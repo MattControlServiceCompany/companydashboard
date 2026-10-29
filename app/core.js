@@ -1811,38 +1811,20 @@ function _saLabel(sa) {
 }
 
 function _updateCompactHdrBaseline(projId) {
-  const bldgs = getUDBldgs(projId);
-  const sqft = bldgs.reduce((s, b) => s + parseInt(b.sqft || 0), 0);
-  let blCost = 0,
-    blKwh = 0,
-    blTherms = 0,
-    blPropane = 0,
-    totalCost = 0,
+  // Baseline $, usage and Site EUI come from getProjectBaselineTotals (utility-data.js), the same call
+  // the Energy Graphics Baseline Site EUI card makes.
+  const bt = getProjectBaselineTotals(projId);
+  const blCost = bt.cost;
+  // Fallback (no baseline set on any meter yet): raw all-bills sum, labeled "Total Cost" instead of
+  // "Baseline" below -- not an audited baseline reconciliation figure.
+  let totalCost = 0,
     totalKwh = 0,
     totalTherms = 0,
     totalPropane = 0;
-  const _blMonthSet = new Set();
-  bldgs.forEach((b) =>
+  getBaselineEligibleBldgs(projId).forEach((b) =>
     (b.meters || []).forEach((m) => {
       if (isBaselineExcluded(projId, m.id)) return;
       if (!isCalcCommodity(projId, m.commodity)) return;
-      const bl = m.baseline;
-      if (bl && bl.months) bl.months.forEach((ym) => _blMonthSet.add(ym));
-      // Single source of truth (2026-09-22): getMeterBaselineTotals wraps getNormRows +
-      // buildMoMap so this header strip reconciles to the same whole-bill BILLED kWh/Therms/$
-      // as the Project Baseline panel, Energy Graphics card, and Baseline report (never the
-      // day-prorated/regression-predicted figures, never the energy-only commodityCost, and
-      // gas usage goes through the therms/naturalGasTherms/naturalGasMMbtu/naturalGasCCF
-      // fallback chain so CSV-imported bills aren't silently zeroed).
-      const bills = (m.bills || []).slice().sort((a, c) => _parseISO(a.start) - _parseISO(c.start));
-      const incl = m.inclusive !== false;
-      const blTot = getMeterBaselineTotals(m, bills, incl);
-      blCost += blTot.cost;
-      if (m.commodity === 'Gas') blTherms += blTot.therms;
-      else if (m.commodity === 'Propane') blPropane += blTot.gallons;
-      else blKwh += blTot.kwh;
-      // Fallback (no baseline set on this meter yet): raw all-bills sum, labeled "Total Cost"
-      // instead of "Baseline" below — not an audited baseline reconciliation figure.
       (m.bills || []).forEach((bill) => {
         totalCost += parseFloat(bill.totalCost) || getBillGasCost(bill) || parseFloat(bill.cost) || 0;
         if (m.commodity === 'Gas') {
@@ -1856,13 +1838,13 @@ function _updateCompactHdrBaseline(projId) {
     }),
   );
   const useCost = blCost > 0 ? blCost : totalCost;
-  const useKwh = blKwh > 0 ? blKwh : totalKwh;
-  const useTherms = blTherms > 0 ? blTherms : totalTherms;
-  const usePropane = blPropane > 0 ? blPropane : totalPropane;
   const label = blCost > 0 ? 'Baseline' : 'Total Cost';
-  const kBtu = computeKBtu(useKwh, useTherms, usePropane);
-  const _blMonthCount = _blMonthSet.size || 12;
-  const eui = sqft > 0 && kBtu > 0 ? (((kBtu / _blMonthCount) * 12) / sqft).toFixed(1) : '—';
+  const eui =
+    bt.eui > 0
+      ? bt.eui.toFixed(1)
+      : bt.sqft > 0 && computeKBtu(totalKwh, totalTherms, totalPropane) > 0
+        ? computePeriodEUI(computeKBtu(totalKwh, totalTherms, totalPropane), 12, bt.sqft).toFixed(1)
+        : '—';
   const blEl = document.getElementById('phc-baseline-' + projId);
   const euiEl = document.getElementById('phc-eui-' + projId);
   if (blEl)
@@ -1893,7 +1875,8 @@ function initDashboardTab(projId) {
   const perfWrap = document.getElementById('dash-perf-' + projId);
   if (!perfWrap) return;
   const bldgs = getUDBldgs(projId);
-  // 2026-09-15 (SA-gate fix): the project-form "Est. Savings $/yr" target and the ECM
+  const _eligBldgs = getBaselineEligibleBldgs(projId); // the one building list the Dashboard counts and sizes
+    // 2026-09-15 (SA-gate fix): the project-form "Est. Savings $/yr" target and the ECM
   // projected $ are savings dollars — hidden for a project with no Service Agreement.
   const _hasSA = projHasContract(projId);
   const estSavings = _hasSA ? parseFloat(p.savings) || 0 : 0;
@@ -1901,7 +1884,7 @@ function initDashboardTab(projId) {
 
   // Render header bar (like HVAC Load Est)
   if (hdrWrap) {
-    const totalSqft = bldgs.reduce((s, b) => s + parseInt(b.sqft || 0), 0);
+    const totalSqft = _eligBldgs.reduce((s, b) => s + parseInt(b.sqft || 0), 0);
     const _totalMeterCount = bldgs.reduce((s, b) => s + (b.meters || []).length, 0);
     const _inclMeters = (b) => (b.meters || []).filter((m) => !isBaselineExcluded(projId, m.id));
     const _blInclCount = bldgs.reduce((s, b) => s + _inclMeters(b).length, 0);
@@ -1913,7 +1896,7 @@ function initDashboardTab(projId) {
     hdrWrap.innerHTML = `<div style="padding:12px 16px;border-bottom:1px solid var(--border);display:flex;align-items:center;gap:12px;flex-wrap:wrap;flex-shrink:0">
             <span style="font-size:13px;font-weight:700;color:var(--text)">📊 Project Dashboard</span>
             <span style="font-size:11px;color:var(--text3)">
-              ${bldgs.length} building${bldgs.length !== 1 ? 's' : ''}${totalSqft ? ' · ' + Number(totalSqft).toLocaleString() + ' sf' : ''} · ${_totalMeterCount} meter${_totalMeterCount !== 1 ? 's' : ''} · ${billCount} bill${billCount !== 1 ? 's' : ''}
+              ${_eligBldgs.length} building${_eligBldgs.length !== 1 ? 's' : ''}${totalSqft ? ' · ' + Number(totalSqft).toLocaleString() + ' sf' : ''} · ${_totalMeterCount} meter${_totalMeterCount !== 1 ? 's' : ''} · ${billCount} bill${billCount !== 1 ? 's' : ''}
             </span>
             ${_blInclCount === 0 ? '' : blMeterCount < _blInclCount ? '<span style="font-size:11px;color:var(--amber);font-weight:600">⚠ ' + blMeterCount + '/' + _blInclCount + ' baseline meters have baselines set</span>' : '<span style="font-size:11px;color:var(--green)">✓ All baseline meters have baselines</span>'}
           </div>`;
@@ -2364,12 +2347,12 @@ function initDashboardTab(projId) {
                   ${curQtrThrough ? '<div style="font-size:11px;color:var(--text3)">' + curQtrThrough + '</div>' : ''}
                   <div style="font-size:28px;font-weight:800;font-family:var(--mono);color:var(--green);margin:4px 0">${$c(curQtrActual)}</div>
                   ${curQtrWaiting.length ? '<div style="display:inline-block;font-size:11px;color:var(--text2);background:var(--s2);border:1px solid var(--border);border-radius:10px;padding:2px 8px;margin-bottom:4px">Waiting for bills: ' + _escHtml(curQtrWaiting.join(', ')) + '</div>' : ''}
-                  <div style="font-size:12px;color:var(--text2)">${curQtrPct !== null ? '<span style="color:var(--green);font-weight:600">' + curQtrPct + '%</span> of ' + curQtrLabel + ' projected (' + $c2(curQtrProjected) + ')' : bldgs.length + ' building' + (bldgs.length !== 1 ? 's' : '') + ' · <span style="color:var(--text3)">' + (useNormalized ? 'Normalized' : 'Actual') + '</span>'}</div>
+                  <div style="font-size:12px;color:var(--text2)">${curQtrPct !== null ? '<span style="color:var(--green);font-weight:600">' + curQtrPct + '%</span> of ' + curQtrLabel + ' projected (' + $c2(curQtrProjected) + ')' : _eligBldgs.length + ' building' + (_eligBldgs.length !== 1 ? 's' : '') + ' · <span style="color:var(--text3)">' + (useNormalized ? 'Normalized' : 'Actual') + '</span>'}</div>
                 </div>` : ''}
                 <div style="border-top:1px solid var(--border);padding-top:12px">
                   <div style="font-size:11px;color:var(--text3);text-transform:uppercase;letter-spacing:.6px">Total Cumulative Savings</div>
                   <div style="font-size:28px;font-weight:800;font-family:var(--mono);color:${totalSav >= 0 ? 'var(--green)' : 'var(--danger)'};margin:4px 0">${totalSav >= 0 ? '' : '-'}${$c(totalSav)}</div>
-                  <div style="font-size:12px;color:var(--text2)">${throughDate ? 'through ' + throughDate : bldgs.length + ' building' + (bldgs.length !== 1 ? 's' : '')} · <span style="color:var(--text3)">${useNormalized ? 'Normalized' : 'Actual'}</span></div>
+                  <div style="font-size:12px;color:var(--text2)">${throughDate ? 'through ' + throughDate : _eligBldgs.length + ' building' + (_eligBldgs.length !== 1 ? 's' : '')} · <span style="color:var(--text3)">${useNormalized ? 'Normalized' : 'Actual'}</span></div>
                 </div>
               </div>
               <div style="display:flex;flex-direction:column;gap:12px;justify-content:center">

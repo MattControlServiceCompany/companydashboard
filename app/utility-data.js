@@ -986,6 +986,34 @@ function getBaselineEligibleBldgs(pid) {
     return true;
   });
 }
+// Project baseline totals and Baseline Site EUI: ONE function (2026-10-29). The project header and the
+// Energy Graphics "Baseline Site EUI" card both call it. Included buildings only (getBaselineEligibleBldgs),
+// included meters only, whole-bill BILLED totals from getMeterBaselineTotals (no weather argument),
+// annualized over the distinct baseline months by computeBaselineEUI, over the same buildings' sqft.
+function getProjectBaselineTotals(pid) {
+  const bldgs = getBaselineEligibleBldgs(pid);
+  const sqft = bldgs.reduce((s, b) => s + parseInt(b.sqft || 0), 0);
+  const out = { sqft, cost: 0, kwh: 0, therms: 0, gallons: 0, monthCount: 0, kBtu: 0, eui: 0 };
+  const monthSet = new Set();
+  bldgs.forEach((b) =>
+    (b.meters || []).forEach((m) => {
+      if (isBaselineExcluded(pid, m.id)) return;
+      if (!isCalcCommodity(pid, m.commodity)) return;
+      const bl = m.baseline;
+      if (bl && bl.months) bl.months.forEach((ym) => monthSet.add(ym));
+      const bills = (m.bills || []).slice().sort((a, c) => _parseISO(a.start) - _parseISO(c.start));
+      const t = getMeterBaselineTotals(m, bills, m.inclusive !== false);
+      out.cost += t.cost;
+      if (m.commodity === 'Gas') out.therms += t.therms;
+      else if (m.commodity === 'Propane') out.gallons += t.gallons;
+      else out.kwh += t.kwh;
+    }),
+  );
+  out.monthCount = monthSet.size || 12;
+  out.kBtu = computeKBtu(out.kwh, out.therms, out.gallons);
+  out.eui = computeBaselineEUI(out.kBtu, out.monthCount, sqft);
+  return out;
+}
 function getUDBldg(pid, bid) {
   return getUDBldgs(pid).find((b) => b.id === bid);
 }

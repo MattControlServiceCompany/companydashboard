@@ -779,8 +779,7 @@ function egfxRefresh(projId) {
   const totalBlKwh = blKwhAvg.reduce((a, b) => a + b, 0);
   const totalBlGas = blGasAvg.reduce((a, b) => a + b, 0);
   const totalBlPropane = blPropaneAvg.reduce((a, b) => a + b, 0);
-  const blKbtu = computeKBtu(totalBlKwh, totalBlGas, totalBlPropane);
-  const blEui = sqft > 0 ? blKbtu / sqft : 0;
+  const blEui = getProjectBaselineTotals(projId).eui; // same call as the project header Site EUI
   const cbecsEui = CBECS_EUI[p.type] || 48.5;
 
   const sortedYears = Object.keys(yearData).map(Number).sort();
