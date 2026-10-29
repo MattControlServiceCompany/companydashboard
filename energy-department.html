@@ -5181,13 +5181,10 @@
           outline-offset: 2px;
         }
       }
-      /* Multi-building file: the review bar stays at the bottom of the screen while the values scroll. It has its own
-         place at the end of the values, so it never covers the last row. The strip under it has the page color,
-         so no value shows under the pinned bar. */
+      /* Multi-building file: the review bar is a normal block after the last value row. It takes its own space, so no
+         row or value is ever under it at any scroll position. Do not make it sticky or fixed: that puts it over the values. */
       .pdf-review-bar {
-        position: sticky;
-        bottom: 0;
-        z-index: calc(var(--z-chrome, 10) + 1);
+        position: static;
         margin-top: 14px;
         padding: 8px 10px;
         background: var(--s2);
@@ -5195,15 +5192,6 @@
         border-radius: 8px;
         font-size: 12px;
         color: var(--text);
-      }
-      .pdf-review-bar::after {
-        content: '';
-        position: absolute;
-        left: -1px;
-        right: -1px;
-        top: 100%;
-        height: 48px;
-        background: var(--bg);
       }
       .pdf-rb-row {
         display: flex;
@@ -10107,7 +10095,7 @@
                   </select>
                 </div>
                 <div id="extractedFieldsGrid" data-fb="energy.pdf.extracted-fields"></div>
-                <!-- Multi-building file: the review bar, always in view at the bottom: counts, one link per issue, Save All. -->
+                <!-- Multi-building file: the review bar, after the last value row: counts, one link per issue, Save All. -->
                 <div id="pdfReviewBar" class="pdf-review-bar" data-fb="energy.pdf.review-bar" style="display: none"></div>
               </div>
               <!-- DOCKED PDF VIEWER: sits beside the values and billing periods (no backdrop), with PDF and OCR text tabs.
