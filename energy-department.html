@@ -5755,17 +5755,13 @@
           z-index: var(--z-chrome, 10);
           margin-bottom: 8px;
         }
-        /* The values sit under the PDF at natural height; the page scrolls, no column is squeezed. */
+        /* The values fill the room under the PDF; their own scroll region scrolls (the page does not), and the review bar
+           stays under it. */
         #pdfBody.pdf-docked #pdfLeftCol {
-          flex: none !important;
+          flex: 1 1 0 !important;
         }
         #pdfDockResize {
           display: none;
-        }
-        /* The column headers stop pinning here: the PDF is the pinned item. */
-        #pdfBody.pdf-docked .drop-zone.collapsed,
-        #pdfBody.pdf-docked .pdf-topbar {
-          position: static !important;
         }
       }
       /* -- SIDEBAR PROJECT FOLDERS -- */
