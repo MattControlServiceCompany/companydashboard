@@ -8620,6 +8620,26 @@ async function _mbSaveOneBill(bi, action) {
 }
 window._mbSaveOneBill = _mbSaveOneBill;
 
+// How many of the rows to save match a saved bill whose values differ (they would change). toSave: row indexes;
+// dupView: the _pdfDupView(bills).map entries ({ diffFields, action }). A row set to Skip does not change anything.
+function _mbCountSavedChanges(toSave, dupView) {
+  return (toSave || []).filter((i) => {
+    const d = (dupView || {})[i];
+    return d && d.action !== 'skip' && (d.diffFields || []).length > 0;
+  }).length;
+}
+function _mbOverwriteWords(n) {
+  return (
+    n +
+    ' saved bill' +
+    (n === 1 ? '' : 's') +
+    (n === 1 ? ' has' : ' have') +
+    ' different values from this file. Saving will change ' +
+    (n === 1 ? 'it' : 'them') +
+    '. A blank new value keeps the saved value. Continue?'
+  );
+}
+
 // ── Bulk "Save All" (fix ede70be1) ──────────────────────────────────────────
 // Loops over checked, non-skipped, not-yet-saved rows and calls the SAME
 // _mbSaveOneBill primitive the per-row Save button uses (one primitive, two
@@ -8685,6 +8705,12 @@ async function confirmMultiBuildingSave(action) {
   if (!toSave.length) {
     if (!unconfirmedGatedIdx.length) showToast('Nothing selected to save — check at least one bill');
     return;
+  }
+
+  // One confirm when saved bills would get new values (Save All and Overwrite All replace a saved bill that differs).
+  if (action === 'save' || action === 'overwrite') {
+    const nChange = _mbCountSavedChanges(toSave, _pdfDupView(bills).map);
+    if (nChange > 0 && !confirm(_mbOverwriteWords(nChange))) return;
   }
 
   _mbSaveAllInProgress = true;
