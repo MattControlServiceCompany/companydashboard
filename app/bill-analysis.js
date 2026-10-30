@@ -7095,6 +7095,14 @@ function _mbCreateWords(bill, match) {
   return 'New ' + comm + ' meter' + (id ? ' for ' + id : '') + (proj ? ' in ' + proj : '') + ', on building ' + bname;
 }
 
+// Previous / Next buttons for the head of the bill box. The first bill has no Previous, the last has no Next.
+function _mbStepButtons(i, total) {
+  const no = _mbBillNo(i);
+  const btn = (dir, text, off) =>
+    '<button type="button" class="pdf-top-btn" onclick="_mbStepBill(' + i + ',' + dir + ')"' + (off ? ' disabled' : '') + ' title="' + text + ' bill">' + text + '</button>';
+  return '<span class="pdf-dest-step">' + btn(-1, 'Previous', no <= 1) + btn(1, 'Next', no >= total) + '</span>';
+}
+
 // The box at the top of the bill's values: bill number, status, the destination (with Change), the issue with its
 // Create buttons, Include in Save All, Save this bill, Skip. Its status words come from _pdfBillIssueItems, the same
 // list the bar uses. Returns { cls: the status class of the box, html }.
@@ -7116,7 +7124,9 @@ function _mbBillBoxHtml(i) {
     cls +
     '">' +
     _escHtml(words) +
-    '</span></div>';
+    '</span>' +
+    _mbStepButtons(i, bills.length) +
+    '</div>';
   if (dupInfo && dupInfo.action === 'skip') return { cls: '', html: head('', 'Already saved: skipped') };
   if (bill._mbSaved) {
     return {
@@ -7287,16 +7297,34 @@ function _mbToggleReviewList() {
   _mbFitReviewLinks();
 }
 window._mbToggleReviewList = _mbToggleReviewList;
+// Open bill i (its building and utility too).
+function _mbGoToBill(i) {
+  const bills = window._pdfMultiBills;
+  if (!bills || !bills[i]) return;
+  window._pdfBuildingTab = bills[i].AccountNumber || '_unknown';
+  window._pdfCommTab = _pdfCommOf(bills[i]);
+  _pdfTopOpen = null;
+  selectMultiBill(i);
+}
+// The bill with bill number `no` ("Bill 3"), as an index, or -1.
+function _mbBillIdxAtNo(no) {
+  const bills = window._pdfMultiBills || [];
+  for (let i = 0; i < bills.length; i++) if (_mbBillNo(i) === no) return i;
+  return -1;
+}
+// Previous / Next button of the bill box: step by bill number.
+function _mbStepBill(i, dir) {
+  const j = _mbBillIdxAtNo(_mbBillNo(i) + dir);
+  if (j >= 0) _mbGoToBill(j);
+}
+window._mbStepBill = _mbStepBill;
 // A link in the bar: open that bill (its building and utility too), then go to the issue.
 function _mbGoToIssue(i, k) {
   const bills = window._pdfMultiBills;
   if (!bills || !bills[i]) return;
   const bw = ((window._pdfBillWarnings || [])[i] || {}).warnings || [];
   const it = _pdfBillIssueItems(bills[i], bw)[k];
-  window._pdfBuildingTab = bills[i].AccountNumber || '_unknown';
-  window._pdfCommTab = _pdfCommOf(bills[i]);
-  _pdfTopOpen = null;
-  selectMultiBill(i);
+  _mbGoToBill(i);
   if (it && it.field && document.querySelector('.ef-input[data-key="' + it.field + '"]')) {
     _pdfGoToField(it.field);
     return;
@@ -17646,9 +17674,12 @@ async function processPDF(file) {
                 newestIdx = fi;
               }
             });
-            window._pdfMultiIdx = newestIdx;
+            // A multi-account file opens on Bill 1 (the bill numbers run building, utility, period); other files on the newest bill.
+            const _openIdx = _mbEnsureReview() ? Math.max(0, _mbBillIdxAtNo(1)) : newestIdx;
+            window._pdfMultiIdx = _openIdx;
+            window._pdfBuildingTab = null;
             renderMultiBillUI(finalBills);
-            renderPDFFields(finalBills[newestIdx], analysisResults[newestIdx]?.warnings || []);
+            renderPDFFields(finalBills[_openIdx], analysisResults[_openIdx]?.warnings || []);
             document.getElementById('pdfClearBtn').style.display = 'block';
             document.getElementById('dropZone').classList.add('collapsed');
             document.getElementById('pdfTypeSection').style.display = 'none';
