@@ -13277,10 +13277,6 @@ setInterval(() => {
 // debug-capture logic itself (building `output`, window._debugFileContent/
 // _debugFileName) is never removed, and the manual button can still produce
 // a file on demand on any host.
-function _isDebugAutoSuppressedHost() {
-  const h = (window.location && window.location.hostname) || '';
-  return h.endsWith('netlify.app');
-}
 function savePDFDebug(isManualSave) {
   const raw = window._pdfRawText || '(no raw text)';
   const bills = window._pdfMultiBills || [];
@@ -13375,7 +13371,8 @@ function savePDFDebug(isManualSave) {
   // code that reads them), it just skips the actual Downloads-folder write. A
   // manual "Save Debug" button click, or ANY call on GitHub Pages or a dev
   // host, still saves.
-  if (!isManualSave && _isDebugAutoSuppressedHost()) return;
+  // The automatic calls (after an extraction) only keep the capture. The file and the toast come from the Save a debug file button.
+  if (!isManualSave) return;
   // Save to Downloads as a file
   const blob = new Blob([output], { type: 'text/plain' });
   const a = document.createElement('a');
