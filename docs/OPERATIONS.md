@@ -911,3 +911,5 @@ This includes a new or changed function, schedule, env var name, timer, host, or
 - How to check: `node test-pricing-price-list.js` (21 pass, includes every estimate type); open any project > Cost Estimate > Price list.
 
 - BAS schedule import fills saved Set Points zones (2026-10-30; app/equipment-matrix.js emFillSavedSetpointSchedules, called by emAttachParsedSchedules). Runs when Save is pressed on the District Calendar import. It sets the Schedule of saved Set Points zones whose schedule is blank, "?" or from an earlier import; a typed schedule stays. Needs no env var. Check: node tools/test-bas-first-use.js.
+
+- Equipment Matrix Edit Mode speed (2026-10-30; app/equipment-matrix.js:7249, :7734). Cell edits use one delegated `focusout` listener on document (`_emAttachNavDelegatedListeners`, attached once per page load) instead of an onblur attribute on each cell. The first render batch is smaller in Edit Mode (`CELL_BUDGET` 8000 instead of 30000), so the table shows sooner. No timer, no network call, no env var. How to check: `node test-equipment-matrix-render-performance.js`; turn Edit Mode on, edit a cell, click away, and the value saves.
