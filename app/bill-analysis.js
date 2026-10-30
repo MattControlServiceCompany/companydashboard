@@ -19678,6 +19678,7 @@ function renderPDFFields(parsed, warnings) {
     { type: 'charge-line', label: 'PTS', chargeField: 'PTSCharge', rateKey: 'PTSCharge' },
     { type: 'charge-line', label: 'TDC', chargeField: 'TDCCharge', qtyField: 'TDCkW', rateKey: 'TDCCharge' },
     { type: 'charge-line', label: 'Bill Offset', chargeField: 'BillOffset', rateKey: null },
+    { type: 'charge-line', label: 'Electric', chargeField: 'ElectricCharge', rateKey: null, hideIfNull: true },
     { type: 'charge-line', label: 'Franchise Fee', chargeField: 'FranchiseFee', rateKey: null },
     { type: 'total', fields: ['TotalCurrentCharges'], chargeKey: 'TotalCurrentCharges' },
   ];
@@ -19822,6 +19823,7 @@ function renderPDFFields(parsed, warnings) {
       rateKey: null,
     },
     { type: 'charge-line', label: 'Water Protection Fee', chargeField: 'WaterProtectionFee', rateKey: null },
+    { type: 'charge-line', label: 'Water Debt Payment', chargeField: 'WaterDebtPayment', rateKey: null, hideIfNull: true },
     { type: 'total', fields: ['TotalCurrentCharges'], chargeKey: 'TotalCurrentCharges' },
   ];
   const _LAYOUT_SEWER = [

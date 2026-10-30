@@ -14867,7 +14867,7 @@ const UTILITY_RULES = [
           const m = raw.match(/([\d,]+\.\d{2})/);
           _waDebtLabels++;
           if (m) {
-            waDebtPmt = _evgRound((waDebtPmt || 0) + parseFloat(m[1].replace(/,/g, '')), 2);
+            waDebtPmt = _evgRound((waDebtPmt || 0) + _addLn('WaterDebtPayment', parseFloat(m[1].replace(/,/g, ''))), 2);
             _waDebtLines++;
           }
           continue;
@@ -14880,7 +14880,7 @@ const UTILITY_RULES = [
           const m = raw.match(/([\d,]+\.\d{2})/);
           _waDebtLabels++;
           if (m) {
-            waDebtPmt = _evgRound((waDebtPmt || 0) + parseFloat(m[1].replace(/,/g, '')), 2);
+            waDebtPmt = _evgRound((waDebtPmt || 0) + _addLn('WaterDebtPayment', parseFloat(m[1].replace(/,/g, ''))), 2);
             _waDebtLines++;
           }
           continue;
@@ -14979,7 +14979,7 @@ const UTILITY_RULES = [
             } else if (/^(?:METER\s+)?DEBT\s+PMT/i.test(rest)) {
               const body = rest.replace(/^(?:METER\s+)?DEBT\s+PMT\s*/i, '').trim();
               const mv = body.match(/([\d,]+\.\d{2})/);
-              if (mv) waDebtPmt = _evgRound((waDebtPmt || 0) + parseFloat(mv[1].replace(/,/g, '')), 2);
+              if (mv) waDebtPmt = _evgRound((waDebtPmt || 0) + _addLn('WaterDebtPayment', parseFloat(mv[1].replace(/,/g, ''))), 2);
             } else if (/^SEWER/i.test(rest) && !/FRANCHISE/i.test(rest)) {
               const body = rest.replace(/^SEWER\s*/i, '');
               const m = _parseMeteredLine(body);
@@ -15144,7 +15144,7 @@ const UTILITY_RULES = [
               if (label === 'EL_FRAN') elFranchiseFee = (elFranchiseFee || 0) + _addLn('FranchiseFee', v);
               else if (label === 'FA' && fuelAdjCharge === null) fuelAdjCharge = v;
               else if (label === 'SW_FRAN' && swFranchiseFee === null) swFranchiseFee = v;
-              else if (label === 'WA_DEBT') waDebtPmt = _evgRound((waDebtPmt || 0) + v, 2);
+              else if (label === 'WA_DEBT') waDebtPmt = _evgRound((waDebtPmt || 0) + _addLn('WaterDebtPayment', v), 2);
               else if (label === 'WA_FRAN' && waFranchiseFee === null) waFranchiseFee = v;
             }
           }
@@ -15229,7 +15229,7 @@ const UTILITY_RULES = [
           kW: null,
           ElectricCharge: Math.round(totalElCharge * 100) / 100,
           FranchiseFee: elFranchiseFee || null,
-          ..._lbg_chargeLinesProp({ FranchiseFee: _chgLines.FranchiseFee || [] }),
+          ..._lbg_chargeLinesProp({ FranchiseFee: _chgLines.FranchiseFee || [], ElectricCharge: elMeters.map((m) => m.charge) }),
           FuelAdjustment: fuelAdjCharge || null,
           _electricMeterCount: elMeters.length,
           TotalCurrentCharges: Math.round(elTotal * 100) / 100,
@@ -15355,7 +15355,7 @@ const UTILITY_RULES = [
           WaterUsage: billValueOrNull(waUsage), // 92e2f54d: a real 0 stays 0
           ...(_waUsageSuspect ? { _usageSuspect: true } : {}),
           WaterCharge: waCharge,
-          ..._lbg_chargeLinesProp({ WaterCharge: _chgLines.WaterCharge || [] }),
+          ..._lbg_chargeLinesProp({ WaterCharge: _chgLines.WaterCharge || [], ...(_debtLost ? {} : { WaterDebtPayment: _chgLines.WaterDebtPayment || [] }) }),
           WaterDebtPayment: _debtLost ? null : waDebtPmt || null,
           WaterFranchiseFee: waFranchiseFee || null,
           TotalCurrentCharges: _debtLost ? null : Math.round(waTotal * 100) / 100,
