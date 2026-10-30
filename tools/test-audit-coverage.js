@@ -139,6 +139,25 @@ t.eq(c.stillNeed.length, 1, 'a VRF unit with fan control and a zone temperature 
 // 7. Empty matrix.
 t.eq(sb.auditComputeCoverage([]).total, 0, 'empty matrix has no units');
 
+// 8. Serving fix: numbered request inputs override a wrong sz subtype (RTU feeding boxes).
+const feeder = row({ building: 'Fake Hall D', category: 'rtu', subtype: 'sz', equipName: 'RTU-40', pointsRaw: { 'Air Request 1': '0', 'Air Request 2': '0', 'Supply Air Temp Setpoint': '55', 'Supply Air Temperature': '55', 'Economizer Damper': '0' } });
+const fbox = row({ building: 'Fake Hall D', equipName: 'Zone | VAV-40', pointsRaw: sp });
+t.eq(sb.auditIsServingUnit(feeder, [feeder, fbox]), true, 'sz-tagged RTU with numbered requests is serving');
+t.eq(sb.auditComputeCoverage([feeder, fbox]).stillNeed.length, 0, 'serving RTU needs only SAT set point, not CO2');
+
+// 9. Screenshot evidence moves a Still-need line to covered.
+const hp = row({ building: 'Fake Hall E', category: 'rtu', equipName: 'HP-1', pointsRaw: Object.assign({ Mode: '1', Schedule: 'On', 'Supply Air Temperature': '55' }, sp) });
+c = sb.auditComputeCoverage([hp]);
+t.eq(c.stillNeed.length, 1, 'unit with no economizer or CO2 point is a Still-need line');
+const ev = {};
+ev[c.stillNeed[0].key] = { files: ['shot-1.png'], note: 'unit has no economizer', who: 'Tester', when: '2026-01-01T00:00:00Z' };
+const c2 = sb.auditComputeCoverage([hp], ev);
+t.eq(c2.stillNeed.length, 0, 'evidence removes the line from Still need');
+t.eq(c2.screenshotCovered.length, 1, 'evidence puts it in the screenshot-covered list');
+t.eq(c2.screenshotCovered[0].evidence.files, ['shot-1.png'], 'screenshot list keeps the file names');
+t.eq([c.pct, c2.pct], [0, 100], 'coverage percent includes screenshot-covered items');
+t.eq(sb.auditComputeCoverage([hp], {}).stillNeed.length, 1, 'undo (no evidence) puts the line back');
+
 const fs = require('fs');
 const faSrc = fs.readFileSync(require('path').join(__dirname, '..', 'app/facility-audit.js'), 'utf8');
 t.ok(/auditComputeCoverage\(/.test(faSrc) && !/AUDIT_COV_ITEMS|auditCoverageNeeds/.test(faSrc), 'the tab calls the one coverage function and has no coverage rules of its own');

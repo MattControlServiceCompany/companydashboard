@@ -16,6 +16,8 @@
 //   - Point names are tested in BOTH forms: the normalized key and the raw BAS point name, so a name the
 //     normalizer dropped or renamed still counts.
 //   - Lighting is audited from the screenshots we have. An unshot lighting zone is never a gap.
+//   - Screenshot evidence: a Still-need line (key = auditCovLineKey) with evidence {files,note,who,when} counts as covered.
+//     Equipment we have SEEN in a screenshot is gathered, even if the unit lacks the feature. The caller passes the evidence in.
 //   - This is about gathering coverage only. It makes no statement about energy use or savings.
 
 // What each need looks like in the BAS point names (matched against the normalized point keys).
@@ -141,8 +143,15 @@ function _auditCovHasItem(row, names, item) {
 //   { total, covered, pct, buildings:[{name,total,covered,pct}], types:[{name,total,covered,pct}],
 //     groups:[{type,buildings,units,needs,covered,missing,example}],
 //     stillNeed:[{type,buildings,units,groups,example,missing,reason}] }
-function auditComputeCoverage(rows) {
+// Key of one Still-need line (system type + missing items). Evidence is stored under this key.
+function auditCovLineKey(type, missing) {
+  return type + '|' + (missing || []).join(',');
+}
+
+// evidence (optional) = { <auditCovLineKey>: { files:[...], note, who, when } }. A line with evidence is covered.
+function auditComputeCoverage(rows, evidence) {
   rows = rows || [];
+  evidence = evidence || {};
   var groups = {};
   rows.forEach(function (row) {
     if (!row || (typeof emIsPhantomRow === 'function' && emIsPhantomRow(row))) return;
@@ -164,6 +173,7 @@ function auditComputeCoverage(rows) {
   var list = Object.keys(groups).map(function (k) {
     var g = groups[k];
     var bset = {};
+    var shot = !g.haveAll && evidence[auditCovLineKey(g.type, g.missing || [])] ? evidence[auditCovLineKey(g.type, g.missing || [])] : null;
     g.members.forEach(function (r) {
       bset[r.building || ''] = true;
     });
@@ -172,7 +182,8 @@ function auditComputeCoverage(rows) {
       buildings: Object.keys(bset).sort(),
       units: g.members.length,
       needs: g.needs,
-      covered: g.haveAll,
+      covered: g.haveAll || !!shot,
+      shot: shot,
       missing: g.haveAll ? [] : g.missing || [],
       example: g.example,
       members: g.members,
@@ -203,15 +214,18 @@ function auditComputeCoverage(rows) {
   });
   // Still need: one line per system type + missing items (not one per group), biggest first.
   var needBy = {};
+  var shotBy = {};
   list.forEach(function (g) {
-    if (g.covered) return;
-    var nk = g.type + '|' + g.missing.join(',');
-    var n = needBy[nk];
+    if (g.covered && !g.shot) return;
+    var nk = auditCovLineKey(g.type, g.missing);
+    var n = (g.shot ? shotBy : needBy)[nk];
     if (!n) {
       var labels = g.missing.map(function (m) {
         return AUDIT_COV_ITEMS[m].label;
       });
-      n = needBy[nk] = {
+      n = (g.shot ? shotBy : needBy)[nk] = {
+        key: nk,
+        evidence: g.shot,
         type: g.type,
         units: 0,
         groups: 0,
@@ -254,5 +268,14 @@ function auditComputeCoverage(rows) {
         return a.type < b.type ? -1 : a.type > b.type ? 1 : b.units - a.units;
       }),
     stillNeed: stillNeed,
+    screenshotCovered: Object.keys(shotBy)
+      .map(function (k) {
+        var n = shotBy[k];
+        n.buildings = Object.keys(n.buildings).sort();
+        return n;
+      })
+      .sort(function (a, b) {
+        return b.units - a.units || (a.type < b.type ? -1 : 1);
+      }),
   };
 }

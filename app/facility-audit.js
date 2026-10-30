@@ -6,6 +6,8 @@
 // The Deficiency List is a filter on the same records. Set points are NEVER stored here: the Set Points
 // view reads emCurrentSetpointZones (app/equipment-matrix.js, same as the Set Points tab) each time.
 // The Coverage view (default) is the internal tracker: computations/audit-coverage.js auditComputeCoverage, render only.
+// Screenshot evidence: en_audit_<pid>.evidence = { <auditCovLineKey>: { files:[...], note, who, when } }.
+// A Still-need line with evidence counts as covered (auditComputeCoverage gets it passed in). Same synced key.
 // Cost and savings link through measureId to the existing measures; no energy math here.
 
 var FA_STATUSES = ['Open', 'Planned', 'Done', 'Dismissed'];
@@ -18,6 +20,7 @@ function faLoad(pid) {
   if (!d || typeof d !== 'object') d = {};
   if (!Array.isArray(d.findings)) d.findings = [];
   if (!d.edits || typeof d.edits !== 'object') d.edits = {};
+  if (!d.evidence || typeof d.evidence !== 'object' || Array.isArray(d.evidence)) d.evidence = {};
   return d;
 }
 
@@ -134,6 +137,36 @@ function faAdd(pid) {
   faRender(pid);
 }
 
+function _faWho() {
+  try {
+    return (typeof currentUser !== 'undefined' && currentUser && (currentUser.name || currentUser.email)) || '';
+  } catch (e) {
+    return '';
+  }
+}
+
+function faEvidenceSave(pid, key, filesText, note) {
+  var files = String(filesText || '')
+    .split(/[,;\r\n]/)
+    .map(function (x) {
+      return x.trim();
+    })
+    .filter(Boolean);
+  if (!files.length) return false;
+  var d = faLoad(pid);
+  d.evidence[key] = { files: files, note: String(note || '').trim(), who: _faWho(), when: new Date().toISOString() };
+  faSave(pid, d);
+  faRender(pid);
+  return true;
+}
+
+function faEvidenceUndo(pid, key) {
+  var d = faLoad(pid);
+  delete d.evidence[key];
+  faSave(pid, d);
+  faRender(pid);
+}
+
 function faSetView(pid, v) {
   _faView = v;
   faRender(pid);
@@ -233,6 +266,12 @@ function _faBindChange(body) {
     if (!t || !t.dataset) return;
     if (t.dataset.action === 'view') faSetView(t.dataset.pid, t.dataset.view);
     else if (t.dataset.action === 'add') faAdd(t.dataset.pid);
+    else if (t.dataset.action === 'shot-undo') faEvidenceUndo(t.dataset.pid, t.dataset.key);
+    else if (t.dataset.action === 'shot-save') {
+      var box = t.closest('.fa-shot');
+      var inputs = box ? box.querySelectorAll('input') : [];
+      faEvidenceSave(t.dataset.pid, t.dataset.key, inputs[0] && inputs[0].value, inputs[1] && inputs[1].value);
+    }
   });
 }
 
@@ -416,11 +455,26 @@ function _faCoverageView(pid) {
   var m = emLoadMatrix(pid);
   var rows = (m && m.rows) || [];
   if (!rows.length) return '<div class="fa-empty">No equipment yet. Import the BAS points in the Equipment Matrix first.</div>';
-  var c = auditComputeCoverage(rows);
+  var c = auditComputeCoverage(rows, faLoad(pid).evidence);
   var need = c.stillNeed
     .map(function (n) {
+      var form =
+        '<details class="fa-shot"><summary>Seen in screenshot</summary><div class="fa-detail">' +
+        '<label class="fa-fld fa-wide">Screenshot file name(s), comma between<input type="text"></label>' +
+        '<label class="fa-fld fa-wide">Note (optional), for example: unit has no economizer<input type="text"></label>' +
+        '<button class="fa-btn" data-action="shot-save" data-pid="' + _escHtml(pid) + '" data-key="' + _escHtml(n.key) + '">Save</button></div></details>';
       return (
-        '<tr><td>' + _escHtml(n.type) + '</td><td class="fa-num">' + n.units + '</td><td>' + _escHtml(n.buildings.join(', ')) + '</td><td>' + _escHtml(n.example) + '</td><td>' + _escHtml(n.reason) + '</td></tr>'
+        '<tr><td>' + _escHtml(n.type) + '</td><td class="fa-num">' + n.units + '</td><td>' + _escHtml(n.buildings.join(', ')) + '</td><td>' + _escHtml(n.example) + '</td><td>' + _escHtml(n.reason) + form + '</td></tr>'
+      );
+    })
+    .join('');
+  var shots = c.screenshotCovered
+    .map(function (n) {
+      var e = n.evidence || {};
+      return (
+        '<tr><td>' + _escHtml(n.type) + '</td><td class="fa-num">' + n.units + '</td><td>' + _escHtml(n.buildings.join(', ')) + '</td><td>' + _escHtml((e.files || []).join(', ')) +
+        '</td><td>' + _escHtml(e.note || '') + '</td><td>' + _escHtml(e.who || '') + '</td><td>' + _escHtml(e.when ? String(e.when).slice(0, 10) : '') +
+        '</td><td><button class="fa-btn" data-action="shot-undo" data-pid="' + _escHtml(pid) + '" data-key="' + _escHtml(n.key) + '">Undo</button></td></tr>'
       );
     })
     .join('');
@@ -440,6 +494,10 @@ function _faCoverageView(pid) {
     (need
       ? _faCovTable([['System type'], ['Units', 1], ['Buildings'], ['Example'], ['Why']], need)
       : '<div class="fa-empty">Nothing else needed.</div>') +
+    (shots
+      ? '<details style="margin-top:12px"><summary class="fa-sub">Covered by screenshot (' + c.screenshotCovered.length + ')</summary>' +
+        _faCovTable([['System type'], ['Units', 1], ['Buildings'], ['Screenshot'], ['Note'], ['Who'], ['When'], ['']], shots) + '</details>'
+      : '') +
     '<div class="fa-sub" style="margin-top:12px">Groups of identical BAS points (' + c.groups.length + ')</div>' +
     _faCovTable([['System type'], ['Units', 1], ['Buildings'], ['Status']], groups)
   );

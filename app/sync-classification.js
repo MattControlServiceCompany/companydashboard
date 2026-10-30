@@ -91,7 +91,7 @@ const SyncClassification = (() => {
     {
       pattern: 'en_audit_',
       prefix: true,
-      note: 'facility-audit.js: en_audit_<pid> = findings the user added or imported plus the user edits to automatic findings. Set points are never stored here. Shared by both users.',
+      note: 'facility-audit.js: en_audit_<pid> = findings the user added or imported plus the user edits to automatic findings. Set points are never stored here. Also holds .evidence = screenshot evidence per Still-need line (file names, note, who, when). Shared by both users.',
     },
     { pattern: 'en_hours_', prefix: true, note: 'hours.js: en_hours_<pid>' },
     {

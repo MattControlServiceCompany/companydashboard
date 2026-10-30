@@ -40,8 +40,9 @@ function _auditHasNumberedRequests(row) {
 function auditIsServingUnit(row, rows) {
   if (!row) return false;
   var cat = row.category;
-  // A single-zone unit (subtype sz) serves one zone and runs its own schedule: never a serving unit.
-  if (row.subtype === 'sz') return false;
+  // A single-zone unit (subtype sz) serves one zone and runs its own schedule: not a serving unit.
+  // Numbered request inputs ("Air Request 1") prove other units request from it, so they override a wrong sz subtype.
+  if (row.subtype === 'sz' && !_auditHasNumberedRequests(row)) return false;
   // A unit with its own zone set points and no numbered request inputs ("Air Request 1", "Heat Request #2")
   // controls its own zone and runs its own schedule: not a serving unit.
   if (_auditHasOwnZoneSetpoints(row) && !_auditHasNumberedRequests(row)) return false;
