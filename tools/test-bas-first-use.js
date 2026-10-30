@@ -97,5 +97,5 @@ t.eq(BasDiff.readableDates('Day of Month 00 (any); Month March; Day of Week Mond
 t.eq(BasDiff.readableDates('Day of Month 00 (any); Month Any; Day of Week Friday; Week Last; Year 0000 (any)'), 'Last Friday of every month', 'last weekday of every month');
 t.eq(BasDiff.readableDates('Day of Month 00 (any); Month Any; Day of Week Friday; Week Any; Year 0000 (any)'), 'every Friday', 'every weekday');
 t.eq(BasDiff.readableDates('Day of Month 00 (any); Month Any; Day of Week Any; Week Any; Year 0000 (any)'), 'every day', 'every day');
-t.ok(/Create meter on Unmatched Bills/.test(read('app/bill-analysis.js')) && !/Create building \+ meter/.test(read('app/bill-analysis.js')), 'no-building button says what it does');
+t.ok(/Create building \+ meter/.test(read('app/bill-analysis.js')), 'no-building button says what it does');
 t.done('test-bas-first-use');

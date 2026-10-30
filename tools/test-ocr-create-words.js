@@ -6,4 +6,5 @@ const eq = (a, e, l) => { if (a !== e) { bad++; console.error('FAIL ' + l + ': '
 const bill = { Commodity: 'Water', AccountNumber: 'TST-0001', ServiceAddress: '1 Test Dr' };
 eq(f(bill, { proj: { name: 'Synth Project' }, bldg: null }), 'New Water meter for account TST-0001 in Synth Project, on building Unmatched Bills', 'no building');
 eq(f(bill, { proj: { name: 'Synth Project' }, bldg: { name: 'Synth Hall' } }), 'New Water meter for account TST-0001 in Synth Project, on building Synth Hall', 'chosen building');
+eq(f(bill, { proj: { name: 'Synth Project' }, bldg: null, createBldgName: '9 Testcat Dr' }), 'New Water meter for account TST-0001 in Synth Project, on new building 9 Testcat Dr', 'new building from address');
 process.exit(bad ? 1 : 0);

@@ -39,7 +39,7 @@ ok(cards(h) === 1 && !/Show all/.test(h), 'one building: no toggle');
 // #3: bar link plus Create meter button for no-building; no button for other issues.
 run('_pdfDestIssue = function(b){ return b.AccountNumber === "TST-0001" ? null : { kind: "no-building", text: "No matching building or meter" }; }; _mbReviewLive = function(){ return true; }; _pdfBuildingName = function(b,a){ return "Bldg "+a; }; _buildDestCell = function(){ return "PICK"; };');
 const bar = sb.get('_mbReviewBarHtml')();
-ok((bar.match(/>Create meter</g) || []).length === 2, 'bar line has a Create meter button for each no-building bill');
+ok((bar.match(/>Create building \+ meter</g) || []).length === 2, 'bar line has a Create meter button for each no-building bill');
 ok(/onclick="_mbCreateForRow\(1\)"/.test(bar) && /onclick="_mbCreateForRow\(2\)"/.test(bar), 'button runs _mbCreateForRow (same function as the bill box)');
 const box = sb.get('_mbBillBoxHtml')(1).html;
 ok(/onclick="_mbCreateForRow\(1\)"/.test(box), 'bill box button runs the same function');
