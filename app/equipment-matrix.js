@@ -4801,26 +4801,6 @@ function emCloseUploadModal(btn, resolvedMode) {
   if (btn) btn.textContent = resolvedMode === 'reimport' ? 'Re-Import CSVs' : 'Import CSVs';
 }
 
-/* ── Effective Schedules CSV import — file picker + result modal (item 5ar) ──
-   The parsing/matching logic lives in emAttachEffectiveSchedules (near the
-   Setpoint & Schedule export, since it feeds that export); these three
-   functions are only the DOM wiring: a hidden file input, the FileReader
-   handoff, and a dismissible result modal that always lists unmatched rows
-   (memory: report unmatched rows in the UI, never silently drop them). */
-
-// emCloseStrayScheduleResultModal (2026-09-25 fix) — #em-sched-result-backdrop above is appended
-// directly to document.body, outside the Equipment Matrix tab's own DOM subtree, with only two
-// close paths: clicking the dimmed backdrop itself, or the panel's own Close button. Neither
-// navigating tabs (sPTab) nor opening the BAS Savings Calc (openBASCalc) cleared it, so importing
-// an Effective Schedules file and then navigating away — without deliberately closing the result
-// panel first — left it stacked on top of whatever rendered next (reported: BAS Calc). Shared
-// one-line helper (both call sites stay in sync) — same "clear stray overlay" idea as
-// closeQuickStart()/#qsOverlay, applied to this modal's own element id.
-function emCloseStrayScheduleResultModal() {
-  var stray = document.getElementById('em-sched-result-backdrop');
-  if (stray && stray.parentNode) stray.parentNode.removeChild(stray);
-}
-
 /* ── PHASE 4: TOOLBAR & TABLE ── */
 
 /* ── emGetBldgCounts ─────────────────────────────────────────────────────────
@@ -11189,7 +11169,7 @@ function _emScheduleBlocks(text) {
 // Parses + matches an Effective Schedules CSV against the project's saved
 // Equipment Matrix, writes the matched schedule onto each matching row, and
 // saves the matrix. Returns { matchedCount, totalCount, unmatched } — never
-// throws away unmatched rows; the caller must show them (emShowEffectiveSchedulesResult).
+// throws away unmatched rows; the caller must show them (the District Calendar import does).
 // Per-zone effective schedule text for display (Summary building detail, Client B report).
 // Reads ONLY the row's own imported schedule — never inherited from an AHU. Blank file entry
 // shows 'No schedule in file'.
