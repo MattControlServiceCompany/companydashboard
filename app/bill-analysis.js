@@ -7156,6 +7156,7 @@ function _mbBillBoxHtml(i) {
   let h = head(lv, n ? _pdfCountWord(n, 'issue') : 'Ready to save');
   const dest = items.find((x) => x.kind === 'dest');
   const isCreate = !!(match && match.matchType === 'create');
+  let joinActs = false;
   const picker = () =>
     _buildDestCell(bill, match, String(i), 'setMbRowDestProj', 'setMbRowDestBldg', 'setMbRowDestMeter', 'setMbRowDestExpand', true, true);
   if (isCreate) {
@@ -7187,12 +7188,15 @@ function _mbBillBoxHtml(i) {
       picker() +
       '</span></div>';
   } else {
-    h += '<div class="pdf-dest-line"><span class="pdf-dest-k">Saves to</span><span class="pdf-dest-pick">' + picker() + '</span></div>';
+    // The Saves-to line and the actions share one row (they wrap only when the box is too narrow).
+    joinActs = true;
+    h += '<div class="pdf-dest-acts"><div class="pdf-dest-line"><span class="pdf-dest-k">Saves to</span><span class="pdf-dest-pick">' + picker() + '</span></div>';
   }
   const isGatedUnconfirmed = !!(bill._gateTripped && !bill._gateOverrideConfirmed);
   const canSave = !!(match && (match.meter || match.matchType === 'create')) && !isGatedUnconfirmed;
   h +=
-    '<div class="pdf-dest-acts"><label class="pdf-dest-inc"><input type="checkbox" onchange="_mbToggleRowChecked(' +
+    (joinActs ? '' : '<div class="pdf-dest-acts">') +
+    '<label class="pdf-dest-inc"><input type="checkbox" onchange="_mbToggleRowChecked(' +
     i +
     ',this.checked)"' +
     (st.checked ? ' checked' : '') +
@@ -7203,7 +7207,8 @@ function _mbBillBoxHtml(i) {
     (isGatedUnconfirmed ? ' title="Held for review: use Save including held bills in More to confirm"' : '') +
     '>Save this bill</button><button class="pdf-top-btn" onclick="_mbSkipRow(' +
     i +
-    ')">Skip</button></div>';
+    ')">Skip</button></div>' +
+    (joinActs ? '</div>' : '');
   return { cls: 'st-' + lv, html: h };
 }
 
@@ -7266,7 +7271,11 @@ function _mbReviewBarHtml() {
         k +
         ')">' +
         _escHtml(label) +
-        '</a>'
+        '</a>' +
+        // A bill with no building or meter: the same Create function as the bill box's button (_mbCreateForRow).
+        (it.kind === 'dest' && it.dkind === 'no-building'
+          ? '<button type="button" class="pdf-rb-more pdf-rb-create" title="Create the meter for this bill on Unmatched Bills" onclick="_mbCreateForRow(' + i + ')">Create meter</button>'
+          : '')
       );
     })
     .join('');
@@ -7336,6 +7345,15 @@ function _mbGoToIssue(i, k) {
   _mbGoToBill(i);
   if (it && it.field && document.querySelector('.ef-input[data-key="' + it.field + '"]')) {
     _pdfGoToField(it.field);
+    return;
+  }
+  // A destination issue: show the top of the bill box, so its Create meter button is in view.
+  if (it && it.kind === 'dest' && document.getElementById('pdfBillDest')) {
+    const bx = document.getElementById('pdfBillDest');
+    bx.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    bx.classList.remove('pdf-flash');
+    void bx.offsetWidth;
+    bx.classList.add('pdf-flash');
     return;
   }
   const el =
@@ -11254,7 +11272,11 @@ function renderQueueResults() {
 
   // Set globals so the existing renderMultiBillUI + renderPDFFields work normally
   window._pdfMultiBills = activeResult.bills;
-  window._pdfMultiIdx = window._pdfMultiIdx || 0;
+  // A file that was not open yet opens on Bill 1 (multi-account) or its first bill; after that the user's pick stays.
+  if (window._pdfOpenedFor !== activeResult) {
+    window._pdfOpenedFor = activeResult;
+    window._pdfMultiIdx = Math.max(0, _mbEnsureReview() ? _mbBillIdxAtNo(1) : 0);
+  }
   if (window._pdfMultiIdx >= activeResult.bills.length) window._pdfMultiIdx = 0;
   window._pdfBillWarnings = activeResult.bills.map((b) => ({ warnings: b._warnings || [] }));
   window._pdfRawText = activeResult.rawText || null;
@@ -11274,7 +11296,7 @@ function selectQueueFile(idx) {
   if (!q) return;
   q._activeFileIdx = idx;
   q._activeGroupKey = null; // clear group selection when switching to file tab
-  window._pdfMultiIdx = 0;
+  window._pdfOpenedFor = null; // the file opens on Bill 1 again
   renderQueueResults();
 }
 
@@ -11293,7 +11315,7 @@ function selectQueueGroup(key) {
       q._activeFileIdx = grp.rows[0].resultIdx;
     }
   }
-  window._pdfMultiIdx = 0;
+  window._pdfOpenedFor = null; // the file opens on Bill 1 again
   renderQueueResults();
 }
 
@@ -17862,7 +17884,7 @@ function _pdfBillIssueItems(bill, bw) {
   };
   const firstLine = (t) => String(t || '').split(/[.\n]/)[0].trim();
   const fieldOf = (w) => (w.field && w.field !== '_all' ? w.field : null);
-  if (is.dest) add({ kind: 'dest', level: 'err', text: is.dest.text });
+  if (is.dest) add({ kind: 'dest', dkind: is.dest.kind, level: 'err', text: is.dest.text });
   if (is.held) {
     const reasons =
       bill._manualReview && !(bill._gateReasons || []).length
@@ -18334,7 +18356,16 @@ function _pdfBuildingListHtml(nav) {
   const dup = _pdfDupView(bills).map;
   const order = {};
   nav.periods.forEach((p, k) => (order[p.i] = k));
-  return nav.groups
+  // With a bill open, the list shrinks to the building on screen and every building with a bill to review; a toggle shows all.
+  const shownGroups = window._pdfBldgsAll ? nav.groups : nav.groups.filter((g) => g.acct === window._pdfBuildingTab || g.review);
+  const hidden = nav.groups.length - shownGroups.length;
+  const toggle =
+    hidden > 0 || window._pdfBldgsAll
+      ? '<button type="button" class="pdf-top-btn pdf-bldgs-toggle" onclick="_pdfToggleBldgs()">' +
+        (window._pdfBldgsAll ? 'Show fewer buildings' : 'Show all ' + nav.groups.length + ' buildings') +
+        '</button>'
+      : '';
+  return shownGroups
     .map((g) => {
       const idxs = [].concat(...g.types.map((t) => t.idxs)).sort((a, b) => order[a] - order[b]);
       const months = [...new Set(idxs.map((i) => nav.monthOf[i]).filter(Boolean))];
@@ -18364,8 +18395,13 @@ function _pdfBuildingListHtml(nav) {
         '</span></span></button>'
       );
     })
-    .join('');
+    .join('') + toggle;
 }
+function _pdfToggleBldgs() {
+  window._pdfBldgsAll = !window._pdfBldgsAll;
+  _pdfRenderTopBar();
+}
+window._pdfToggleBldgs = _pdfToggleBldgs;
 // The bill on screen: its building (always named), its utility (one button per utility, the one on screen filled), and its billing period. A file with one choice shows plain text, not a menu.
 function _pdfSelectorsHtml(nav) {
   const bills = nav.bills;
