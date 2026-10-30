@@ -52,47 +52,48 @@ const o = (gymEnd, extra) => Object.assign({}, base, { snaps: mkSnaps(gymEnd, '2
 // the list: only a Not covered event, today or later, never a serving unit or all-day event
 let a = SA.computeActions(o(1080));
 eq(a.length, 1, 'one action: the Not covered game (past game, plant event and all-day event make none)');
-eq(a[0].id, 'g1', 'the action is the game');
-eq(a[0].text, 'Fri Oct 30 Game - TAH Gym 6:00 PM – 9:00 PM: AHU-1 - Gym unoccupied for the whole event -> add 6:00 PM - 9:00 PM to group Gyms', 'action line');
+const G1 = a[0].id;
+eq(a[0].eventIds, ['g1'], 'the action is the game');
+eq(a[0].text, 'Fri Oct 30 Game - TAH Gym: AHU-1 - Gym unoccupied 6:00 PM - 9:00 PM -> add 6:00 PM - 9:00 PM to group Gyms', 'action line');
 const part = SA.computeActions(o(1140, { events: { p: ['Game - TAH Gym', z('2026-10-30', 18, 0), z('2026-10-30', 21, 0), 0, ''] } }));
-eq(part[0].text.split(': ')[1], 'AHU-1 - Gym unoccupied after 7:00 PM -> add 7:00 PM - 9:00 PM to group Gyms', 'part of the event short');
+eq(part[0].text.split(': ')[1], 'AHU-1 - Gym unoccupied 7:00 PM - 9:00 PM -> add 7:00 PM - 9:00 PM to group Gyms', 'part of the event short');
 eq(SA.computeActions(o(1260)).length, 0, 'covered: no action');
 const two = Object.assign({}, events, { g2: ['Late - TAH Gym', z('2026-10-31', 19, 0), z('2026-10-31', 21, 0), 0, ''] });
 const s2 = SA.computeActions(o(1080, { events: two }));
-eq(s2[0].id, 'g2', 'newest event first, Oct 31 before Oct 30');
+eq(s2[0].eventIds, ['g2'], 'newest event first, Oct 31 before Oct 30');
 
 // status over time
 const t1 = '2026-10-30T15:00:00Z';
 let r = SA.reconcile(o(1080, { stored: null, now: t1, latestImport: '2026-10-29T20:00:00Z' }));
 eq(r.changes.map((c) => c.what), ['New action'], 'first look opens the action');
-eq(r.stored.actions.g1.status, 'open', 'status open');
+eq(r.stored.actions[G1].status, 'open', 'status open');
 // nothing new
 eq(SA.reconcile(o(1080, { stored: r.stored, now: t1, latestImport: '2026-10-29T20:00:00Z' })).changes, [], 'second look changes nothing');
 // done by a person
-let d = SA.setStatus(r.stored, 'g1', 'done', 'TST User', '2026-10-30T16:00:00Z');
-eq([d.stored.actions.g1.status, d.stored.actions.g1.doneBy, d.stored.actions.g1.doneAt], ['done', 'TST User', '2026-10-30T16:00:00Z'], 'done records who and when');
+let d = SA.setStatus(r.stored, G1, 'done', 'TST User', '2026-10-30T16:00:00Z');
+eq([d.stored.actions[G1].status, d.stored.actions[G1].doneBy, d.stored.actions[G1].doneAt], ['done', 'TST User', '2026-10-30T16:00:00Z'], 'done records who and when');
 eq(d.changes.map((c) => c.what), ['Marked done'], 'done is a change for the history');
-eq(SA.setStatus(d.stored, 'g1', 'done', 'x', 'y').changes, [], 'done twice changes nothing');
+eq(SA.setStatus(d.stored, G1, 'done', 'x', 'y').changes, [], 'done twice changes nothing');
 // no new import yet: stays done
-eq(SA.reconcile(o(1080, { stored: d.stored, now: '2026-10-30T17:00:00Z', latestImport: '2026-10-29T20:00:00Z' })).stored.actions.g1.status, 'done', 'done stays done until the next import');
+eq(SA.reconcile(o(1080, { stored: d.stored, now: '2026-10-30T17:00:00Z', latestImport: '2026-10-29T20:00:00Z' })).stored.actions[G1].status, 'done', 'done stays done until the next import');
 // a newer import still short: reopens with a note
 let re = SA.reconcile(o(1080, { stored: d.stored, now: '2026-10-31T01:00:00Z', latestImport: '2026-10-30T22:00:00Z' }));
-eq(re.stored.actions.g1.status, 'open', 'done and still not covered reopens');
-eq(/Marked done by TST User on Fri Oct 30, 2026, still not covered after the update of Fri Oct 30, 2026/.test(re.stored.actions.g1.note), true, 'reopen note names who and when');
+eq(re.stored.actions[G1].status, 'open', 'done and still not covered reopens');
+eq(/Marked done by TST User on Fri Oct 30, 2026, still not covered after the update of Fri Oct 30, 2026/.test(re.stored.actions[G1].note), true, 'reopen note names who and when');
 // a newer import fixes it: closes with the date
 let cl = SA.reconcile(o(1260, { stored: r.stored, now: '2026-10-30T23:00:00Z', latestImport: '2026-10-30T22:00:00Z' }));
-eq([cl.stored.actions.g1.status, cl.stored.actions.g1.note], ['closed', 'Fixed in BAS on Fri Oct 30, 2026'], 'covered closes itself');
-eq(SA.reconcile(o(1260, { stored: d.stored, now: '2026-10-30T23:00:00Z', latestImport: '2026-10-30T22:00:00Z' })).stored.actions.g1.status, 'closed', 'a done action closes too when fixed');
+eq([cl.stored.actions[G1].status, cl.stored.actions[G1].note], ['closed', 'Fixed in BAS on Fri Oct 30, 2026'], 'covered closes itself');
+eq(SA.reconcile(o(1260, { stored: d.stored, now: '2026-10-30T23:00:00Z', latestImport: '2026-10-30T22:00:00Z' })).stored.actions[G1].status, 'closed', 'a done action closes too when fixed');
 // closed, then not covered again
-eq(SA.reconcile(o(1080, { stored: cl.stored, now: '2026-10-31T02:00:00Z', latestImport: '2026-10-31T01:00:00Z' })).stored.actions.g1.status, 'open', 'closed then short again reopens');
+eq(SA.reconcile(o(1080, { stored: cl.stored, now: '2026-10-31T02:00:00Z', latestImport: '2026-10-31T01:00:00Z' })).stored.actions[G1].status, 'open', 'closed then short again reopens');
 // event removed from the calendar
 const gone = SA.reconcile(o(1080, { events: {}, stored: r.stored, now: t1, latestImport: '' }));
-eq(gone.stored.actions.g1.note, 'Event removed from the calendar', 'removed event closes');
+eq(gone.stored.actions[G1].note, 'Event removed from the calendar', 'removed event closes');
 // space turned Off-site
 const off = SA.reconcile(o(1080, { map: { spaces: { 'tah gym': { space: 'TAH Gym', programs: [], offsite: true, confirmed: true } } }, stored: r.stored, now: t1, latestImport: '' }));
-eq(off.stored.actions.g1.note, 'No longer checked (Off-site)', 'off-site closes with the reason');
+eq(off.stored.actions[G1].note, 'No longer checked (Off-site)', 'off-site closes with the reason');
 // the input is not changed
-eq(r.stored.actions.g1.status, 'open', 'reconcile does not change the stored object it was given');
+eq(r.stored.actions[G1].status, 'open', 'reconcile does not change the stored object it was given');
 // history record
 const h = SA.historyRecord(d.changes, t1, 'TST User', 'bash_x');
 eq([h.kind, h.by, h.counts.total, h.changes[0].what], ['action', 'TST User', 1, 'Marked done'], 'history record');

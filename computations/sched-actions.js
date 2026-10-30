@@ -66,26 +66,56 @@
   function and(list) {
     return list.length < 2 ? list.join('') : list.slice(0, -1).join(', ') + ' and ' + list[list.length - 1];
   }
-  function unoccText(c) {
-    return and(
-      c.gaps.map(function (g) {
-        if (g[0] === c.fromMin && g[1] === c.toMin) return 'for the whole event';
-        if (g[0] === c.fromMin) return 'until ' + BD.clock(g[1]);
-        if (g[1] === c.toMin) return 'after ' + BD.clock(g[0]);
-        return BD.clock(g[0]) + ' - ' + BD.clock(g[1]);
-      }),
-    );
+  // Merge spans [[a,b]] (minutes of a day) that overlap or touch: [[a,b]] sorted.
+  function mergeSpans(list) {
+    var out = [];
+    list
+      .slice()
+      .sort(function (x, y) {
+        return x[0] - y[0];
+      })
+      .forEach(function (g) {
+        var last = out[out.length - 1];
+        if (last && g[0] <= last[1]) last[1] = Math.max(last[1], g[1]);
+        else out.push([g[0], g[1]]);
+      });
+    return out;
   }
-  function actionText(row, c, tz, group) {
-    return (
-      dayText(CD.calendarDay(row[1], tz)) + ' ' + row[0] + ' ' + CD.timeText(row, tz) + ': ' +
-      programName(c.program) + ' unoccupied ' + unoccText(c) +
-      ' -> add ' + and(c.gaps.map(rangeText)) + (group ? ' to group ' + group : '')
-    );
+  function spansText(spans) {
+    return and(spans.map(rangeText));
   }
+  // 'Fri Oct 30', or 'Mon/Wed Nov 3 - Nov 24 (6 dates)' for several dates (ascending YYYY-MM-DD)
+  function whenText(dates) {
+    if (dates.length < 2) return dayText(dates[0]);
+    var days = [];
+    dates.forEach(function (d) {
+      var w = dayText(d).split(' ')[0];
+      if (days.indexOf(w) === -1) days.push(w);
+    });
+    var order = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
+    days.sort(function (x, y) {
+      return order.indexOf(x) - order.indexOf(y);
+    });
+    var md = function (d) {
+      return dayText(d).split(' ').slice(1).join(' ');
+    };
+    return days.join('/') + ' ' + md(dates[0]) + ' - ' + md(dates[dates.length - 1]) + ' (' + dates.length + ' dates)';
+  }
+  function uniq(list) {
+    return list.filter(function (x, i) {
+      return list.indexOf(x) === i;
+    });
+  }
+  function titlesText(titles) {
+    var t = uniq(titles);
+    return t.length > 3 ? t.slice(0, 3).join(', ') + ' and ' + (t.length - 3) + ' more' : and(t);
+  }
+  // One line = one BAS unit (its scheduling group, else its program) x one set of uncovered spans, over every date and event
+  // that needs it. Events in one unit on one day merge: overlapping or touching uncovered spans become one span. Days with the
+  // same merged spans join into one line.
   function computeActions(o) {
     var ctx = { tz: o.tz, map: o.map, snaps: o.snaps };
-    var out = [];
+    var units = {};
     Object.keys(o.events || {}).forEach(function (id) {
       var row = o.events[id];
       if (!row || !row[1]) return;
@@ -94,20 +124,51 @@
       var c = BC.eventCoverage(row, ctx);
       if (c.status !== 'short') return;
       var group = groupFor(o.groups, c.program);
-      out.push({
-        id: id,
-        date: date,
-        start: row[1],
-        title: row[0],
-        space: c.space,
-        program: c.program,
-        short: c.short,
-        group: group,
-        text: actionText(row, c, o.tz, group),
+      var uk = group ? BD.keyBuilding(c.program) + '|' + group : c.program;
+      var u = (units[uk] = units[uk] || { key: uk, group: group, days: {} });
+      var d = (u.days[date] = u.days[date] || { spans: [], events: [], programs: [], short: 0 });
+      d.spans = d.spans.concat(c.gaps);
+      d.events.push({ id: id, title: row[0], space: c.space });
+      d.programs.push(c.program);
+      d.short += c.short;
+    });
+    var out = [];
+    Object.keys(units).forEach(function (uk) {
+      var u = units[uk];
+      var bySig = {};
+      Object.keys(u.days).forEach(function (date) {
+        var d = u.days[date];
+        d.spans = mergeSpans(d.spans);
+        var sig = d.spans.map(function (g) { return g[0] + '-' + g[1]; }).join(',');
+        (bySig[sig] = bySig[sig] || []).push(date);
+      });
+      Object.keys(bySig).forEach(function (sig) {
+        var dates = bySig[sig].sort();
+        var ds = dates.map(function (x) { return u.days[x]; });
+        var events = [].concat.apply([], ds.map(function (d) { return d.events; }));
+        var programs = uniq([].concat.apply([], ds.map(function (d) { return d.programs; })));
+        var names = uniq(programs.map(programName));
+        var spans = ds[0].spans;
+        out.push({
+          id: uk + '|' + sig,
+          date: dates[dates.length - 1],
+          dates: dates,
+          start: dates[0],
+          eventIds: events.map(function (e) { return e.id; }),
+          title: titlesText(events.map(function (e) { return e.title; })),
+          space: uniq(events.map(function (e) { return e.space; })).join(', '),
+          program: programs[0],
+          short: ds.reduce(function (n, d) { return n + d.short; }, 0),
+          group: u.group,
+          text:
+            whenText(dates) + ' ' + titlesText(events.map(function (e) { return e.title; })) + ': ' +
+            names.join(', ') + ' unoccupied ' + spansText(spans) +
+            ' -> add ' + spansText(spans) + (u.group ? ' to group ' + u.group : ''),
+        });
       });
     });
     return out.sort(function (a, b) {
-      return a.start < b.start ? 1 : a.start > b.start ? -1 : a.id < b.id ? 1 : -1;
+      return a.date < b.date ? 1 : a.date > b.date ? -1 : a.id < b.id ? 1 : -1;
     });
   }
 
@@ -152,13 +213,14 @@
       var a = cur[id];
       var s = store.actions[id];
       if (!s) {
-        store.actions[id] = { id: id, date: a.date, text: a.text, program: a.program, status: 'open', openedAt: now, note: '' };
+        store.actions[id] = { id: id, date: a.date, text: a.text, program: a.program, eventIds: a.eventIds, status: 'open', openedAt: now, note: '' };
         changes.push({ id: id, text: a.text, what: 'New action' });
         return;
       }
       s.date = a.date;
       s.text = a.text;
       s.program = a.program;
+      s.eventIds = a.eventIds;
       if (s.status === 'done' && latest && latest > s.doneAt) {
         var note = 'Marked done by ' + (s.doneBy || 'someone') + ' on ' + dayOf(s.doneAt, o.tz) + ', still not covered after the update of ' + dayOf(latest, o.tz);
         s.status = 'open';
@@ -178,13 +240,24 @@
         if (s.date < CD.addDays(o.today, -CLOSED_KEEP_DAYS)) delete store.actions[id];
         return;
       }
-      var row = (o.events || {})[id];
       var note;
-      if (!row) note = 'Event removed from the calendar';
+      var rows = (s.eventIds || [id])
+        .map(function (e) {
+          return (o.events || {})[e];
+        })
+        .filter(Boolean);
+      if (!rows.length) note = 'Event removed from the calendar';
       else if (s.date < o.today) note = 'Event date passed';
       else {
-        var c = BC.eventCoverage(row, ctx);
-        note = c.status === 'covered' ? 'Fixed in BAS on ' + (latest ? dayOf(latest, o.tz) : BD.dateText(o.today)) : 'No longer checked (' + c.label + ')';
+        var cs = rows.map(function (r) {
+          return BC.eventCoverage(r, ctx);
+        });
+        var every = function (st) {
+          return cs.every(function (c) { return c.status === st; });
+        };
+        if (every('covered')) note = 'Fixed in BAS on ' + (latest ? dayOf(latest, o.tz) : BD.dateText(o.today));
+        else if (cs.some(function (c) { return c.status === 'short'; })) note = 'Merged into another line';
+        else note = 'No longer checked (' + cs[0].label + ')';
       }
       s.status = 'closed';
       s.closedAt = now;
