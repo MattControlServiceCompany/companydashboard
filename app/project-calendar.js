@@ -258,6 +258,18 @@
   function badge(status) {
     return status ? '<span class="pcal-badge pcal-' + status + '">' + (status === 'new' ? 'New' : status === 'changed' ? 'Changed' : 'Canceled') + '</span>' : '';
   }
+  // The BAS column: one cell per event from BasCoverage.eventCoverage (computations/bas-coverage.js, the only copy).
+  function basCell(row, status, ctx) {
+    if (status === 'canceled' || !window.BasCoverage) return '';
+    var c = BasCoverage.eventCoverage(row, ctx);
+    if (c.status === 'allday') return '';
+    var cls = c.status === 'covered' ? ' pcal-new' : c.status === 'short' ? ' pcal-changed' : '';
+    var tip = '';
+    if (c.from) {
+      tip = 'Checked against the ' + (c.exact ? '' : 'same-weekday ') + BasDiff.dateText(c.from) + ' BAS copy' + (c.program ? '. Least covered: ' + BasDiff.splitKey(c.program).program : '');
+    }
+    return '<span class="pcal-badge' + cls + '"' + (tip ? ' title="' + _escHtml(tip) + '"' : '') + '>' + _escHtml(c.label) + '</span>';
+  }
   function renderList(pid) {
     var host = document.getElementById('pcal-list-' + pid);
     if (!host) return;
@@ -320,6 +332,7 @@
       (v.compared ? btn('Changes only', s.changesOnly, 'pcalChangesOnly(' + pid + ')') : '') +
       '</div>' + stepper;
     var shown = v.items.slice(0, s.limit);
+    var basCtx = { tz: tz, map: DB.get('en_space_map_' + pid, null), snaps: DB.get('en_bas_snap_' + pid, {}) };
     var today = todayOf(tz);
     var yr = today.slice(0, 4);
     var body = '';
@@ -328,7 +341,7 @@
       if (e.day !== lastDay) {
         lastDay = e.day;
         body +=
-          '<tr class="pcal-day"><th colspan="3" scope="colgroup">' +
+          '<tr class="pcal-day"><th colspan="4" scope="colgroup">' +
           _escHtml(CalendarDiff.dayLabel(e.day) + (e.day.slice(0, 4) !== yr ? ', ' + e.day.slice(0, 4) : '') + (e.day === today ? ' (today)' : '')) +
           '</th></tr>';
       }
@@ -346,11 +359,11 @@
       body +=
         '<tr class="pcal-r' + (e.status === 'canceled' ? ' pcal-gone' : '') + '"' + tip + '><td>' +
         _escHtml(CalendarDiff.timeText(e.row, tz) + multi) +
-        '</td><td>' + what + '</td><td>' + place + '</td></tr>';
+        '</td><td>' + what + '</td><td>' + place + '</td><td>' + basCell(e.row, e.status, basCtx) + '</td></tr>';
     });
     var tbl = shown.length
-      ? '<div class="pcal-outer"><table class="pcal-tbl pcal-ev-tbl"><colgroup><col style="width:24%"><col style="width:48%"><col style="width:28%"></colgroup>' +
-        '<thead><tr><th>Time</th><th>Event</th><th>Location</th></tr></thead><tbody>' + body + '</tbody></table></div>'
+      ? '<div class="pcal-outer"><table class="pcal-tbl pcal-ev-tbl"><colgroup><col style="width:19%"><col style="width:35%"><col style="width:22%"><col style="width:24%"></colgroup>' +
+        '<thead><tr><th>Time</th><th>Event</th><th>Location</th><th>BAS</th></tr></thead><tbody>' + body + '</tbody></table></div>'
       : '<div style="font-size:12px;margin-top:8px">' +
         (s.changesOnly ? 'No changes ' + _escHtml(scope) + '.' : 'No events found.') + '</div>';
     var heading = q
@@ -488,6 +501,7 @@
       pid +
       '"></div></div></div>';
     renderList(pid);
+    if (typeof window.spaceMapRender === 'function') window.spaceMapRender(pid);
   }
 
   // --- actions -----------------------------------------------------------------

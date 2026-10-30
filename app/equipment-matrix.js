@@ -6897,8 +6897,10 @@ function emSetScreenshot(rowId, done) {
 
 function emGetCellValByDef(row, def, edits) {
   if (def.isComputed) return emRowCalc(row)[def.key];
-  var editKey = row.id + '::' + def.key;
-  if (edits && edits[editKey] !== undefined) return edits[editKey];
+  if (edits) {
+    var editKey = row.id + '::' + def.key;
+    if (edits[editKey] !== undefined) return edits[editKey];
+  }
   if (def.key.indexOf('check_') === 0) {
     var checkCols = EM_CHECK_COLS_14;
     // FIX 3a (1b74f531): Use explicit null/undefined check so 0 passes through (was falsy || '')
@@ -6927,7 +6929,35 @@ function emGetCellValByDef(row, def, edits) {
    Only processes defs where def.type==='num' || def.isLive || def.isDynPoint.
    Returns: { [def.key]: { sum, count, avg } }
    Columns with no numeric data return { sum:0, count:0, avg:NaN }.      */
+// Perf (2026-10-30): Edit/Lock toggles and filter-free re-renders ask for the same footer again. The result is
+// reused while the rows (same objects, same order), the column keys, the gas flag and the normalized-points
+// cache (reset on every save and custom-mapping change) are all unchanged.
+var _emFooterMemo = null;
 function emComputeFooterAvg(rows, defs) {
+  var defKey = defs
+    .map(function (d) {
+      return d.key;
+    })
+    .join('|');
+  var gas = _emCalcCtx ? _emCalcCtx.hasGas : null;
+  var m = _emFooterMemo;
+  if (
+    m &&
+    m.pts === _emPointsComputedCache &&
+    m.defKey === defKey &&
+    m.gas === gas &&
+    m.rows.length === rows.length &&
+    m.rows.every(function (r, i) {
+      return r === rows[i];
+    })
+  ) {
+    return m.result;
+  }
+  var res = emComputeFooterAvgUncached(rows, defs);
+  _emFooterMemo = { pts: _emPointsComputedCache, defKey: defKey, gas: gas, rows: rows.slice(), result: res };
+  return res;
+}
+function emComputeFooterAvgUncached(rows, defs) {
   var result = {};
   for (var di = 0; di < defs.length; di++) {
     var def = defs[di];
@@ -6939,7 +6969,8 @@ function emComputeFooterAvg(rows, defs) {
     var sum = 0,
       count = 0;
     for (var ri = 0; ri < rows.length; ri++) {
-      var raw = emGetCellValByDef(rows[ri], def, {});
+      // null edits: the footer never applies cell edits, and null skips the per-cell editKey string build.
+      var raw = emGetCellValByDef(rows[ri], def, null);
       if (raw === null || raw === undefined || raw === '') continue;
       var n = parseFloat(raw);
       if (isNaN(n)) continue;
@@ -7213,6 +7244,15 @@ function _emAttachNavDelegatedListeners() {
   if (_emNavListenersAttached) return;
   if (typeof document === 'undefined' || !document.addEventListener) return;
   _emNavListenersAttached = true;
+
+  // Edit Mode cell edits: one delegated listener instead of an onblur attribute on every cell (smaller HTML, faster toggle).
+  document.addEventListener('focusout', function (e) {
+    var td = e.target && e.target.closest ? e.target.closest('td[data-em-ek]') : null;
+    var tr = td ? td.parentNode : null;
+    if (tr && tr.hasAttribute('data-em-rid')) {
+      emHandleCellEdit(tr.getAttribute('data-em-rid'), td.getAttribute('data-em-ek'), td.textContent);
+    }
+  });
 
   document.addEventListener('change', function (e) {
     var t = e.target;
@@ -7554,20 +7594,23 @@ function emRenderTable(data, filters) {
       var cellClassAttr = cellClass ? ' class="' + cellClass.slice(1) + '"' : '';
       if (_emEditMode && !def.isComputed && !def.isScreenshot) {
         cells +=
-          '<td contenteditable="true"' +
+          '<td contenteditable="true" data-em-ek="' +
+          _escHtml(def.key) +
+          '"' +
           cellClassAttr +
-          ' onblur="emHandleCellEdit(\'' +
-          rowId.replace(/'/g, "\\'") +
-          "','" +
-          def.key.replace(/'/g, "\\'") +
-          '\',this.textContent)">' +
+          '>' +
           displayVal +
           '</td>';
       } else {
         cells += '<td' + cellClassAttr + '>' + displayVal + '</td>';
       }
     }
-    var rowHtml = '<tr style="content-visibility:auto;contain-intrinsic-size:auto 32px">' + cells + '</tr>';
+    var rowHtml =
+      '<tr style="content-visibility:auto;contain-intrinsic-size:auto 32px"' +
+      (_emEditMode ? ' data-em-rid="' + _escHtml(rowId) + '"' : '') +
+      '>' +
+      cells +
+      '</tr>';
     // M4 Part 2: inline "All Points" drawer row (inserted right after equipment row)
     if (isDrawerOpen) {
       rowHtml += '<tr><td colspan="' + _emTotalColCount + '" style="padding:0;border-bottom:2px solid var(--accent)">';
@@ -7685,7 +7728,9 @@ function emRenderTable(data, filters) {
     // does not hide or page any column — it only shrinks how many ROWS land in the very first
     // paint; the existing IntersectionObserver sentinel below still appends the rest (still all
     // columns) as the user scrolls, exactly as before.
-    var CELL_BUDGET = 30000;
+    // Edit Mode cells are heavier (editable cells + delete buttons), so its first paint takes a smaller budget; the
+    // observer below appends the rest on scroll exactly as in Raw View.
+    var CELL_BUDGET = _emEditMode ? 8000 : 30000;
     var BATCH_SIZE = Math.max(5, Math.min(150, Math.floor(CELL_BUDGET / Math.max(1, defs.length))));
     var renderIndex = 0;
 

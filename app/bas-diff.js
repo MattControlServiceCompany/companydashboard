@@ -358,6 +358,20 @@
       .replace(/Day of Month\s+(\d{1,2});\s*Month\s+([A-Za-z]{3})[A-Za-z]*((?:;\s*(?:Day of Week|Week)\s+Any)*)(;\s*Year\s+0+\s*\(any\))?/gi, function (m, d, mon) {
         return mon.charAt(0).toUpperCase() + mon.slice(1).toLowerCase() + ' ' + parseInt(d, 10);
       })
+      // Any day of the month, a day of week, and a week: "2nd Monday of every month", "Last Friday in March".
+      .replace(/Day of Month\s+0+\s*\(any\);\s*Month\s+(Any|0+\s*\(any\)|[A-Za-z]{3,9});\s*Day of Week\s+([A-Za-z]+);\s*Week\s+([A-Za-z0-9]+)(;\s*Year\s+0+\s*\(any\))?/gi, function (m, mon, dow, wk, yr) {
+        var cap = function (t) {
+          return t.charAt(0).toUpperCase() + t.slice(1).toLowerCase();
+        };
+        var anyMon = /^(any|0)/i.test(mon);
+        var anyDow = /^any$/i.test(dow);
+        var anyWk = /^any$/i.test(wk);
+        if (anyDow && anyWk) return anyMon ? 'every day' : 'every day in ' + cap(mon);
+        var where = anyMon ? 'of every month' : 'in ' + cap(mon);
+        if (anyWk) return 'every ' + cap(dow) + (anyMon ? '' : ' in ' + cap(mon));
+        if (anyDow) return wk.toLowerCase() + ' week ' + where;
+        return cap(wk) + ' ' + cap(dow) + ' ' + where;
+      })
       .replace(/Year\s+0+\s*\(any\)/gi, 'any year')
       .replace(/Day of Month\s+0+\s*\(any\)/gi, 'any day of the month')
       .replace(/(^|[^f] )Month\s+0+\s*\(any\)/gi, '$1any month');

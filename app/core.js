@@ -1587,6 +1587,7 @@ function renderDetail(p) {
               <div id="ptab-district-inner-${p.id}" style="padding:16px">
                 <div style="font-size:12px;color:var(--text2);margin-bottom:12px">Check that each school event has a matching BAS schedule: compare the feed (top) with BAS schedules (below).</div>
                 <div id="pcal-panel-${p.id}"></div>
+                <div id="space-panel-${p.id}"></div>
                 <div id="bas-panel-${p.id}"></div>
                 <div class="card" style="margin-bottom:16px">
                   <div class="card-hdr" style="justify-content:space-between">
