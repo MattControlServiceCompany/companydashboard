@@ -100,6 +100,11 @@ const SyncClassification = (() => {
       note: 'project-calendar.js: en_cal_cfg_<pid> (feed address), en_cal_snap_<pid> (last copy of the feed), en_cal_hist_<pid> (sync history, merged by id). Shared by both users.',
     },
     {
+      pattern: 'en_space_map_',
+      prefix: true,
+      note: 'space-map.js: en_space_map_<pid> = which BAS programs serve each calendar space (or Off-site), confirmed by the user. Shared by both users.',
+    },
+    {
       pattern: 'audit_estimate_config',
       prefix: false,
       note: 'audit-estimate.js: company-wide Audit Estimate assumptions (hoursPerEquip, hoursPerBuilding, hoursReport, matrixReviewHours, fullFacility.*, history) — no rate, no per-user data; both users need the same company defaults',

@@ -87,7 +87,7 @@ const RestoreMerge = (() => {
     [(k) => k.indexOf('en_report_') === 0, 'Reports'],
     [(k) => k.indexOf('en_agreement_') === 0, 'Service agreements'],
     [(k) => k.indexOf('en_budget_') === 0 || k.indexOf('en_hours_') === 0, 'Budget and hours'],
-    [(k) => k === 'en_dc_events' || k.indexOf('en_cal_') === 0, 'District calendar'],
+    [(k) => k === 'en_dc_events' || k.indexOf('en_cal_') === 0 || k.indexOf('en_space_map_') === 0, 'District calendar'],
     [(k) => k.indexOf('bldgsavproj_cfg_') === 0 || k.indexOf('bldgperf_cfg_') === 0, 'Building chart settings'],
     [(k) => k.indexOf('sv_') === 0, 'Service department'],
     [

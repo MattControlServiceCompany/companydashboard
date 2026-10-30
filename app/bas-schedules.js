@@ -442,6 +442,7 @@
       (att && !att.error ? ' ' + att.matchedCount + ' of ' + att.totalCount + ' matched to Equipment Matrix rows.' : '') +
       (att && att.error ? ' Equipment Matrix schedules not filled: ' + att.error : '');
     render(pid);
+    if (typeof window.pcalRender === 'function') window.pcalRender(pid); // the events list BAS column uses the new copy
   };
   window.basPickGroups = function (pid, input) {
     readFiles(input).then(function (files) {

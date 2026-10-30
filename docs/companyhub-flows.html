@@ -328,6 +328,14 @@ var FLOWS = [
     ]
   },
   {
+    id: 'project-space-map', name: 'Project page, District Calendar tab: Space map and BAS column', desc: 'The Space map card says which BAS program(s) serve each calendar space, or Off-site. The events list BAS column shows Covered, Not covered (minutes short), No BAS schedule for this space, Off-site or Not mapped. Serving units are never checked. No network call.',
+    path: ['user','energy','ls'],
+    steps: [
+      { from:'user', to:'energy', label:'User confirms or chooses the BAS program(s) for a calendar space, or marks it Off-site', detail:'app/space-map.js. Name suggestions come from BasCoverage.suggestPrograms; Import suggestions reads a CSV in the browser.' },
+      { from:'energy', to:'ls', label:'Map saved; each event is checked against that date's BAS schedule', detail:'computations/bas-coverage.js eventCoverage (the only copy). Writes en_space_map_<pid>; reads en_bas_snap_<pid> and en_cal_snap_<pid>.' },
+    ]
+  },
+  {
     id: 'backup', name: 'Backup / Restore', desc: 'Export all data as JSON (data-only, no bill PDFs). Restore compares the file with the current data per key family (app/restore-merge.js), previews Add missing only / Merge (fills blanks) / Replace, downloads a safety copy, then writes (server CAS with explicitOverwrite when sync is on)',
     path: ['user','energy','siteui','ls'],
     steps: [
