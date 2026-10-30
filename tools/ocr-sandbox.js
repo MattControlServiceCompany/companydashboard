@@ -21,7 +21,7 @@ module.exports = function load(extra) {
     extra || {}
   );
   vm.createContext(sandbox);
-  for (const p of ['lib/formatting.js', 'computations/rates.js', 'app/energy-savings.js', 'app/bill-analysis.js']) {
+  for (const p of ['lib/formatting.js', 'computations/rates.js', 'computations/savings.js', 'app/energy-savings.js', 'app/bill-analysis.js']) {
     vm.runInContext(fs.readFileSync(path.join(__dirname, '..', p), 'utf8'), sandbox, { filename: path.basename(p) });
   }
   sandbox.get = (n) => vm.runInContext('typeof ' + n + ' !== "undefined" ? ' + n + ' : null', sandbox);

@@ -1334,6 +1334,15 @@ function billChargePartsOf(rates) {
   return Object.keys(cp).length ? cp : null;
 }
 
+// The printed lines of one charge ([ { charge } ]) when the bill has 2 or more and they add up to the charge field,
+// else null. The review shows each line as its own row; the field keeps the sum.
+function billChargeLinesOf(bill, field) {
+  const l = bill && bill._chargeLines && bill._chargeLines[field];
+  if (!l || l.length < 2) return null;
+  const sum = l.reduce((a, x) => a + (parseBillNumber(x.charge) || 0), 0);
+  return Math.abs(sum - (parseBillNumber(bill[field]) || 0)) < 0.005 ? l : null;
+}
+
 function _qtySelfVerifies(qty, rate, ocrCharge) {
   return qty > 0 && rate > 0 && ocrCharge > 0 && Math.abs(qty * rate - ocrCharge) <= _Q_SELFVERIFY_CENTS;
 }
@@ -19685,23 +19694,18 @@ function renderPDFFields(parsed, warnings) {
     { section: 'Meter Readings' },
     { type: 'pair', fields: ['MeterNumber', 'ReadDifference'] },
     { type: 'pair', fields: ['StartRead', 'EndRead'] },
-    { section: 'Charges' },
-    // Fix (2026-07-28, gas-bill-ocr-extraction, Defect 3): CCF/MMbtu usage used to render
-    // under "Meter Readings" ABOVE "Charges" — Therms already showed correctly WITH its
-    // charge via the 'Gas' charge-line's qtyField below, so CCF/MMbtu bills were the only
-    // ones splitting usage from charges into two sections. Moved into Charges (still
-    // conditional — only the unit(s) actually present on this bill render) so every gas
-    // unit type shows usage alongside its charge consistently.
-    // Fix 3 (60de292d, preserved): show only the gas-unit field(s) present on this bill.
+    // Usage (Therms, CCF, MMbtu) sits with the meter readings. Charges only has money lines.
     { type: 'pair', fields: ['NaturalGasTherms'], condition: 'NaturalGasTherms' },
     { type: 'pair', fields: ['NaturalGasCCF'], condition: 'NaturalGasCCF' },
     { type: 'pair', fields: ['NaturalGasMMbtu', 'ProductionMonth'], condition: 'NaturalGasMMbtu' },
+    { section: 'Charges' },
     { type: 'charge-line', label: 'Base', chargeField: 'CustomerCharge', rateKey: null },
     {
       type: 'charge-line',
       label: 'Gas',
       chargeField: 'GasCharge',
       qtyField: 'NaturalGasTherms',
+      usageAbove: true,
       unit: 'Therms',
       rateKey: null,
     },
@@ -19731,13 +19735,10 @@ function renderPDFFields(parsed, warnings) {
     // Declaring them explicitly here removes them from extraKeys and renders them with the
     // rest of the Billing Period fields instead.
     { type: 'pair', fields: ['InvoiceNumber', 'NumberOfDays'] },
-    { section: 'Charges' },
-    // Fix (2026-07-28, gas-bill-ocr-extraction, Defect 3): usage (NaturalGasMMbtu) used to
-    // render under its own "Meter Readings" section ABOVE "Charges" — the exact "gas usage
-    // reading in its own separate section instead of with the charges" complaint. Moved
-    // into the Charges section (as the first row) so usage and the charges it produced are
-    // read together, not split across two headers.
+    // Usage sits with the meter readings. Charges only has money lines.
+    { section: 'Usage' },
     { type: 'pair', fields: ['NaturalGasMMbtu'] },
+    { section: 'Charges' },
     // Per-site charge component lines (from Fix 1 extractor — a84458f0 defect 1)
     // _wreTriggerCharge/_wreIndexCharge/_wreSWECharge are underscore-prefixed, so they
     // are excluded from the extra-field tail by the startsWith('_') filter.
@@ -19809,13 +19810,14 @@ function renderPDFFields(parsed, warnings) {
     { section: 'Meter Readings' },
     { type: 'pair', fields: ['MeterNumber', 'RateSchedule'] },
     { type: 'pair', fields: ['StartRead', 'EndRead'] },
-    { section: 'Charges' },
     { type: 'pair', fields: ['WaterUsage'] },
+    { section: 'Charges' },
     {
       type: 'charge-line',
       label: 'Water',
       chargeField: 'WaterCharge',
       qtyField: 'WaterUsage',
+      usageAbove: true,
       unit: 'Gal',
       rateKey: null,
     },
@@ -19831,13 +19833,15 @@ function renderPDFFields(parsed, warnings) {
     { section: 'Billing Period' },
     { type: 'pair', fields: ['BillingPeriodStart', 'BillingPeriodEnd'] },
     { type: 'pair', fields: ['BillDate', 'NumberOfDays'] },
-    { section: 'Charges' },
+    { section: 'Usage' },
     { type: 'pair', fields: ['SewerUsage'] },
+    { section: 'Charges' },
     {
       type: 'charge-line',
       label: 'Sewer',
       chargeField: 'SewerCharge',
       qtyField: 'SewerUsage',
+      usageAbove: true,
       unit: 'Gal',
       rateKey: null,
     },
@@ -19902,6 +19906,7 @@ function renderPDFFields(parsed, warnings) {
       label: 'Delivery Charge',
       chargeField: 'DeliveryCharge',
       qtyField: 'McfBilled',
+      usageAbove: true,
       unit: 'Mcf',
       rateKey: null,
     },
@@ -19910,6 +19915,7 @@ function renderPDFFields(parsed, warnings) {
       label: 'Gas System Reliability Surcharge',
       chargeField: 'GasSystemReliability',
       qtyField: 'McfBilled',
+      usageAbove: true,
       unit: 'Mcf',
       rateKey: null,
     },
@@ -19918,6 +19924,7 @@ function renderPDFFields(parsed, warnings) {
       label: 'Weather Normalization',
       chargeField: 'WeatherNormalization',
       qtyField: 'McfBilled',
+      usageAbove: true,
       unit: 'Mcf',
       printedRateField: 'WNAPerMcf',
       rateKey: null,
@@ -19927,6 +19934,7 @@ function renderPDFFields(parsed, warnings) {
       label: 'Cost of Gas',
       chargeField: 'GasCharge',
       qtyField: 'McfBilled',
+      usageAbove: true,
       unit: 'Mcf',
       printedRateField: 'CostOfGasPerMcf',
       rateKey: null,
@@ -20414,11 +20422,27 @@ function renderPDFFields(parsed, warnings) {
       };
 
       // The quantity cell comes first: it is the editable value when this row is its first place.
-      const qtyCell = row.qtyField ? buildCell(row.qtyField) : '';
+      const qtyCell = row.qtyField && !row.usageAbove ? buildCell(row.qtyField) : '';
 
       // No rate data: the rate is computed from the quantity and the charge.
       // rateKey:null means a flat-dollar line (Tax Exempt / Bill Offset / Franchise Fee / Gas / Water / etc.).
       if (!row.rateKey || !ri) {
+        // A charge printed on two or more lines: each line is a row of its own (the field keeps their sum).
+        const _lines = billChargeLinesOf(parsed, row.chargeField);
+        if (_lines) {
+          _lines.forEach((ln, li) => {
+            const amt = parseBillNumber(ln.charge) || 0;
+            runningTotal += amt;
+            _row(
+              _chargeRow(
+                '',
+                '',
+                _partCell(row.label + ' Charge (' + (li + 1) + ')', '_chg_' + row.chargeField + '_' + li, fmtDollar(amt)),
+              ),
+            );
+          });
+          return;
+        }
         runningTotal += chargeVal;
         const qtyVal = row.qtyField ? parseFloat(parsed[row.qtyField]) || 0 : 0;
         // WRE Trigger/Index rows: the printed formula is charge = (Mmbtu + Fuel) x Rate, so Fuel joins the
@@ -20447,7 +20471,7 @@ function renderPDFFields(parsed, warnings) {
           }
         }
         const qtyShown =
-          qtyCell || (qtyVal > 0 ? _roBox(row.label + ' Qty', _fmt4(qtyVal) + (rateUnit ? ' ' + rateUnit : '')) : '');
+          qtyCell || (qtyVal > 0 && !row.usageAbove ? _roBox(row.label + ' Qty', _fmt4(qtyVal) + (rateUnit ? ' ' + rateUnit : '')) : '');
         _row(
           _chargeRow(qtyShown, _roBox(row.label + ' Rate', rateStr), _center(buildCell(row.chargeField))) +
             _detail(rateWarn, 'ef-warn'),
@@ -20910,6 +20934,15 @@ function _pdfApplyFieldEdit(key, rawValue) {
   const idx = window._pdfMultiIdx || 0;
   if (!bills || !bills[idx]) return;
   const b = bills[idx];
+  // One printed line of a charge (data-key _chg_<field>_<n>): change the line, and the field keeps the sum of its lines.
+  const _lineKey = /^_chg_(.+)_(\d+)$/.exec(key);
+  if (_lineKey && billChargeLinesOf(b, _lineKey[1])) {
+    b._chargeLines[_lineKey[1]][+_lineKey[2]].charge = val == null ? 0 : parseBillNumber(val) || 0;
+    b[_lineKey[1]] = b._chargeLines[_lineKey[1]].reduce((a, x) => a + (parseBillNumber(x.charge) || 0), 0).toFixed(2);
+    b['_userCorrected_' + _lineKey[1]] = { corrected: b[_lineKey[1]], ts: Date.now() };
+    renderPDFFields(b, (window._pdfBillWarnings || [])[idx]?.warnings || []);
+    return;
+  }
   const _prevVal = b[key];
   b[key] = val;
   // A seasonal energy line (kWh, rate or charge): the On / Off totals are written again from the lines.

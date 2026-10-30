@@ -6542,7 +6542,22 @@ function _lbg_mergeMetered(acc, p) {
     charge: acc.charge != null ? acc.charge + (p.charge || 0) : p.charge,
     prevRead: acc.prevRead != null ? acc.prevRead : p.prevRead,
     currRead: acc.currRead != null ? acc.currRead : p.currRead,
+    lines: _lbg_lineAmounts(acc).concat(_lbg_lineAmounts(p)),
   };
+}
+// The amount of each printed line behind one merged charge (the merge adds them into one number).
+function _lbg_lineAmounts(x) {
+  return x.lines || (x.charge != null ? [x.charge] : []);
+}
+// bill._chargeLines for a bill: { chargeField: [ { charge } ] } for each charge printed on two or more lines, so the
+// review shows every line as its own row. { } when no charge has more than one line. map: { chargeField: merged line }.
+function _lbg_chargeLinesProp(map) {
+  const out = {};
+  Object.keys(map).forEach((k) => {
+    const l = map[k] && map[k].lines;
+    if (l && l.length > 1) out[k] = l.map((c) => ({ charge: c }));
+  });
+  return Object.keys(out).length ? { _chargeLines: out } : {};
 }
 function _lbg_cleanCents(raw) {
   if (raw == null) return null;
@@ -12511,6 +12526,7 @@ const UTILITY_RULES = [
           WaterProtectionFee: wpf.charge,
           TotalCurrentCharges: waterTotal,
           TotalAmountDue: waterTotal,
+          ..._lbg_chargeLinesProp({ WaterCharge: water, WaterProtectionFee: wpf }),
         });
       }
       if (sewer.charge != null && sewer.charge !== 0) {
@@ -13067,21 +13083,13 @@ const UTILITY_RULES = [
           if (water !== null && wp.prevRead == null && wp.currRead == null && !wp.usage) {
             wpfLineSeen = true;
             wpfParts.push(wp.charge);
-            wpf =
-              wpf === null
-                ? wp
-                : { ...wpf, charge: wpf.charge != null ? wpf.charge + (wp.charge || 0) : wp.charge };
+            wpf = wpf === null ? wp : { ...wpf, ..._lbg_mergeMetered(wpf, wp) };
           } else if (water === null) {
             waterLineSeen = true;
             water = wp;
           } else {
             waterLineSeen = true;
-            water = {
-              usage: (water.usage || 0) + (wp.usage || 0),
-              charge: water.charge != null ? water.charge + (wp.charge || 0) : wp.charge,
-              prevRead: water.prevRead != null ? water.prevRead : wp.prevRead,
-              currRead: water.currRead != null ? water.currRead : wp.currRead,
-            };
+            water = _lbg_mergeMetered(water, wp);
           }
         }
         // Water Protection Fee: accumulate ALL occurrences, not just the
@@ -13576,6 +13584,7 @@ const UTILITY_RULES = [
           WaterProtectionFee: wpf.charge,
           TotalCurrentCharges: waterTotal,
           TotalAmountDue: waterTotal,
+          ..._lbg_chargeLinesProp({ WaterCharge: water, WaterProtectionFee: wpf }),
         };
         if (wpf._signCorrected)
           waterBill._auto_corrected_WaterProtectionFee = {
