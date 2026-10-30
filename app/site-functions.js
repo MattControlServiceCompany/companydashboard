@@ -2507,6 +2507,16 @@ async function siteResetAllMeterTableSettings() {
    site-ui.js delegates to this array and should NOT maintain its own copy.
 */
 var RELEASE_NOTES = [
+  { v: 'v2026.10.30.190', date: '2026-10-30', title: 'PDF / OCR building creation, District Calendar change list grouping',
+    items: [
+      { type: 'feature', text: 'PDF / OCR: a bill with no matching building now offers "Create building + meter". The building is named from the service address on the bill, and bills with the same address go to the same new building.' },
+      { type: 'fix', text: 'PDF / OCR: the Extracted Values boxes now fill the full width.' },
+      { type: 'change', text: 'District Calendar: "What needs to change" shows no line when the BAS schedule already covers the event.' },
+      { type: 'change', text: 'District Calendar: "What needs to change" shows one line for overlapping events in the same area.' },
+      { type: 'change', text: 'District Calendar: "What needs to change" shows one line for the same area on repeated dates.' },
+      { type: 'change', text: 'District Calendar: "What needs to change" shows one line per scheduling group.' }
+    ]
+  },
   { v: 'v2026.10.30.189', date: '2026-10-30', title: 'PDF / OCR review, District Calendar change list, weather, faster Audit View',
     items: [
       { type: 'change', text: 'PDF / OCR: the building list is shorter. Use "Show all N buildings" to see the rest.' },
