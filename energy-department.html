@@ -4584,11 +4584,11 @@
          The active underline is the bottom border of the tab button itself. */
       .pd-tabs {
         display: flex;
-        flex-wrap: nowrap;
+        flex-wrap: wrap;
         align-items: flex-end;
         gap: 1px;
-        min-width: max-content;
-        flex: 1 0 auto;
+        min-width: 0;
+        flex: 1 1 auto;
         border-bottom: 1px solid var(--border2);
       }
       /* Folder tab (role="tab" in role="tablist"). All tabs sit on one strip with a rule along the bottom. Inactive tabs are

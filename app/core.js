@@ -1585,11 +1585,12 @@ function renderDetail(p) {
             </div>
             <div id="ptab-district" class="ptab" style="padding:16px">
               <div id="ptab-district-inner-${p.id}" style="padding:16px">
+                <div style="font-size:12px;color:var(--text2);margin-bottom:12px">Check that each school event has a matching BAS schedule: compare the feed (top) with BAS schedules (below).</div>
                 <div id="pcal-panel-${p.id}"></div>
                 <div id="bas-panel-${p.id}"></div>
                 <div class="card" style="margin-bottom:16px">
                   <div class="card-hdr" style="justify-content:space-between">
-                    <span class="card-title">🗓️ Manual calendar events</span>
+                    <span class="card-title">🗓️ Manual calendar events<span style="display:block;font-size:11px;font-weight:400;color:var(--text2)">Only for events that are not in the feed</span></span>
                     <div style="display:flex;gap:8px">
                       <button class="btn btn-ghost btn-sm" onclick="distCalAddRow(${p.id})">+ Add Event</button>
                       <button class="btn btn-ghost btn-sm" style="color:var(--red);border-color:rgba(244,63,94,.35)" onclick="distCalDeleteAll(${p.id})">🗑 Delete All</button>
@@ -1608,7 +1609,7 @@ function renderDetail(p) {
                           <input class="fi" id="distcal-url-${p.id}" placeholder="https://...calendar.pdf" style="flex:1">
                           <button class="btn btn-em btn-sm" onclick="distCalLoadURL(${p.id})">Load</button>
                         </div>
-                        <div style="font-size:11px;color:var(--text3)">Paste a direct link to the district's PDF calendar. If blocked by CORS, use PDF Upload instead.</div>
+                        <div style="font-size:11px;color:var(--text3)">Paste a direct link to the district's PDF calendar. If the link does not load, use PDF Upload instead.</div>
                       </div>
                       <div id="distcal-import-pdf-${p.id}" style="display:none">
                         <div style="border:2px dashed var(--border2);border-radius:8px;padding:20px;text-align:center;cursor:pointer;margin-bottom:8px"

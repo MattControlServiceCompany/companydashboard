@@ -1147,11 +1147,11 @@ function _renderSavingsContent(wrap, projId) {
               <table class="dtbl sv-matrix-tbl">
                 <thead>
                   <tr>
-                    <th style="width:20px"></th><th style="width:28px"></th><th style="width:28px">✓</th><th style="width:44px">Msr #</th>
+                    <th style="width:20px"></th><th style="width:28px"></th><th style="width:28px">✓</th><th style="width:44px" title="Measure number">Msr #</th>
                     <th style="min-width:130px">Building</th><th style="width:74px">Sq Ft</th><th style="min-width:190px">Measure Description</th>
-                    <th style="width:54px;font-size:9px;text-align:center">kWh $/S</th><th style="width:54px;font-size:9px;text-align:center">kWh $/W</th>
-                    <th style="width:54px;font-size:9px;text-align:center">kW $/S</th><th style="width:54px;font-size:9px;text-align:center">kW $/W</th>
-                    <th style="width:54px;font-size:9px;text-align:center">$/Therm</th><th style="width:54px;font-size:9px;text-align:center">$/Gallon</th>
+                    <th style="width:54px;font-size:9px;text-align:center" title="kWh rate, summer ($/kWh)">kWh $/S</th><th style="width:54px;font-size:9px;text-align:center" title="kWh rate, winter ($/kWh)">kWh $/W</th>
+                    <th style="width:54px;font-size:9px;text-align:center" title="Demand rate, summer ($/kW)">kW $/S</th><th style="width:54px;font-size:9px;text-align:center" title="Demand rate, winter ($/kW)">kW $/W</th>
+                    <th style="width:54px;font-size:9px;text-align:center" title="Gas rate ($/therm)">$/Therm</th><th style="width:54px;font-size:9px;text-align:center" title="Propane rate ($/gallon)">$/Gallon</th>
                     ${grpHdr('kwh', '⚡ kWh Savings', 13, 'rgba(59,130,246,0.07)')}
                     ${grpHdr('kw', '⚡ kW Savings', 13, 'rgba(245,158,11,0.07)')}
                     ${grpHdr('gas', '🔥 Gas Therms', 13, 'rgba(20,184,166,0.07)')}
