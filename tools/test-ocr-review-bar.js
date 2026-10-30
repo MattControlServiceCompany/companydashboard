@@ -4,7 +4,7 @@
 //   1. A bill with no matching meter (address "825 Testcat Dr") shows the issue in its box and in the bar, and is
 //      never green (box, building row, utility status).
 //   2. Save All is on when the only bills with issues are unchecked.
-//   3. Create meter on bill A at once sends bill B (same account) to the same new meter: "Goes to new meter (from
+//   3. Create meter on bill A at once sends bill B (same account) to the same new meter: "New ... meter for account ... (from
 //      bill N)", checked. Save All makes exactly 1 meter, with both bills on it.
 //   4. A bar link opens that bill. The Customer Charge row starts at the left edge. The Create button is a styled
 //      button in the bill's box. The bar does not cover the last row at the end of the page.
@@ -173,7 +173,7 @@ async function open(context, theme, width) {
       };
     });
     ok(r4.t2 === 'create' && r4.from === 1 && r4.checked2 === true, 'bill 2 follows bill 1 to the new meter, checked: ' + JSON.stringify(r4).slice(0, 120));
-    ok(new RegExp('Goes to new meter \\(from bill ' + r4.bill1No + '\\)').test(r4.box2), 'bill 2 shows "Goes to new meter (from bill N)": ' + r4.box2);
+    ok(new RegExp('New [A-Za-z]+ meter for account [^ ]+ in .*\(from bill ' + r4.bill1No + '\)').test(r4.box2), 'bill 2 shows "New ... meter ... (from bill N)": ' + r4.box2);
     ok(!/No matching/.test(r4.bar), 'bar no longer lists the no-match issue');
     if (SHOTS) await page.screenshot({ path: path.join(SHOTS, '2026-10-29-review-bar-dark-1920-after-create.png') });
 
