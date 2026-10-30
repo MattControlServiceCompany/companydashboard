@@ -1334,6 +1334,15 @@ function billChargePartsOf(rates) {
   return Object.keys(cp).length ? cp : null;
 }
 
+// The printed lines of one charge ([ { charge } ]) when the bill has 2 or more and they add up to the charge field,
+// else null. The review shows each line as its own row; the field keeps the sum.
+function billChargeLinesOf(bill, field) {
+  const l = bill && bill._chargeLines && bill._chargeLines[field];
+  if (!l || l.length < 2) return null;
+  const sum = l.reduce((a, x) => a + (parseBillNumber(x.charge) || 0), 0);
+  return Math.abs(sum - (parseBillNumber(bill[field]) || 0)) < 0.005 ? l : null;
+}
+
 function _qtySelfVerifies(qty, rate, ocrCharge) {
   return qty > 0 && rate > 0 && ocrCharge > 0 && Math.abs(qty * rate - ocrCharge) <= _Q_SELFVERIFY_CENTS;
 }
@@ -7084,6 +7093,25 @@ function _pdfDestIssue(bill) {
   return { kind: 'no-building', text: 'No matching building or meter' };
 }
 
+// Plain words for a "create" target: which meter, in which project, on which building. The building is the one the
+// user chose, or "Unmatched Bills" (where _autoCreateMeterAndSaveBill puts a meter that has no chosen building).
+function _mbCreateWords(bill, match) {
+  const comm = bill.Commodity || _inferBillCommodity(bill) || 'Electric';
+  const id = bill.AccountNumber ? 'account ' + bill.AccountNumber : bill.MeterNumber ? 'meter ' + bill.MeterNumber : '';
+  const proj = match && match.proj && match.proj.name;
+  const b = match && match.bldg;
+  const bname = b ? b.name || b.addr || '' : 'Unmatched Bills';
+  return 'New ' + comm + ' meter' + (id ? ' for ' + id : '') + (proj ? ' in ' + proj : '') + ', on building ' + bname;
+}
+
+// Previous / Next buttons for the head of the bill box. The first bill has no Previous, the last has no Next.
+function _mbStepButtons(i, total) {
+  const no = _mbBillNo(i);
+  const btn = (dir, text, off) =>
+    '<button type="button" class="pdf-top-btn" onclick="_mbStepBill(' + i + ',' + dir + ')"' + (off ? ' disabled' : '') + ' title="' + text + ' bill">' + text + '</button>';
+  return '<span class="pdf-dest-step">' + btn(-1, 'Previous', no <= 1) + btn(1, 'Next', no >= total) + '</span>';
+}
+
 // The box at the top of the bill's values: bill number, status, the destination (with Change), the issue with its
 // Create buttons, Include in Save All, Save this bill, Skip. Its status words come from _pdfBillIssueItems, the same
 // list the bar uses. Returns { cls: the status class of the box, html }.
@@ -7105,7 +7133,9 @@ function _mbBillBoxHtml(i) {
     cls +
     '">' +
     _escHtml(words) +
-    '</span></div>';
+    '</span>' +
+    _mbStepButtons(i, bills.length) +
+    '</div>';
   if (dupInfo && dupInfo.action === 'skip') return { cls: '', html: head('', 'Already saved: skipped') };
   if (bill._mbSaved) {
     return {
@@ -7132,7 +7162,7 @@ function _mbBillBoxHtml(i) {
     const from = match.fromRow != null ? ' (from bill ' + _mbBillNo(match.fromRow) + ')' : '';
     h +=
       '<div class="pdf-dest-line"><span class="pdf-dest-k">Saves to</span><span class="pdf-dest-v">' +
-      _escHtml((match.createOnBldgId || match.fromRow != null ? 'Goes to new meter' : 'Goes to new building and meter') + from) +
+      _escHtml(_mbCreateWords(bill, match) + from) +
       '</span><a href="javascript:void(0)" onclick="setMbRowDestExpand(' +
       i +
       ',false)">Undo</a></div>';
@@ -7276,16 +7306,34 @@ function _mbToggleReviewList() {
   _mbFitReviewLinks();
 }
 window._mbToggleReviewList = _mbToggleReviewList;
+// Open bill i (its building and utility too).
+function _mbGoToBill(i) {
+  const bills = window._pdfMultiBills;
+  if (!bills || !bills[i]) return;
+  window._pdfBuildingTab = bills[i].AccountNumber || '_unknown';
+  window._pdfCommTab = _pdfCommOf(bills[i]);
+  _pdfTopOpen = null;
+  selectMultiBill(i);
+}
+// The bill with bill number `no` ("Bill 3"), as an index, or -1.
+function _mbBillIdxAtNo(no) {
+  const bills = window._pdfMultiBills || [];
+  for (let i = 0; i < bills.length; i++) if (_mbBillNo(i) === no) return i;
+  return -1;
+}
+// Previous / Next button of the bill box: step by bill number.
+function _mbStepBill(i, dir) {
+  const j = _mbBillIdxAtNo(_mbBillNo(i) + dir);
+  if (j >= 0) _mbGoToBill(j);
+}
+window._mbStepBill = _mbStepBill;
 // A link in the bar: open that bill (its building and utility too), then go to the issue.
 function _mbGoToIssue(i, k) {
   const bills = window._pdfMultiBills;
   if (!bills || !bills[i]) return;
   const bw = ((window._pdfBillWarnings || [])[i] || {}).warnings || [];
   const it = _pdfBillIssueItems(bills[i], bw)[k];
-  window._pdfBuildingTab = bills[i].AccountNumber || '_unknown';
-  window._pdfCommTab = _pdfCommOf(bills[i]);
-  _pdfTopOpen = null;
-  selectMultiBill(i);
+  _mbGoToBill(i);
   if (it && it.field && document.querySelector('.ef-input[data-key="' + it.field + '"]')) {
     _pdfGoToField(it.field);
     return;
@@ -7378,18 +7426,22 @@ window.setMbRowDestExpand = setMbRowDestExpand;
 // meter match. Reuses _mbSetCreateTarget (marks the row checked + savable);
 // the meter/building is built from the bill (account, meter number, address,
 // utility) at save time by _autoCreateMeterAndSaveBill. No second create path.
+// The project the bills of this file go to (one file is one customer): the batch project, else the project another
+// bill of the file already matched, else the project open on the page. null when none is known.
+function _mbFileProjId() {
+  return (
+    (window._pdfQueue && window._pdfQueue.batchProjId) ||
+    (Object.values(_mbRowTargets).find((t) => t && t.projId && t.matchType !== 'create') || {}).projId ||
+    (typeof udSelProjId !== 'undefined' ? udSelProjId : null) ||
+    null
+  );
+}
 function _mbCreateForRow(i) {
   const bills = window._pdfMultiBills;
   if (!bills || !bills[i]) return;
   const ov = bills[i]._meterOverride;
   const m = _mbRowTargets[i];
-  const projId =
-    (ov && ov.projId) ||
-    (m && m.projId) ||
-    (window._pdfQueue && window._pdfQueue.batchProjId) ||
-    // The project another bill of this file already matched (one file is one customer).
-    (Object.values(_mbRowTargets).find((t) => t && t.projId && t.matchType !== 'create') || {}).projId ||
-    (typeof udSelProjId !== 'undefined' ? udSelProjId : null);
+  const projId = (ov && ov.projId) || (m && m.projId) || _mbFileProjId();
   if (!projId) {
     showToast('Pick a project for this bill first, then create the meter');
     return;
@@ -7438,6 +7490,7 @@ function setMbRowDestBldg(i, val) {
   if (!bills || !bills[i]) return;
   _mbUnlinkSameMeter(i);
   const ov = bills[i]._meterOverride || { projId: null, bldgId: null, meterId: null };
+  if (ov.projId == null) ov.projId = _mbFileProjId(); // the list showed the file's project already picked
   if (val === '__CREATE_NEW__') {
     ov.bldgId = '__CREATE_NEW__';
     ov.meterId = '__CREATE_NEW__';
@@ -7459,6 +7512,7 @@ function setMbRowDestMeter(i, val) {
   if (!bills || !bills[i]) return;
   _mbUnlinkSameMeter(i);
   const ov = bills[i]._meterOverride || { projId: null, bldgId: null, meterId: null };
+  if (ov.projId == null) ov.projId = _mbFileProjId(); // the list showed the file's project already picked
   if (val === '__CREATE_NEW__') {
     ov.meterId = '__CREATE_NEW__';
     bills[i]._meterOverride = ov;
@@ -8609,6 +8663,26 @@ async function _mbSaveOneBill(bi, action) {
 }
 window._mbSaveOneBill = _mbSaveOneBill;
 
+// How many of the rows to save match a saved bill whose values differ (they would change). toSave: row indexes;
+// dupView: the _pdfDupView(bills).map entries ({ diffFields, action }). A row set to Skip does not change anything.
+function _mbCountSavedChanges(toSave, dupView) {
+  return (toSave || []).filter((i) => {
+    const d = (dupView || {})[i];
+    return d && d.action !== 'skip' && (d.diffFields || []).length > 0;
+  }).length;
+}
+function _mbOverwriteWords(n) {
+  return (
+    n +
+    ' saved bill' +
+    (n === 1 ? '' : 's') +
+    (n === 1 ? ' has' : ' have') +
+    ' different values from this file. Saving will change ' +
+    (n === 1 ? 'it' : 'them') +
+    '. A blank new value keeps the saved value. Continue?'
+  );
+}
+
 // ── Bulk "Save All" (fix ede70be1) ──────────────────────────────────────────
 // Loops over checked, non-skipped, not-yet-saved rows and calls the SAME
 // _mbSaveOneBill primitive the per-row Save button uses (one primitive, two
@@ -8674,6 +8748,12 @@ async function confirmMultiBuildingSave(action) {
   if (!toSave.length) {
     if (!unconfirmedGatedIdx.length) showToast('Nothing selected to save — check at least one bill');
     return;
+  }
+
+  // One confirm when saved bills would get new values (Save All and Overwrite All replace a saved bill that differs).
+  if (action === 'save' || action === 'overwrite') {
+    const nChange = _mbCountSavedChanges(toSave, _pdfDupView(bills).map);
+    if (nChange > 0 && !confirm(_mbOverwriteWords(nChange))) return;
   }
 
   _mbSaveAllInProgress = true;
@@ -10372,6 +10452,12 @@ function exitPreviewMode() {
   renderQueueProgress();
 }
 
+// Projects for the pick list: all of them, or only the file's project (and one already picked) when it is known.
+function _mbPickProjects(list, fileProjId, pickedProjId) {
+  const all = list || [];
+  if (!fileProjId) return all;
+  return all.filter((p) => String(p.id) === String(fileProjId) || (pickedProjId && String(p.id) === String(pickedProjId)));
+}
 // ── Destination cell builder (fix b-46a984a0 — batch-to-meter review) ──
 // GATE: zero silent auto-routes. An 'identity' match (account/meter-number hit) is
 // shown as confirmed text the user can still override via "Change". Anything else —
@@ -10433,18 +10519,21 @@ function _buildDestCell(bill, autoMatch, handlerArg, setProjFn, setBldgFn, setMe
   const curBldg = ov && ov.bldgId ? ov.bldgId : (isIdentity || isCommodity) && autoMatch && !ov ? autoMatch.bldgId : '';
   const curMeter =
     ov && ov.meterId ? ov.meterId : (isIdentity || isCommodity) && autoMatch && !ov ? autoMatch.meterId : '';
+  // The multi-bill review lists only the project this file goes to (plus a project already picked), never other clients.
+  const _fileProj = setProjFn === 'setMbRowDestProj' ? _mbFileProjId() : null;
+  const curProjShown = curProj || _fileProj || '';
   const selStyle =
     'font-size:10px;padding:1px 2px;max-width:112px;background:var(--s2);border:1px solid var(--border2);' +
     'border-radius:3px;color:var(--text);margin-bottom:1px;display:block';
   const projOpts =
     '<option value="">Select project…</option>' +
-    (projects || [])
+    _mbPickProjects(projects, _fileProj, curProj)
       .map(
         (p) =>
           '<option value="' +
           p.id +
           '"' +
-          (String(p.id) === String(curProj) ? ' selected' : '') +
+          (String(p.id) === String(curProjShown) ? ' selected' : '') +
           '>' +
           _escHtml(p.name) +
           '</option>',
@@ -10452,7 +10541,7 @@ function _buildDestCell(bill, autoMatch, handlerArg, setProjFn, setBldgFn, setMe
       .join('');
   const bldgOptsBase =
     '<option value="">Select building…</option>' +
-    (curProj ? getUDBldgs(parseInt(curProj)) || [] : [])
+    (curProjShown ? getUDBldgs(parseInt(curProjShown)) || [] : [])
       .map(
         (b2) =>
           '<option value="' +
@@ -10465,13 +10554,13 @@ function _buildDestCell(bill, autoMatch, handlerArg, setProjFn, setBldgFn, setMe
       )
       .join('');
   const createBldgOpt =
-    allowCreate && curProj
+    allowCreate && curProjShown
       ? '<option value="__CREATE_NEW__"' +
         (String(curBldg) === '__CREATE_NEW__' ? ' selected' : '') +
         '>+ New building (create from this bill)</option>'
       : '';
   const bldgOpts = bldgOptsBase + createBldgOpt;
-  const bldgObj = curProj && curBldg ? getUDBldg(parseInt(curProj), curBldg) : null;
+  const bldgObj = curProjShown && curBldg ? getUDBldg(parseInt(curProjShown), curBldg) : null;
   const meterOptsBase =
     '<option value="">Select meter…</option>' +
     ((bldgObj && bldgObj.meters) || [])
@@ -10490,7 +10579,7 @@ function _buildDestCell(bill, autoMatch, handlerArg, setProjFn, setBldgFn, setMe
       })
       .join('');
   const createMeterOpt =
-    allowCreate && curProj
+    allowCreate && curProjShown
       ? '<option value="__CREATE_NEW__"' +
         (String(curMeter) === '__CREATE_NEW__' ? ' selected' : '') +
         '>+ New meter (create from this bill)</option>'
@@ -13197,10 +13286,6 @@ setInterval(() => {
 // debug-capture logic itself (building `output`, window._debugFileContent/
 // _debugFileName) is never removed, and the manual button can still produce
 // a file on demand on any host.
-function _isDebugAutoSuppressedHost() {
-  const h = (window.location && window.location.hostname) || '';
-  return h.endsWith('netlify.app');
-}
 function savePDFDebug(isManualSave) {
   const raw = window._pdfRawText || '(no raw text)';
   const bills = window._pdfMultiBills || [];
@@ -13295,7 +13380,8 @@ function savePDFDebug(isManualSave) {
   // code that reads them), it just skips the actual Downloads-folder write. A
   // manual "Save Debug" button click, or ANY call on GitHub Pages or a dev
   // host, still saves.
-  if (!isManualSave && _isDebugAutoSuppressedHost()) return;
+  // The automatic calls (after an extraction) only keep the capture. The file and the toast come from the Save a debug file button.
+  if (!isManualSave) return;
   // Save to Downloads as a file
   const blob = new Blob([output], { type: 'text/plain' });
   const a = document.createElement('a');
@@ -17609,9 +17695,12 @@ async function processPDF(file) {
                 newestIdx = fi;
               }
             });
-            window._pdfMultiIdx = newestIdx;
+            // A multi-account file opens on Bill 1 (the bill numbers run building, utility, period); other files on the newest bill.
+            const _openIdx = _mbEnsureReview() ? Math.max(0, _mbBillIdxAtNo(1)) : newestIdx;
+            window._pdfMultiIdx = _openIdx;
+            window._pdfBuildingTab = null;
             renderMultiBillUI(finalBills);
-            renderPDFFields(finalBills[newestIdx], analysisResults[newestIdx]?.warnings || []);
+            renderPDFFields(finalBills[_openIdx], analysisResults[_openIdx]?.warnings || []);
             document.getElementById('pdfClearBtn').style.display = 'block';
             document.getElementById('dropZone').classList.add('collapsed');
             document.getElementById('pdfTypeSection').style.display = 'none';
@@ -17861,6 +17950,16 @@ function _pdfGroupBills(bills, warnings, multi) {
   });
   groups.forEach((g) => g.types.sort((a, b) => _pdfCommRank(a.comm) - _pdfCommRank(b.comm)));
   return groups;
+}
+// Hover text of the "fixed" chip: which values the reader changed.
+function _pdfFixedTitle(names) {
+  const list = (names || []).filter(Boolean);
+  return list.length ? 'The reader changed: ' + list.join(', ') : 'Values the reader changed on this bill';
+}
+// Text of a utility button or card: the utility, then (for an error) the reason in plain words, or (check).
+function _pdfTypeWords(t) {
+  if (t.level === 'err') return t.comm + ' · ' + (t.reason || 'needs a fix');
+  return t.comm + (t.level ? ' (check)' : '');
 }
 // "1 bill", "4 bills".
 function _pdfCountWord(n, word) {
@@ -18240,7 +18339,7 @@ function _pdfBuildingListHtml(nav) {
       const idxs = [].concat(...g.types.map((t) => t.idxs)).sort((a, b) => order[a] - order[b]);
       const months = [...new Set(idxs.map((i) => nav.monthOf[i]).filter(Boolean))];
       const monthTxt = months.length > 2 ? months[0] + ' and ' + (months.length - 1) + ' more' : months.join(', ');
-      const comms = g.types.map((t) => t.comm + (t.level === 'err' ? ' (error)' : t.level ? ' (check)' : '')).join(', ');
+      const comms = g.types.map(_pdfTypeWords).join(', ');
       const saved = idxs.filter((i) => dup[i]).length;
       const differ = idxs.filter((i) => dup[i] && (dup[i].diffFields || []).length > 0).length;
       const st = _pdfBldgStatus(g.review, saved, differ);
@@ -18291,7 +18390,7 @@ function _pdfSelectorsHtml(nav) {
             '" aria-pressed="' + (on ? 'true' : 'false') + '" title="' +
             _escHtml(t.level ? t.comm + ': ' + t.reason + (t.warn > 1 ? ' (' + t.warn + ' bills to review)' : '') : 'Show the ' + t.comm + ' bill of this building') +
             '" onclick="selectCommTab(this.dataset.comm)">' +
-            _escHtml(t.comm + (t.level === 'err' ? ' · error' : t.level ? ' · check' : '')) + '</button>'
+            _escHtml(t.level === 'err' ? _pdfTypeWords(t) : t.comm + (t.level ? ' · check' : '')) + '</button>'
           );
         })
         .join('') +
@@ -18508,7 +18607,7 @@ function _pdfRenderTopBar(opts) {
       '<div class="pdf-pop-title">The reader noticed these. They do not stop you from saving.</div>' + chips.warn.join('');
   }
   if (chipsOk && chips.fixed.length) {
-    chip('green', 'fixed', chips.fixed.length + ' fixed', 'Values the reader changed on this bill');
+    chip('green', 'fixed', chips.fixed.length + ' fixed', _pdfFixedTitle(chips.fixedNames));
     popHtml.fixed =
       '<div class="pdf-pop-title">The reader changed these values. Open a line to see how, or to revert it.</div>' +
       chips.fixed.join('');
@@ -19579,6 +19678,7 @@ function renderPDFFields(parsed, warnings) {
     { type: 'charge-line', label: 'PTS', chargeField: 'PTSCharge', rateKey: 'PTSCharge' },
     { type: 'charge-line', label: 'TDC', chargeField: 'TDCCharge', qtyField: 'TDCkW', rateKey: 'TDCCharge' },
     { type: 'charge-line', label: 'Bill Offset', chargeField: 'BillOffset', rateKey: null },
+    { type: 'charge-line', label: 'Electric', chargeField: 'ElectricCharge', rateKey: null, hideIfNull: true },
     { type: 'charge-line', label: 'Franchise Fee', chargeField: 'FranchiseFee', rateKey: null },
     { type: 'total', fields: ['TotalCurrentCharges'], chargeKey: 'TotalCurrentCharges' },
   ];
@@ -19595,23 +19695,18 @@ function renderPDFFields(parsed, warnings) {
     { section: 'Meter Readings' },
     { type: 'pair', fields: ['MeterNumber', 'ReadDifference'] },
     { type: 'pair', fields: ['StartRead', 'EndRead'] },
-    { section: 'Charges' },
-    // Fix (2026-07-28, gas-bill-ocr-extraction, Defect 3): CCF/MMbtu usage used to render
-    // under "Meter Readings" ABOVE "Charges" — Therms already showed correctly WITH its
-    // charge via the 'Gas' charge-line's qtyField below, so CCF/MMbtu bills were the only
-    // ones splitting usage from charges into two sections. Moved into Charges (still
-    // conditional — only the unit(s) actually present on this bill render) so every gas
-    // unit type shows usage alongside its charge consistently.
-    // Fix 3 (60de292d, preserved): show only the gas-unit field(s) present on this bill.
+    // Usage (Therms, CCF, MMbtu) sits with the meter readings. Charges only has money lines.
     { type: 'pair', fields: ['NaturalGasTherms'], condition: 'NaturalGasTherms' },
     { type: 'pair', fields: ['NaturalGasCCF'], condition: 'NaturalGasCCF' },
     { type: 'pair', fields: ['NaturalGasMMbtu', 'ProductionMonth'], condition: 'NaturalGasMMbtu' },
+    { section: 'Charges' },
     { type: 'charge-line', label: 'Base', chargeField: 'CustomerCharge', rateKey: null },
     {
       type: 'charge-line',
       label: 'Gas',
       chargeField: 'GasCharge',
       qtyField: 'NaturalGasTherms',
+      usageAbove: true,
       unit: 'Therms',
       rateKey: null,
     },
@@ -19641,13 +19736,10 @@ function renderPDFFields(parsed, warnings) {
     // Declaring them explicitly here removes them from extraKeys and renders them with the
     // rest of the Billing Period fields instead.
     { type: 'pair', fields: ['InvoiceNumber', 'NumberOfDays'] },
-    { section: 'Charges' },
-    // Fix (2026-07-28, gas-bill-ocr-extraction, Defect 3): usage (NaturalGasMMbtu) used to
-    // render under its own "Meter Readings" section ABOVE "Charges" — the exact "gas usage
-    // reading in its own separate section instead of with the charges" complaint. Moved
-    // into the Charges section (as the first row) so usage and the charges it produced are
-    // read together, not split across two headers.
+    // Usage sits with the meter readings. Charges only has money lines.
+    { section: 'Usage' },
     { type: 'pair', fields: ['NaturalGasMMbtu'] },
+    { section: 'Charges' },
     // Per-site charge component lines (from Fix 1 extractor — a84458f0 defect 1)
     // _wreTriggerCharge/_wreIndexCharge/_wreSWECharge are underscore-prefixed, so they
     // are excluded from the extra-field tail by the startsWith('_') filter.
@@ -19719,17 +19811,19 @@ function renderPDFFields(parsed, warnings) {
     { section: 'Meter Readings' },
     { type: 'pair', fields: ['MeterNumber', 'RateSchedule'] },
     { type: 'pair', fields: ['StartRead', 'EndRead'] },
-    { section: 'Charges' },
     { type: 'pair', fields: ['WaterUsage'] },
+    { section: 'Charges' },
     {
       type: 'charge-line',
       label: 'Water',
       chargeField: 'WaterCharge',
       qtyField: 'WaterUsage',
+      usageAbove: true,
       unit: 'Gal',
       rateKey: null,
     },
     { type: 'charge-line', label: 'Water Protection Fee', chargeField: 'WaterProtectionFee', rateKey: null },
+    { type: 'charge-line', label: 'Water Debt Payment', chargeField: 'WaterDebtPayment', rateKey: null, hideIfNull: true },
     { type: 'total', fields: ['TotalCurrentCharges'], chargeKey: 'TotalCurrentCharges' },
   ];
   const _LAYOUT_SEWER = [
@@ -19741,13 +19835,15 @@ function renderPDFFields(parsed, warnings) {
     { section: 'Billing Period' },
     { type: 'pair', fields: ['BillingPeriodStart', 'BillingPeriodEnd'] },
     { type: 'pair', fields: ['BillDate', 'NumberOfDays'] },
-    { section: 'Charges' },
+    { section: 'Usage' },
     { type: 'pair', fields: ['SewerUsage'] },
+    { section: 'Charges' },
     {
       type: 'charge-line',
       label: 'Sewer',
       chargeField: 'SewerCharge',
       qtyField: 'SewerUsage',
+      usageAbove: true,
       unit: 'Gal',
       rateKey: null,
     },
@@ -19812,6 +19908,7 @@ function renderPDFFields(parsed, warnings) {
       label: 'Delivery Charge',
       chargeField: 'DeliveryCharge',
       qtyField: 'McfBilled',
+      usageAbove: true,
       unit: 'Mcf',
       rateKey: null,
     },
@@ -19820,6 +19917,7 @@ function renderPDFFields(parsed, warnings) {
       label: 'Gas System Reliability Surcharge',
       chargeField: 'GasSystemReliability',
       qtyField: 'McfBilled',
+      usageAbove: true,
       unit: 'Mcf',
       rateKey: null,
     },
@@ -19828,6 +19926,7 @@ function renderPDFFields(parsed, warnings) {
       label: 'Weather Normalization',
       chargeField: 'WeatherNormalization',
       qtyField: 'McfBilled',
+      usageAbove: true,
       unit: 'Mcf',
       printedRateField: 'WNAPerMcf',
       rateKey: null,
@@ -19837,6 +19936,7 @@ function renderPDFFields(parsed, warnings) {
       label: 'Cost of Gas',
       chargeField: 'GasCharge',
       qtyField: 'McfBilled',
+      usageAbove: true,
       unit: 'Mcf',
       printedRateField: 'CostOfGasPerMcf',
       rateKey: null,
@@ -20324,11 +20424,27 @@ function renderPDFFields(parsed, warnings) {
       };
 
       // The quantity cell comes first: it is the editable value when this row is its first place.
-      const qtyCell = row.qtyField ? buildCell(row.qtyField) : '';
+      const qtyCell = row.qtyField && !row.usageAbove ? buildCell(row.qtyField) : '';
 
       // No rate data: the rate is computed from the quantity and the charge.
       // rateKey:null means a flat-dollar line (Tax Exempt / Bill Offset / Franchise Fee / Gas / Water / etc.).
       if (!row.rateKey || !ri) {
+        // A charge printed on two or more lines: each line is a row of its own (the field keeps their sum).
+        const _lines = billChargeLinesOf(parsed, row.chargeField);
+        if (_lines) {
+          _lines.forEach((ln, li) => {
+            const amt = parseBillNumber(ln.charge) || 0;
+            runningTotal += amt;
+            _row(
+              _chargeRow(
+                '',
+                '',
+                _partCell(row.label + ' Charge (' + (li + 1) + ')', '_chg_' + row.chargeField + '_' + li, fmtDollar(amt)),
+              ),
+            );
+          });
+          return;
+        }
         runningTotal += chargeVal;
         const qtyVal = row.qtyField ? parseFloat(parsed[row.qtyField]) || 0 : 0;
         // WRE Trigger/Index rows: the printed formula is charge = (Mmbtu + Fuel) x Rate, so Fuel joins the
@@ -20357,7 +20473,7 @@ function renderPDFFields(parsed, warnings) {
           }
         }
         const qtyShown =
-          qtyCell || (qtyVal > 0 ? _roBox(row.label + ' Qty', _fmt4(qtyVal) + (rateUnit ? ' ' + rateUnit : '')) : '');
+          qtyCell || (qtyVal > 0 && !row.usageAbove ? _roBox(row.label + ' Qty', _fmt4(qtyVal) + (rateUnit ? ' ' + rateUnit : '')) : '');
         _row(
           _chargeRow(qtyShown, _roBox(row.label + ' Rate', rateStr), _center(buildCell(row.chargeField))) +
             _detail(rateWarn, 'ef-warn'),
@@ -20735,6 +20851,7 @@ function renderPDFFields(parsed, warnings) {
     );
   const _chipReview = _issueList.filter((e) => e.level === 'review').map(_issueHtml);
   const _chipWarn = _issueList.filter((e) => e.level === 'warn').map(_issueHtml);
+  const _chipFixedNames = [];
   Object.keys(parsed)
     .filter((k) => k.startsWith('_auto_corrected_') || k.startsWith('_ocr_consensus_') || k.startsWith('_auto_recovered_B2_'))
     .forEach((k) => {
@@ -20742,6 +20859,7 @@ function renderPDFFields(parsed, warnings) {
       const field = k.replace(/^_(auto_corrected|ocr_consensus|auto_recovered_B2)_/, '');
       const fi = _fixInfo(field, type);
       if (!fi) return;
+      _chipFixedNames.push(LABELS[field] || field);
       _chipFixed.push(
         _pdfPopItem(
           (LABELS[field] || field) + ': read ' + fi.from + ', fixed to ' + fi.to,
@@ -20756,6 +20874,7 @@ function renderPDFFields(parsed, warnings) {
     review: _chipReview,
     warn: _chipWarn,
     fixed: _chipFixed,
+    fixedNames: _chipFixedNames,
     manualIdx: _showManualAssign ? _dupIdx : null,
   };
   // Header: the title, the Data analysis bar and Manual Assign. The bar counts and links come from the same _issueList
@@ -20817,6 +20936,15 @@ function _pdfApplyFieldEdit(key, rawValue) {
   const idx = window._pdfMultiIdx || 0;
   if (!bills || !bills[idx]) return;
   const b = bills[idx];
+  // One printed line of a charge (data-key _chg_<field>_<n>): change the line, and the field keeps the sum of its lines.
+  const _lineKey = /^_chg_(.+)_(\d+)$/.exec(key);
+  if (_lineKey && billChargeLinesOf(b, _lineKey[1])) {
+    b._chargeLines[_lineKey[1]][+_lineKey[2]].charge = val == null ? 0 : parseBillNumber(val) || 0;
+    b[_lineKey[1]] = b._chargeLines[_lineKey[1]].reduce((a, x) => a + (parseBillNumber(x.charge) || 0), 0).toFixed(2);
+    b['_userCorrected_' + _lineKey[1]] = { corrected: b[_lineKey[1]], ts: Date.now() };
+    renderPDFFields(b, (window._pdfBillWarnings || [])[idx]?.warnings || []);
+    return;
+  }
   const _prevVal = b[key];
   b[key] = val;
   // A seasonal energy line (kWh, rate or charge): the On / Off totals are written again from the lines.
