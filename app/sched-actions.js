@@ -7,7 +7,7 @@
 //
 // Data (shared keys, read and written only through DB.get / DB.set):
 //   en_sched_actions_<pid>  { actions:{ "<event id>": { id, date, text, program, status, openedAt, doneBy, doneAt, closedAt, note } } }  class SYNCED
-//   en_bas_hist_<pid>       one record (kind 'action') for each save that changed an action: who, when, what.
+//   en_bas_acthist_<pid>    one record (kind 'action') for each save that changed an action: who, when, what. Its own list (50), so actions never push out BAS import history (en_bas_hist_).
 // Reads en_cal_snap_<pid>, en_cal_cfg_<pid>, en_space_map_<pid>, en_bas_snap_<pid>, en_bas_groups_<pid>.
 //
 // Network: none. Opening the tab only reads saved data and works out the list in memory. The list is saved
@@ -36,7 +36,7 @@
     var tz = (cfg && cfg.timezone) || 'America/Chicago';
     var g = DB.get('en_bas_groups_' + pid, null);
     return {
-      events: (snap && snap.events) || {},
+      events: Object.assign({}, (snap && snap.events) || {}, typeof distCalManualRows === 'function' ? distCalManualRows(pid) : {}),
       map: DB.get('en_space_map_' + pid, null),
       snaps: snaps,
       groups: (g && g.groups) || {},
@@ -49,10 +49,10 @@
   }
   async function writeHistory(pid, changes, by) {
     if (!changes.length) return;
-    var h = DB.get('en_bas_hist_' + pid, []);
+    var h = DB.get('en_bas_acthist_' + pid, []);
     var id = 'bash_' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
     var rec = SchedActions.historyRecord(changes, new Date().toISOString(), by, id);
-    await DB.set('en_bas_hist_' + pid, [rec].concat(Array.isArray(h) ? h : []).slice(0, HIST_MAX));
+    await DB.set('en_bas_acthist_' + pid, [rec].concat(Array.isArray(h) ? h : []).slice(0, HIST_MAX));
   }
 
   function render(pid) {

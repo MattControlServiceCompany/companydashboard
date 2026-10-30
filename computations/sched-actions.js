@@ -219,7 +219,7 @@
   // --- BAS-side waste -------------------------------------------------------------------------
   // A program occupied all day on a saved BAS day while no event of that building is on the calendar that day.
   // An event belongs to a building by its confirmed space map, else by the first word of its space name.
-  // Serving units are never listed. -> [{ key, building, program, group, dates:[YYYY-MM-DD], text }], by building then program.
+  // Serving units and exterior lights (see below) are never listed. -> [{ key, building, program, group, dates:[YYYY-MM-DD], text }], by building then program.
   function wasteFindings(o) {
     var since = CD.addDays(o.today, -WASTE_DAYS);
     var spaces = (o.map && o.map.spaces) || {};
@@ -246,7 +246,10 @@
           if (b) busy[b] = 1;
         });
         keys.forEach(function (k) {
-          if (BC.isServingProgram(programName(k)) || busy[BD.keyBuilding(k)]) return;
+          if (BC.isUnchecked(programName(k)) || busy[BD.keyBuilding(k)]) return;
+          // Exterior lights run on a photocell or astro clock: all-day only enables them. Listed only when the caller names
+          // the program as having no photocell, astro or light-level point (o.noLightLevel[key]). The schedule export carries no points.
+          if (BC.isExteriorLighting(programName(k)) && !(o.noLightLevel && o.noLightLevel[k])) return;
           if (BC.minutesShort(rows[k], 0, 1440) > 1440 - WASTE_MIN) return;
           byKey[k] = byKey[k] || { key: k, building: BD.keyBuilding(k), program: programName(k), group: groupFor(o.groups, k), dates: [] };
           byKey[k].dates.push(d);

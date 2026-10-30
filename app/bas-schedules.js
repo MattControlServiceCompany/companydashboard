@@ -5,7 +5,7 @@
 //
 // Data (shared keys, read and written only through DB.get / DB.set; class SYNCED, prefix en_bas_):
 //   en_bas_snap_<pid>    { "YYYY-MM-DD": { forDate, importedAt, importedBy, rows:{ "location|program": [[start,end,mode]] } } }
-//   en_bas_hist_<pid>    [ { id, kind, at, by, forDate, comparedTo, buildings, counts, byBuilding, added, removed, changed } ]  newest first, 50
+//   en_bas_hist_<pid>    [ { id, kind, at, by, forDate, comparedTo, buildings, counts, byBuilding, added, removed, changed } ]  newest first, 50 (imports only; actions are in en_bas_acthist_<pid>, 50)
 //   en_bas_groups_<pid>  { importedAt, importedBy, groups:{ "building|group": { building, group, schedules, members } } }
 //
 // Network: none. Opening the page or the tab reads saved data only. Files are read in the browser.
@@ -37,6 +37,15 @@
   function histOf(pid) {
     var h = DB.get('en_bas_hist_' + pid, []);
     return Array.isArray(h) ? h : [];
+  }
+  // History shown on screen: imports plus actions, newest first. Imports are saved only to en_bas_hist_ (histOf).
+  function shownHistOf(pid) {
+    var a = DB.get('en_bas_acthist_' + pid, []);
+    return histOf(pid)
+      .concat(Array.isArray(a) ? a : [])
+      .sort(function (x, y) {
+        return x && y && x.at < y.at ? 1 : x && y && x.at > y.at ? -1 : 0;
+      });
   }
   function groupsOf(pid) {
     return DB.get('en_bas_groups_' + pid, null);
@@ -357,7 +366,7 @@
       '<div class="pcal-msg" id="bas-msg-' + pid + '" role="status">' + esc(s.msg) + '</div>' +
       pendingBox(pid) +
       datesSection(pid, snaps) +
-      histSection(histOf(pid)) +
+      histSection(shownHistOf(pid)) +
       viewSection(pid, snaps) +
       groupsSection(groupsOf(pid)) +
       '</div></div>';

@@ -99,7 +99,7 @@ eq([h.kind, h.by, h.counts.total, h.changes[0].what], ['action', 'TST User', 1, 
 
 // waste: occupied all day, no event of that building that day; serving units never
 let w = SA.wasteFindings(o(1080));
-eq(w.map((f) => f.building + ':' + f.program + ':' + f.dates.join('+')).sort(), ['Test Alpha Hall:Pole Lights:2026-10-31', 'Test Beta School:Hall Lights:2026-10-30+2026-10-31'], 'a building with an event that day is left out; serving units are left out');
+eq(w.map((f) => f.building + ':' + f.program + ':' + f.dates.join('+')).sort(), ['Test Beta School:Hall Lights:2026-10-30+2026-10-31'], 'a building with an event that day is left out; serving units, DHW and exterior lights are left out');
 eq(SA.wasteFindings(Object.assign(o(1080), { today: '2026-12-31' })).length, 0, 'old saved days are not checked');
 
 // one place for the rules: the tab file draws only; no network

@@ -14,7 +14,8 @@
 // Statuses (eventCoverage): covered, short (not covered, with minutes short), nobas (no BAS schedule for this space),
 //   offsite, notmapped, nocopy (no BAS copy for that kind of day), allday (no times to check).
 // Serving units (AHU/RTU/ERV/DOAS that serve boxes, HW/CHW plants) run on requests and have no schedule to check:
-//   isServingProgram. They are never suggested and never checked.
+//   isServingProgram. They are never suggested and never checked. Domestic hot water (DHW) is NOT serving: it is out of
+//   scope (isOutOfScopeProgram). isUnchecked is the one test for both.
 (function (root) {
   'use strict';
 
@@ -50,13 +51,32 @@
   // --- serving units --------------------------------------------------------------------------
   // A plant (HW, CHW, boiler, chiller, pump), an ERV or a DOAS is serving. An AHU, RTU or MAU whose name is only its
   // tag ("AHU-2", "RTU-3A") serves boxes. An air handler named for a room ("AHU-1 - Rm 12") serves that room.
-  var SERVING_WORD = /\b(hw|chw|hws|chws|hwp|chwp|boiler|chiller|pump|plant|erv|doas|hrv|dhw|domestic hot water)\b/i;
+  var SERVING_WORD = /\b(hw|chw|hws|chws|hwp|chwp|boiler|chiller|pump|plant|erv|doas|hrv)\b/i;
   var BARE_UNIT = /^(ahu|rtu|mau|oau|ac|cu|hp)[-_ ]?[a-z0-9]{1,4}([/,][a-z0-9]{1,4})*$/i;
   function isServingProgram(program) {
     var p = String(program || '')
       .replace(/ #\d+$/, '')
       .trim();
     return SERVING_WORD.test(p) || BARE_UNIT.test(p);
+  }
+
+  // --- out of scope ---------------------------------------------------------------------------
+  // Domestic hot water is NOT a serving unit. It is outside these checks: never suggested, never checked.
+  var OUT_OF_SCOPE_WORD = /\b(dhw|domestic hot water)\b/i;
+  function isOutOfScopeProgram(program) {
+    return OUT_OF_SCOPE_WORD.test(String(program || ''));
+  }
+  // Exterior and site lighting (exterior, pole, parking lot, walkway, canopy, bollard lights). It normally runs on a photocell or
+  // an astronomical clock, so an all-day schedule only enables it. The waste check skips it.
+  var LIGHT_WORD = /\b(lights?|lighting)\b/i;
+  var EXTERIOR_WORD = /\b(exterior|pole|poles|parking|site|outdoor|walkway|canopy|bollard|security)\b/i;
+  function isExteriorLighting(program) {
+    var p = String(program || '');
+    return LIGHT_WORD.test(p) && EXTERIOR_WORD.test(p);
+  }
+  // The ONE test for "this program is never suggested, checked or listed": a serving unit or out of scope.
+  function isUnchecked(program) {
+    return isServingProgram(program) || isOutOfScopeProgram(program);
   }
 
   // --- matching a mapped program to snapshot rows ---------------------------------------------
@@ -87,7 +107,7 @@
     (stored || []).forEach(function (s) {
       var hit = Object.prototype.hasOwnProperty.call(rows || {}, s) ? [s] : matchKeys(keys, keyParts(s).location, keyParts(s).program);
       hit.forEach(function (k) {
-        if (out.indexOf(k) === -1 && !isServingProgram(programOfKey(k))) out.push(k);
+        if (out.indexOf(k) === -1 && !isUnchecked(programOfKey(k))) out.push(k);
       });
     });
     return out;
@@ -150,7 +170,7 @@
     var out = keys.filter(function (k) {
       if (BD.keyBuilding(k) !== hit[0]) return false;
       var p = programOfKey(k);
-      if (isServingProgram(p)) return false;
+      if (isUnchecked(p)) return false;
       var low = p.toLowerCase();
       return tokens.every(function (t) {
         return /^\d+$/.test(t) ? new RegExp('(^|[^0-9])' + t + '([^0-9]|$)').test(low) : low.indexOf(t) !== -1;
@@ -321,6 +341,9 @@
   var api = {
     spaceKey: spaceKey,
     isServingProgram: isServingProgram,
+    isOutOfScopeProgram: isOutOfScopeProgram,
+    isUnchecked: isUnchecked,
+    isExteriorLighting: isExteriorLighting,
     matchKeys: matchKeys,
     resolveKeys: resolveKeys,
     suggestPrograms: suggestPrograms,

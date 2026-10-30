@@ -128,6 +128,35 @@
     });
     return o.year + '-' + o.month + '-' + o.day;
   }
+
+  // A wall-clock time ("2026-10-30", "18:30") in the time zone tz as an ISO time. '' when the time is not HH:MM.
+  var _tzf = {};
+  function localToIso(ymd, hhmm, tz) {
+    var m = /^(\d{1,2}):(\d{2})$/.exec(String(hhmm || '').trim());
+    if (!DATE_ONLY.test(ymd || '') || !m) return '';
+    var a = ymd.split('-');
+    var want = Date.UTC(Number(a[0]), Number(a[1]) - 1, Number(a[2]), Number(m[1]), Number(m[2]));
+    var f = (_tzf[tz] = _tzf[tz] || new Intl.DateTimeFormat('en-US', { timeZone: tz, hourCycle: 'h23', year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' }));
+    var t = want;
+    for (var i = 0; i < 2; i++) {
+      var o = {};
+      f.formatToParts(new Date(t)).forEach(function (x) { o[x.type] = x.value; });
+      t += want - Date.UTC(Number(o.year), Number(o.month) - 1, Number(o.day), Number(o.hour), Number(o.minute));
+    }
+    return new Date(t).toISOString();
+  }
+  // Manual events ({ id, date, start, end, space, name }) as event rows [title, start, end, allDay, location] keyed "m<id>",
+  // the same shape as the feed copy. Without a start time the row is date-only (all-day): the BAS check skips it.
+  function manualRows(list, tz) {
+    var out = {};
+    (list || []).forEach(function (ev) {
+      if (!ev || !DATE_ONLY.test(ev.date || '') || !ev.name) return;
+      var s = localToIso(ev.date, ev.start, tz);
+      var e = s ? localToIso(ev.date, ev.end, tz) : '';
+      out['m' + ev.id] = [ev.name, s || ev.date, e, 0, ev.space || ''];
+    });
+    return out;
+  }
   // Last day of an all-day event. The stored end is exclusive (a 1-day event on 10-20 ends 10-21), so it is one day back.
   function allDayLastDay(start, end, tz) {
     var first = calendarDay(start, tz);
@@ -299,6 +328,8 @@
     carriedMarks: carriedMarks,
     calendarDay: calendarDay,
     allDayLastDay: allDayLastDay,
+    localToIso: localToIso,
+    manualRows: manualRows,
     FIELDS: FIELDS,
     DETAIL_CAP: DETAIL_CAP,
     diffSnapshots: diffSnapshots,

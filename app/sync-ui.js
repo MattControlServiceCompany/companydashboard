@@ -460,6 +460,7 @@
     ['en_report_templates_', 'the report templates'],
     ['en_bas_snap_', 'this building automation schedule copy'],
     ['en_bas_hist_', 'this building automation schedule history'],
+    ['en_bas_acthist_', 'this schedule action history'],
     ['en_bas_groups_', 'these scheduling groups'],
     ['en_bas_', 'this building automation trend data'],
     ['en_alarms_', 'this alarm log'],

@@ -589,6 +589,7 @@
   }
 
   // The calendar's own table and text helpers, shared with the BAS schedules card (app/bas-schedules.js).
+  window.pcalBasCell = basCell; // the one BAS badge, also used by the manual events table (district-calendar.js)
   window.pcalUi = { table: table, num: num, stamp: stamp, ensureStyle: ensureStyle };
   window.pcalRender = render;
   window.pcalSync = sync;
