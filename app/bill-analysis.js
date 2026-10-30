@@ -7100,8 +7100,9 @@ function _mbCreateWords(bill, match) {
   const id = bill.AccountNumber ? 'account ' + bill.AccountNumber : bill.MeterNumber ? 'meter ' + bill.MeterNumber : '';
   const proj = match && match.proj && match.proj.name;
   const b = match && match.bldg;
-  const bname = b ? b.name || b.addr || '' : 'Unmatched Bills';
-  return 'New ' + comm + ' meter' + (id ? ' for ' + id : '') + (proj ? ' in ' + proj : '') + ', on building ' + bname;
+  const newName = !b && match && match.createBldgName;
+  const bname = b ? b.name || b.addr || '' : newName || 'Unmatched Bills';
+  return 'New ' + comm + ' meter' + (id ? ' for ' + id : '') + (proj ? ' in ' + proj : '') + ', on ' + (newName ? 'new ' : '') + 'building ' + bname;
 }
 
 // Previous / Next buttons for the head of the bill box. The first bill has no Previous, the last has no Next.
@@ -7183,7 +7184,7 @@ function _mbBillBoxHtml(i) {
       '</div><div class="pdf-dest-acts"><button class="pdf-top-btn primary" onclick="_mbCreateForRow(' +
       i +
       ')">' +
-      (match && match.bldgId ? 'Create meter' : 'Create meter on Unmatched Bills') +
+      (match && match.bldgId ? 'Create meter' : bill.ServiceAddress ? 'Create building + meter' : 'Create meter on Unmatched Bills') +
       '</button><span class="pdf-dest-or">or pick a meter</span><span class="pdf-dest-pick">' +
       picker() +
       '</span></div>';
@@ -7278,7 +7279,7 @@ function _mbReviewBarHtml() {
         '</a>' +
         // A bill with no building or meter: the same Create function as the bill box's button (_mbCreateForRow).
         (it.kind === 'dest' && it.dkind === 'no-building'
-          ? '<button type="button" class="pdf-rb-more pdf-rb-create" title="Create the meter for this bill on Unmatched Bills" onclick="_mbCreateForRow(' + i + ')">Create meter</button>'
+          ? '<button type="button" class="pdf-rb-more pdf-rb-create" title="Create the building and meter for this bill" onclick="_mbCreateForRow(' + i + ')">Create building + meter</button>'
           : '')
       );
     })
@@ -7399,12 +7400,16 @@ function _mbSameMeterBills(a, b) {
 // Create on bill i: every other bill of the file with the same account or meter number (same utility) that has
 // no meter goes to the same new meter at once, checked. Save makes the meter once (the first save creates it,
 // the next saves find it through the duplicate guard in _autoCreateMeterAndSaveBill).
+function _bldgKey(a) {
+  return String(a || '').toLowerCase().replace(/[^a-z0-9]/g, '');
+}
 function _mbLinkSameMeter(i) {
   const bills = window._pdfMultiBills || [];
   const src = _mbRowTargets[i];
   if (!src || src.matchType !== 'create') return;
   bills.forEach((b, j) => {
-    if (j === i || b._mbSaved || !_mbSameMeterBills(b, bills[i])) return;
+    const sameAddr = !!src.createBldgName && _bldgKey(_mbNewBldgName(b)) === _bldgKey(src.createBldgName);
+    if (j === i || b._mbSaved || !(_mbSameMeterBills(b, bills[i]) || sameAddr)) return;
     const t = _mbRowTargets[j];
     if (t && (t.matchType === 'identity' || t.matchType === 'commodity' || t.matchType === 'manual')) return;
     if (t && t.matchType === 'create' && t.fromRow == null) return;
@@ -7487,6 +7492,9 @@ window.setMbRowDestProj = setMbRowDestProj;
 // meter/building is materialized at save time by _autoCreateMeterAndSaveBill.
 // bldgId non-null => create the meter on that EXISTING building; null =>
 // project-level new/sentinel building.
+function _mbNewBldgName(bill) {
+  return String((bill && bill.ServiceAddress) || '').replace(/\s+/g, ' ').trim();
+}
 function _mbSetCreateTarget(i, projId, bldgId) {
   const proj = (projects || []).find(function (p) {
     return p.id === projId;
@@ -7500,6 +7508,8 @@ function _mbSetCreateTarget(i, projId, bldgId) {
     meter: null,
     matchType: 'create',
     createOnBldgId: bldgId || null,
+    // No building chosen: the bill's service address names a new building (made once at save, shared by same-address bills).
+    createBldgName: !bldgId ? _mbNewBldgName((window._pdfMultiBills || [])[i]) : '',
   };
   if (_mbRowState[i]) _mbRowState[i].checked = true;
   else _mbRowState[i] = { checked: true, skipped: false };
@@ -8367,7 +8377,7 @@ async function _mbSaveOneBill(bi, action) {
     if (!_cProj) {
       return { status: 'unresolved', reason: 'create target has no project' };
     }
-    const _created = _autoCreateMeterAndSaveBill(bill, _cProj, billRow, billMatch.createOnBldgId || null);
+    const _created = _autoCreateMeterAndSaveBill(bill, _cProj, billRow, billMatch.createOnBldgId || null, billMatch.createBldgName || '');
     if (_created && _created.meter) {
       const _dest =
         ((billMatch.proj && billMatch.proj.name) || '') +
@@ -22030,7 +22040,7 @@ function _billIdentityHitsMeter(extracted, m) {
 // Called when _saveSinglePDFBill cannot find a meter match but the bill has
 // enough identity information (AccountNumber or MeterNumber) to create one.
 // Returns { bldg, meter } on success, or null if creation was skipped.
-function _autoCreateMeterAndSaveBill(extracted, projId, billRow, preferBldgId) {
+function _autoCreateMeterAndSaveBill(extracted, projId, billRow, preferBldgId, newBldgName) {
   if (!projId) return null;
   const acctNum = extracted.AccountNumber || '';
   const meterNum = extracted.MeterNumber || '';
@@ -22123,6 +22133,35 @@ function _autoCreateMeterAndSaveBill(extracted, projId, billRow, preferBldgId) {
     // the "Unmatched Bills" sentinel building below (visible in the project's
     // building list) for a human to review and reassign, rather than being
     // silently placed under a guessed building.
+  }
+
+  // Create building + meter (OCR page): the bill's service address names the building. A building made earlier in
+  // the batch with the same address is reused, so same-address bills never make a second building.
+  if (!targetBldg && newBldgName) {
+    const key = _bldgKey(newBldgName);
+    const pool = _acmCustomerId ? getCustomerBuildings(_acmCustomerId) : projBldgs;
+    targetBldg = pool.find((b) => !b._unmatchedSentinel && (_bldgKey(b.name) === key || _bldgKey(b.addr) === key)) || null;
+    if (!targetBldg) {
+      targetBldg = {
+        id: 'b' + Date.now() + '_' + Math.random().toString(36).slice(2, 5),
+        name: newBldgName,
+        addr: newBldgName,
+        sqft: 0,
+        zip: '',
+        addrAliases: [],
+        meters: [],
+      };
+      if (_acmCustomerId) addUDBldg(_acmCustomerId, targetBldg);
+      else projBldgs.push(targetBldg);
+    }
+    if (_acmProj) {
+      _acmProj.scope = _acmProj.scope || { buildingIds: [], meterExcludeIds: [] };
+      if (!Array.isArray(_acmProj.scope.buildingIds)) _acmProj.scope.buildingIds = [];
+      if (!_acmProj.scope.buildingIds.includes(targetBldg.id)) {
+        _acmProj.scope.buildingIds.push(targetBldg.id);
+        sset('en_projects', typeof projects !== 'undefined' ? projects : sget('en_projects', []));
+      }
+    }
   }
 
   if (!targetBldg) {

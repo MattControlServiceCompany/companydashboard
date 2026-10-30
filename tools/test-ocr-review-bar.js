@@ -130,7 +130,7 @@ async function open(context, theme, width) {
     ok(/st-review/.test(r1.bldgCls), 'building row of the no-match bills is not green: ' + r1.bldgCls);
     ok(r1.barVisible && /No matching building or meter/.test(r1.barText) && /825 Testcat Dr|Testcat/.test(r1.barText), 'bar lists the no-match issue: ' + r1.barText);
     ok(/4 bills · 1 ready · 3 with issues/.test(r1.barText), 'bar counts: ' + r1.barText.slice(0, 60));
-    ok(r1.createText === 'Create meter on Unmatched Bills', 'Create button in the bill box: ' + r1.createText);
+    ok(r1.createText === 'Create building + meter', 'Create button in the bill box: ' + r1.createText);
     ok(r1.createBg !== 'rgba(0, 0, 0, 0)' && r1.createRadius !== '0px', 'Create button is a styled button: ' + r1.createBg + ' ' + r1.createRadius);
     ok(r1.saveAllDisabled === false && /Save All \(1\)/.test(r1.saveAllText), 'Save All on while only the issue bills are unchecked: ' + r1.saveAllText);
     ok(r1.checked2 === false, 'bill 2 starts unchecked');
@@ -175,6 +175,16 @@ async function open(context, theme, width) {
     ok(r4.t2 === 'create' && r4.from === 1 && r4.checked2 === true, 'bill 2 follows bill 1 to the new meter, checked: ' + JSON.stringify(r4).slice(0, 120));
     ok(new RegExp('New [A-Za-z]+ meter for account [^ ]+ in .*\\(from bill ' + r4.bill1No + '\\)').test(r4.box2), 'bill 2 shows "New ... meter ... (from bill N)": ' + r4.box2);
     ok(!/No matching/.test(r4.bar), 'bar no longer lists the no-match issue');
+    ok(/on new building 825 Testcat Dr/.test(r4.box2), 'Saves-to line names the new building from the service address: ' + r4.box2);
+    // Undo removes the pending building and meter for both bills (nothing is made before Save).
+    await page.evaluate(() => { selectMultiBill(1); });
+    await page.click('#pdfBillDest .pdf-dest-line a');
+    await page.waitForTimeout(200);
+    const rU = await page.evaluate(() => ({ t1: _mbRowTargets[1] && _mbRowTargets[1].matchType, t2: _mbRowTargets[2] && _mbRowTargets[2].matchType, n: utilityData['cust_990001'].buildings.length }));
+    ok(rU.t1 !== 'create' && rU.t2 !== 'create' && rU.n === 1, 'Undo clears both bills and made no building: ' + JSON.stringify(rU));
+    await page.evaluate(() => { selectMultiBill(1); });
+    await page.click('#pdfBillDest button.primary');
+    await page.waitForTimeout(200);
     if (SHOTS) await page.screenshot({ path: path.join(SHOTS, '2026-10-29-review-bar-dark-1920-after-create.png') });
 
     // Save All: exactly one new meter for account TST-0003, both bills on it.
@@ -189,6 +199,8 @@ async function open(context, theme, width) {
       );
       return { meters: ms, saved: window._pdfMultiBills.map((b) => !!b._mbSaved), bar: document.getElementById('pdfReviewBar').textContent };
     });
+    const r5b = await page.evaluate(() => utilityData['cust_990001'].buildings.map((b) => b.name + ':' + (b.meters || []).length));
+    ok(r5b.length === 2 && r5b.includes('825 Testcat Dr:1') && !r5b.some((x) => /Unmatched/.test(x)), 'one new building from the address with the one new meter: ' + JSON.stringify(r5b));
     ok(r5.meters.length === 1 && r5.meters[0] === 2, 'one new meter with both bills: ' + JSON.stringify(r5.meters));
     ok(JSON.stringify(r5.saved) === '[true,true,true,false]', 'saved bills 0,1,2, the held bill stays: ' + JSON.stringify(r5.saved));
     ok(/3 saved/.test(r5.bar), 'bar shows saved count: ' + r5.bar.slice(0, 60));
