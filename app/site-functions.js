@@ -2507,6 +2507,20 @@ async function siteResetAllMeterTableSettings() {
    site-ui.js delegates to this array and should NOT maintain its own copy.
 */
 var RELEASE_NOTES = [
+  { v: 'v2026.10.30.189', date: '2026-10-30', title: 'PDF / OCR review, District Calendar change list, weather, faster Audit View',
+    items: [
+      { type: 'change', text: 'PDF / OCR: the building list is shorter. Use "Show all N buildings" to see the rest.' },
+      { type: 'feature', text: 'PDF / OCR: the review bar has a "Create meter" button.' },
+      { type: 'change', text: 'PDF / OCR: on a narrow window the review bar shows 1 issue and a "more issues" button.' },
+      { type: 'fix', text: 'PDF / OCR: opening a bill now opens the right bill.' },
+      { type: 'feature', text: 'District Calendar: a manual event has a start, an end, a space and a BAS column.' },
+      { type: 'feature', text: 'District Calendar: a "What needs to change" list shows each item as Open, Done or Closed, with a History.' },
+      { type: 'fix', text: 'District Calendar: the page updates at once after you add a manual event.' },
+      { type: 'change', text: 'Weather: new months are fetched when the site loads.' },
+      { type: 'feature', text: 'Energy Graphics: a notice shows when the weather for a month is not yet available.' },
+      { type: 'change', text: 'Equipment Matrix: Audit View loads faster.' }
+    ]
+  },
   { v: 'v2026.10.30.188', date: '2026-10-30', title: 'District Calendar space map, Facility Audit Coverage, faster Edit Mode',
     items: [
       { type: 'feature', text: 'District Calendar: new space map. Link each calendar space to its BAS programs, or mark it Off-site. Suggestions can be loaded from a file.' },
