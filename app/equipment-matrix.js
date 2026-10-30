@@ -7245,6 +7245,15 @@ function _emAttachNavDelegatedListeners() {
   if (typeof document === 'undefined' || !document.addEventListener) return;
   _emNavListenersAttached = true;
 
+  // Edit Mode cell edits: one delegated listener instead of an onblur attribute on every cell (smaller HTML, faster toggle).
+  document.addEventListener('focusout', function (e) {
+    var td = e.target && e.target.closest ? e.target.closest('td[data-em-ek]') : null;
+    var tr = td ? td.parentNode : null;
+    if (tr && tr.hasAttribute('data-em-rid')) {
+      emHandleCellEdit(tr.getAttribute('data-em-rid'), td.getAttribute('data-em-ek'), td.textContent);
+    }
+  });
+
   document.addEventListener('change', function (e) {
     var t = e.target;
     if (!t || !t.hasAttribute) return;
@@ -7585,20 +7594,23 @@ function emRenderTable(data, filters) {
       var cellClassAttr = cellClass ? ' class="' + cellClass.slice(1) + '"' : '';
       if (_emEditMode && !def.isComputed && !def.isScreenshot) {
         cells +=
-          '<td contenteditable="true"' +
+          '<td contenteditable="true" data-em-ek="' +
+          _escHtml(def.key) +
+          '"' +
           cellClassAttr +
-          ' onblur="emHandleCellEdit(\'' +
-          rowId.replace(/'/g, "\\'") +
-          "','" +
-          def.key.replace(/'/g, "\\'") +
-          '\',this.textContent)">' +
+          '>' +
           displayVal +
           '</td>';
       } else {
         cells += '<td' + cellClassAttr + '>' + displayVal + '</td>';
       }
     }
-    var rowHtml = '<tr style="content-visibility:auto;contain-intrinsic-size:auto 32px">' + cells + '</tr>';
+    var rowHtml =
+      '<tr style="content-visibility:auto;contain-intrinsic-size:auto 32px"' +
+      (_emEditMode ? ' data-em-rid="' + _escHtml(rowId) + '"' : '') +
+      '>' +
+      cells +
+      '</tr>';
     // M4 Part 2: inline "All Points" drawer row (inserted right after equipment row)
     if (isDrawerOpen) {
       rowHtml += '<tr><td colspan="' + _emTotalColCount + '" style="padding:0;border-bottom:2px solid var(--accent)">';
@@ -7716,7 +7728,9 @@ function emRenderTable(data, filters) {
     // does not hide or page any column — it only shrinks how many ROWS land in the very first
     // paint; the existing IntersectionObserver sentinel below still appends the rest (still all
     // columns) as the user scrolls, exactly as before.
-    var CELL_BUDGET = 8000;
+    // Edit Mode cells are heavier (editable cells + delete buttons), so its first paint takes a smaller budget; the
+    // observer below appends the rest on scroll exactly as in Raw View.
+    var CELL_BUDGET = _emEditMode ? 8000 : 30000;
     var BATCH_SIZE = Math.max(5, Math.min(150, Math.floor(CELL_BUDGET / Math.max(1, defs.length))));
     var renderIndex = 0;
 
@@ -9293,7 +9307,7 @@ function emRenderAuditTable(data, filters) {
     _emRowAppendObserver = null;
   }
 
-  var AUDIT_BATCH_SIZE = 60;
+  var AUDIT_BATCH_SIZE = 150;
   var auditRenderIndex = 0;
 
   function appendNextAuditBatch() {
