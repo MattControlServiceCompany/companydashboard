@@ -423,11 +423,12 @@ var _faCss =
   '.fa-big{font-size:20px;font-weight:600}' +
   '.fa-empty{padding:24px;text-align:center}' +
   '.fa-review{border:1px solid var(--border);border-radius:6px;padding:8px;margin-bottom:12px;font-size:12px}' +
-  '.fa-tbl summary{cursor:pointer}';
+  '.fa-tbl summary{cursor:pointer}' +
+  '@media (max-width:700px){.fa-need{table-layout:fixed}.fa-need td{min-width:0}.fa-need th:nth-child(1){width:18%}.fa-need th:nth-child(2){width:11%}.fa-need th:nth-child(3){width:19%}.fa-need th:nth-child(4){width:20%}.fa-need th:nth-child(5){width:32%}.fa-need th{white-space:normal}}';
 
-function _faCovTable(heads, rowsHtml, totalHtml) {
+function _faCovTable(heads, rowsHtml, totalHtml, cls) {
   return (
-    '<div class="ch-tbl-outer fa-outer fa-vscroll"><table class="fa-tbl"><thead><tr>' +
+    '<div class="ch-tbl-outer fa-outer fa-vscroll"><table class="fa-tbl' + (cls ? ' ' + cls : '') + '"><thead><tr>' +
     heads
       .map(function (h) {
         return '<th' + (h[1] ? ' class="fa-num"' : '') + '>' + _escHtml(h[0]) + '</th>';
@@ -492,7 +493,7 @@ function _faCoverageView(pid) {
     '<div><div class="fa-sub">By system type</div>' + _faCovTally(c.types, c, 'System type') + '</div></div>' +
     '<div class="fa-sub">Still need (' + c.stillNeed.length + ')</div>' +
     (need
-      ? _faCovTable([['System type'], ['Units', 1], ['Buildings'], ['Example'], ['Why']], need)
+      ? _faCovTable([['System type'], ['Units', 1], ['Buildings'], ['Example'], ['Why']], need, '', 'fa-need')
       : '<div class="fa-empty">Nothing else needed.</div>') +
     (shots
       ? '<details style="margin-top:12px"><summary class="fa-sub">Covered by screenshot (' + c.screenshotCovered.length + ')</summary>' +

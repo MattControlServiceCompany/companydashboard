@@ -92,12 +92,14 @@ const csv = [
   ['TAH Gym', 'x', L, 'AHU-1 - Gym', 'a', 'yes'],
   ['TAH Two', 'x', L, 'Room 114; AHU-1', 'b', 'assumed'],
   ['TAH Three', 'x', '', 'AHU-9', 'c', 'no'],
+  ['TAH Four', 'x', L, 'Room 114', 'd', 'confirmed'],
   ['', 'x', '', '', '', ''],
 ];
 const imp = C.entriesFromCsv(csv, keys, 'TST user', '2026-10-30T00:00:00Z');
-eq(imp.count, 3, 'three spaces read, blank row skipped');
+eq(imp.count, 4, 'four spaces read, blank row skipped');
 eq(imp.entries['tah gym'].programs, [L + '|AHU-1 - Gym'], 'program name turned into a row key');
-eq([imp.entries['tah gym'].confirmed, imp.entries['tah two'].confirmed, imp.entries['tah three'].confirmed], [true, true, false], 'yes and assumed are confirmed, no is a suggestion');
+eq([imp.entries['tah gym'].confirmed, imp.entries['tah two'].confirmed, imp.entries['tah three'].confirmed], [true, false, false], 'yes is confirmed; assumed and no are suggestions');
+eq(imp.entries['tah four'].confirmed, true, 'confirmed is confirmed');
 eq(imp.entries['tah two'].programs, [L + '|Room 114', L + '|AHU-1 - Gym'], 'two programs, one loose name');
 eq(C.entriesFromCsv([['a', 'b']], keys).error !== '', true, 'missing columns give a message');
 
@@ -109,3 +111,4 @@ eq(/https?:\/\/|fetch\(/.test(read('app/space-map.js')) || /fetch\(/.test(read('
 
 console.log(fails ? fails + ' FAILED' : 'ALL PASSED');
 process.exit(fails ? 1 : 0);
+
