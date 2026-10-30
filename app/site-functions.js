@@ -2507,6 +2507,25 @@ async function siteResetAllMeterTableSettings() {
    site-ui.js delegates to this array and should NOT maintain its own copy.
 */
 var RELEASE_NOTES = [
+  { v: 'v2026.10.30.187', date: '2026-10-30', title: 'PDF / OCR bill review, schedule import, District Calendar, help text',
+    items: [
+      { type: 'change', text: 'PDF / OCR page: review opens on bill 1, with Previous and Next buttons to move between bills.' },
+      { type: 'change', text: 'PDF / OCR page: Save All warns you before it changes bills that are already saved.' },
+      { type: 'fix', text: 'PDF / OCR page: the project list shows only the current project.' },
+      { type: 'fix', text: 'PDF / OCR page: the page no longer downloads a debug file by itself.' },
+      { type: 'feature', text: 'PDF / OCR page: when a bill fails, the page now shows the reason.' },
+      { type: 'change', text: 'PDF / OCR page: each charge line printed on the bill is its own row. Usage no longer appears under Charges.' },
+      { type: 'feature', text: 'PDF / OCR page, Unmatched Bills: a new Create meter button makes a meter for a bill that has none.' },
+      { type: 'change', text: 'BAS / Set Points: schedules import in one place, District Calendar, and fill the Set Points tab.' },
+      { type: 'fix', text: 'BAS / Facility Audit: the set points now match the Set Points tab. Dates and hours are easier to read.' },
+      { type: 'change', text: 'Cost Estimate and HVAC Load: the help text is clearer.' },
+      { type: 'feature', text: 'BAS / District Calendar: the feed address has help text and a check button.' },
+      { type: 'fix', text: 'BAS / District Calendar: the text for a project with no feed is now correct. Delete All is hidden when there are no events.' },
+      { type: 'change', text: 'BAS / District Calendar: the calendar syncs when the site loads, if the last sync is more than 1 hour old.' },
+      { type: 'feature', text: 'Project tabs: arrows show when some tabs are hidden, so you can scroll to them.' },
+      { type: 'change', text: 'Energy Savings page: the column headers now show hover text.' }
+    ]
+  },
   { v: 'v2026.10.29.186', date: '2026-10-29', title: 'PDF / OCR review bar, tab scrollbar, Dashboard building count, readability',
     items: [
       { type: 'fix', text: 'PDF / OCR page: the review bar stays at the bottom of the screen and never covers a bill row. It shows 3 issue links and a button for the rest.' },
