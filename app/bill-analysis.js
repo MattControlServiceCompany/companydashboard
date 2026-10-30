@@ -7417,18 +7417,22 @@ window.setMbRowDestExpand = setMbRowDestExpand;
 // meter match. Reuses _mbSetCreateTarget (marks the row checked + savable);
 // the meter/building is built from the bill (account, meter number, address,
 // utility) at save time by _autoCreateMeterAndSaveBill. No second create path.
+// The project the bills of this file go to (one file is one customer): the batch project, else the project another
+// bill of the file already matched, else the project open on the page. null when none is known.
+function _mbFileProjId() {
+  return (
+    (window._pdfQueue && window._pdfQueue.batchProjId) ||
+    (Object.values(_mbRowTargets).find((t) => t && t.projId && t.matchType !== 'create') || {}).projId ||
+    (typeof udSelProjId !== 'undefined' ? udSelProjId : null) ||
+    null
+  );
+}
 function _mbCreateForRow(i) {
   const bills = window._pdfMultiBills;
   if (!bills || !bills[i]) return;
   const ov = bills[i]._meterOverride;
   const m = _mbRowTargets[i];
-  const projId =
-    (ov && ov.projId) ||
-    (m && m.projId) ||
-    (window._pdfQueue && window._pdfQueue.batchProjId) ||
-    // The project another bill of this file already matched (one file is one customer).
-    (Object.values(_mbRowTargets).find((t) => t && t.projId && t.matchType !== 'create') || {}).projId ||
-    (typeof udSelProjId !== 'undefined' ? udSelProjId : null);
+  const projId = (ov && ov.projId) || (m && m.projId) || _mbFileProjId();
   if (!projId) {
     showToast('Pick a project for this bill first, then create the meter');
     return;
@@ -7477,6 +7481,7 @@ function setMbRowDestBldg(i, val) {
   if (!bills || !bills[i]) return;
   _mbUnlinkSameMeter(i);
   const ov = bills[i]._meterOverride || { projId: null, bldgId: null, meterId: null };
+  if (ov.projId == null) ov.projId = _mbFileProjId(); // the list showed the file's project already picked
   if (val === '__CREATE_NEW__') {
     ov.bldgId = '__CREATE_NEW__';
     ov.meterId = '__CREATE_NEW__';
@@ -7498,6 +7503,7 @@ function setMbRowDestMeter(i, val) {
   if (!bills || !bills[i]) return;
   _mbUnlinkSameMeter(i);
   const ov = bills[i]._meterOverride || { projId: null, bldgId: null, meterId: null };
+  if (ov.projId == null) ov.projId = _mbFileProjId(); // the list showed the file's project already picked
   if (val === '__CREATE_NEW__') {
     ov.meterId = '__CREATE_NEW__';
     bills[i]._meterOverride = ov;
@@ -10437,6 +10443,12 @@ function exitPreviewMode() {
   renderQueueProgress();
 }
 
+// Projects for the pick list: all of them, or only the file's project (and one already picked) when it is known.
+function _mbPickProjects(list, fileProjId, pickedProjId) {
+  const all = list || [];
+  if (!fileProjId) return all;
+  return all.filter((p) => String(p.id) === String(fileProjId) || (pickedProjId && String(p.id) === String(pickedProjId)));
+}
 // ── Destination cell builder (fix b-46a984a0 — batch-to-meter review) ──
 // GATE: zero silent auto-routes. An 'identity' match (account/meter-number hit) is
 // shown as confirmed text the user can still override via "Change". Anything else —
@@ -10498,18 +10510,21 @@ function _buildDestCell(bill, autoMatch, handlerArg, setProjFn, setBldgFn, setMe
   const curBldg = ov && ov.bldgId ? ov.bldgId : (isIdentity || isCommodity) && autoMatch && !ov ? autoMatch.bldgId : '';
   const curMeter =
     ov && ov.meterId ? ov.meterId : (isIdentity || isCommodity) && autoMatch && !ov ? autoMatch.meterId : '';
+  // The multi-bill review lists only the project this file goes to (plus a project already picked), never other clients.
+  const _fileProj = setProjFn === 'setMbRowDestProj' ? _mbFileProjId() : null;
+  const curProjShown = curProj || _fileProj || '';
   const selStyle =
     'font-size:10px;padding:1px 2px;max-width:112px;background:var(--s2);border:1px solid var(--border2);' +
     'border-radius:3px;color:var(--text);margin-bottom:1px;display:block';
   const projOpts =
     '<option value="">Select project…</option>' +
-    (projects || [])
+    _mbPickProjects(projects, _fileProj, curProj)
       .map(
         (p) =>
           '<option value="' +
           p.id +
           '"' +
-          (String(p.id) === String(curProj) ? ' selected' : '') +
+          (String(p.id) === String(curProjShown) ? ' selected' : '') +
           '>' +
           _escHtml(p.name) +
           '</option>',
@@ -10517,7 +10532,7 @@ function _buildDestCell(bill, autoMatch, handlerArg, setProjFn, setBldgFn, setMe
       .join('');
   const bldgOptsBase =
     '<option value="">Select building…</option>' +
-    (curProj ? getUDBldgs(parseInt(curProj)) || [] : [])
+    (curProjShown ? getUDBldgs(parseInt(curProjShown)) || [] : [])
       .map(
         (b2) =>
           '<option value="' +
@@ -10530,13 +10545,13 @@ function _buildDestCell(bill, autoMatch, handlerArg, setProjFn, setBldgFn, setMe
       )
       .join('');
   const createBldgOpt =
-    allowCreate && curProj
+    allowCreate && curProjShown
       ? '<option value="__CREATE_NEW__"' +
         (String(curBldg) === '__CREATE_NEW__' ? ' selected' : '') +
         '>+ New building (create from this bill)</option>'
       : '';
   const bldgOpts = bldgOptsBase + createBldgOpt;
-  const bldgObj = curProj && curBldg ? getUDBldg(parseInt(curProj), curBldg) : null;
+  const bldgObj = curProjShown && curBldg ? getUDBldg(parseInt(curProjShown), curBldg) : null;
   const meterOptsBase =
     '<option value="">Select meter…</option>' +
     ((bldgObj && bldgObj.meters) || [])
@@ -10555,7 +10570,7 @@ function _buildDestCell(bill, autoMatch, handlerArg, setProjFn, setBldgFn, setMe
       })
       .join('');
   const createMeterOpt =
-    allowCreate && curProj
+    allowCreate && curProjShown
       ? '<option value="__CREATE_NEW__"' +
         (String(curMeter) === '__CREATE_NEW__' ? ' selected' : '') +
         '>+ New meter (create from this bill)</option>'
