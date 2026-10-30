@@ -173,7 +173,7 @@ async function open(context, theme, width) {
       };
     });
     ok(r4.t2 === 'create' && r4.from === 1 && r4.checked2 === true, 'bill 2 follows bill 1 to the new meter, checked: ' + JSON.stringify(r4).slice(0, 120));
-    ok(new RegExp('New [A-Za-z]+ meter for account [^ ]+ in .*\(from bill ' + r4.bill1No + '\)').test(r4.box2), 'bill 2 shows "New ... meter ... (from bill N)": ' + r4.box2);
+    ok(new RegExp('New [A-Za-z]+ meter for account [^ ]+ in .*\\(from bill ' + r4.bill1No + '\\)').test(r4.box2), 'bill 2 shows "New ... meter ... (from bill N)": ' + r4.box2);
     ok(!/No matching/.test(r4.bar), 'bar no longer lists the no-match issue');
     if (SHOTS) await page.screenshot({ path: path.join(SHOTS, '2026-10-29-review-bar-dark-1920-after-create.png') });
 
