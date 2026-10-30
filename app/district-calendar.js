@@ -857,6 +857,12 @@ function distCalRefreshBas(projId) {
   });
 }
 
+// After a manual event is added, edited or deleted: redraw the What needs to change card and the History list.
+function distCalRefreshPanels(projId) {
+  if (typeof window.sactRender === 'function') window.sactRender(projId);
+  if (typeof window.basRender === 'function') window.basRender(projId);
+}
+
 function distCalAddRow(projId) {
   const p = projects.find((x) => x.id === projId);
   if (!p) return;
@@ -864,9 +870,10 @@ function distCalAddRow(projId) {
   p.districtCalendar.push({ id: Date.now(), date: '', start: '', end: '', space: '', name: '', type: 'Holiday' });
   sset('en_projects', projects);
   renderDistCalTable(projId);
+  distCalRefreshPanels(projId);
 }
 
-function distCalUpdate(projId, idx, field, val) {
+async function distCalUpdate(projId, idx, field, val) {
   const p = projects.find((x) => x.id === projId);
   if (!p) return;
   if (!p.districtCalendar[idx]) return;
@@ -874,16 +881,19 @@ function distCalUpdate(projId, idx, field, val) {
   sset('en_projects', projects);
   if (field === 'date' || field === 'start' || field === 'end' || field === 'space' || field === 'name') {
     distCalRefreshBas(projId); // the BAS column follows the change (only that cell, so typing focus stays)
-    if (typeof window.sactPersist === 'function') window.sactPersist(projId);
+    if (typeof window.sactPersist === 'function') await window.sactPersist(projId);
+    distCalRefreshPanels(projId);
   }
 }
 
-function distCalRemove(projId, idx) {
+async function distCalRemove(projId, idx) {
   const p = projects.find((x) => x.id === projId);
   if (!p) return;
   p.districtCalendar.splice(idx, 1);
   sset('en_projects', projects);
   renderDistCalTable(projId);
+  if (typeof window.sactPersist === 'function') await window.sactPersist(projId);
+  distCalRefreshPanels(projId);
 }
 
 function distCalDeleteAll(projId) {

@@ -7241,6 +7241,10 @@ function _mbReviewSummary() {
       : 'Save the ' + _pdfCountWord(c.toSave.length, 'selected bill');
   return out;
 }
+// Links shown in the review bar: 1 under 800 px wide (keeps the bar at one-issue height), else 3.
+function _mbReviewMax(w) {
+  return (w == null ? window.innerWidth : w) < 800 ? 1 : 3;
+}
 // The bar at the bottom of the values: counts, one link per issue (a click opens the bill at the issue), Save All.
 function _mbReviewBarHtml() {
   const bills = window._pdfMultiBills || [];
@@ -7252,7 +7256,7 @@ function _mbReviewBarHtml() {
     s.saved ? s.saved + ' saved' : '',
     s.skipped ? s.skipped + ' skipped' : '',
   ].filter(Boolean);
-  const RB_MAX = 3; // links shown before the "+N more issues" button
+  const RB_MAX = _mbReviewMax(); // links shown before the "+N more issues" button
   const expanded = !!window._pdfRbExpanded && s.links.length > RB_MAX;
   const shown = expanded ? s.links : s.links.slice(0, RB_MAX);
   const links = shown

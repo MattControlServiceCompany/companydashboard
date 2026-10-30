@@ -1500,7 +1500,7 @@ function egfxRefresh(projId) {
       if (isBaselineExcluded(projId, m.id)) return;
       (m.bills || []).forEach((bill) => yms.push(billMonth(bill, m.bills)));
     });
-    wxPendingMonths(wx.cache, yms.filter((ym) => /^d{4}-d{2}$/.test(ym))).forEach((ym) => _wxPendingYms.add(ym));
+    wxPendingMonths(wx.cache, yms.filter((ym) => /^\d{4}-\d{2}$/.test(ym))).forEach((ym) => _wxPendingYms.add(ym));
   });
   const _wxPendingTxt = wxPendingNotice(Array.from(_wxPendingYms).sort(), (ym) => fmtMon(ym + '-01'));
   const _wxPendingHtml = _wxPendingTxt
