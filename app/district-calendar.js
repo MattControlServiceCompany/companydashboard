@@ -619,11 +619,11 @@ function dcRenderCalendar() {
       const ds = `${yr}-${String(mo + 1).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
       const evs = byDate[ds] || [];
       const isToday = new Date(yr, mo, d).getTime() === today.getTime();
-      html += `<div class="dc-day${isToday ? ' dc-today' : ''}${evs.length ? ' has-ev' : ''}"${evs.length ? ` title="${evs.map((e) => e.name).join(', ')}"` : ''}>
+      html += `<div class="dc-day${isToday ? ' dc-today' : ''}${evs.length ? ' has-ev' : ''}"${evs.length ? ` title="${_escHtml(evs.map((e) => e.name).join(', '))}"` : ''}>
               <div class="dc-day-n">${d}</div>
               <div class="dc-day-evs">${evs
                 .slice(0, 2)
-                .map((ev) => `<div class="dc-ev-pill ev-${ev.type}">${ev.name}</div>`)
+                .map((ev) => `<div class="dc-ev-pill ev-${_escHtml(ev.type)}">${_escHtml(ev.name)}</div>`)
                 .join('')}${evs.length > 2 ? `<div class="dc-ev-pill ev-event">+${evs.length - 2}</div>` : ''}</div>
             </div>`;
     }
@@ -657,7 +657,7 @@ function dcRenderEventList(filter = '') {
         .map((ev) => {
           const d = new Date(ev.date + 'T12:00:00');
           const ds = d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
-          return `<div class="dc-ev-row"><div class="dc-ev-date">${ds}</div><div><div class="dc-ev-name">${ev.name}</div><div class="dc-ev-type-lbl" style="color:${TYPE_COLOR[ev.type] || 'var(--text2)'}">${TYPE_LBL[ev.type] || ev.type}</div></div></div>`;
+          return `<div class="dc-ev-row"><div class="dc-ev-date">${ds}</div><div><div class="dc-ev-name">${_escHtml(ev.name)}</div><div class="dc-ev-type-lbl" style="color:${TYPE_COLOR[ev.type] || 'var(--text2)'}">${_escHtml(TYPE_LBL[ev.type] || ev.type)}</div></div></div>`;
         })
         .join('')
     : '<div style="font-size:12px;color:var(--text2);padding:6px">No events match.</div>';
@@ -781,7 +781,7 @@ function renderDistCalTable(projId) {
         const bg = dayEvs.length ? TYPE_COLORS[dayEvs[0].type] || '#6b7280' : 'transparent';
         const title = dayEvs.map((e) => e.name + ' (' + e.type + ')').join('\n');
         const opacity = dayEvs.length ? '0.25' : '0';
-        grid += `<div style="position:relative;padding:2px;border-radius:3px;min-height:22px" title="${title.replace(/"/g, '&quot;')}">
+        grid += `<div style="position:relative;padding:2px;border-radius:3px;min-height:22px" title="${_escHtml(title)}">
                 <div style="position:absolute;inset:0;background:${bg};opacity:${opacity};border-radius:3px"></div>
                 <span style="position:relative;${dayEvs.length ? 'font-weight:700;color:' + bg : 'color:var(--text2)'}">${d}</span></div>`;
       }
@@ -812,13 +812,13 @@ function renderDistCalTable(projId) {
               );
               const bas = typeof pcalBasCell === 'function' ? pcalBasCell(manual['m' + ev.id] || [''], '', basCtx) : '';
               return `<tr>
-            <td><input class="fi" type="date" value="${ev.date || ''}" onchange="distCalUpdate(${projId},${i},'date',this.value)" style="font-family:var(--mono)"></td>
+            <td><input class="fi" type="date" value="${_escHtml(ev.date || '')}" onchange="distCalUpdate(${projId},${i},'date',this.value)" style="font-family:var(--mono)"></td>
             <td><input class="fi" type="time" value="${_escHtml(ev.start || '')}" onchange="distCalUpdate(${projId},${i},'start',this.value)" style="font-family:var(--mono)"></td>
             <td><input class="fi" type="time" value="${_escHtml(ev.end || '')}" onchange="distCalUpdate(${projId},${i},'end',this.value)" style="font-family:var(--mono)"></td>
             <td><input class="fi" value="${_escHtml(ev.name || '')}" onchange="distCalUpdate(${projId},${i},'name',this.value)" style="width:100%"></td>
             <td><input class="fi" list="distcal-spaces-${projId}" value="${_escHtml(ev.space || '')}" onchange="distCalUpdate(${projId},${i},'space',this.value)" style="width:100%"></td>
             <td><select class="fs" onchange="distCalUpdate(${projId},${i},'type',this.value)">${opts}</select></td>
-            <td id="distcal-bas-${projId}-${ev.id}">${bas}</td>
+            <td id="distcal-bas-${projId}-${_escHtml(ev.id)}">${bas}</td>
             <td><button class="btn-del" onclick="distCalRemove(${projId},${i})">✕</button></td>
           </tr>`;
             })
@@ -1038,7 +1038,7 @@ function _distCalRenderPreview(projId) {
       (t) => `<option${t === (ev.type || 'Other') ? ' selected' : ''}>${t}</option>`,
     ).join('');
     rows += `<tr>
-            <td style="padding:3px 5px"><input class="fi" type="date" value="${ev.date || ''}" onchange="window._distCalPendingImport[${projId}][${i}].date=this.value" style="font-family:var(--mono)"></td>
+            <td style="padding:3px 5px"><input class="fi" type="date" value="${_escHtml(ev.date || '')}" onchange="window._distCalPendingImport[${projId}][${i}].date=this.value" style="font-family:var(--mono)"></td>
             <td style="padding:3px 5px"><input class="fi" value="${_escHtml(ev.name || '')}" onchange="window._distCalPendingImport[${projId}][${i}].name=this.value" style="width:100%"></td>
             <td style="padding:3px 5px"><select class="fs" onchange="window._distCalPendingImport[${projId}][${i}].type=this.value">${selOpts}</select></td>
             <td style="padding:3px 5px"><button class="btn-del" onclick="window._distCalPendingImport[${projId}][${i}]._deleted=true;_distCalRenderPreview(${projId})">✕</button></td>
@@ -1830,7 +1830,7 @@ async function loadTemplate(e) {
     const m = contractTemplate.match(/\[([A-Z_]+)\]/g) || [];
     const vars = m.length ? [...new Set(m.map((v) => v.replace(/[\[\]]/g, '')))] : CONTRACT_VARS;
     document.getElementById('tmplStatus').innerHTML =
-      `<div style="font-size:13px;color:var(--em)">✓ Loaded: ${file.name}</div>`;
+      `<div style="font-size:13px;color:var(--em)">✓ Loaded: ${_escHtml(file.name)}</div>`;
     document.getElementById('contractVarsCard').style.display = 'block';
     renderContractVars(vars);
   };
@@ -1840,7 +1840,7 @@ function renderContractVars(vars) {
   document.getElementById('contractVars').innerHTML = vars
     .map(
       (v) =>
-        `<div class="cv-row"><div class="cv-key">[${v}]</div><input class="cv-inp" id="cv-${v}" placeholder="${v.replace(/_/g, ' ').toLowerCase()}..."></div>`,
+        `<div class="cv-row"><div class="cv-key">[${_escHtml(v)}]</div><input class="cv-inp" id="cv-${_escHtml(v)}" placeholder="${_escHtml(v.replace(/_/g, ' ').toLowerCase())}..."></div>`,
     )
     .join('');
 }

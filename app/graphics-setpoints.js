@@ -1489,7 +1489,28 @@ function egfxRefresh(projId) {
   }
   const blPropaneBl = blPropaneNorm.some((v) => v > 0) ? blPropaneNorm : blPropaneAvg;
 
+  // Bill months newer than the newest stored weather month: same plain text as the Utility Data Normalized tab
+  // (wxPendingMonths / wxPendingNotice, computations/weather-refresh.js - the one rule).
+  const _wxPendingYms = new Set();
+  bldgs.forEach((b) => {
+    const wx = getWeatherForBuilding(projId, b.id);
+    if (!wx.cache.length) return;
+    const yms = [];
+    (b.meters || []).forEach((m) => {
+      if (isBaselineExcluded(projId, m.id)) return;
+      (m.bills || []).forEach((bill) => yms.push(billMonth(bill, m.bills)));
+    });
+    wxPendingMonths(wx.cache, yms.filter((ym) => /^d{4}-d{2}$/.test(ym))).forEach((ym) => _wxPendingYms.add(ym));
+  });
+  const _wxPendingTxt = wxPendingNotice(Array.from(_wxPendingYms).sort(), (ym) => fmtMon(ym + '-01'));
+  const _wxPendingHtml = _wxPendingTxt
+    ? '<div style="background:var(--s2);border:1px solid var(--border);border-radius:7px;padding:9px 13px;margin-bottom:12px;font-size:12px;color:var(--text)">' +
+      _escHtml(_wxPendingTxt) +
+      '.</div>'
+    : '';
+
   chartsEl.innerHTML = `
+          ${_wxPendingHtml}
           ${_yoyHtml('Electric kWh', '⚡', 'kWh', 'kwh', blKwhAvg)}
           ${totalBlKwh > 0 ? _yoyHtml('Electric kW', '⚡', 'kW', 'kw', _blKwFromMap) : ''}
           ${hasGas ? _yoyHtml('Gas Therms', '🔥', 'therms', 'gas', blGasAvg) : ''}
