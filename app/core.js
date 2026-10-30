@@ -3118,9 +3118,6 @@ function toggleProjDetailPanel(projId, panelKey) {
 
 const FULLWIN_TABS = ['savings', 'hvacload', 'utility', 'energygfx'];
 function sPTab(tab, el) {
-  // Clear a stray Effective Schedules Import result modal (2026-09-25 fix) — see
-  // emCloseStrayScheduleResultModal (app/equipment-matrix.js) for why this is needed here.
-  if (typeof emCloseStrayScheduleResultModal === 'function') emCloseStrayScheduleResultModal();
   document.querySelectorAll('.ptab').forEach((b) => b.classList.remove('active'));
   document.querySelectorAll('.pdt').forEach((b) => {
     b.classList.remove('active');

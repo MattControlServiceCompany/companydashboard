@@ -87,13 +87,13 @@ const src = fs.readFileSync(path.join(REPO, 'app/equipment-matrix.js'), 'utf8');
 assert(src.includes('function emAttachEffectiveSchedules'), 'source contains emAttachEffectiveSchedules');
 assert(src.includes('function emParseEffectiveSchedulesCSV'), 'source contains emParseEffectiveSchedulesCSV');
 assert(src.includes('function _emParseScheduleBlock'), 'source contains _emParseScheduleBlock');
-assert(src.includes('function emTriggerEffectiveSchedulesImport'), 'source contains the import button handler');
-assert(src.includes('function emShowEffectiveSchedulesResult'), 'source reports the import result (matched/unmatched)');
+assert(!src.includes('function emTriggerEffectiveSchedulesImport'), 'Equipment Matrix has no second import entry point (District Calendar is the one)');
+assert(src.includes('function emAttachParsedSchedules'), 'source contains the shared attach function the District Calendar import calls');
 
 const sandbox = {
   console,
   window: {},
-  document: undefined, // this test never touches DOM-only functions (emTriggerEffectiveSchedulesImport, etc.)
+  document: undefined, // this test never touches DOM-only functions (DOM-only functions)
   sget,
   sset,
   DB: { get: sget, set: sset, isReady: () => true },

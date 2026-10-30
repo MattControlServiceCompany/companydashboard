@@ -351,6 +351,25 @@
     });
     return out;
   }
+  // Display text for the WebCTRL "dates" cell: the zero codes become words. Display only; stored text is unchanged.
+  function readableDates(raw) {
+    return String(raw == null ? '' : raw)
+      .replace(/Year\s+0+\s*\(any\)/gi, 'any year')
+      .replace(/Day of Month\s+0+\s*\(any\)/gi, 'any day of the month')
+      .replace(/(^|[^f] )Month\s+0+\s*\(any\)/gi, '$1any month');
+  }
+  // Display text for the hours of one group schedule: { text, note }. note is set when the file has no readable
+  // clock time; it holds the raw text so the screen can show it on hover only.
+  function readableHours(s) {
+    var start = norm(s.start);
+    var end = norm(s.end);
+    if (/\d/.test(start + end)) return { text: s.mode + ' ' + start + ' - ' + end, note: '' };
+    var raw = [start, end].filter(Boolean).join(' - ');
+    return {
+      text: s.mode + ', hours not in file',
+      note: 'The export has no clock time for this row' + (raw ? ' (it says: ' + raw + ')' : '') + '.',
+    };
+  }
   function scheduleText(s) {
     var hours = s.start || s.end ? s.start + ' - ' + s.end : '';
     return [s.description, s.type, s.days, s.mode, hours, s.dates, s.priority !== 'Normal' ? s.priority : '']
@@ -439,6 +458,8 @@
     pickBaseline: pickBaseline,
     applyScheduleImport: applyScheduleImport,
     daysText: daysText,
+    readableDates: readableDates,
+    readableHours: readableHours,
     readGroupRows: readGroupRows,
     scheduleText: scheduleText,
     groupText: groupText,

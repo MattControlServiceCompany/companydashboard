@@ -88,12 +88,13 @@ const before = Object.keys(sb.__store).length;
 run([spOff, schedLong]);
 t.eq(Object.keys(sb.__store).length, before, 'computing findings writes nothing');
 
-// 6. Set points are read from the matrix, not stored
+// 6. Set points come from the same source as the Set Points tab, not stored
 sb.__store['en_eqmatrix_900'] = JSON.stringify({ rows: [spOff], importedAt: 'x', buildings: [] });
+sb.getUDBldgs = () => [{ id: 'b900', name: 'Fake Hall A', meters: [] }];
 const viaTab = sb.faSetPointRows(900);
-const viaMatrix = sb.emBuildSetpointExportRows(900);
-t.eq(viaTab, viaMatrix, 'Set Points view returns emBuildSetpointExportRows output');
-t.ok(viaTab.length === 1 && viaTab[0].indexOf('72') !== -1, 'set point value comes from the matrix row');
+const viaZones = sb.emCurrentSetpointZones(900, 'b900');
+t.eq(viaTab.length, viaZones.length, 'Set Points view has one row per Set Points zone');
+t.ok(viaTab.length === 1 && viaTab[0][2] === '72', 'set point value comes from the matrix row');
 sb.faEdit(900, 'auto:' + spOff.id + '::setpoint-off-standard', 'status', 'Planned');
 sb.faAdd(900);
 const saved = sb.__store['en_audit_900'] || '';

@@ -613,6 +613,14 @@ function _pricingSelectedMeasures(projId) {
 // Cost lines of each Energy Savings measure, rolled up for the project, with the matrix savings beside them.
 // Cost only: the savings come from the matrix (msrAnnualSavings / calcMeasureDollars) and the payback from simplePayback.
 // Cost lines are entered on the Energy Savings page (measure detail, Financials).
+// The note under the cost table. Plain words; the same text for every project.
+function _pricingCostNote(costed, total) {
+  if (!costed) {
+    return 'No measure has cost lines yet, so there is no project payback. To add one, open the measure on the Energy Savings page and use Financials: cost lines.';
+  }
+  if (costed >= total) return 'All ' + total + ' measure' + (total === 1 ? ' has' : 's have') + ' cost lines. The project payback counts all of them.';
+  return 'The project payback counts only the ' + costed + ' of ' + total + ' measures that have cost lines. Add cost lines to the other ' + (total - costed) + ' on the Energy Savings page.';
+}
 function _pricingMeasureCostRollupHTML(projId) {
   var msrs = _pricingSelectedMeasures(projId);
   if (!msrs.length) return '';
@@ -647,7 +655,7 @@ function _pricingMeasureCostRollupHTML(projId) {
   var tf = 'padding:6px 10px;background:var(--s1);font-weight:700;border-top:2px solid var(--border2);border-right:1px solid var(--border);font-variant-numeric:tabular-nums;white-space:nowrap;text-align:right;';
   return (
     '<div id="pricing-measure-cost-' + projId + '" style="flex-shrink:0;padding:10px 14px">' +
-    '<div style="font-size:11px;font-weight:700;color:var(--text2);text-transform:uppercase;letter-spacing:.5px;margin-bottom:6px">Measure cost lines (entered on the Energy Savings page)</div>' +
+    '<div style="font-size:11px;font-weight:700;color:var(--text2);text-transform:uppercase;letter-spacing:.5px;margin-bottom:6px">Measure cost lines (add them on the Energy Savings page: open a measure, then Financials)</div>' +
     '<div class="ch-tbl-outer" style="border:1px solid var(--border);border-radius:6px;overflow:hidden"><div class="ch-tbl-scroll" style="overflow-x:auto">' +
     '<table class="ch-tbl" style="border-collapse:separate;border-spacing:0;width:100%;font-size:12px;color:var(--text)">' +
     '<thead><tr>' +
@@ -663,7 +671,7 @@ function _pricingMeasureCostRollupHTML(projId) {
     '<td style="' + tf + '">' + money(t.annualAll) + '</td>' +
     '<td style="' + tf + 'border-right:none">' + (t.years === null ? '—' : t.years.toFixed(1) + ' yrs') + '</td>' +
     '</tr></tfoot></table></div></div>' +
-    '<div style="font-size:10px;color:var(--text3);margin-top:4px">' + (t.costedCount === 0 ? 'No measure has cost lines yet, so there is no project payback.' : 'The project payback counts only the ' + t.costedCount + ' measure' + (t.costedCount === 1 ? '' : 's') + ' that ' + (t.costedCount === 1 ? 'has' : 'have') + ' cost lines.') + '</div></div>'
+    '<div style="font-size:10px;color:var(--text3);margin-top:4px">' + _pricingCostNote(t.costedCount, msrs.length) + '</div></div>'
   );
 }
 
