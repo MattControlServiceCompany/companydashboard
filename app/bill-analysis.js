@@ -17942,6 +17942,16 @@ function _pdfGroupBills(bills, warnings, multi) {
   groups.forEach((g) => g.types.sort((a, b) => _pdfCommRank(a.comm) - _pdfCommRank(b.comm)));
   return groups;
 }
+// Hover text of the "fixed" chip: which values the reader changed.
+function _pdfFixedTitle(names) {
+  const list = (names || []).filter(Boolean);
+  return list.length ? 'The reader changed: ' + list.join(', ') : 'Values the reader changed on this bill';
+}
+// Text of a utility button or card: the utility, then (for an error) the reason in plain words, or (check).
+function _pdfTypeWords(t) {
+  if (t.level === 'err') return t.comm + ' · ' + (t.reason || 'needs a fix');
+  return t.comm + (t.level ? ' (check)' : '');
+}
 // "1 bill", "4 bills".
 function _pdfCountWord(n, word) {
   return n + ' ' + word + (n === 1 ? '' : 's');
@@ -18320,7 +18330,7 @@ function _pdfBuildingListHtml(nav) {
       const idxs = [].concat(...g.types.map((t) => t.idxs)).sort((a, b) => order[a] - order[b]);
       const months = [...new Set(idxs.map((i) => nav.monthOf[i]).filter(Boolean))];
       const monthTxt = months.length > 2 ? months[0] + ' and ' + (months.length - 1) + ' more' : months.join(', ');
-      const comms = g.types.map((t) => t.comm + (t.level === 'err' ? ' (error)' : t.level ? ' (check)' : '')).join(', ');
+      const comms = g.types.map(_pdfTypeWords).join(', ');
       const saved = idxs.filter((i) => dup[i]).length;
       const differ = idxs.filter((i) => dup[i] && (dup[i].diffFields || []).length > 0).length;
       const st = _pdfBldgStatus(g.review, saved, differ);
@@ -18371,7 +18381,7 @@ function _pdfSelectorsHtml(nav) {
             '" aria-pressed="' + (on ? 'true' : 'false') + '" title="' +
             _escHtml(t.level ? t.comm + ': ' + t.reason + (t.warn > 1 ? ' (' + t.warn + ' bills to review)' : '') : 'Show the ' + t.comm + ' bill of this building') +
             '" onclick="selectCommTab(this.dataset.comm)">' +
-            _escHtml(t.comm + (t.level === 'err' ? ' · error' : t.level ? ' · check' : '')) + '</button>'
+            _escHtml(t.level === 'err' ? _pdfTypeWords(t) : t.comm + (t.level ? ' · check' : '')) + '</button>'
           );
         })
         .join('') +
@@ -18588,7 +18598,7 @@ function _pdfRenderTopBar(opts) {
       '<div class="pdf-pop-title">The reader noticed these. They do not stop you from saving.</div>' + chips.warn.join('');
   }
   if (chipsOk && chips.fixed.length) {
-    chip('green', 'fixed', chips.fixed.length + ' fixed', 'Values the reader changed on this bill');
+    chip('green', 'fixed', chips.fixed.length + ' fixed', _pdfFixedTitle(chips.fixedNames));
     popHtml.fixed =
       '<div class="pdf-pop-title">The reader changed these values. Open a line to see how, or to revert it.</div>' +
       chips.fixed.join('');
@@ -20815,6 +20825,7 @@ function renderPDFFields(parsed, warnings) {
     );
   const _chipReview = _issueList.filter((e) => e.level === 'review').map(_issueHtml);
   const _chipWarn = _issueList.filter((e) => e.level === 'warn').map(_issueHtml);
+  const _chipFixedNames = [];
   Object.keys(parsed)
     .filter((k) => k.startsWith('_auto_corrected_') || k.startsWith('_ocr_consensus_') || k.startsWith('_auto_recovered_B2_'))
     .forEach((k) => {
@@ -20822,6 +20833,7 @@ function renderPDFFields(parsed, warnings) {
       const field = k.replace(/^_(auto_corrected|ocr_consensus|auto_recovered_B2)_/, '');
       const fi = _fixInfo(field, type);
       if (!fi) return;
+      _chipFixedNames.push(LABELS[field] || field);
       _chipFixed.push(
         _pdfPopItem(
           (LABELS[field] || field) + ': read ' + fi.from + ', fixed to ' + fi.to,
@@ -20836,6 +20848,7 @@ function renderPDFFields(parsed, warnings) {
     review: _chipReview,
     warn: _chipWarn,
     fixed: _chipFixed,
+    fixedNames: _chipFixedNames,
     manualIdx: _showManualAssign ? _dupIdx : null,
   };
   // Header: the title, the Data analysis bar and Manual Assign. The bar counts and links come from the same _issueList
