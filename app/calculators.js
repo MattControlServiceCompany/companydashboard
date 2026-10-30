@@ -855,11 +855,25 @@ function _buildBaselineDataHtml(b, projId) {
 // "Where these numbers come from" box (Phase 3, 2026-10-13): shows which data the estimate uses (from the single resolver
 // resolveHvacLoadData) and holds the annual-totals entry. The entry is stored on the building as
 // b.quickAnnual and is shown as "not used" once the building has baseline bills.
+// What the source box says about missing data and whether the annual-totals entry starts open.
+// Pure: takes the result of resolveHvacLoadData. Returns { open, summary, missing }.
+function hvlSourceHelp(r) {
+  if (r.source === 'bills') return { open: false, summary: 'Optional: type annual totals instead of using bills', missing: '' };
+  if (r.source === 'annual') return { open: true, summary: 'Annual totals (quick entry)', missing: '' };
+  return {
+    open: true,
+    summary: 'Annual totals (quick entry)',
+    missing:
+      'Missing: no monthly bills are in the baseline for this building. Add bills or include a meter in the Utility Data tab, or type the annual totals below.',
+  };
+}
+
 function _hvlRenderSourceCard(projId, b) {
   const wrap = document.getElementById('hvl-source-' + projId);
   if (!wrap || !b) return;
   const r = resolveHvacLoadData(projId, b);
   const q = getHvacQuickAnnual(b) || {};
+  const help = hvlSourceHelp(r);
   const val = (v) => (v ? _escHtml(String(v)) : '');
   const note =
     r.source === 'bills' && r.quick
@@ -874,7 +888,9 @@ function _hvlRenderSourceCard(projId, b) {
             <div style="padding:16px">
               <div style="font-size:13px;color:var(--text)">Using: <strong id="hvl-source-label-${projId}">${_escHtml(r.label)}</strong></div>
               ${note}
-              <div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.6px;color:var(--text3);margin:14px 0 8px">Annual totals (quick entry)</div>
+              ${help.missing ? `<div style="font-size:12px;color:var(--text);margin-top:6px">${_escHtml(help.missing)}</div>` : ''}
+              <details${help.open ? ' open' : ''}>
+              <summary style="cursor:pointer;font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.6px;color:var(--text3);margin:14px 0 8px">${_escHtml(help.summary)}</summary>
               <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:12px">
                 ${field('year', 'Year', q.year, 'For example 2025')}
                 ${field('kwh', 'Electricity per year (kWh)', q.kwh, 'From a year of electric bills')}
@@ -886,6 +902,7 @@ function _hvlRenderSourceCard(projId, b) {
                 <button class="btn btn-em btn-sm" id="hvl-q-save-${projId}" onclick="hvacQuickAnnualSave(${projId})">Save annual totals</button>
                 <button class="btn btn-ghost btn-sm" onclick="hvacQuickAnnualClear(${projId})">Clear</button>
               </div>
+              </details>
             </div>
           </div>`;
 }
