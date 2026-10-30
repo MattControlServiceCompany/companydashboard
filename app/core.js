@@ -1592,7 +1592,7 @@ function renderDetail(p) {
                     <span class="card-title">🗓️ Manual calendar events</span>
                     <div style="display:flex;gap:8px">
                       <button class="btn btn-ghost btn-sm" onclick="distCalAddRow(${p.id})">+ Add Event</button>
-                      <button class="btn btn-ghost btn-sm" style="color:var(--red);border-color:rgba(244,63,94,.35)" onclick="distCalDeleteAll(${p.id})">🗑 Delete All</button>
+                      <button id="distcal-delall-${p.id}" class="btn btn-ghost btn-sm" style="color:var(--red);border-color:rgba(244,63,94,.35)${(p.districtCalendar || []).length ? '' : ';display:none'}" onclick="distCalDeleteAll(${p.id})">🗑 Delete All</button>
                       <button class="btn btn-em btn-sm" onclick="distCalShowImport(${p.id})">📥 Import Calendar</button>
                     </div>
                   </div>

@@ -426,7 +426,8 @@
       pid +
       ')">' +
       (cfg ? 'Save address' : 'Save and sync') +
-      '</button></div>';
+      '</button></div>' +
+      '<div class="pcal-note" style="margin-top:4px;font-size:12px;color:var(--text2)">In Google Calendar: Settings, then the calendar, then Integrate calendar. Copy the Secret address in iCal format (it ends in .ics).</div>';
     var history = '';
     if (hist.length) {
       history =
@@ -500,6 +501,8 @@
     var tz = (document.getElementById('pcal-tz-' + pid) || {}).value || DEFAULT_TZ;
     url = url.trim();
     if (!url) return say(pid, 'Enter the feed address first.');
+    var bad = CalendarDiff.feedUrlProblem(url);
+    if (bad) return say(pid, bad);
     var had = !!cfgOf(pid);
     await DB.set(k('cfg', pid), { icsUrl: url, timezone: tz });
     state(pid).month = null;
@@ -573,7 +576,10 @@
   window.pcalUi = { table: table, num: num, stamp: stamp, ensureStyle: ensureStyle };
   window.pcalRender = render;
   window.pcalSync = sync;
-  // Called when the District Calendar tab opens. Syncs once if the saved copy is older than 1 hour. No timers.
+  window.pcalHasFeed = function (pid) {
+    return !!cfgOf(pid);
+  };
+  // Called when the District Calendar tab opens, and for every project once per page load (pcalAutoSyncAll). Syncs once if the saved copy is older than 1 hour. No timers.
   // A second render within 60 seconds does not call again (a failed sync leaves the copy old).
   window.pcalAutoSync = function (pid) {
     var s = state(pid);
@@ -583,6 +589,20 @@
     s.autoAt = Date.now();
     return sync(pid);
   };
+  // Runs once per page load, after the first full data pull (event dbFullPull, signed in). Checks every project
+  // with a feed through pcalAutoSync (same 1 hour rule). No timers, no polling.
+  window.pcalAutoSyncAll = function () {
+    var list = DB.get('en_projects', []);
+    if (!Array.isArray(list)) return;
+    list.forEach(function (p) {
+      if (p && p.id != null) window.pcalAutoSync(p.id);
+    });
+  };
+  if (typeof window.addEventListener === 'function') {
+    window.addEventListener('dbFullPull', function () {
+      window.pcalAutoSyncAll();
+    });
+  }
   window.pcalSave = save;
   window.pcalMonth = function (pid, d) {
     var s = state(pid);
