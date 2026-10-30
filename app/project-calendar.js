@@ -579,7 +579,7 @@
   window.pcalHasFeed = function (pid) {
     return !!cfgOf(pid);
   };
-  // Called when the District Calendar tab opens. Syncs once if the saved copy is older than 1 hour. No timers.
+  // Called when the District Calendar tab opens, and for every project once per page load (pcalAutoSyncAll). Syncs once if the saved copy is older than 1 hour. No timers.
   // A second render within 60 seconds does not call again (a failed sync leaves the copy old).
   window.pcalAutoSync = function (pid) {
     var s = state(pid);
@@ -589,6 +589,20 @@
     s.autoAt = Date.now();
     return sync(pid);
   };
+  // Runs once per page load, after the first full data pull (event dbFullPull, signed in). Checks every project
+  // with a feed through pcalAutoSync (same 1 hour rule). No timers, no polling.
+  window.pcalAutoSyncAll = function () {
+    var list = DB.get('en_projects', []);
+    if (!Array.isArray(list)) return;
+    list.forEach(function (p) {
+      if (p && p.id != null) window.pcalAutoSync(p.id);
+    });
+  };
+  if (typeof window.addEventListener === 'function') {
+    window.addEventListener('dbFullPull', function () {
+      window.pcalAutoSyncAll();
+    });
+  }
   window.pcalSave = save;
   window.pcalMonth = function (pid, d) {
     var s = state(pid);

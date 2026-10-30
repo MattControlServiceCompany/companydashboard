@@ -52,6 +52,38 @@ function run(snap, cfgv, token, opens) {
   eq(await run(null, null, SIGNED, 1), 0, 'no feed -> no fetch');
   eq(await run({ fetchedAt: iso(3 * H), count: 0, events: {} }, cfg, '', 1), 0, 'signed out -> no fetch');
 
+  // 2b. sync on load without the tab open (event dbFullPull), no timers
+  async function load(projs, store0) {
+    const store = Object.assign({ en_projects: projs, en_cal_hist_1: [] }, store0);
+    let calls = 0, timers = 0, handler = null;
+    const win = { CH_AUTH: { getToken: () => SIGNED }, addEventListener: (n, f) => { if (n === 'dbFullPull') handler = f; } };
+    const ctx = {
+      window: win, CalendarDiff: D, console, Date, Math, JSON, Object, Array, Promise, Intl, isNaN, Number, String, parseInt, parseFloat,
+      setTimeout: () => { timers++; }, setInterval: () => { timers++; },
+      _escHtml: (x) => String(x),
+      document: { getElementById: () => null, createElement: () => ({ style: {}, setAttribute() {} }), head: { appendChild() {} }, querySelector: () => null },
+      DB: { get: (k, d) => (store[k] === undefined || store[k] === null ? d : store[k]), set: async (k, v) => { store[k] = v; } },
+      fetch: async () => { calls++; return { ok: true, json: async () => ({ ok: true, snapshot: { fetchedAt: new Date().toISOString(), count: 0, window: {}, events: {} } }) }; },
+    };
+    ctx.window.document = ctx.document;
+    vm.createContext(ctx);
+    vm.runInContext(fs.readFileSync(path.join(__dirname, '..', 'app', 'project-calendar.js'), 'utf8'), ctx);
+    if (!handler) return { calls: -1, timers };
+    await handler();
+    await new Promise((r) => setImmediate(r));
+    return { calls, timers };
+  }
+  const stale = { fetchedAt: iso(3 * H), count: 0, events: {} };
+  const fresh = { fetchedAt: new Date().toISOString(), count: 0, events: {} };
+  let r = await load([{ id: 1 }], { en_cal_cfg_1: cfg, en_cal_snap_1: stale });
+  eq(r, { calls: 1, timers: 0 }, 'load, tab closed, stale copy -> one sync, no timers');
+  r = await load([{ id: 1 }], { en_cal_cfg_1: cfg, en_cal_snap_1: fresh });
+  eq(r, { calls: 0, timers: 0 }, 'load, copy < 1 h old -> no sync');
+  r = await load([{ id: 1 }], {});
+  eq(r, { calls: 0, timers: 0 }, 'load, no feed -> no sync');
+  r = await load([{ id: 1 }, { id: 2 }], { en_cal_cfg_1: cfg, en_cal_snap_1: stale, en_cal_cfg_2: cfg, en_cal_snap_2: stale });
+  eq(r.calls, 2, 'two projects with feeds -> two syncs');
+
   // 3. mark persistence
   const TZ = 'America/Chicago';
   const ev = {
