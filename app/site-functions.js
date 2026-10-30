@@ -2507,6 +2507,16 @@ async function siteResetAllMeterTableSettings() {
    site-ui.js delegates to this array and should NOT maintain its own copy.
 */
 var RELEASE_NOTES = [
+  { v: 'v2026.10.30.188', date: '2026-10-30', title: 'District Calendar space map, Facility Audit Coverage, faster Edit Mode',
+    items: [
+      { type: 'feature', text: 'District Calendar: new space map. Link each calendar space to its BAS programs, or mark it Off-site. Suggestions can be loaded from a file.' },
+      { type: 'feature', text: 'District Calendar: upcoming events now have a BAS column: Covered, Not covered (with the minutes short), Not mapped, or Off-site.' },
+      { type: 'change', text: 'District Calendar: dates read like "2nd Monday of every month".' },
+      { type: 'feature', text: 'Facility Audit: the page opens on Coverage. It shows how much of the audit data is gathered, per building and system, grouped by identical equipment.' },
+      { type: 'feature', text: 'Facility Audit: a "Still need" list shows what is missing. "Seen in screenshot" marks a line covered, with who and when.' },
+      { type: 'change', text: 'Equipment Matrix: Edit Mode opens faster.' }
+    ]
+  },
   { v: 'v2026.10.30.187', date: '2026-10-30', title: 'PDF / OCR bill review, schedule import, District Calendar, help text',
     items: [
       { type: 'change', text: 'PDF / OCR page: review opens on bill 1, with Previous and Next buttons to move between bills.' },
