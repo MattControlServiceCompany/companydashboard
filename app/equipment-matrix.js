@@ -5745,6 +5745,24 @@ function emPointTotal(rows) {
   return { total: total, approxRows: approxRows, title: title };
 }
 
+/* ── Render-scoped compliance memo ───────────────────────────────────────────
+   emComputeCompliance bypasses its own cache whenever custom mappings are passed (always, from
+   the Audit paths), so one Audit render computed compliance + sequence readiness 3x per row
+   (stats pills, footer totals, row cells). _emCompMemo is set only for the duration of
+   emRenderAuditTable and holds one { c, s } per row id; null elsewhere = no caching. */
+var _emCompMemo = null;
+function emAuditCompliance(r, pid, maps) {
+  if (!_emCompMemo) return emComputeCompliance(r, emLoadEquipConfigFlags(pid, r.id), maps);
+  var m = _emCompMemo[r.id];
+  if (!m) m = _emCompMemo[r.id] = { c: emComputeCompliance(r, emLoadEquipConfigFlags(pid, r.id), maps), s: null };
+  return m.c;
+}
+function emAuditSeqReadiness(r, comp) {
+  var m = _emCompMemo && _emCompMemo[r.id];
+  if (!m || m.c !== comp) return emComputeSequenceReadiness(r, comp);
+  return m.s || (m.s = emComputeSequenceReadiness(r, comp));
+}
+
 /* ── emComputeAuditStats ────────────────────────────────────────────────────
    Compute average compliance % and total BAS point count across all rows.
    Returns: { avgCoverage: number, totalBASPoints: number }              */
@@ -5760,7 +5778,7 @@ function emComputeAuditStats(rows) {
     if (r.category && EM_POINT_CATEGORIES[r.category]) {
       // space-type-classifier-2026-07-29 fix: real per-row flags so the footer/summary
       // avgCoverage stat agrees with the priced coverage and the Audit table column.
-      var compliance = emComputeCompliance(r, emLoadEquipConfigFlags(_auditStatsPid, r.id), _auditStatsMaps);
+      var compliance = emAuditCompliance(r, _auditStatsPid, _auditStatsMaps);
       totalCoverage += compliance.coveragePct;
       covCount++;
     }
@@ -5772,8 +5790,8 @@ function emComputeAuditStats(rows) {
   for (var si = 0; si < rows.length; si++) {
     var sr = rows[si];
     if (!sr.category || !EM_POINT_CATEGORIES[sr.category]) continue;
-    var srCompliance = emComputeCompliance(sr, emLoadEquipConfigFlags(_auditStatsPid, sr.id), _auditStatsMaps);
-    var srReadiness = emComputeSequenceReadiness(sr, srCompliance);
+    var srCompliance = emAuditCompliance(sr, _auditStatsPid, _auditStatsMaps);
+    var srReadiness = emAuditSeqReadiness(sr, srCompliance);
     for (var sk in srReadiness) {
       if (!srReadiness.hasOwnProperty(sk)) continue;
       var seqEntry = srReadiness[sk];
@@ -7030,9 +7048,8 @@ function emComputeAuditFooterTotals(rows, defs) {
     // space-type-classifier-2026-07-29 fix: load once per row (not per emComputeCompliance
     // call below) so the footer aggregates agree with the priced coverage without adding
     // extra emLoadEquipConfigFlags calls per row.
-    var _rFlags = emLoadEquipConfigFlags(_footerPid, r.id);
     if (r.category && EM_POINT_CATEGORIES[r.category]) {
-      comp = emComputeCompliance(r, _rFlags, _footerMaps);
+      comp = emAuditCompliance(r, _footerPid, _footerMaps);
       covSum += comp.coveragePct;
       covCount++;
     }
@@ -7040,7 +7057,7 @@ function emComputeAuditFooterTotals(rows, defs) {
     // Count per-cat column presence
     if (catDefs.length) {
       if (!comp && r.category && EM_POINT_CATEGORIES[r.category]) {
-        comp = emComputeCompliance(r, _rFlags, _footerMaps);
+        comp = emAuditCompliance(r, _footerPid, _footerMaps);
       }
       for (var cdi = 0; cdi < catDefs.length; cdi++) {
         var cd = catDefs[cdi];
@@ -7063,8 +7080,8 @@ function emComputeAuditFooterTotals(rows, defs) {
 
     // Count per-seq column presence
     if (seqDefs.length) {
-      if (!comp) comp = emComputeCompliance(r, _rFlags, _footerMaps);
-      var seqReadiness = emComputeSequenceReadiness(r, comp);
+      if (!comp) comp = emAuditCompliance(r, _footerPid, _footerMaps);
+      var seqReadiness = emAuditSeqReadiness(r, comp);
       for (var sdi = 0; sdi < seqDefs.length; sdi++) {
         var sd = seqDefs[sdi];
         var sColKey = sd.key; // e.g. "_seq_sat_reset"
@@ -9164,13 +9181,14 @@ function emRenderAuditTable(data, filters) {
   // ── Pre-compute compliance and sequence readiness for each page row ──
   var complianceCache = {};
   var seqReadinessCache = {};
+  _emCompMemo = {}; // render-scoped; cleared on both exits below
   for (var pr = 0; pr < pageRows.length; pr++) {
     var r = pageRows[pr];
     // space-type-classifier-2026-07-29 fix: pass real per-row config flag overrides so
     // the visible Coverage % column agrees with the priced coverage (report-engine.js
     // already does this — this was the one call site that fed the Audit table itself).
-    complianceCache[r.id] = emComputeCompliance(r, emLoadEquipConfigFlags(_auditPid, r.id), _auditMaps);
-    seqReadinessCache[r.id] = emComputeSequenceReadiness(r, complianceCache[r.id]);
+    complianceCache[r.id] = emAuditCompliance(r, _auditPid, _auditMaps);
+    seqReadinessCache[r.id] = emAuditSeqReadiness(r, complianceCache[r.id]);
   }
 
   // ── Pre-compute BAS behavior summaries per building (Phase 5) ──
@@ -9252,7 +9270,8 @@ function emRenderAuditTable(data, filters) {
       var def = defs[di];
       cells += emRenderAuditCell(row, def, compliance, coveredMap, naMap, missingMap, seqReadiness, rowBehaviorSummary);
     }
-    return '<tr>' + cells + '</tr>';
+    // content-visibility:auto (same as Raw View rows): the browser skips layout/paint for off-screen rows.
+    return '<tr style="content-visibility:auto;contain-intrinsic-size:auto 32px">' + cells + '</tr>';
   }
 
   // Pagination bar removed (2026-09-23) — all rows render in the scrollable wrap.
@@ -9299,6 +9318,7 @@ function emRenderAuditTable(data, filters) {
     if (emptyParsedTfoot) wrap.querySelector('table').appendChild(emptyParsedTfoot);
     emUpdateStickyOffsets();
     emAttachColResizeHandler(wrap);
+    _emCompMemo = null;
     return;
   }
 
@@ -9359,6 +9379,7 @@ function emRenderAuditTable(data, filters) {
   }
   emUpdateStickyOffsets();
   emAttachColResizeHandler(wrap);
+  _emCompMemo = null;
 }
 
 /* ── emRenderAuditCell ──────────────────────────────────────────────────────
