@@ -261,7 +261,7 @@ async function open(context, theme, width) {
             return {
               total: links.length,
               cutLinks: vis.filter((a) => !inside(a.getBoundingClientRect(), bar) || (lr && !inside(a.getBoundingClientRect(), lr))).length,
-              more: (document.querySelector('#pdfReviewBar .pdf-rb-more') || {}).textContent || '',
+              more: (document.querySelector('#pdfReviewBar .pdf-rb-more:not(.pdf-rb-create)') || {}).textContent || '',
               barBottom: bar.bottom,
               barH: bar.height,
               vh: window.innerHeight,
@@ -274,12 +274,12 @@ async function open(context, theme, width) {
           ok(c1.total === 3 && c1.more === '+15 more issues', tag + '3 links and "+15 more issues": ' + JSON.stringify(c1));
           ok(c1.cutLinks === 0, tag + 'no link cut ' + JSON.stringify(c1));
           if (SHOTS) await v.page.screenshot({ path: path.join(SHOTS, '2026-10-29-ocrbar-list-after-' + theme + '-18.png') });
-          await v.page.click('#pdfReviewBar .pdf-rb-more');
+          await v.page.click('#pdfReviewBar .pdf-rb-more:not(.pdf-rb-create)');
           const c2 = await cut();
           ok(c2.total === 18 && c2.more === 'Show less', tag + 'expanded shows all 18: ' + JSON.stringify(c2));
           ok(c2.cutLinks === 0 && c2.barBottom <= c2.vh + 1 && c2.barH <= c2.vh * 0.5 + 60, tag + 'expanded: none cut, bar on screen, list capped ' + JSON.stringify(c2));
           if (SHOTS) await v.page.screenshot({ path: path.join(SHOTS, '2026-10-29-ocrbar-list-after-' + theme + '-18-expanded.png') });
-          await v.page.click('#pdfReviewBar .pdf-rb-more');
+          await v.page.click('#pdfReviewBar .pdf-rb-more:not(.pdf-rb-create)');
           const c3 = await cut();
           ok(c3.total === 3 && /^\+15/.test(c3.more), tag + 'Show less collapses again');
         } else {

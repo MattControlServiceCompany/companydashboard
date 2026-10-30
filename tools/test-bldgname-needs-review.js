@@ -117,6 +117,7 @@ function runCase(sandbox, bldgBarStub, name, bills, billWarnings) {
     `
     window._pdfMultiIdx = 0;
     window._pdfBuildingTab = undefined;
+    window._pdfBldgsAll = true; // this test checks every building is listed; the collapsed list is tested in test-ocr-values-space.js
     window._pdfCommTab = undefined;
     window._pdfDupMap = {};
     window._pdfQueue = null;
