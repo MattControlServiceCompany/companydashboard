@@ -147,8 +147,24 @@ function wxProjectZips(project, buildings) {
   return Array.from(set);
 }
 
+// Months of `yms` that are NEWER than the newest stored weather month (the source has not published them yet).
+// Older gaps are not "not yet available" and are not listed. Returns a sorted 'YYYY-MM' array.
+function wxPendingMonths(weatherRows, yms) {
+  const newest = wxNewestYm(weatherRows);
+  if (!newest) return [];
+  return Array.from(new Set((yms || []).filter((ym) => ym > newest))).sort();
+}
+
+// Plain text for the pending months, or '' when none. monthLabel(ym) -> 'Sep 2026'.
+function wxPendingNotice(pending, monthLabel) {
+  if (!pending || !pending.length) return '';
+  return 'Weather for ' + pending.map(monthLabel).join(', ') + ' not yet available';
+}
+
 if (typeof module !== 'undefined' && module.exports) {
   module.exports = {
+    wxPendingMonths,
+    wxPendingNotice,
     wxLastCompleteYm,
     wxNewestYm,
     wxNeedsRefresh,

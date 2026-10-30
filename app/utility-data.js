@@ -6251,8 +6251,22 @@ function renderNormPane(pane, m, bills, incl) {
       '</span>' +
       '</div>';
 
+    // Bill months newer than the newest stored weather month: say so plainly (wxPendingNotice, one text rule).
+    const _wxPendingTxt = weatherByYm
+      ? wxPendingNotice(
+          wxPendingMonths(
+            Object.values(weatherByYm),
+            rows.filter((r) => !r.partial).map((r) => r.ym),
+          ),
+          (ym) => fmtMon(ym + '-01'),
+        )
+      : '';
     const wddNotice =
-      udNormMetric === 'weather' && !hasWeather
+      _wxPendingTxt && hasWeather
+        ? '<div style="background:var(--s2);border:1px solid var(--border);border-radius:7px;padding:9px 13px;margin-bottom:12px;font-size:12px;color:var(--text)">' +
+          _escHtml(_wxPendingTxt) +
+          '.</div>'
+        : udNormMetric === 'weather' && !hasWeather
         ? '<div style="background:var(--warn-dim);border:1px solid rgba(245,158,11,.25);border-radius:7px;padding:9px 13px;margin-bottom:12px;font-size:12px;color:var(--warn)">' +
           '⚠️ No ' +
           weatherDDLabel +
@@ -6590,7 +6604,26 @@ function wddSaveCache(zip, rows) {
 const _wddRefreshTried = new Set();
 async function wddRefreshProjectWeather(pid) {
   const proj = (typeof projects !== 'undefined' ? projects : []).find((p) => String(p.id) === String(pid));
-  const zips = wxProjectZips(proj, getUDBldgs(pid)).filter((z) => !_wddRefreshTried.has(z));
+  return wddRefreshZips(wxProjectZips(proj, getUDBldgs(pid)));
+}
+// Once per page load (event dbFullPull, same hook as the calendar): every ZIP of every project's buildings.
+// Each ZIP is tried once per page load; wxRefreshZip makes no call when the newest stored month is the last
+// complete month. No timers, no polling.
+function wddRefreshAllProjectsWeather() {
+  const list = sget('en_projects', []) || [];
+  const zips = new Set();
+  list.forEach((p) => {
+    if (p && p.id != null) wxProjectZips(p, getUDBldgs(p.id)).forEach((z) => zips.add(z));
+  });
+  return wddRefreshZips(Array.from(zips));
+}
+if (typeof window !== 'undefined' && window.addEventListener) {
+  window.addEventListener('dbFullPull', function () {
+    wddRefreshAllProjectsWeather();
+  });
+}
+async function wddRefreshZips(allZips) {
+  const zips = allZips.filter((z) => !_wddRefreshTried.has(z));
   let changed = false;
   for (const zip of zips) {
     _wddRefreshTried.add(zip);
