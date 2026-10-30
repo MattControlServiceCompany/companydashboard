@@ -243,6 +243,21 @@
   var AUTO_SYNC_MS = 60 * 60 * 1000;
 
   // Should the tab sync by itself on open? Needs a saved feed, a signed-in user, and a copy older than 1 hour (or none).
+  // Client copy of the feed address rule in netlify/functions/lib/calendar/feed-url.mjs (the server stays the real gate).
+  // Returns '' when the address looks like a Google Calendar iCal link, else a plain message.
+  function feedUrlProblem(value) {
+    var u;
+    try {
+      u = new URL(String(value || ''));
+    } catch (e) {
+      return 'That is not a web address. Paste the secret address in iCal format from Google Calendar.';
+    }
+    if (u.protocol !== 'https:' || u.hostname !== 'calendar.google.com' || u.port || u.username || u.password || !/\.ics$/i.test(u.pathname)) {
+      return 'That is not a Google Calendar feed. The address must start with https://calendar.google.com and end in .ics.';
+    }
+    return '';
+  }
+
   function needsAutoSync(o) {
     if (!o.cfg || !o.token) return false;
     var t = o.snap && o.snap.fetchedAt ? Date.parse(o.snap.fetchedAt) : NaN;
@@ -280,6 +295,7 @@
   var api = {
     MARK_DAYS: MARK_DAYS,
     needsAutoSync: needsAutoSync,
+    feedUrlProblem: feedUrlProblem,
     carriedMarks: carriedMarks,
     calendarDay: calendarDay,
     allDayLastDay: allDayLastDay,

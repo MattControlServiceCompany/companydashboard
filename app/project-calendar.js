@@ -426,7 +426,8 @@
       pid +
       ')">' +
       (cfg ? 'Save address' : 'Save and sync') +
-      '</button></div>';
+      '</button></div>' +
+      '<div class="pcal-note" style="margin-top:4px;font-size:12px;color:var(--text2)">In Google Calendar: Settings, then the calendar, then Integrate calendar. Copy the Secret address in iCal format (it ends in .ics).</div>';
     var history = '';
     if (hist.length) {
       history =
@@ -500,6 +501,8 @@
     var tz = (document.getElementById('pcal-tz-' + pid) || {}).value || DEFAULT_TZ;
     url = url.trim();
     if (!url) return say(pid, 'Enter the feed address first.');
+    var bad = CalendarDiff.feedUrlProblem(url);
+    if (bad) return say(pid, bad);
     var had = !!cfgOf(pid);
     await DB.set(k('cfg', pid), { icsUrl: url, timezone: tz });
     state(pid).month = null;
@@ -573,6 +576,9 @@
   window.pcalUi = { table: table, num: num, stamp: stamp, ensureStyle: ensureStyle };
   window.pcalRender = render;
   window.pcalSync = sync;
+  window.pcalHasFeed = function (pid) {
+    return !!cfgOf(pid);
+  };
   // Called when the District Calendar tab opens. Syncs once if the saved copy is older than 1 hour. No timers.
   // A second render within 60 seconds does not call again (a failed sync leaves the copy old).
   window.pcalAutoSync = function (pid) {

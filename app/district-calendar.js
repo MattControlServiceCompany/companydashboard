@@ -717,9 +717,14 @@ function renderDistCalTable(projId) {
   p.districtCalendar = p.districtCalendar || [];
   const wrap = document.getElementById('distcal-table-' + projId);
   if (!wrap) return;
+  const delBtn = document.getElementById('distcal-delall-' + projId);
+  if (delBtn) delBtn.style.display = p.districtCalendar.length ? '' : 'none';
   if (!p.districtCalendar.length) {
+    const hasFeed = typeof pcalHasFeed === 'function' && pcalHasFeed(projId);
     wrap.innerHTML =
-      '<div style="text-align:center;color:var(--text3);padding:30px;font-size:13px">No manual events. The synced feed is shown above.</div>';
+      '<div style="text-align:center;color:var(--text3);padding:30px;font-size:13px">No manual events.' +
+      (hasFeed ? ' The synced feed is shown above.' : ' No calendar feed is set up yet. Add the feed address above.') +
+      '</div>';
     return;
   }
   const rows = p.districtCalendar.sort((a, b) => new Date(a.date) - new Date(b.date));
