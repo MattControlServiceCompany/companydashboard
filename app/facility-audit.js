@@ -5,12 +5,13 @@
 // Automatic findings are NOT stored: computations/audit-rules.js recomputes them on every read.
 // The Deficiency List is a filter on the same records. Set points are NEVER stored here: the Set Points
 // view reads emCurrentSetpointZones (app/equipment-matrix.js, same as the Set Points tab) each time.
+// The Coverage view (default) is the internal tracker: computations/audit-coverage.js auditComputeCoverage, render only.
 // Cost and savings link through measureId to the existing measures; no energy math here.
 
 var FA_STATUSES = ['Open', 'Planned', 'Done', 'Dismissed'];
 var FA_ISSUE_TYPES = ['Energy Services', 'Optimization', 'Deficiency'];
 var FA_EDIT_FIELDS = ['status', 'notes', 'cost', 'hours', 'picture', 'pictureLink', 'how', 'change', 'measureId'];
-var _faView = 'findings';
+var _faView = 'coverage';
 
 function faLoad(pid) {
   var d = sget('en_audit_' + pid, null);
@@ -375,9 +376,74 @@ var _faCss =
   '.fa-fld input{background:var(--s2);color:var(--text);border:1px solid var(--border);border-radius:4px;padding:4px 6px;font-size:12px}' +
   '.fa-line{flex-basis:100%;font-size:12px}' +
   '.fa-cell{width:100%;min-width:140px;box-sizing:border-box;background:var(--s2);color:var(--text);border:1px solid var(--border);border-radius:4px;padding:4px 6px;font-size:12px;font-family:inherit;resize:vertical}' +
+  '.fa-vscroll{max-height:320px;overflow:auto}' +
+  '.fa-vscroll th{position:sticky;top:0;z-index:var(--z-sticky-head,3)}' +
+  '.fa-tbl tr.fa-total td{font-weight:600;background:var(--s1)}' +
+  '.fa-tbl td.fa-num,.fa-tbl th.fa-num{text-align:right;white-space:nowrap}' +
+  '.fa-cols{display:grid;grid-template-columns:repeat(auto-fit,minmax(300px,1fr));gap:12px;margin-bottom:12px}' +
+  '.fa-big{font-size:20px;font-weight:600}' +
   '.fa-empty{padding:24px;text-align:center}' +
   '.fa-review{border:1px solid var(--border);border-radius:6px;padding:8px;margin-bottom:12px;font-size:12px}' +
   '.fa-tbl summary{cursor:pointer}';
+
+function _faCovTable(heads, rowsHtml, totalHtml) {
+  return (
+    '<div class="ch-tbl-outer fa-outer fa-vscroll"><table class="fa-tbl"><thead><tr>' +
+    heads
+      .map(function (h) {
+        return '<th' + (h[1] ? ' class="fa-num"' : '') + '>' + _escHtml(h[0]) + '</th>';
+      })
+      .join('') +
+    '</tr></thead><tbody>' +
+    rowsHtml +
+    (totalHtml || '') +
+    '</tbody></table></div>'
+  );
+}
+
+function _faCovTally(list, total, label) {
+  var h = list
+    .map(function (r) {
+      return '<tr><td>' + _escHtml(r.name) + '</td><td class="fa-num">' + r.covered + ' of ' + r.total + '</td><td class="fa-num">' + r.pct + '%</td></tr>';
+    })
+    .join('');
+  var t = '<tr class="fa-total"><td>All</td><td class="fa-num">' + total.covered + ' of ' + total.total + '</td><td class="fa-num">' + total.pct + '%</td></tr>';
+  return _faCovTable([[label], ['Covered', 1], ['%', 1]], h, t);
+}
+
+// Coverage view: render only. Every number comes from auditComputeCoverage.
+function _faCoverageView(pid) {
+  var m = emLoadMatrix(pid);
+  var rows = (m && m.rows) || [];
+  if (!rows.length) return '<div class="fa-empty">No equipment yet. Import the BAS points in the Equipment Matrix first.</div>';
+  var c = auditComputeCoverage(rows);
+  var need = c.stillNeed
+    .map(function (n) {
+      return (
+        '<tr><td>' + _escHtml(n.type) + '</td><td class="fa-num">' + n.units + '</td><td>' + _escHtml(n.buildings.join(', ')) + '</td><td>' + _escHtml(n.example) + '</td><td>' + _escHtml(n.reason) + '</td></tr>'
+      );
+    })
+    .join('');
+  var groups = c.groups
+    .map(function (g) {
+      return (
+        '<tr><td>' + _escHtml(g.type) + '</td><td class="fa-num">' + g.units + '</td><td>' + _escHtml(g.buildings.join(', ')) + '</td><td>' + (g.covered ? 'Covered' : 'Need data') + '</td></tr>'
+      );
+    })
+    .join('');
+  return (
+    '<div class="fa-bar"><span class="fa-big">' + c.pct + '% covered</span><span class="fa-sub">' + c.covered + ' of ' + c.total + ' units, in ' + c.groups.length + ' groups of identical BAS points. ' +
+    'Equipment with the same BAS points as a covered unit counts as covered. Serving units are checked for their supply air temperature set point only.</span></div>' +
+    '<div class="fa-cols"><div><div class="fa-sub">By building</div>' + _faCovTally(c.buildings, c, 'Building') + '</div>' +
+    '<div><div class="fa-sub">By system type</div>' + _faCovTally(c.types, c, 'System type') + '</div></div>' +
+    '<div class="fa-sub">Still need (' + c.stillNeed.length + ')</div>' +
+    (need
+      ? _faCovTable([['System type'], ['Units', 1], ['Buildings'], ['Example'], ['Why']], need)
+      : '<div class="fa-empty">Nothing else needed.</div>') +
+    '<div class="fa-sub" style="margin-top:12px">Groups of identical BAS points (' + c.groups.length + ')</div>' +
+    _faCovTable([['System type'], ['Units', 1], ['Buildings'], ['Status']], groups)
+  );
+}
 
 function faRender(pid, importResult) {
   pid = pid || window._activeProjId;
@@ -396,6 +462,7 @@ function faRender(pid, importResult) {
   });
   var shown = _faView === 'deficiency' ? defs : all;
   var pills = [
+    ['coverage', 'Coverage'],
     ['findings', 'All findings'],
     ['deficiency', 'Deficiency list'],
     ['setpoints', 'Set points'],
@@ -409,20 +476,17 @@ function faRender(pid, importResult) {
     _faCss +
     '</style><div class="fa-wrap"><div class="fa-bar">' +
     pills +
-    '<span class="fa-sub">' +
-    all.length +
-    ' findings, ' +
-    open.length +
-    ' not done, ' +
-    defs.length +
-    ' deficiencies</span></div>' +
-    '<div class="fa-bar"><button class="fa-btn" data-action="add" data-pid="' +
+    (_faView === 'coverage'
+      ? ''
+      : '<span class="fa-sub">' + all.length + ' findings, ' + open.length + ' not done, ' + defs.length + ' deficiencies</span>') +
+    '</div>' +
+    (_faView === 'coverage' ? '' : '<div class="fa-bar"><button class="fa-btn" data-action="add" data-pid="' +
     _escHtml(pid) +
     '">Add finding</button><label class="fa-btn">Import audit workbook or CSV<input type="file" accept=".xlsx,.csv" style="display:none" data-action="import" data-pid="' +
     _escHtml(pid) +
-    '"></label></div>' +
+    '"></label></div>') +
     _faImportReview(importResult) +
-    (_faView === 'setpoints' ? _faSetPointsTable(pid) : _faFindingsTable(pid, shown)) +
+    (_faView === 'coverage' ? _faCoverageView(pid) : _faView === 'setpoints' ? _faSetPointsTable(pid) : _faFindingsTable(pid, shown)) +
     '</div>';
 }
 

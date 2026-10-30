@@ -111,6 +111,7 @@ let handler = null;
 let clickHandler = null;
 const fakeBody = { innerHTML: '', addEventListener: (type, fn) => { if (type === 'change') handler = fn; if (type === 'click') clickHandler = fn; } };
 sb.document.getElementById = () => fakeBody;
+sb._faView = 'findings'; // the tab now opens on Coverage; this test checks the findings table
 sb.faRender(900);
 const html = fakeBody.innerHTML;
 t.ok(html.indexOf('Hostile id') !== -1, 'hostile record is rendered');
