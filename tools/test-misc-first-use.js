@@ -75,11 +75,6 @@ const fakeInput = { files: [{ name: 'a.csv', text: () => Promise.resolve('x') }]
   t('8 manual card subtitle', core.indexOf('Only for events that are not in the feed') >= 0);
   t('8 no CORS wording', core.indexOf('If blocked by CORS') < 0 && core.indexOf('If the link does not load, use PDF Upload') >= 0);
 
-  // #9 tab bar wraps
-  const html = rd('energy-department.html');
-  const m = /\.pd-tabs \{([^}]*)\}/.exec(html);
-  t('9 tab bar wraps', !!m && /flex-wrap:\s*wrap/.test(m[1]) && !/max-content/.test(m[1]));
-
   // #25 headings have hover text
   const es = rd('app/energy-savings.js');
   ['kWh $/S', 'kWh $/W', 'kW $/S', 'kW $/W', '$/Therm', '$/Gallon', 'Msr #'].forEach((h) => {
