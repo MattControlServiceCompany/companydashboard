@@ -435,6 +435,47 @@
         overflow-y: hidden;
         scrollbar-width: thin;
       }
+      /* Arrow buttons at the strip edges. Sticky + zero layout width (negative margin), so the tabs and the scrollbar room do not move.
+         Each shows only on the side that has hidden tabs (set in _tabArrowsUpdate, app/core.js). */
+      .hdr-tabs-arrow {
+        position: sticky;
+        z-index: 2;
+        flex: 0 0 auto;
+        align-self: flex-start;
+        width: 24px;
+        height: 28px;
+        padding: 0;
+        border: 1px solid var(--border2);
+        border-radius: 7px;
+        background: var(--s3);
+        color: var(--text);
+        font-family: var(--font);
+        font-size: 18px;
+        line-height: 1;
+        cursor: pointer;
+      }
+      .pdt {
+        scroll-margin-inline: 30px; /* a scrolled-into-view tab clears the arrow */
+      }
+      .hdr-tabs-arrow[hidden] {
+        display: none;
+      }
+      .hdr-tabs-arrow:hover {
+        background: var(--s4);
+        border-color: var(--accent);
+      }
+      .hdr-tabs-arrow:focus-visible {
+        outline: 2px solid var(--accent);
+        outline-offset: -3px;
+      }
+      .hdr-tabs-arrow-l {
+        left: 0;
+        margin-right: -24px;
+      }
+      .hdr-tabs-arrow-r {
+        right: 0;
+        margin-left: -24px;
+      }
             .t-right {
         display: flex;
         align-items: center;
@@ -9636,7 +9677,9 @@
             </div>
           </div>
           <nav class="hdr-tabs" id="hdrTabs" data-fb="energy.dept-nav" style="display: none">
+            <button type="button" class="hdr-tabs-arrow hdr-tabs-arrow-l" id="hdrTabsL" aria-label="Scroll tabs left" title="Scroll tabs left" hidden>&#8249;</button>
             <div class="pd-tabs" id="pdTabBar" role="tablist" aria-label="Project sections"></div>
+            <button type="button" class="hdr-tabs-arrow hdr-tabs-arrow-r" id="hdrTabsR" aria-label="Scroll tabs right" title="Scroll tabs right" hidden>&#8250;</button>
           </nav>
         </header>
 
