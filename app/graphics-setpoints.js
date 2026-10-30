@@ -2570,16 +2570,16 @@ function _spZoneRow(projId, bldgId, z, idx) {
             value="${_escHtml(z.name || '')}" placeholder="Zone or system name"
             oninput="spUpdateField('${projId}','${bldgId}',${idx},'name',this.value)"></td>
           <td style="padding:4px 6px"><input class="fi" style="width:70px;font-size:12px;font-family:var(--mono);text-align:center" type="text" inputmode="decimal"
-            value="${v(z.occHeat)}" placeholder="70"
+            value="${v(z.occHeat)}" placeholder="${EM_SP_PLACEHOLDER.occHeat}"
             oninput="spUpdateField('${projId}','${bldgId}',${idx},'occHeat',_spParseSpField(this.value))"></td>
           <td style="padding:4px 6px"><input class="fi" style="width:70px;font-size:12px;font-family:var(--mono);text-align:center" type="text" inputmode="decimal"
-            value="${v(z.occCool)}" placeholder="74"
+            value="${v(z.occCool)}" placeholder="${EM_SP_PLACEHOLDER.occCool}"
             oninput="spUpdateField('${projId}','${bldgId}',${idx},'occCool',_spParseSpField(this.value))"></td>
           <td style="padding:4px 6px"><input class="fi" style="width:70px;font-size:12px;font-family:var(--mono);text-align:center" type="text" inputmode="decimal"
-            value="${v(z.unoccHeat)}" placeholder="60"
+            value="${v(z.unoccHeat)}" placeholder="${EM_SP_PLACEHOLDER.unoccHeat}"
             oninput="spUpdateField('${projId}','${bldgId}',${idx},'unoccHeat',_spParseSpField(this.value))"></td>
           <td style="padding:4px 6px"><input class="fi" style="width:70px;font-size:12px;font-family:var(--mono);text-align:center" type="text" inputmode="decimal"
-            value="${v(z.unoccCool)}" placeholder="85"
+            value="${v(z.unoccCool)}" placeholder="${EM_SP_PLACEHOLDER.unoccCool}"
             oninput="spUpdateField('${projId}','${bldgId}',${idx},'unoccCool',_spParseSpField(this.value))"></td>
           <td style="padding:4px 6px"><input class="fi" style="width:100%;font-size:12px" type="text"
             value="${_escHtml(z.schedule || '')}" placeholder="e.g. Monday–Friday 6:00a-4:30p"

@@ -68,4 +68,29 @@ t.ok(none.open && /Missing/.test(none.missing) && /Utility Data/.test(none.missi
 const bills = ctx2.hvlSourceHelp({ source: 'bills' });
 t.ok(!bills.open && /Optional/.test(bills.summary) && bills.missing === '', 'bills: entry closed and labelled optional');
 t.ok(ctx2.hvlSourceHelp({ source: 'annual' }).open, 'annual: entry open');
+// ---- v187 fixes: a saved Set Points record gets the import's schedules; audit = tab cell for cell ----
+const PID2 = 901;
+const servRow = { id: 'r2', building: 'Fake Hall A', category: 'ahu', equipName: 'TST-0002', location: 'TST-0002', bacnetLocation: '/Fake District/Fake Hall A/Roof', schema: 2, pointsRaw: {}, checks: {}, points: {} };
+const boxRow = Object.assign({}, eqRow, { id: 'r3', equipName: 'TST-0003', location: 'TST-0003' });
+sb.__store['en_eqmatrix_' + PID2] = JSON.stringify({ rows: [servRow, boxRow], importedAt: 'x', buildings: [] });
+sb.projects = [{ id: PID2, setpoints: [{ buildingId: 'b1', zones: [
+  { name: 'TST-0002', occHeat: null, occCool: null, unoccHeat: null, unoccCool: null, schedule: '' },
+  { name: 'TST-0003', occHeat: 70, occCool: 74, unoccHeat: '?', unoccCool: 85, schedule: '' },
+  { name: 'TST-0004', occHeat: 68, occCool: 72, unoccHeat: 60, unoccCool: 85, schedule: 'typed by hand' }] }] }];
+const parsed2 = [{ location: '/Fake District/Fake Hall A/Roof', controlProgram: 'TST-0003', scheduleText: 'Occupied from 7:00 AM to 4:00 PM' },
+  { location: '/Fake District/Fake Hall A/Roof', controlProgram: 'TST-0004', scheduleText: 'Occupied from 1:00 AM to 2:00 AM' }];
+sb.emAttachParsedSchedules(PID2, parsed2, 'fake2.csv');
+const zs = sb.emCurrentSetpointZones(PID2, 'b1');
+t.eq(zs[1].schedule, 'M-F 7:00-16:00', 'import fills the schedule of a saved Set Points zone');
+t.eq(zs[0].schedule, '', 'serving unit with no schedule in the file stays blank (no gap marker)');
+t.eq(zs[2].schedule, 'typed by hand', 'a typed schedule is never replaced');
+t.eq(JSON.parse(sb.__store['en_projects'])[0].setpoints[0].zones[1].schedule, 'M-F 7:00-16:00', 'the filled schedule is saved');
+const faCells = sb.faSetPointRows(PID2);
+t.eq(faCells[0], ['Fake Hall A', 'TST-0002', '70', '74', '60', '85', ''], 'audit shows the italic defaults like the tab');
+t.eq(faCells[1], ['Fake Hall A', 'TST-0003', '70', '74', '?', '85', 'M-F 7:00-16:00'], 'audit keeps ? and values like the tab');
+const faHtml = sb._faSetPointsTable(PID2).split('</tr>');
+t.ok(/<td><i>70<\/i><\/td><td><i>74<\/i><\/td><td><i>60<\/i><\/td><td><i>85<\/i><\/td>/.test(faHtml[1]), 'audit shows empty cells as italic defaults');
+t.ok(/<td>70<\/td><td>74<\/td><td>\?<\/td><td>85<\/td>/.test(faHtml[2]), 'audit shows saved values and ? as plain text');
+t.eq(BasDiff.readableDates('Day of Month 28; Month February; Day of Week Any; Week Any; Year 0000 (any)'), 'Feb 28', 'fixed day reads like a date');
+t.ok(/Create meter on Unmatched Bills/.test(read('app/bill-analysis.js')) && !/Create building \+ meter/.test(read('app/bill-analysis.js')), 'no-building button says what it does');
 t.done('test-bas-first-use');

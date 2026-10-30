@@ -1,4 +1,4 @@
-// Item #3: "Create building + meter" says what it will create (meter, project, building).
+// Item #3: the Create button says what it will create (meter, project, building).
 const sb = require('./ocr-sandbox.js')();
 const f = sb.get('_mbCreateWords');
 let bad = 0;

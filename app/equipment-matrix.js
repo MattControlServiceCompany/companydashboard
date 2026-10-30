@@ -11258,11 +11258,41 @@ function emAttachParsedSchedules(pid, parsed, fileName) {
     unmatchedCount: unmatched.length,
   };
   emSaveMatrix(pid, data);
+  emFillSavedSetpointSchedules(pid);
   return {
     matchedCount: Object.keys(matchedRowIds).length,
     totalCount: parsed.length,
     unmatched: unmatched,
   };
+}
+
+// A saved Set Points record wins over the matrix (emCurrentSetpointZones), so an import must also fill the
+// Schedule of its zones. Only a blank / '?' / earlier imported schedule is replaced; a typed one stays.
+// The text comes from the ONE mapping (emZonesFromSetpointRows). Zones match by name inside the building.
+function emFillSavedSetpointSchedules(pid) {
+  var projs = typeof projects !== 'undefined' ? projects : sget('en_projects', []);
+  var p = (projs || []).filter(function (x) {
+    return String(x.id) === String(pid);
+  })[0];
+  if (!p || !(p.setpoints || []).length) return 0;
+  var changed = 0;
+  p.setpoints.forEach(function (rec) {
+    var fresh = {};
+    emZonesFromSetpointRows(emBuildSetpointExportRows(pid, rec.buildingId, '')).forEach(function (z) {
+      fresh[z.name] = z.schedule;
+    });
+    (rec.zones || []).forEach(function (z) {
+      var cur = String(z.schedule || '');
+      var auto = cur === '' || cur === '?' || cur === 'No occupied schedule found' || /^M-F \d/.test(cur);
+      var nv = fresh[z.name];
+      if (auto && nv && nv !== '?' && nv !== cur) {
+        z.schedule = nv;
+        changed++;
+      }
+    });
+  });
+  if (changed) sset('en_projects', projs);
+  return changed;
 }
 
 // Displays a raw BAS point value as a plain number string, or '?' when the
@@ -11400,6 +11430,10 @@ function emBuildSetpointExportRows(pid, bldgIdFilter, optionLetter) {
   }
   return out;
 }
+
+// What the Set Points tab shows (italic placeholder) in an empty set point cell. The ONE list: the tab's
+// input placeholders and the Facility Audit set points view both read it.
+var EM_SP_PLACEHOLDER = { occHeat: '70', occCool: '74', unoccHeat: '60', unoccCool: '85' };
 
 // Set point rows -> Set Points tab zones. The ONE mapping (Pull from Equipment Matrix, the Set Points
 // tab and the Facility Audit set points view all use it). Unknown values stay '?', never invented.

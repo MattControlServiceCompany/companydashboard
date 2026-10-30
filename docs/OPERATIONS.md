@@ -899,3 +899,5 @@ This includes a new or changed function, schedule, env var name, timer, host, or
 - One price rule: CSC price = `_pricingUnitPriceFor(entry, {priceBasis:'contract'})` (40% of list, `COST_CONTRACT_PCT`), the same function the estimate rows call. The header line reads `COST_CONTRACT_PCT` and `_pricingGetConfig().hourlyRate` live. Net = the ALC net column (what CSC pays).
 - Open state, search, category and sort are in memory only. Nothing is stored. No network call, no timer.
 - How to check: `node test-pricing-price-list.js` (21 pass, includes every estimate type); open any project > Cost Estimate > Price list.
+
+- BAS schedule import fills saved Set Points zones (2026-10-30; app/equipment-matrix.js emFillSavedSetpointSchedules, called by emAttachParsedSchedules). Runs when Save is pressed on the District Calendar import. It sets the Schedule of saved Set Points zones whose schedule is blank, "?" or from an earlier import; a typed schedule stays. Needs no env var. Check: node tools/test-bas-first-use.js.

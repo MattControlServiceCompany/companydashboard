@@ -60,18 +60,29 @@ function faIsDeficiency(f) {
 
 // Set points: the same source as the Set Points tab (emCurrentSetpointZones), read every time, never stored.
 var FA_SETPOINT_HEADERS = ['Building', 'Zone / System', 'Occupied Heat °F', 'Occupied Cool °F', 'Unoccupied Heat °F', 'Unoccupied Cool °F', 'Schedule'];
-function faSetPointRows(pid) {
+function faSetPointCells(pid) {
   var out = [];
   var bldgs = typeof getUDBldgs === 'function' ? getUDBldgs(pid) : [];
+  var blank = function (x) {
+    return x === null || x === undefined || x === '';
+  };
   bldgs.forEach(function (b) {
     emCurrentSetpointZones(pid, b.id).forEach(function (z) {
-      var v = function (x) {
-        return x === null || x === undefined || x === '' ? '?' : String(x);
+      // Same as the Set Points tab: an empty cell shows the italic default, a '?' stays '?', a blank schedule stays blank.
+      var t = function (k) {
+        return blank(z[k]) ? { text: EM_SP_PLACEHOLDER[k], dflt: true } : { text: String(z[k]) };
       };
-      out.push([b.name || 'Building', z.name || '?', v(z.occHeat), v(z.occCool), v(z.unoccHeat), v(z.unoccCool), z.schedule || '?']);
+      out.push([{ text: b.name || 'Building' }, { text: z.name || '?' }, t('occHeat'), t('occCool'), t('unoccHeat'), t('unoccCool'), { text: z.schedule || '' }]);
     });
   });
   return out;
+}
+function faSetPointRows(pid) {
+  return faSetPointCells(pid).map(function (r) {
+    return r.map(function (c) {
+      return c.text;
+    });
+  });
 }
 
 function faEdit(pid, id, field, value) {
@@ -289,7 +300,7 @@ function _faFindingsTable(pid, list) {
 }
 
 function _faSetPointsTable(pid) {
-  var rows = faSetPointRows(pid);
+  var rows = faSetPointCells(pid);
   if (!rows.length) return '<div class="fa-empty">No set points yet.</div>';
   var heads = FA_SETPOINT_HEADERS;
   return (
@@ -306,7 +317,7 @@ function _faSetPointsTable(pid) {
           '<tr>' +
           r
             .map(function (c) {
-              return '<td>' + _escHtml(c) + '</td>';
+              return '<td>' + (c.dflt ? '<i>' + _escHtml(c.text) + '</i>' : _escHtml(c.text)) + '</td>';
             })
             .join('') +
           '</tr>'

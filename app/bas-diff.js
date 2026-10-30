@@ -354,6 +354,10 @@
   // Display text for the WebCTRL "dates" cell: the zero codes become words. Display only; stored text is unchanged.
   function readableDates(raw) {
     return String(raw == null ? '' : raw)
+      // A fixed day of one month (e.g. "Day of Month 28; Month February; Day of Week Any; Week Any; Year 0000 (any)") reads "Feb 28".
+      .replace(/Day of Month\s+(\d{1,2});\s*Month\s+([A-Za-z]{3})[A-Za-z]*((?:;\s*(?:Day of Week|Week)\s+Any)*)(;\s*Year\s+0+\s*\(any\))?/gi, function (m, d, mon) {
+        return mon.charAt(0).toUpperCase() + mon.slice(1).toLowerCase() + ' ' + parseInt(d, 10);
+      })
       .replace(/Year\s+0+\s*\(any\)/gi, 'any year')
       .replace(/Day of Month\s+0+\s*\(any\)/gi, 'any day of the month')
       .replace(/(^|[^f] )Month\s+0+\s*\(any\)/gi, '$1any month');

@@ -80,7 +80,7 @@ const ok = (c, l) => (c ? pass++ : failures.push(l));
     );
     ok(r.enabled === true, 'both issue bills unchecked: Save All enabled');
     ok(r.noMatchDoesNotBlock === true, 'unchecked no-match bill does not block Save All');
-    ok(/Create building \+ meter/.test(r.rowHtml), 'no-match bill box offers Create building + meter');
+    ok(/Create meter on Unmatched Bills/.test(r.rowHtml), 'no-match bill box offers Create meter on Unmatched Bills');
     ok(r.createType === 'create' && r.createChecked === true, 'Create makes the row a checked create target');
     ok(JSON.stringify(r.calls) === '[0,2]', 'saves exactly the 2 selected bills: ' + JSON.stringify(r.calls));
   } catch (e) {

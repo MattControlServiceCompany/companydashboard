@@ -7182,7 +7182,7 @@ function _mbBillBoxHtml(i) {
       '</div><div class="pdf-dest-acts"><button class="pdf-top-btn primary" onclick="_mbCreateForRow(' +
       i +
       ')">' +
-      (match && match.bldgId ? 'Create meter' : 'Create building + meter') +
+      (match && match.bldgId ? 'Create meter' : 'Create meter on Unmatched Bills') +
       '</button><span class="pdf-dest-or">or pick a meter</span><span class="pdf-dest-pick">' +
       picker() +
       '</span></div>';
@@ -7422,7 +7422,7 @@ function setMbRowDestExpand(i, expand) {
 }
 window.setMbRowDestExpand = setMbRowDestExpand;
 
-// One-click "Create meter" / "Create building + meter" for a row with no
+// One-click "Create meter" / "Create meter on Unmatched Bills" for a row with no
 // meter match. Reuses _mbSetCreateTarget (marks the row checked + savable);
 // the meter/building is built from the bill (account, meter number, address,
 // utility) at save time by _autoCreateMeterAndSaveBill. No second create path.

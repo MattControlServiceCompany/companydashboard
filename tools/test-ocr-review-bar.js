@@ -130,7 +130,7 @@ async function open(context, theme, width) {
     ok(/st-review/.test(r1.bldgCls), 'building row of the no-match bills is not green: ' + r1.bldgCls);
     ok(r1.barVisible && /No matching building or meter/.test(r1.barText) && /825 Testcat Dr|Testcat/.test(r1.barText), 'bar lists the no-match issue: ' + r1.barText);
     ok(/4 bills · 1 ready · 3 with issues/.test(r1.barText), 'bar counts: ' + r1.barText.slice(0, 60));
-    ok(r1.createText === 'Create building + meter', 'Create button in the bill box: ' + r1.createText);
+    ok(r1.createText === 'Create meter on Unmatched Bills', 'Create button in the bill box: ' + r1.createText);
     ok(r1.createBg !== 'rgba(0, 0, 0, 0)' && r1.createRadius !== '0px', 'Create button is a styled button: ' + r1.createBg + ' ' + r1.createRadius);
     ok(r1.saveAllDisabled === false && /Save All \(1\)/.test(r1.saveAllText), 'Save All on while only the issue bills are unchecked: ' + r1.saveAllText);
     ok(r1.checked2 === false, 'bill 2 starts unchecked');
