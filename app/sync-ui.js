@@ -463,6 +463,7 @@
     ['en_bas_groups_', 'these scheduling groups'],
     ['en_bas_', 'this building automation trend data'],
     ['en_alarms_', 'this alarm log'],
+    ['en_audit_', 'this facility audit'],
     ['en_hours_', 'this hours log'],
     ['en_cal_', 'this calendar feed copy'],
     ['en_space_map_', 'this space map'],

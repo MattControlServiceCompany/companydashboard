@@ -35,7 +35,7 @@ function loadAuditSandbox() {
   sandbox.window = sandbox;
   sandbox.__store = store;
   vm.createContext(sandbox);
-  ['lib/formatting.js', 'app/equipment-matrix.js', 'computations/audit-rules.js', 'computations/audit-import.js', 'app/facility-audit.js'].forEach((f) => {
+  ['lib/formatting.js', 'app/equipment-matrix.js', 'computations/audit-rules.js', 'computations/audit-coverage.js', 'computations/audit-import.js', 'app/facility-audit.js'].forEach((f) => {
     vm.runInContext(fs.readFileSync(path.join(ROOT, f), 'utf8'), sandbox, { filename: f });
   });
   return sandbox;

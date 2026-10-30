@@ -501,6 +501,8 @@ The app Restore path (6c) is on main only, not in stable (v87), until the Nov 2 
 - Import of the audit workbook: computations/audit-import.js `auditImportSheets`, called from app/facility-audit.js `faImportFile` when the user picks a file. Rows that match no equipment stay as free text and show in the import review list.
 - Check: `node tools/test-audit-rules.js` and `node tools/test-audit-import.js`.
 
+- Coverage view (2026-10-30, default view of the tab): computations/audit-coverage.js `auditComputeCoverage` is the ONE coverage function; `_faCoverageView` in app/facility-audit.js only renders it. It runs on every render of the tab, in the browser, no timer, no env var, nothing stored. It groups equipment by system type plus identical BAS point names (Equipment Matrix), marks a group covered when one member has the data it needs, and lists only real gaps in "Still need". Serving units need no schedule; plumbing (domestic hot water) is out of scope; lighting is never a gap. Check: `node tools/test-audit-coverage.js`.
+
 ## 7. How to keep this file current
 
 Any commit that changes these facts must update this file in the same commit.

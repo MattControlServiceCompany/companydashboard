@@ -13,7 +13,7 @@ var AUDIT_SCHEDULE_TOLERANCE_HOURS = 0.5;
 // it turns on from their requests (Matt, 2026-10-28). Plants (hot water, chilled water) work the same way.
 // AHU, ERV, DOAS and the plants are ALWAYS serving units. An RTU is serving only when its building has
 // box or zone rows (VAV, FPB, DDVAV, zone); otherwise it is a single-zone RTU with its own schedule.
-// Domestic hot water is NOT a serving unit.
+// Domestic hot water is NOT a serving unit. A single-zone AHU or RTU (subtype sz) is NOT a serving unit.
 var AUDIT_ALWAYS_SERVING_CATEGORIES = { ahu: true, erv: true, doas: true, hwp: true, chwp: true };
 var AUDIT_TERMINAL_CATEGORIES = { vav: true, fpb: true, ddvav: true, zone: true };
 
@@ -23,9 +23,29 @@ function _auditNum(v) {
   return isNaN(n) ? null : n;
 }
 
+function _auditHasOwnZoneSetpoints(row) {
+  var pts = typeof emGetNormalizedPoints === 'function' ? emGetNormalizedPoints(row) || {} : {};
+  return ['zoneCoolSetpoint', 'zoneHtgSetpoint', 'effectiveCoolSetpoint', 'effectiveHtgSetpoint'].some(function (k) {
+    return pts[k] !== undefined && pts[k] !== null && pts[k] !== '';
+  });
+}
+
+function _auditHasNumberedRequests(row) {
+  var raw = row.pointsRaw && !Array.isArray(row.pointsRaw) ? row.pointsRaw : {};
+  return Object.keys(raw).some(function (k) {
+    return /request ?#?\d/i.test(k) && raw[k] !== '' && raw[k] !== null && raw[k] !== undefined;
+  });
+}
+
 function auditIsServingUnit(row, rows) {
   if (!row) return false;
   var cat = row.category;
+  // A single-zone unit (subtype sz) serves one zone and runs its own schedule: not a serving unit.
+  // Numbered request inputs ("Air Request 1") prove other units request from it, so they override a wrong sz subtype.
+  if (row.subtype === 'sz' && !_auditHasNumberedRequests(row)) return false;
+  // A unit with its own zone set points and no numbered request inputs ("Air Request 1", "Heat Request #2")
+  // controls its own zone and runs its own schedule: not a serving unit.
+  if (_auditHasOwnZoneSetpoints(row) && !_auditHasNumberedRequests(row)) return false;
   if (AUDIT_ALWAYS_SERVING_CATEGORIES[cat]) return true;
   if (cat !== 'rtu') return false;
   var bn = _emNormBldgNameForJoin(row.building || '');
