@@ -161,7 +161,7 @@
 
   // --- suggestions CSV ------------------------------------------------------------------------
   // rows2d = CSV rows (first row = headers calendar_space, bas_location, bas_program, confirmed). bas_program holds one
-  // or more programs separated by ";". "yes" and "assumed" in the confirmed column count as confirmed. Returns
+  // or more programs separated by ";". "yes" and "confirmed" in the confirmed column count as confirmed; "assumed" and anything else is a suggestion. Returns
   // { entries:{ spaceKey: entry }, count }. keys = row keys of the newest snapshot, to turn names into row keys.
   function entriesFromCsv(rows2d, keys, who, at) {
     var head = (rows2d[0] || []).map(norm);
@@ -198,7 +198,7 @@
         space: space,
         programs: programs,
         offsite: false,
-        confirmed: flag === 'yes' || flag === 'assumed',
+        confirmed: flag === 'yes' || flag === 'confirmed',
         by: who || '',
         at: at || '',
       };

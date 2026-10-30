@@ -368,7 +368,7 @@
         (s.changesOnly ? 'No changes ' + _escHtml(scope) + '.' : 'No events found.') + '</div>';
     var heading = q
       ? 'Events matching "' + q + '" (' + num(v.items.length) + ')'
-      : (s.view === 'month' ? monthLabel(s.month) : s.view === 'past' ? 'Past events, newest first' : 'Next 14 days' + (range14 ? ', ' + range14 : '')) + ' (' + num(v.items.length) + ' events)';
+      : (s.view === 'month' ? monthLabel(s.month) : s.view === 'past' ? 'Past events, newest first' : 'Next 14 days' + (range14 ? ', ' + range14 : '')) + ' (' + num(v.items.length) + (v.items.length === 1 ? ' event)' : ' events)');
     host.innerHTML =
       '<div class="pcal-sum">' + _escHtml(line) + '</div><div class="pcal-feed">' + _escHtml(feedLine) + '</div>' + controls + '<h4>' + _escHtml(heading) + '</h4>' + tbl +
       (v.items.length > shown.length

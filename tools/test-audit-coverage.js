@@ -161,4 +161,5 @@ t.eq(sb.auditComputeCoverage([hp], {}).stillNeed.length, 1, 'undo (no evidence) 
 const fs = require('fs');
 const faSrc = fs.readFileSync(require('path').join(__dirname, '..', 'app/facility-audit.js'), 'utf8');
 t.ok(/auditComputeCoverage\(/.test(faSrc) && !/AUDIT_COV_ITEMS|auditCoverageNeeds/.test(faSrc), 'the tab calls the one coverage function and has no coverage rules of its own');
+t.ok(/class="[^"]*fa-need|'fa-need'/.test(faSrc) && /@media \(max-width:700px\)\{\.fa-need\{table-layout:fixed\}\.fa-need td\{min-width:0\}/.test(faSrc), 'Still-need table drops min widths and fixes layout at 700px and narrower (640px fit; browser check separate)');
 t.done('test-audit-coverage');

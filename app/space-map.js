@@ -135,7 +135,7 @@
     var nSug = rows.filter(function (r) { return r.state === 'suggested'; }).length;
     var nNone = rows.length - nConf - nSug;
     var summary = rows.length
-      ? nConf + ' confirmed, ' + nSug + ' suggested, ' + nNone + ' not mapped, of ' + rows.length + ' spaces in the upcoming events.'
+      ? nConf + ' confirmed, ' + nSug + ' suggested, ' + nNone + ' not mapped, of ' + rows.length + (rows.length === 1 ? ' space' : ' spaces') + ' in the upcoming events.'
       : 'No upcoming events with a space yet. Sync the calendar feed first.';
     var body = rows.map(function (r, i) {
       var prog = r.offsite ? 'Off-site (no BAS action)' : programsText(r.programs);
@@ -309,7 +309,7 @@
         }
       });
       await DB.set('en_space_map_' + pid, map);
-      s.msg = added + ' spaces read from the file' + (kept ? '; ' + kept + ' you already confirmed were kept' : '') + '.';
+      s.msg = added + (added === 1 ? ' space' : ' spaces') + ' read from the file' + (kept ? '; ' + kept + ' you already confirmed were kept' : '') + '.';
       refresh(pid);
     });
   };
