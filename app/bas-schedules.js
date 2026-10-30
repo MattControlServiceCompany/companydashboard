@@ -107,6 +107,7 @@
   function recSummary(rec) {
     var head = shortStamp(rec.at) + (rec.by ? ' by ' + rec.by : '') + ' — ';
     var total = rec.counts.total;
+    if (rec.kind === 'action') return head + 'schedule actions: ' + plural(total, 'change', 'changes');
     if (rec.kind === 'groups') {
       if (rec.first) return head + 'scheduling groups: first copy saved, ' + plural(total, 'group', 'groups');
       return (
@@ -125,6 +126,9 @@
   function recTables(rec) {
     var T = ui().table;
     var out = '';
+    if (rec.kind === 'action') {
+      return T([['Action', '70%'], ['What happened', '30%']], (rec.changes || []).map(function (x) { return [esc(x.text), esc(x.what)]; }));
+    }
     var isGroup = rec.kind === 'groups';
     var label = function (key) {
       return isGroup ? esc(key.split('|')[1]) : esc(programLabel(key));
@@ -433,6 +437,7 @@
     }
     await DB.set('en_bas_hist_' + pid, res.hist);
     await DB.set('en_bas_snap_' + pid, res.snaps);
+    if (typeof window.sactPersist === 'function') await window.sactPersist(pid); // closes or reopens actions against the new copy
     // The same import also fills the Equipment Matrix schedules (Set Points tab, Facility Audit, reports).
     var att = typeof emAttachParsedSchedules === 'function' ? emAttachParsedSchedules(pid, p.parsed, p.files.map(function (f) { return f.name; }).join(', ')) : null;
     s.pending = null;

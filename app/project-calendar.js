@@ -502,6 +502,7 @@
       '"></div></div></div>';
     renderList(pid);
     if (typeof window.spaceMapRender === 'function') window.spaceMapRender(pid);
+    if (typeof window.sactRender === 'function') window.sactRender(pid);
   }
 
   // --- actions -----------------------------------------------------------------
@@ -577,6 +578,7 @@
       }
       await DB.set(k('hist', pid), [rec].concat(hist).slice(0, HIST_MAX));
       await DB.set(k('snap', pid), snap);
+      if (typeof window.sactPersist === 'function') await window.sactPersist(pid); // closes or reopens actions against the new copy
       s.month = null;
     } catch (e) {
       s.msg = 'The calendar feed could not be read. The last saved copy is kept.';

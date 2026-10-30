@@ -467,6 +467,7 @@
     ['en_hours_', 'this hours log'],
     ['en_cal_', 'this calendar feed copy'],
     ['en_space_map_', 'this space map'],
+    ['en_sched_actions_', 'these calendar schedule actions'],
     ['en_budget_', 'this budget data'],
     ['en_customers', 'the customer list'],
     ['en_deleted_records', 'the deletion records'],

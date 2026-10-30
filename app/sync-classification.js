@@ -105,6 +105,11 @@ const SyncClassification = (() => {
       note: 'space-map.js: en_space_map_<pid> = which BAS programs serve each calendar space (or Off-site), confirmed by the user. Shared by both users.',
     },
     {
+      pattern: 'en_sched_actions_',
+      prefix: true,
+      note: 'sched-actions.js: en_sched_actions_<pid> = the What needs to change list (one action per Not covered event: Open, Done by whom and when, or Closed). Shared by both users.',
+    },
+    {
       pattern: 'audit_estimate_config',
       prefix: false,
       note: 'audit-estimate.js: company-wide Audit Estimate assumptions (hoursPerEquip, hoursPerBuilding, hoursReport, matrixReviewHours, fullFacility.*, history) — no rate, no per-user data; both users need the same company defaults',

@@ -50,7 +50,7 @@
   // --- serving units --------------------------------------------------------------------------
   // A plant (HW, CHW, boiler, chiller, pump), an ERV or a DOAS is serving. An AHU, RTU or MAU whose name is only its
   // tag ("AHU-2", "RTU-3A") serves boxes. An air handler named for a room ("AHU-1 - Rm 12") serves that room.
-  var SERVING_WORD = /\b(hw|chw|hws|chws|hwp|chwp|boiler|chiller|pump|plant|erv|doas|hrv)\b/i;
+  var SERVING_WORD = /\b(hw|chw|hws|chws|hwp|chwp|boiler|chiller|pump|plant|erv|doas|hrv|dhw|domestic hot water)\b/i;
   var BARE_UNIT = /^(ahu|rtu|mau|oau|ac|cu|hp)[-_ ]?[a-z0-9]{1,4}([/,][a-z0-9]{1,4})*$/i;
   function isServingProgram(program) {
     var p = String(program || '')
@@ -111,6 +111,23 @@
     if (!ini || t.length < 2) return false;
     return t === ini || (t.length === ini.length + 1 && (t.slice(1) === ini || t.slice(0, ini.length) === ini));
   }
+  // The building a space name points to by its first word ("TAH Gym" -> Test Alpha Hall), or '' when the word
+  // stands for none or for more than one of the buildings in keys.
+  function buildingOfPlace(space, keys) {
+    var words = String(space || '')
+      .trim()
+      .split(/\s+/)
+      .filter(Boolean);
+    if (!words.length) return '';
+    var buildings = {};
+    keys.forEach(function (k) {
+      buildings[BD.keyBuilding(k)] = 1;
+    });
+    var hit = Object.keys(buildings).filter(function (b) {
+      return prefixMatchesBuilding(words[0], b);
+    });
+    return hit.length === 1 ? hit[0] : '';
+  }
   // suggestPrograms(space, keys) -> row keys. The first word names the building; the other words (and any room number)
   // name programs of that building. Serving units are never suggested. [] when nothing matches or the name is vague.
   function suggestPrograms(space, keys) {
@@ -119,16 +136,9 @@
       .split(/\s+/)
       .filter(Boolean);
     if (words.length < 2) return [];
-    var prefix = words[0];
+    var hit = [buildingOfPlace(space, keys)];
+    if (!hit[0]) return [];
     var rest = words.slice(1);
-    var buildings = {};
-    keys.forEach(function (k) {
-      buildings[BD.keyBuilding(k)] = 1;
-    });
-    var hit = Object.keys(buildings).filter(function (b) {
-      return prefixMatchesBuilding(prefix, b);
-    });
-    if (hit.length !== 1) return [];
     var tokens = rest
       .map(function (w) {
         return w.toLowerCase().replace(/[^a-z0-9]/g, '');
@@ -230,8 +240,8 @@
     });
     return (+o.hour % 24) * 60 + +o.minute;
   }
-  // Minutes of [from,to] that the occupied blocks do not cover.
-  function minutesShort(blocks, from, to) {
+  // The stretches of [from,to] (minutes) that the occupied blocks do not cover: [[start,end]] in order.
+  function gapsOf(blocks, from, to) {
     var occ = (blocks || [])
       .filter(function (b) {
         return b[2] === 'occ';
@@ -243,25 +253,33 @@
         return a[0] - b[0];
       });
     var cur = from;
-    var covered = 0;
+    var gaps = [];
     occ.forEach(function (b) {
       var s = Math.max(b[0], cur);
       var e = Math.min(b[1], to);
       if (e > s) {
-        covered += e - s;
+        if (s > cur) gaps.push([cur, s]);
         cur = e;
       }
     });
-    return to - from - covered;
+    if (to > cur) gaps.push([cur, to]);
+    return gaps;
+  }
+  // Minutes of [from,to] that the occupied blocks do not cover.
+  function minutesShort(blocks, from, to) {
+    return gapsOf(blocks, from, to).reduce(function (n, g) {
+      return n + g[1] - g[0];
+    }, 0);
   }
 
   // --- the one coverage function --------------------------------------------------------------
   // eventCoverage(row, ctx) -> { status, label, space, short, program, from, exact }
   //   row = [title, start, end, allDay, location]; ctx = { tz, map, snaps }
-  //   short = minutes the worst mapped program is unoccupied during the event; program = its row key.
+  //   short = minutes the worst mapped program is unoccupied during the event; program = its row key; gaps = those stretches.
+//   fromMin/toMin = the event as minutes of that day.
   function eventCoverage(row, ctx) {
     var place = CD.eventPlace({ title: row[0], location: row[4] }).text;
-    var res = { status: '', label: '', space: place, short: 0, program: '', from: '', exact: true };
+    var res = { status: '', label: '', space: place, short: 0, program: '', from: '', exact: true, fromMin: 0, toMin: 0, gaps: [] };
     var done = function (status, label) {
       res.status = status;
       res.label = label;
@@ -286,11 +304,14 @@
     if (!row[2]) to = from + NO_END_MIN;
     else to = CD.calendarDay(row[2], ctx.tz) > date ? 1440 : minuteOfDay(row[2], ctx.tz);
     if (to <= from) to = Math.min(1440, from + NO_END_MIN);
+    res.fromMin = from;
+    res.toMin = to;
     keys.forEach(function (k) {
       var m = minutesShort(snap.rows[k], from, to);
       if (m > res.short) {
         res.short = m;
         res.program = k;
+        res.gaps = gapsOf(snap.rows[k], from, to);
       }
     });
     if (!res.short) return done('covered', 'Covered');
@@ -303,9 +324,11 @@
     matchKeys: matchKeys,
     resolveKeys: resolveKeys,
     suggestPrograms: suggestPrograms,
+    buildingOfPlace: buildingOfPlace,
     entriesFromCsv: entriesFromCsv,
     snapshotForDate: snapshotForDate,
     minutesShort: minutesShort,
+    gapsOf: gapsOf,
     eventCoverage: eventCoverage,
   };
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
