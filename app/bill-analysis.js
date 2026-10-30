@@ -7084,6 +7084,17 @@ function _pdfDestIssue(bill) {
   return { kind: 'no-building', text: 'No matching building or meter' };
 }
 
+// Plain words for a "create" target: which meter, in which project, on which building. The building is the one the
+// user chose, or "Unmatched Bills" (where _autoCreateMeterAndSaveBill puts a meter that has no chosen building).
+function _mbCreateWords(bill, match) {
+  const comm = bill.Commodity || _inferBillCommodity(bill) || 'Electric';
+  const id = bill.AccountNumber ? 'account ' + bill.AccountNumber : bill.MeterNumber ? 'meter ' + bill.MeterNumber : '';
+  const proj = match && match.proj && match.proj.name;
+  const b = match && match.bldg;
+  const bname = b ? b.name || b.addr || '' : 'Unmatched Bills';
+  return 'New ' + comm + ' meter' + (id ? ' for ' + id : '') + (proj ? ' in ' + proj : '') + ', on building ' + bname;
+}
+
 // The box at the top of the bill's values: bill number, status, the destination (with Change), the issue with its
 // Create buttons, Include in Save All, Save this bill, Skip. Its status words come from _pdfBillIssueItems, the same
 // list the bar uses. Returns { cls: the status class of the box, html }.
@@ -7132,7 +7143,7 @@ function _mbBillBoxHtml(i) {
     const from = match.fromRow != null ? ' (from bill ' + _mbBillNo(match.fromRow) + ')' : '';
     h +=
       '<div class="pdf-dest-line"><span class="pdf-dest-k">Saves to</span><span class="pdf-dest-v">' +
-      _escHtml((match.createOnBldgId || match.fromRow != null ? 'Goes to new meter' : 'Goes to new building and meter') + from) +
+      _escHtml(_mbCreateWords(bill, match) + from) +
       '</span><a href="javascript:void(0)" onclick="setMbRowDestExpand(' +
       i +
       ',false)">Undo</a></div>';
