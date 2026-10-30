@@ -274,8 +274,9 @@
         body +=
           '<tr><td>' + (i === 0 ? cell : '') + '</td>' +
           (s
-            ? '<td>' + esc(s.description + (s.type ? ' (' + s.type + ')' : '')) + '</td><td>' + esc(s.days) + '</td><td>' +
-              esc(/\d/.test(s.start + s.end) ? s.mode + ' ' + s.start + ' - ' + s.end : s.mode + ', time not readable') + '</td><td>' + esc(s.dates || '') + '</td>'
+            ? '<td>' + esc(s.description + (s.type ? ' (' + s.type + ')' : '')) + '</td><td>' + esc(s.days) + '</td><td' +
+              (BasDiff.readableHours(s).note ? ' title="' + esc(BasDiff.readableHours(s).note) + '"' : '') + '>' +
+              esc(BasDiff.readableHours(s).text) + '</td><td>' + esc(BasDiff.readableDates(s.dates)) + '</td>'
             : '<td colspan="4">No schedule in file</td>') +
           '</tr>';
       });
@@ -417,9 +418,14 @@
     if (res.error) return say(pid, res.error);
     await DB.set('en_bas_hist_' + pid, res.hist);
     await DB.set('en_bas_snap_' + pid, res.snaps);
+    // The same import also fills the Equipment Matrix schedules (Set Points tab, Facility Audit, reports).
+    var att = typeof emAttachParsedSchedules === 'function' ? emAttachParsedSchedules(pid, p.parsed, p.files.map(function (f) { return f.name; }).join(', ')) : null;
     s.pending = null;
     s.date = p.date;
-    s.msg = 'Saved ' + plural(p.parsed.length, 'program', 'programs') + ' for ' + BasDiff.dateText(p.date) + '.';
+    s.msg =
+      'Saved ' + plural(p.parsed.length, 'program', 'programs') + ' for ' + BasDiff.dateText(p.date) + '.' +
+      (att && !att.error ? ' ' + att.matchedCount + ' of ' + att.totalCount + ' matched to Equipment Matrix rows.' : '') +
+      (att && att.error ? ' Equipment Matrix schedules not filled: ' + att.error : '');
     render(pid);
   };
   window.basPickGroups = function (pid, input) {

@@ -4582,10 +4582,10 @@ function emRenderMatrix(container, data, pid) {
     _emAddRowBtn.addEventListener('click', function () {
       emAddManualRow(pid);
     });
-  var _emImportSchedBtn = document.getElementById('em-import-schedules-btn');
-  if (_emImportSchedBtn)
-    _emImportSchedBtn.addEventListener('click', function () {
-      emTriggerEffectiveSchedulesImport(pid);
+  var _emSchedLink = document.getElementById('em-schedules-link');
+  if (_emSchedLink)
+    _emSchedLink.addEventListener('click', function () {
+      sPTab('district', document.querySelector('.pdt[data-tab="district"]'));
     });
 
   emRenderTable(data, _emFilters);
@@ -4807,110 +4807,6 @@ function emCloseUploadModal(btn, resolvedMode) {
    functions are only the DOM wiring: a hidden file input, the FileReader
    handoff, and a dismissible result modal that always lists unmatched rows
    (memory: report unmatched rows in the UI, never silently drop them). */
-function emTriggerEffectiveSchedulesImport(pid) {
-  var resolvedPid = pid || window._emActivePid;
-  if (!resolvedPid) {
-    if (typeof showToast === 'function') showToast('No project selected', 'warn');
-    return;
-  }
-  var input = document.createElement('input');
-  input.type = 'file';
-  input.accept = '.csv';
-  input.style.display = 'none';
-  input.addEventListener('change', function () {
-    var file = input.files && input.files[0];
-    if (file) emHandleEffectiveSchedulesFile(resolvedPid, file);
-    if (input.parentNode) input.parentNode.removeChild(input);
-  });
-  document.body.appendChild(input);
-  input.click();
-}
-
-function emHandleEffectiveSchedulesFile(pid, file) {
-  var reader = new FileReader();
-  reader.onload = function () {
-    var text = String(reader.result || '');
-    var result = emAttachEffectiveSchedules(pid, text, file.name);
-    emShowEffectiveSchedulesResult(result);
-    var data = emLoadMatrix(pid);
-    var tableWrap = document.getElementById('em-table-wrap');
-    var container = tableWrap ? tableWrap.parentNode : null;
-    if (data && container) emRenderMatrix(container, data, pid);
-  };
-  reader.onerror = function () {
-    if (typeof showToast === 'function') showToast('Could not read the Effective Schedules file', 'error');
-  };
-  reader.readAsText(file);
-}
-
-function emShowEffectiveSchedulesResult(result) {
-  var existing = document.getElementById('em-sched-result-backdrop');
-  if (existing) existing.parentNode.removeChild(existing);
-  var backdrop = document.createElement('div');
-  backdrop.id = 'em-sched-result-backdrop';
-  backdrop.style.cssText =
-    'position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,0.45);z-index:9998;' +
-    'display:flex;align-items:flex-start;justify-content:center;padding-top:70px';
-  backdrop.addEventListener('click', function (e) {
-    if (e.target === backdrop) backdrop.parentNode.removeChild(backdrop);
-  });
-
-  var panel = document.createElement('div');
-  panel.style.cssText =
-    'background:var(--s1);border:1px solid var(--border);border-radius:10px;box-shadow:0 8px 32px rgba(0,0,0,0.28);' +
-    'width:560px;max-width:calc(100vw - 32px);z-index:9999;padding:20px;max-height:calc(100vh - 110px);overflow-y:auto';
-
-  var summary = result.error
-    ? _escHtml(result.error)
-    : 'Matched ' +
-      result.matchedCount +
-      ' of ' +
-      result.totalCount +
-      ' control program' +
-      (result.totalCount === 1 ? '' : 's') +
-      ' to Equipment Matrix rows.';
-
-  var unmatchedHtml = '';
-  if (result.unmatched && result.unmatched.length) {
-    var unmatchedRowsHtml = result.unmatched
-      .map(function (u) {
-        return (
-          '<tr><td style="padding:4px 8px;border-bottom:1px solid var(--border);font-size:11px;color:var(--text)">' +
-          _escHtml(u.building) +
-          '</td><td style="padding:4px 8px;border-bottom:1px solid var(--border);font-size:11px;color:var(--text)">' +
-          _escHtml(u.controlProgram) +
-          '</td></tr>'
-        );
-      })
-      .join('');
-    unmatchedHtml =
-      '<div style="font-size:12px;font-weight:600;margin:10px 0 6px;color:var(--text)">Unmatched (' +
-      result.unmatched.length +
-      ') — no Equipment Matrix row found for this building + control program:</div>' +
-      '<table style="width:100%;border-collapse:collapse;margin-bottom:8px"><thead><tr>' +
-      '<th style="text-align:left;padding:4px 8px;font-size:11px;color:var(--text3);border-bottom:1px solid var(--border)">Building</th>' +
-      '<th style="text-align:left;padding:4px 8px;font-size:11px;color:var(--text3);border-bottom:1px solid var(--border)">Control Program</th>' +
-      '</tr></thead><tbody>' +
-      unmatchedRowsHtml +
-      '</tbody></table>';
-  }
-
-  panel.innerHTML =
-    '<div style="font-size:15px;font-weight:700;margin-bottom:8px;color:var(--text)">Effective Schedules Import</div>' +
-    '<div style="font-size:13px;color:var(--text2);margin-bottom:8px">' +
-    summary +
-    '</div>' +
-    unmatchedHtml +
-    '<button id="em-sched-result-close" class="btn btn-sm" style="height:28px;font-size:11px;margin-top:8px">Close</button>';
-
-  backdrop.appendChild(panel);
-  document.body.appendChild(backdrop);
-  var closeBtn = document.getElementById('em-sched-result-close');
-  if (closeBtn)
-    closeBtn.addEventListener('click', function () {
-      backdrop.parentNode.removeChild(backdrop);
-    });
-}
 
 // emCloseStrayScheduleResultModal (2026-09-25 fix) — #em-sched-result-backdrop above is appended
 // directly to document.body, outside the Equipment Matrix tab's own DOM subtree, with only two
@@ -5113,7 +5009,7 @@ function emRenderToolbar(data, pid, projBadge) {
     '<button id="em-export-setpoints-btn" class="btn btn-ghost btn-sm" style="height:28px;font-size:11px">Export Setpoints &amp; Schedules</button>' +
     // Escaping (2026-09-23, item 5ar): id="..." here so wiring is attached via addEventListener
     // (see emRenderMatrix) instead of interpolating pid into an onclick string.
-    '<button id="em-import-schedules-btn" class="btn btn-ghost btn-sm" style="height:28px;font-size:11px">Import Effective Schedules CSV</button>' +
+    '<button id="em-schedules-link" class="btn btn-ghost btn-sm" style="height:28px;font-size:11px" title="WebCTRL schedules are imported once, on the District Calendar tab, under BAS schedules.">Schedules: import on District Calendar</button>' +
     '<button id="em-add-row-btn" class="btn btn-ghost btn-sm" style="height:28px;font-size:11px">+ Add Row</button>' +
     '<button class="btn btn-ghost btn-sm" onclick="emAddCustomCol(\'' +
     pid +
@@ -11310,6 +11206,12 @@ function emZoneScheduleDisplay(row) {
 }
 
 function emAttachEffectiveSchedules(pid, csvText, fileName) {
+  return emAttachParsedSchedules(pid, emParseEffectiveSchedulesCSV(csvText), fileName);
+}
+
+// The one place that writes imported WebCTRL schedules onto Equipment Matrix rows. The District
+// Calendar BAS schedules import (the only import entry point) calls it with its parsed programs.
+function emAttachParsedSchedules(pid, parsed, fileName) {
   var data = emLoadMatrix(pid);
   if (!data || !data.rows || !data.rows.length) {
     return {
@@ -11327,7 +11229,6 @@ function emAttachEffectiveSchedules(pid, csvText, fileName) {
     if (!lookup[key]) lookup[key] = [];
     lookup[key].push(r);
   }
-  var parsed = emParseEffectiveSchedulesCSV(csvText);
   var importDate = new Date().toISOString().slice(0, 10);
   var unmatched = [];
   var matchedRowIds = {};
@@ -11518,6 +11419,46 @@ function emBuildSetpointExportRows(pid, bldgIdFilter, optionLetter) {
     ]);
   }
   return out;
+}
+
+// Set point rows -> Set Points tab zones. The ONE mapping (Pull from Equipment Matrix, the Set Points
+// tab and the Facility Audit set points view all use it). Unknown values stay '?', never invented.
+function emZonesFromSetpointRows(rows) {
+  function num(c) {
+    if (c === '?') return '?';
+    var n = parseFloat(c);
+    return isNaN(n) ? '?' : n;
+  }
+  function sched(row) {
+    if (row[8] === '?') return '?';
+    if (row[8] === 'No') return 'No occupied schedule found';
+    return 'M-F ' + row[9] + '-' + row[10];
+  }
+  return (rows || []).map(function (row) {
+    return {
+      name: row[1] || '?',
+      occHeat: num(row[3]),
+      occCool: num(row[4]),
+      unoccHeat: num(row[5]),
+      unoccCool: num(row[6]),
+      schedule: sched(row),
+    };
+  });
+}
+
+// The ONE source of the current set points for a building: the saved Set Points tab record when
+// one exists, else the Equipment Matrix (with its imported schedules). Set Points tab and Facility
+// Audit both call this. Reads only; writes nothing.
+function emCurrentSetpointZones(pid, bldgId) {
+  var projs = typeof projects !== 'undefined' ? projects : sget('en_projects', []);
+  var p = (projs || []).filter(function (x) {
+    return String(x.id) === String(pid);
+  })[0];
+  var rec = p && (p.setpoints || []).filter(function (r) {
+    return r.buildingId === bldgId;
+  })[0];
+  if (rec) return rec.zones || [];
+  return emZonesFromSetpointRows(emBuildSetpointExportRows(pid, bldgId, ''));
 }
 
 // Writes the .xlsx using the site's existing SheetJS (XLSX global) library —

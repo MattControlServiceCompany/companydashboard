@@ -4,7 +4,7 @@
 //   edits     - the user's changes to automatic findings (status, notes, cost, hours, picture, link).
 // Automatic findings are NOT stored: computations/audit-rules.js recomputes them on every read.
 // The Deficiency List is a filter on the same records. Set points are NEVER stored here: the Set Points
-// view reads emBuildSetpointExportRows (app/equipment-matrix.js) each time.
+// view reads emCurrentSetpointZones (app/equipment-matrix.js, same as the Set Points tab) each time.
 // Cost and savings link through measureId to the existing measures; no energy math here.
 
 var FA_STATUSES = ['Open', 'Planned', 'Done', 'Dismissed'];
@@ -58,9 +58,20 @@ function faIsDeficiency(f) {
   return !!(f.deficiency || f.cscList || f.issueType === 'Deficiency');
 }
 
-// Set points: read from the Equipment Matrix every time, never stored.
+// Set points: the same source as the Set Points tab (emCurrentSetpointZones), read every time, never stored.
+var FA_SETPOINT_HEADERS = ['Building', 'Zone / System', 'Occupied Heat °F', 'Occupied Cool °F', 'Unoccupied Heat °F', 'Unoccupied Cool °F', 'Schedule'];
 function faSetPointRows(pid) {
-  return emBuildSetpointExportRows(pid);
+  var out = [];
+  var bldgs = typeof getUDBldgs === 'function' ? getUDBldgs(pid) : [];
+  bldgs.forEach(function (b) {
+    emCurrentSetpointZones(pid, b.id).forEach(function (z) {
+      var v = function (x) {
+        return x === null || x === undefined || x === '' ? '?' : String(x);
+      };
+      out.push([b.name || 'Building', z.name || '?', v(z.occHeat), v(z.occCool), v(z.unoccHeat), v(z.unoccCool), z.schedule || '?']);
+    });
+  });
+  return out;
 }
 
 function faEdit(pid, id, field, value) {
@@ -279,10 +290,10 @@ function _faFindingsTable(pid, list) {
 
 function _faSetPointsTable(pid) {
   var rows = faSetPointRows(pid);
-  if (!rows.length) return '<div class="fa-empty">No equipment in the matrix.</div>';
-  var heads = typeof EM_SETPOINT_EXPORT_HEADERS !== 'undefined' ? EM_SETPOINT_EXPORT_HEADERS : [];
+  if (!rows.length) return '<div class="fa-empty">No set points yet.</div>';
+  var heads = FA_SETPOINT_HEADERS;
   return (
-    '<div class="fa-sub">Read from the Equipment Matrix. Nothing is stored here.</div><div class="ch-tbl-outer fa-outer fa-scroll"><table class="fa-tbl"><thead><tr>' +
+    '<div class="fa-sub">Same rows as the Set Points tab. Nothing is stored here.</div><div class="ch-tbl-outer fa-outer fa-scroll"><table class="fa-tbl"><thead><tr>' +
     heads
       .map(function (h) {
         return '<th>' + _escHtml(h) + '</th>';

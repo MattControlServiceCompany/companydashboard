@@ -2420,7 +2420,8 @@ function renderSetpointsTab(projId) {
   const dataSource = isViewingSnapshot ? activeSnapData.data : p.setpoints || [];
 
   const displayRecord = dataSource.find((r) => r.buildingId === activeBldgId);
-  const zones = displayRecord ? displayRecord.zones : [];
+  // Current view: the one shared source (saved record, else the Equipment Matrix). Snapshots: their own copy.
+  const zones = isViewingSnapshot ? (displayRecord ? displayRecord.zones : []) : emCurrentSetpointZones(projId, activeBldgId);
 
   const snapPills = _spBuildSnapshotPills(projId, activeSnapId, snapshots);
 
@@ -2461,7 +2462,7 @@ function renderSetpointsTab(projId) {
     const avgRows = bldgs
       .map((b) => {
         const rec = dataSource.find((r) => r.buildingId === b.id);
-        const bZones = rec ? rec.zones : [];
+        const bZones = isViewingSnapshot ? (rec ? rec.zones : []) : emCurrentSetpointZones(projId, b.id);
         return _spComputeAvgRow(bZones, b);
       })
       .filter(Boolean);
@@ -2522,18 +2523,7 @@ function renderSetpointsTab(projId) {
               }
               ${
                 !isAvg && !isViewingSnapshot
-                  ? `<!-- CSV Upload Area -->
-              <div id="sp-upload-${projId}" style="border:2px dashed var(--border2);border-radius:8px;padding:16px;text-align:center;margin-bottom:16px;cursor:pointer;transition:border-color .2s"
-                   onclick="document.getElementById('sp-file-${projId}').click()"
-                   ondragover="event.preventDefault();this.style.borderColor='var(--accent)'"
-                   ondragleave="this.style.borderColor='var(--border2)'"
-                   ondrop="spHandleDrop(event,'${projId}','${activeBldgId}')">
-                <div style="font-size:22px;margin-bottom:4px">📂</div>
-                <div style="font-size:12px;font-weight:600;color:var(--text)">Drop BAS export here or click to browse</div>
-                <div style="font-size:11px;color:var(--text3);margin-top:4px">CSV, XLSX, or Niagara equipment snapshot (Zone/System · Occ/Unocc Heat/Cool · Schedule)</div>
-                <input type="file" id="sp-file-${projId}" accept=".csv,.txt,.xlsx,.xls" style="display:none"
-                       onchange="spHandleFileInput(event,'${projId}','${activeBldgId}')">
-              </div>`
+                  ? `<div style="font-size:12px;color:var(--text2);margin-bottom:16px">Set points and schedules come from the Equipment Matrix. WebCTRL schedules are imported once, on the <a href="#" style="color:var(--accent)" onclick="sPTab('district',document.querySelector('.pdt[data-tab=&quot;district&quot;]'));return false">District Calendar</a> tab. Use Pull from Equipment Matrix to refresh the rows below.</div>`
                   : ''
               }
               ${isViewingSnapshot ? `<div style="margin-bottom:12px;padding:8px 12px;background:var(--s2);border:1px solid var(--border2);border-radius:6px;font-size:11px;color:var(--text2)">Viewing saved snapshot: <strong style="color:var(--text)">${_escHtml(activeSnapData.label)}</strong> — switch to <a href="#" style="color:var(--accent);text-decoration:none" onclick="event.preventDefault();spViewSnapshot('${projId}',null)">Current</a> to edit</div>` : ''}
@@ -2853,7 +2843,7 @@ function _spGetDraft(projId, bldgId) {
   if (!window._spDraft[key]) {
     const p = projects.find((x) => String(x.id) === String(projId));
     const rec = p && (p.setpoints || []).find((r) => r.buildingId === bldgId);
-    window._spDraft[key] = JSON.parse(JSON.stringify(rec ? rec.zones : []));
+    window._spDraft[key] = JSON.parse(JSON.stringify(emCurrentSetpointZones(projId, bldgId)));
   }
   return window._spDraft[key];
 }
@@ -2973,18 +2963,6 @@ function spDeleteAllZones(projId, bldgId) {
    Heat/Cool, 7 Adjustment, 8 has-schedule(Yes/No/'?'), 9-10 start/stop,
    11 Sat&Sun, 12-19 Proposed (not used here — Set Points tab tracks the
    EXISTING/current BAS program, not a savings-calc proposal). */
-function _spScheduleFromExportRow(row) {
-  var hasSched = row[8]; // 'Yes' | 'No' | '?'
-  if (hasSched === '?') return '?';
-  if (hasSched === 'No') return 'No occupied schedule found';
-  return 'M-F ' + row[9] + '-' + row[10];
-}
-function _spNumOrUnknown(cell) {
-  if (cell === '?') return '?';
-  var n = parseFloat(cell);
-  return isNaN(n) ? '?' : n;
-}
-
 function spOpenPullFromEMDialog(projId, defaultBldgId) {
   var existing = document.getElementById('sp-pull-em-modal');
   if (existing) existing.remove();
@@ -3070,16 +3048,7 @@ function spPullFromEquipmentMatrix(projId, bldgId) {
   ) {
     return;
   }
-  var zones = rows.map(function (row) {
-    return {
-      name: row[1] || '?',
-      occHeat: _spNumOrUnknown(row[3]),
-      occCool: _spNumOrUnknown(row[4]),
-      unoccHeat: _spNumOrUnknown(row[5]),
-      unoccCool: _spNumOrUnknown(row[6]),
-      schedule: _spScheduleFromExportRow(row),
-    };
-  });
+  var zones = emZonesFromSetpointRows(rows);
   if (rec) {
     rec.zones = zones;
   } else {
