@@ -38,7 +38,7 @@
       .sort();
     if (!dates.length || !snaps[dates[dates.length - 1]].rows) return [];
     return Object.keys(snaps[dates[dates.length - 1]].rows).filter(function (k) {
-      return !BasCoverage.isServingProgram(BasDiff.splitKey(k).program.replace(/ #\d+$/, ''));
+      return !BasCoverage.isUnchecked(BasDiff.splitKey(k).program.replace(/ #\d+$/, ''));
     });
   }
   function whoName() {
@@ -64,8 +64,9 @@
     var tz = tzOf(pid);
     var t = today(tz);
     var by = {};
-    Object.keys((snap && snap.events) || {}).forEach(function (id) {
-      var row = snap.events[id];
+    var events = Object.assign({}, (snap && snap.events) || {}, typeof distCalManualRows === 'function' ? distCalManualRows(pid) : {});
+    Object.keys(events).forEach(function (id) {
+      var row = events[id];
       if (!row[1]) return;
       var last = CalendarDiff.calendarDay(row[1], tz);
       if (row[3] || /^\d{4}-\d{2}-\d{2}$/.test(row[1])) last = CalendarDiff.allDayLastDay(row[1], row[2], tz);

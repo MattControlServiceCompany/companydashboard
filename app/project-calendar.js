@@ -502,6 +502,7 @@
       '"></div></div></div>';
     renderList(pid);
     if (typeof window.spaceMapRender === 'function') window.spaceMapRender(pid);
+    if (typeof window.sactRender === 'function') window.sactRender(pid);
   }
 
   // --- actions -----------------------------------------------------------------
@@ -577,6 +578,7 @@
       }
       await DB.set(k('hist', pid), [rec].concat(hist).slice(0, HIST_MAX));
       await DB.set(k('snap', pid), snap);
+      if (typeof window.sactPersist === 'function') await window.sactPersist(pid); // closes or reopens actions against the new copy
       s.month = null;
     } catch (e) {
       s.msg = 'The calendar feed could not be read. The last saved copy is kept.';
@@ -587,6 +589,7 @@
   }
 
   // The calendar's own table and text helpers, shared with the BAS schedules card (app/bas-schedules.js).
+  window.pcalBasCell = basCell; // the one BAS badge, also used by the manual events table (district-calendar.js)
   window.pcalUi = { table: table, num: num, stamp: stamp, ensureStyle: ensureStyle };
   window.pcalRender = render;
   window.pcalSync = sync;

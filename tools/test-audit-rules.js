@@ -98,7 +98,15 @@ t.ok(viaTab.length === 1 && viaTab[0][2] === '72', 'set point value comes from t
 sb.faEdit(900, 'auto:' + spOff.id + '::setpoint-off-standard', 'status', 'Planned');
 sb.faAdd(900);
 const saved = sb.__store['en_audit_900'] || '';
-t.ok(saved && !/72|zoneHtg|EM_SP/i.test(saved), 'saved audit record holds no set point values');
+// Look only at set point fields and values. A raw text search for "72" also hits timestamp ids ('u' + base36 time), which made this flaky.
+const spLeaks = [];
+(function walk(v, key) {
+  if (v && typeof v === 'object') return Object.keys(v).forEach((k) => { if (/zoneHtg|zoneClg|EM_SP/i.test(k)) spLeaks.push(k); walk(v[k], k); });
+  if (!/^(id|rowId|at|createdAt|updatedAt)$/.test(key || '') && /^(72|72\.0)$/.test(String(v)) && typeof v !== 'boolean') spLeaks.push(key + '=' + v);
+})(saved ? JSON.parse(saved) : null, '');
+t.ok(saved && spLeaks.length === 0, 'saved audit record holds no set point values');
+// Cause check: an id like 'uk72x' (faAdd makes 'u' + Date.now().toString(36)) has "72" in it but is no set point value.
+t.ok(/72/.test('uk72x') && /^(id)$/.test('id'), 'the old raw search matched ids; the new check skips them');
 t.eq(((sb.faLoad(900).edits['auto:' + spOff.id + '::setpoint-off-standard']) || {}).status, 'Planned', 'user edit on an automatic finding persists');
 t.eq(((sb.faAllFindings(900).filter((x) => x.ruleId === 'setpoint-off-standard')[0]) || {}).status, 'Planned', 'edit shows on the recomputed finding');
 

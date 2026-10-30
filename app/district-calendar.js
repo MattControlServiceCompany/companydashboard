@@ -728,6 +728,13 @@ function renderDistCalTable(projId) {
     return;
   }
   const rows = p.districtCalendar.sort((a, b) => new Date(a.date) - new Date(b.date));
+  const cfg = DB.get('en_cal_cfg_' + projId, null);
+  const manual = distCalManualRows(projId);
+  const basCtx = {
+    tz: (cfg && cfg.timezone) || 'America/Chicago',
+    map: DB.get('en_space_map_' + projId, null),
+    snaps: DB.get('en_bas_snap_' + projId, {}),
+  };
   const viewMode = window._distCalView[projId] || 'list';
   const toggleBtn = `<div style="display:flex;justify-content:flex-end;margin-bottom:8px">
           <button class="btn btn-ghost btn-sm" onclick="distCalToggleView(${projId})" style="font-size:11px">
@@ -796,29 +803,65 @@ function renderDistCalTable(projId) {
   wrap.innerHTML =
     toggleBtn +
     `<table class="dtbl" style="width:100%">
-          <thead><tr><th style="width:140px">Date</th><th>Event Name</th><th style="width:140px">Type</th><th style="width:36px"></th></tr></thead>
+          <thead><tr><th style="width:140px">Date</th><th style="width:100px">Start</th><th style="width:100px">End</th><th>Event Name</th><th style="width:170px">Space</th><th style="width:140px">Type</th><th style="width:170px">BAS</th><th style="width:36px"></th></tr></thead>
           <tbody>${rows
             .map((ev, i) => {
               const selType = ev.type || 'Other';
               const opts = DIST_CAL_TYPES.map((t) => `<option${t === selType ? ' selected' : ''}>${t}</option>`).join(
                 '',
               );
+              const bas = typeof pcalBasCell === 'function' ? pcalBasCell(manual['m' + ev.id] || [''], '', basCtx) : '';
               return `<tr>
             <td><input class="fi" type="date" value="${ev.date || ''}" onchange="distCalUpdate(${projId},${i},'date',this.value)" style="font-family:var(--mono)"></td>
+            <td><input class="fi" type="time" value="${_escHtml(ev.start || '')}" onchange="distCalUpdate(${projId},${i},'start',this.value)" style="font-family:var(--mono)"></td>
+            <td><input class="fi" type="time" value="${_escHtml(ev.end || '')}" onchange="distCalUpdate(${projId},${i},'end',this.value)" style="font-family:var(--mono)"></td>
             <td><input class="fi" value="${_escHtml(ev.name || '')}" onchange="distCalUpdate(${projId},${i},'name',this.value)" style="width:100%"></td>
+            <td><input class="fi" list="distcal-spaces-${projId}" value="${_escHtml(ev.space || '')}" onchange="distCalUpdate(${projId},${i},'space',this.value)" style="width:100%"></td>
             <td><select class="fs" onchange="distCalUpdate(${projId},${i},'type',this.value)">${opts}</select></td>
+            <td id="distcal-bas-${projId}-${ev.id}">${bas}</td>
             <td><button class="btn-del" onclick="distCalRemove(${projId},${i})">✕</button></td>
           </tr>`;
             })
             .join('')}</tbody>
-        </table>`;
+        </table><datalist id="distcal-spaces-${projId}">${distCalSpaceNames(projId)
+          .map((s) => `<option value="${_escHtml(s)}">`)
+          .join('')}</datalist>`;
+}
+
+// Space names for the manual event row: the space map list (en_space_map_<pid>), or the person types any text.
+function distCalSpaceNames(projId) {
+  const m = DB.get('en_space_map_' + projId, null);
+  const spaces = (m && m.spaces) || {};
+  return Object.keys(spaces)
+    .map((k) => spaces[k] && spaces[k].space)
+    .filter(Boolean)
+    .sort();
+}
+// Manual events as event rows [title, start, end, allDay, location] keyed "m<id>": the one conversion
+// (CalendarDiff.manualRows), used by the BAS column here, the What needs to change list and the space map list.
+function distCalManualRows(projId) {
+  const p = projects.find((x) => x.id === projId);
+  const cfg = DB.get('en_cal_cfg_' + projId, null);
+  return CalendarDiff.manualRows((p && p.districtCalendar) || [], (cfg && cfg.timezone) || 'America/Chicago');
+}
+
+function distCalRefreshBas(projId) {
+  const p = projects.find((x) => x.id === projId);
+  if (!p || typeof pcalBasCell !== 'function') return;
+  const cfg = DB.get('en_cal_cfg_' + projId, null);
+  const ctx = { tz: (cfg && cfg.timezone) || 'America/Chicago', map: DB.get('en_space_map_' + projId, null), snaps: DB.get('en_bas_snap_' + projId, {}) };
+  const manual = distCalManualRows(projId);
+  (p.districtCalendar || []).forEach((ev) => {
+    const td = document.getElementById('distcal-bas-' + projId + '-' + ev.id);
+    if (td) td.innerHTML = pcalBasCell(manual['m' + ev.id] || [''], '', ctx);
+  });
 }
 
 function distCalAddRow(projId) {
   const p = projects.find((x) => x.id === projId);
   if (!p) return;
   p.districtCalendar = p.districtCalendar || [];
-  p.districtCalendar.push({ id: Date.now(), date: '', name: '', type: 'Holiday' });
+  p.districtCalendar.push({ id: Date.now(), date: '', start: '', end: '', space: '', name: '', type: 'Holiday' });
   sset('en_projects', projects);
   renderDistCalTable(projId);
 }
@@ -829,6 +872,10 @@ function distCalUpdate(projId, idx, field, val) {
   if (!p.districtCalendar[idx]) return;
   p.districtCalendar[idx][field] = val;
   sset('en_projects', projects);
+  if (field === 'date' || field === 'start' || field === 'end' || field === 'space' || field === 'name') {
+    distCalRefreshBas(projId); // the BAS column follows the change (only that cell, so typing focus stays)
+    if (typeof window.sactPersist === 'function') window.sactPersist(projId);
+  }
 }
 
 function distCalRemove(projId, idx) {

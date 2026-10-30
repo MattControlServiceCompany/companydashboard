@@ -226,6 +226,18 @@
           "keyFiles": ["app/space-map.js", "computations/bas-coverage.js", "app/project-calendar.js", "tools/test-bas-coverage.js"]
         },
         {
+          "id": "project-sched-actions",
+          "name": "Project page, District Calendar tab: What needs to change",
+          "description": "The card at the top of the tab (app/sched-actions.js, container sact-panel-<pid>) lists one action per Not covered upcoming event, with Done / Open again, and BAS programs occupied all day with no event. Rules are in computations/sched-actions.js; the coverage check is BasCoverage.eventCoverage.",
+          "steps": [
+            "The tab works out the list in memory from en_cal_snap_<pid>, en_space_map_<pid>, en_bas_snap_<pid>, en_bas_groups_<pid> and en_sched_actions_<pid> (SchedActions.reconcile)",
+            "User chooses Done or Open again; en_sched_actions_<pid> is saved with who and when, and a kind 'action' record is added to en_bas_hist_<pid>",
+            "After a calendar sync or a BAS import the list is saved again: a fixed action closes, a Done action still Not covered reopens with a note"
+          ],
+          "storageKeys": ["en_sched_actions_<pid>", "en_bas_hist_<pid>", "en_space_map_<pid>", "en_bas_snap_<pid>", "en_cal_snap_<pid>"],
+          "keyFiles": ["app/sched-actions.js", "computations/sched-actions.js", "computations/bas-coverage.js", "tools/test-sched-actions.js"]
+        },
+        {
           "id": "weather-normalization",
           "name": "Weather Normalization",
           "description": "Upload weather data CSV by ZIP code. Used in ASHRAE Guideline 14 baseline calculations to adjust consumption for weather variations.",
