@@ -8,16 +8,31 @@
 //     A group is covered when at least one member has the data we need. Units are never listed one by one.
 //   - Serving units (AHU, ERV, DOAS, serving RTU) have no schedule. They run on requests.
 //     A missing schedule is never a gap for them. Plants need only their water temperature set point.
-//   - Domestic hot water (category plumbing) and non-HVAC categories are out of scope.
+//   - A serving unit needs ONLY its supply air temperature (SAT) set point. A single-zone unit (subtype sz) serves
+//     one zone: it is not a serving unit, it needs its own zone set points and schedule, and never "requests".
+//   - Domestic hot water (category plumbing, or any DHW/domestic row) and non-HVAC categories are out of scope.
+//   - A plant row needs a water temperature set point only when it makes or holds water temperature. Pumps,
+//     sump/grinder/fire pump alarms, meters, pressure sensors, and fan units are not plants.
+//   - Point names are tested in BOTH forms: the normalized key and the raw BAS point name, so a name the
+//     normalizer dropped or renamed still counts.
 //   - Lighting is audited from the screenshots we have. An unshot lighting zone is never a gap.
 //   - This is about gathering coverage only. It makes no statement about energy use or savings.
 
 // What each need looks like in the BAS point names (matched against the normalized point keys).
+// Names that look like a set point but are not the one we need (alarms, diagnostics, limits, pressure, flow...).
+var AUDIT_COV_NOT_SP = /diagnostic|fail|fault|alarm|safety|limit|static|pressure|\bdp\b|dpset|diff|humid|dehumid|cfm|flow|speed|enthalpy|co2|firing|tracking|prohibit|feedback|enable|mode|reset ?sel/i;
 var AUDIT_COV_ITEMS = {
-  setpoints: { label: 'set points', re: /set ?point|setpt/i },
-  sat: { label: 'supply air temperature set point', re: /(sat|supply.*temp|discharge.*temp)\w*(set ?point|setpt|sp\b)/i },
-  econ: { label: 'economizer settings', re: /econ/i },
-  co2: { label: 'CO2 value', re: /co2/i },
+  setpoints: { label: 'set points', re: /set ?point|setpt|stpt/i, not: AUDIT_COV_NOT_SP },
+  // SAT set point: a supply/discharge air temperature set point, or the cooling/heating set point PID of a supply
+  // air loop ("Cooling Set Point BACnet PID / Setpoint": its input is the supply air temperature).
+  sat: {
+    label: 'supply air temperature set point',
+    re: /(supply|discharge)[\w ]*temp[\w ]*(set ?point|setpt|\bsp\b)|(^|[^a-z])(sat|dat)[\w ]*(set ?point|setpt|\bsp\b)|(^|[^a-z])(cool|heat|hw|chw)\w*( valve| coil)? ?(set ?point)? ?(bacnet ?)?pid ?[\/ ]*set ?point|(^|[^a-z])(remote |integration )?(cool|heat)(ing)? (remote |integration )?set ?point( signal)?( ani| av| ano)?$|(^|[^a-z])eru set ?point/i,
+    not: /diagnostic|fail|fault|alarm|safety|limit|oa ?(cooling|heating)|static|pressure|humid|dehumid|zone|space|room|occupied|effective|adjust|pre-?heat/i,
+  },
+  wsp: { label: 'water temperature set point', re: /set ?point|setpt|stpt/i, not: AUDIT_COV_NOT_SP },
+  econ: { label: 'economizer settings', re: /econ|outside ?air ?damper|oa ?damper/i },
+  co2: { label: 'CO2 value', re: /co2|carbon dioxide/i },
   mode: { label: 'heating and cooling mode', re: /mode/i },
   request: { label: 'requests', re: /request/i },
   schedule: { label: 'schedule', re: /schedule|occupan/i },
@@ -27,40 +42,98 @@ var AUDIT_COV_ITEMS = {
 // Category -> what we need.
 var AUDIT_COV_ZONE = { vav: 1, fpb: 1, ddvav: 1, zone: 1, fcu: 1, vrf: 1, ac: 1 };
 var AUDIT_COV_AIR = {
-  ahu: ['sat', 'econ', 'co2', 'mode', 'request'],
-  rtu: ['sat', 'econ', 'co2', 'mode', 'request'],
-  doas: ['sat', 'co2', 'mode', 'request'],
-  erv: ['sat', 'mode', 'request'],
+  ahu: ['econ', 'co2', 'mode'],
+  rtu: ['econ', 'co2', 'mode'],
+  doas: ['co2', 'mode'],
+  erv: ['mode'],
 };
 var AUDIT_COV_PLANT = { hwp: 1, chwp: 1 };
 var AUDIT_COV_BASIC = { ef: 1, heater: 1, mau: 1, furnace: 1 };
 var AUDIT_COV_NONE = { lighting: 1 };
+// Domestic hot water, meters and pump or sump alarm rows are not HVAC water plants.
+var AUDIT_COV_NOT_PLANT_NAME = /domestic|\bdhw\b|meter|sump|ejector|grinder|fire pump/i;
+// A plant makes or holds water temperature: it has a loop/boiler/chiller/system supply, return or leaving water point.
+var AUDIT_COV_PLANT_POINT = /system ?(supply|return)|(boiler|chiller|loop|secondary|primary|plant|source)\W*(\w+\W+){0,2}(supply|return|leaving|outlet)|(supply|return|leaving)\W*water|hot ?water (supply|temp)|chilled ?water (supply|temp)|lchw|lcw|chws|hws/i;
+// A control point: something a unit can command or run.
+var AUDIT_COV_CONTROL_POINT = /fan|valve|damper|mode|enable|command|cmd|flow|schedule|heat|cool|set ?point/i;
+// A zone unit has a set point only when it senses a zone temperature.
+var AUDIT_COV_ZONE_TEMP = /(zone|space|room)\W*(air\W*)?temp|temp\W*(of )?(zone|space|room)|^raw:temp(erature)?$/i;
 
-// The items we need for one row, or null when the row is out of scope.
-function auditCoverageNeeds(row, rows) {
+// An air handler or rooftop unit has a supply air temperature, mixed air, return air or an economizer.
+// A fan alone (stair pressure fan, exhaust fan, destratification fan) is not an air unit.
+var AUDIT_COV_AIR_UNIT_POINT = /supply ?air ?temp|mixed ?air|return ?air ?temp|discharge ?air ?temp|economizer/i;
+// A terminal box has an air flow set point or flow control and no supply fan.
+var AUDIT_COV_BOX_POINT = /air ?flow ?set ?point|flow ?control/i;
+
+function _auditCovNames(row) {
+  var pts = emGetNormalizedPoints(row) || {};
+  var seen = {};
+  Object.keys(pts).forEach(function (k) {
+    if (pts[k] !== '' && pts[k] !== null && pts[k] !== undefined) seen[k] = true;
+  });
+  var raw = row.pointsRaw;
+  if (raw && !Array.isArray(raw)) {
+    Object.keys(raw).forEach(function (k) {
+      if (raw[k] !== '' && raw[k] !== null && raw[k] !== undefined) seen['raw:' + k] = true;
+    });
+  }
+  return Object.keys(seen).sort();
+}
+
+// The items we need for one row, or null when the row is out of scope. names = _auditCovNames(row).
+function auditCoverageNeeds(row, rows, names) {
   var cat = row.category;
+  // Filed as an air unit but the equipment name says it is a fan coil, box or fan: use the name's category
+  // (emParseEquipBaseName is the one name classifier).
+  if (AUDIT_COV_AIR[cat] && typeof emParseEquipBaseName === 'function') {
+    var nameCat = emParseEquipBaseName(row.equipName || row.location || '');
+    if (nameCat === 'fcu' || nameCat === 'vav' || nameCat === 'ef') cat = nameCat;
+  }
+  names = names || _auditCovNames(row);
+  var has = function (re) {
+    return names.some(function (k) {
+      return re.test(k);
+    });
+  };
   if (AUDIT_COV_NONE[cat]) return [];
-  if (AUDIT_COV_ZONE[cat] || AUDIT_COV_PLANT[cat]) return ['setpoints'];
+  if (AUDIT_COV_PLANT[cat]) {
+    if (AUDIT_COV_NOT_PLANT_NAME.test((row.location || '') + ' ' + (row.equipName || ''))) return null;
+    if (!has(AUDIT_COV_PLANT_POINT) || has(/fan/i)) return null;
+    return ['wsp'];
+  }
+  if (AUDIT_COV_AIR[cat] && !has(AUDIT_COV_AIR_UNIT_POINT)) {
+    // Filed as an air unit but the points show no air unit: a terminal box, or a panel/relay row.
+    // A box needs its zone set points. Anything else is not an air unit and is out of scope.
+    return has(AUDIT_COV_BOX_POINT) && has(AUDIT_COV_ZONE_TEMP) ? ['setpoints'] : null;
+  }
+  if (AUDIT_COV_ZONE[cat]) {
+    // A CO2 monitoring program (sensors only, nothing to control) has no set point to find.
+    if (has(/co2/i) && !has(AUDIT_COV_CONTROL_POINT)) return [];
+    // A zone unit senses a zone temperature. An outdoor unit, an exhaust fan or a damper row filed as a zone unit does not.
+    return has(AUDIT_COV_ZONE_TEMP) ? ['setpoints'] : [];
+  }
   if (AUDIT_COV_BASIC[cat]) return ['points'];
   if (AUDIT_COV_AIR[cat]) {
-    var needs = AUDIT_COV_AIR[cat].slice();
-    // A single-zone RTU has its own schedule and zone set points. A serving unit has neither.
-    if (!auditIsServingUnit(row, rows)) {
-      needs = needs.filter(function (n) {
-        return n !== 'sat';
-      });
-      needs.unshift('setpoints', 'schedule');
-    }
-    return needs;
+    // A serving unit has no schedule and runs on requests: it needs only its SAT set point.
+    if (auditIsServingUnit(row, rows)) return ['sat'];
+    // A single-zone unit has its own schedule and zone set points. Nothing requests from it.
+    // An energy wheel (ERV) replaces the economizer. A garage unit reads carbon monoxide, not CO2.
+    return ['setpoints', 'schedule'].concat(
+      AUDIT_COV_AIR[cat].filter(function (n) {
+        if (n === 'econ') return !has(/energy wheel|enthalpy wheel|sensible wheel|\berv\b/i);
+        if (n === 'co2') return !has(/carbon monoxide/i);
+        return true;
+      })
+    );
   }
   return null;
 }
 
-function _auditCovHasItem(row, keys, item) {
+function _auditCovHasItem(row, names, item) {
   if (item === 'schedule' && row.existingSchedule && row.existingSchedule.rawText) return true;
-  var re = AUDIT_COV_ITEMS[item].re;
-  return keys.some(function (k) {
-    return re.test(k);
+  var def = AUDIT_COV_ITEMS[item];
+  return names.some(function (k) {
+    return def.re.test(k) && !(def.not && def.not.test(k));
   });
 }
 
@@ -73,14 +146,9 @@ function auditComputeCoverage(rows) {
   var groups = {};
   rows.forEach(function (row) {
     if (!row || (typeof emIsPhantomRow === 'function' && emIsPhantomRow(row))) return;
-    var needs = auditCoverageNeeds(row, rows);
+    var keys = _auditCovNames(row);
+    var needs = auditCoverageNeeds(row, rows, keys);
     if (!needs) return;
-    var pts = emGetNormalizedPoints(row) || {};
-    var keys = Object.keys(pts)
-      .filter(function (k) {
-        return pts[k] !== '' && pts[k] !== null && pts[k] !== undefined;
-      })
-      .sort();
     var type = emFormatEquipTypeLabel(row) || row.category || '';
     var gk = type + '|' + needs.join(',') + '|' + keys.join(',');
     var g = groups[gk];
