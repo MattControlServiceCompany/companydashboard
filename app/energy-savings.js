@@ -6550,11 +6550,11 @@ function _lbg_lineAmounts(x) {
   return x.lines || (x.charge != null ? [x.charge] : []);
 }
 // bill._chargeLines for a bill: { chargeField: [ { charge } ] } for each charge printed on two or more lines, so the
-// review shows every line as its own row. { } when no charge has more than one line. map: { chargeField: merged line }.
+// review shows every line as its own row. { } when no charge has more than one line. map: { chargeField: merged line, or the array of line amounts }.
 function _lbg_chargeLinesProp(map) {
   const out = {};
   Object.keys(map).forEach((k) => {
-    const l = map[k] && map[k].lines;
+    const l = Array.isArray(map[k]) ? map[k] : map[k] && map[k].lines;
     if (l && l.length > 1) out[k] = l.map((c) => ({ charge: c }));
   });
   return Object.keys(out).length ? { _chargeLines: out } : {};
@@ -14709,6 +14709,9 @@ const UTILITY_RULES = [
       // Electric
       const elMeters = []; // one entry per EL - ELECTRIC row
       let elFranchiseFee = null;
+      // Each printed line behind a summed charge: { chargeField: [amount] } (bill._chargeLines, see _lbg_chargeLinesProp).
+      const _chgLines = {};
+      const _addLn = (k, v) => ((_chgLines[k] = _chgLines[k] || []).push(v), v);
       let fuelAdjCharge = null; // signed (may be negative)
 
       // Sewer
@@ -14796,7 +14799,7 @@ const UTILITY_RULES = [
           const raw = ln.replace(/^(?:E[LlIi1]\.?|GH)[\s\xa0\xE2—–~=|\-]{1,6}FRANCHISE\s+FEE?\s*/i, '').trim();
           // Drop trailing anchor so OCR noise chars after the amount still match.
           const m = raw.match(/([\d,]+\.\d{2})/);
-          if (m) elFranchiseFee = (elFranchiseFee || 0) + parseFloat(m[1].replace(/,/g, ''));
+          if (m) elFranchiseFee = (elFranchiseFee || 0) + _addLn('FranchiseFee', parseFloat(m[1].replace(/,/g, '')));
           continue;
         }
 
@@ -14814,7 +14817,7 @@ const UTILITY_RULES = [
               swCurrRead = parsed.currRead;
             }
             swUsage = (swUsage || 0) + (parsed.usage || 0);
-            swCharge = (swCharge || 0) + parsed.charge;
+            swCharge = (swCharge || 0) + _addLn('SewerCharge', parsed.charge);
           } else _noteMissing('Sewer', parsed);
           continue;
         }
@@ -14847,7 +14850,7 @@ const UTILITY_RULES = [
               waCurrRead = parsed.currRead;
             }
             waUsage = (waUsage || 0) + (parsed.usage || 0);
-            waCharge = (waCharge || 0) + parsed.charge;
+            waCharge = (waCharge || 0) + _addLn('WaterCharge', parsed.charge);
             _waMeterLines++;
           } else _noteMissing('Water', parsed);
           continue;
@@ -14967,11 +14970,11 @@ const UTILITY_RULES = [
                     break;
                   }
                 }
-                if (lastCommodity === 'EL') elFranchiseFee = (elFranchiseFee || 0) + fv;
+                if (lastCommodity === 'EL') elFranchiseFee = (elFranchiseFee || 0) + _addLn('FranchiseFee', fv);
                 else if (lastCommodity === 'SW' && swFranchiseFee === null) swFranchiseFee = fv;
                 else if (lastCommodity === 'WA' && waFranchiseFee === null) waFranchiseFee = fv;
                 // If we can't determine commodity, default to most recently seen type
-                else if (elMeters.length > 0) elFranchiseFee = (elFranchiseFee || 0) + fv;
+                else if (elMeters.length > 0) elFranchiseFee = (elFranchiseFee || 0) + _addLn('FranchiseFee', fv);
               }
             } else if (/^(?:METER\s+)?DEBT\s+PMT/i.test(rest)) {
               const body = rest.replace(/^(?:METER\s+)?DEBT\s+PMT\s*/i, '').trim();
@@ -14986,7 +14989,7 @@ const UTILITY_RULES = [
                   swCurrRead = m.currRead;
                 }
                 swUsage = (swUsage || 0) + (m.usage || 0);
-                swCharge = (swCharge || 0) + m.charge;
+                swCharge = (swCharge || 0) + _addLn('SewerCharge', m.charge);
               } else _noteMissing('Sewer', m);
             } else if (/^WATER/i.test(rest) && !/DEBT|METER|FRANCHISE/i.test(rest)) {
               const body = rest.replace(/^WATER\s*/i, '');
@@ -14997,7 +15000,7 @@ const UTILITY_RULES = [
                   waCurrRead = m.currRead;
                 }
                 waUsage = (waUsage || 0) + (m.usage || 0);
-                waCharge = (waCharge || 0) + m.charge;
+                waCharge = (waCharge || 0) + _addLn('WaterCharge', m.charge);
               } else _noteMissing('Water', m);
             }
           }
@@ -15138,7 +15141,7 @@ const UTILITY_RULES = [
               const label = _nonMeteredLabels[idx];
               const v = parseFloat(_singleChargeLines[idx].replace(/,/g, ''));
               if (isNaN(v)) continue;
-              if (label === 'EL_FRAN') elFranchiseFee = (elFranchiseFee || 0) + v;
+              if (label === 'EL_FRAN') elFranchiseFee = (elFranchiseFee || 0) + _addLn('FranchiseFee', v);
               else if (label === 'FA' && fuelAdjCharge === null) fuelAdjCharge = v;
               else if (label === 'SW_FRAN' && swFranchiseFee === null) swFranchiseFee = v;
               else if (label === 'WA_DEBT') waDebtPmt = _evgRound((waDebtPmt || 0) + v, 2);
@@ -15226,6 +15229,7 @@ const UTILITY_RULES = [
           kW: null,
           ElectricCharge: Math.round(totalElCharge * 100) / 100,
           FranchiseFee: elFranchiseFee || null,
+          ..._lbg_chargeLinesProp({ FranchiseFee: _chgLines.FranchiseFee || [] }),
           FuelAdjustment: fuelAdjCharge || null,
           _electricMeterCount: elMeters.length,
           TotalCurrentCharges: Math.round(elTotal * 100) / 100,
@@ -15351,6 +15355,7 @@ const UTILITY_RULES = [
           WaterUsage: billValueOrNull(waUsage), // 92e2f54d: a real 0 stays 0
           ...(_waUsageSuspect ? { _usageSuspect: true } : {}),
           WaterCharge: waCharge,
+          ..._lbg_chargeLinesProp({ WaterCharge: _chgLines.WaterCharge || [] }),
           WaterDebtPayment: _debtLost ? null : waDebtPmt || null,
           WaterFranchiseFee: waFranchiseFee || null,
           TotalCurrentCharges: _debtLost ? null : Math.round(waTotal * 100) / 100,
@@ -15374,6 +15379,7 @@ const UTILITY_RULES = [
           ...(_swUsageSuspect ? { _usageSuspect: true } : {}),
           ...(_swUsageFromWater ? { _sewerUsageFromWater: true } : {}),
           SewerCharge: swCharge,
+          ..._lbg_chargeLinesProp({ SewerCharge: _chgLines.SewerCharge || [] }),
           SewerFranchiseFee: swFranchiseFee || null,
           TotalCurrentCharges: Math.round(swTotal * 100) / 100,
           TotalAmountDue: TotalAmountDue || null,
