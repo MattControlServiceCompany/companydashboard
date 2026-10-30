@@ -83,6 +83,7 @@ const WARNINGS = [
         const g = document.getElementById('extractedFieldsGrid');
         const grid = g.querySelector('.ef-grid');
         const item = (k) => g.querySelector('.ef-input[data-key="' + k + '"]')?.closest('.ef-item');
+        const rowsOf = (gr) => { const m = {}; gr.querySelectorAll(':scope > .ef-item, :scope > .ef-pair > .ef-item').forEach((e) => { const b = e.getBoundingClientRect(); (m[Math.round(b.top)] = m[Math.round(b.top)] || []).push(b.right); }); return m; };
         const title = (document.querySelector('.ef-bar-title') || {}).textContent || '';
         const num = (re) => ((title.match(re) || [])[1] ? Number(title.match(re)[1]) : 0);
         const chip = (re) => {
@@ -103,8 +104,9 @@ const WARNINGS = [
           startIcon: !!item('BillingPeriodStart')?.querySelector('.ef-ico'),
           kwCls: item('ActualKW')?.className || '',
           kwIcon: !!item('ActualKW')?.querySelector('.ef-ico'),
-          cols: grid ? getComputedStyle(grid).gridTemplateColumns.split(' ').length : 0,
-          colMin: grid ? Math.min(...getComputedStyle(grid).gridTemplateColumns.split(' ').map(parseFloat)) : 0,
+          cols: grid ? Math.max(...Object.values(rowsOf(grid)).map((r) => r.length)) : 0,
+          colMin: grid ? Math.min(...[...grid.querySelectorAll(':scope > .ef-item, :scope > .ef-pair > .ef-item')].map((e) => e.getBoundingClientRect().width)) : 0,
+          rowsShort: grid ? Object.values(rowsOf(grid)).filter((r) => Math.abs(Math.max(...r) - grid.getBoundingClientRect().right) > 1).length : 0,
           textColor: getComputedStyle(item('CustomerName').querySelector('.ef-input')).color,
           flagColor: getComputedStyle(item('ActualKW').querySelector('.ef-input')).color,
           titleOf: item('CustomerName').querySelector('.ef-input').title,
@@ -132,16 +134,17 @@ const WARNINGS = [
     if (!wide.manual) problems.push('Manual Assign button missing');
     if (!/is-error/.test(wide.startCls) || !wide.startIcon) problems.push('missing value has no red edge and icon: ' + wide.startCls);
     if (!/is-warn/.test(wide.kwCls) || !wide.kwIcon) problems.push('warning value has no amber edge and icon: ' + wide.kwCls);
-    const expectCols = Math.min(8, Math.max(1, Math.floor((wide.paneW + 2) / 192)));
-    if (wide.cols !== expectCols) problems.push('wide pane: expected ' + expectCols + ' columns, got ' + wide.cols + ' (pane ' + wide.paneW + ')');
+    const expectCols = Math.max(1, Math.floor((wide.paneW + 2) / 192));
+    if (wide.cols > expectCols) problems.push('wide pane: expected at most ' + expectCols + ' per row, got ' + wide.cols + ' (pane ' + wide.paneW + ')');
     if (wide.colMin < 189) problems.push('a column is narrower than 190 px: ' + wide.colMin);
+    if (wide.rowsShort) problems.push('wide pane: ' + wide.rowsShort + ' rows of boxes stop short of the right edge');
     if (wide.hscroll) problems.push('wide pane scrolls sideways');
     // a narrow values pane (under two 190 px columns): force a 340 px pane
     await page.evaluate(() => (document.getElementById('extractedFieldsGrid').style.width = '340px'));
     await page.waitForTimeout(500);
     const narrow = await read();
     if (narrow.paneW >= 382) problems.push('setup: narrow pane is ' + narrow.paneW + ' px, expected under 382');
-    if (narrow.cols !== 1) problems.push('narrow pane (' + narrow.paneW + ' px): expected 1 column, got ' + narrow.cols);
+    if (narrow.cols !== 1) problems.push('narrow pane (' + narrow.paneW + ' px): expected 1 per row, got ' + narrow.cols);
     if (narrow.hscroll) problems.push('narrow pane scrolls sideways');
     // typing in a cell: the one edit path saves it and the cell re-draws
     const loc = page.locator('#extractedFieldsGrid .ef-input[data-key="CustomerName"]');
