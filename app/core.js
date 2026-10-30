@@ -1585,11 +1585,12 @@ function renderDetail(p) {
             </div>
             <div id="ptab-district" class="ptab" style="padding:16px">
               <div id="ptab-district-inner-${p.id}" style="padding:16px">
+                <div style="font-size:12px;color:var(--text2);margin-bottom:12px">Check that each school event has a matching BAS schedule: compare the feed (top) with BAS schedules (below).</div>
                 <div id="pcal-panel-${p.id}"></div>
                 <div id="bas-panel-${p.id}"></div>
                 <div class="card" style="margin-bottom:16px">
                   <div class="card-hdr" style="justify-content:space-between">
-                    <span class="card-title">🗓️ Manual calendar events</span>
+                    <span class="card-title">🗓️ Manual calendar events<span style="display:block;font-size:11px;font-weight:400;color:var(--text2)">Only for events that are not in the feed</span></span>
                     <div style="display:flex;gap:8px">
                       <button class="btn btn-ghost btn-sm" onclick="distCalAddRow(${p.id})">+ Add Event</button>
                       <button id="distcal-delall-${p.id}" class="btn btn-ghost btn-sm" style="color:var(--red);border-color:rgba(244,63,94,.35)${(p.districtCalendar || []).length ? '' : ';display:none'}" onclick="distCalDeleteAll(${p.id})">🗑 Delete All</button>
@@ -1608,7 +1609,7 @@ function renderDetail(p) {
                           <input class="fi" id="distcal-url-${p.id}" placeholder="https://...calendar.pdf" style="flex:1">
                           <button class="btn btn-em btn-sm" onclick="distCalLoadURL(${p.id})">Load</button>
                         </div>
-                        <div style="font-size:11px;color:var(--text3)">Paste a direct link to the district's PDF calendar. If blocked by CORS, use PDF Upload instead.</div>
+                        <div style="font-size:11px;color:var(--text3)">Paste a direct link to the district's PDF calendar. If the link does not load, use PDF Upload instead.</div>
                       </div>
                       <div id="distcal-import-pdf-${p.id}" style="display:none">
                         <div style="border:2px dashed var(--border2);border-radius:8px;padding:20px;text-align:center;cursor:pointer;margin-bottom:8px"
@@ -2984,6 +2985,30 @@ function _phcFullTitle(projId) {
   const el = document.getElementById('phc-info-' + projId);
   if (el) el.title = el.textContent.replace(/\s+/g, ' ').trim();
 }
+// Tab strip overflow arrows: a left/right arrow shows only on the side that has hidden tabs. One function decides it (used by the
+// update, the tests). A click scrolls the strip by about one strip width. Active-tab scroll-into-view is in sPTab.
+function _tabArrowState(scrollLeft, clientWidth, scrollWidth) {
+  const max = scrollWidth - clientWidth;
+  return { left: max > 1 && scrollLeft > 1, right: max > 1 && scrollLeft < max - 1 };
+}
+function _tabArrowsUpdate() {
+  const nav = document.getElementById('hdrTabs');
+  const l = document.getElementById('hdrTabsL');
+  const r = document.getElementById('hdrTabsR');
+  if (!nav || !l || !r) return;
+  const st = _tabArrowState(nav.scrollLeft, nav.clientWidth, nav.scrollWidth);
+  l.hidden = !st.left;
+  r.hidden = !st.right;
+}
+function _tabArrowsInit() {
+  const nav = document.getElementById('hdrTabs');
+  if (!nav || nav._arrowsWired) return;
+  nav._arrowsWired = true;
+  nav.addEventListener('scroll', _tabArrowsUpdate, { passive: true });
+  window.addEventListener('resize', _tabArrowsUpdate);
+  document.getElementById('hdrTabsL').addEventListener('click', () => nav.scrollBy({ left: -nav.clientWidth, behavior: 'smooth' }));
+  document.getElementById('hdrTabsR').addEventListener('click', () => nav.scrollBy({ left: nav.clientWidth, behavior: 'smooth' }));
+}
 function _syncHeaderTabs() {
   const bar = document.getElementById('hdrTabs');
   const info = document.getElementById('hdrProjBar');
@@ -2997,6 +3022,8 @@ function _syncHeaderTabs() {
   dept.style.display = open ? 'none' : '';
   const top = bar.closest('.topbar');
   if (top) top.classList.toggle('has-tabs', open);
+  _tabArrowsInit();
+  _tabArrowsUpdate();
 }
 
 // Account menu on the initials badge. "Switch or add account" and "Log out" both run the one sign-out flow
@@ -3129,6 +3156,7 @@ function sPTab(tab, el) {
     el.setAttribute('aria-selected', 'true');
     // The strip scrolls sideways when the tabs do not fit: keep the active tab reachable.
     if (el.scrollIntoView) el.scrollIntoView({ inline: 'nearest', block: 'nearest' });
+    _tabArrowsUpdate();
   }
   // Close any open project-level or building-level panels when switching tabs
   if (window._activeProjId) {

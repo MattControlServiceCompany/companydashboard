@@ -18,7 +18,7 @@
   var _st = {}; // per project: { date, bldg, q, limit, msg, pending, gpending }
 
   function state(pid) {
-    return (_st[pid] = _st[pid] || { date: '', bldg: '', q: '', limit: PAGE_ROWS, msg: '', pending: null, gpending: null });
+    return (_st[pid] = _st[pid] || { date: '', bldg: '', q: '', limit: PAGE_ROWS, open: false, dateErr: '', msg: '', pending: null, gpending: null });
   }
   function ui() {
     return window.pcalUi;
@@ -40,6 +40,13 @@
   }
   function groupsOf(pid) {
     return DB.get('en_bas_groups_' + pid, null);
+  }
+  // Today as YYYY-MM-DD in local time: the default for "Date this export covers".
+  function todayIso() {
+    var d = new Date();
+    var m = d.getMonth() + 1;
+    var day = d.getDate();
+    return d.getFullYear() + '-' + (m < 10 ? '0' : '') + m + '-' + (day < 10 ? '0' : '') + day;
   }
   function whoName() {
     try {
@@ -184,7 +191,7 @@
   function histSection(hist) {
     if (!hist.length) return '';
     return (
-      '<details open><summary>BAS changes (' + hist.length + ')</summary>' +
+      '<details open><summary>Differences from the previous saved day (' + hist.length + ')</summary>' +
       hist
         .map(function (r) {
           return '<details class="pcal-hist-item"><summary>' + esc(recSummary(r)) + '</summary>' + (r.first ? '' : recTables(r)) + '</details>';
@@ -241,11 +248,12 @@
       '<select class="fi bas-date" aria-label="Date" onchange="basPickDate(' + pid + ',this.value)">' + dateOpts + '</select>' +
       '<select class="fi bas-date" aria-label="Building" onchange="basPickBldg(' + pid + ',this.value)">' + bOpts + '</select>' +
       '<input class="fi" id="bas-q-' + pid + '" placeholder="Search schedules" value="' + esc(s.q) + '" oninput="basSearch(' + pid + ',this.value)" style="flex:1 1 220px;min-width:0"></div>' +
+      '<details' + (s.open || s.q || s.bldg ? ' open' : '') + ' ontoggle="basToggle(' + pid + ',this.open)"><summary>' + esc(plural(keys.length, 'program', 'programs')) + '</summary>' +
       '<div id="bas-view-' + pid + '">' + tbl +
       (keys.length > shown.length
         ? '<div class="pcal-nav"><span style="font-size:12px">Showing ' + num(shown.length) + ' of ' + num(keys.length) + '.</span><button class="btn btn-ghost btn-sm" onclick="basMore(' + pid + ')">Show more</button></div>'
         : '') +
-      '</div>'
+      '</div></details>'
     );
   }
   function groupsSection(g) {
@@ -319,6 +327,7 @@
       ui().table([['File', '30%'], ['Building found in the Location column (programs)', '56%'], ['Programs', '14%']], frows) +
       '<div class="pcal-row"><label for="bas-for-' + pid + '"><b>Date this export covers</b> (required)</label>' +
       '<input class="fi bas-date" type="date" id="bas-for-' + pid + '" value="' + esc(p.date) + '" onchange="basSetDate(' + pid + ',this.value)"></div>' +
+      (s.dateErr ? '<div class="pcal-msg" role="alert">' + esc(s.dateErr) + '</div>' : '') +
       dup +
       '<div class="pcal-row">' +
       (total ? '<button class="btn btn-em btn-sm" onclick="basSave(' + pid + ')">Save ' + esc(plural(total, 'program', 'programs')) + '</button>' : '') +
@@ -384,8 +393,9 @@
       });
       var s = state(pid);
       s.gpending = null;
-      s.pending = { files: infos, parsed: parsed, date: '' };
+      s.pending = { files: infos, parsed: parsed, date: todayIso() };
       s.msg = '';
+      s.dateErr = '';
       render(pid);
     });
   };
@@ -393,6 +403,7 @@
     var p = state(pid).pending;
     if (p) {
       p.date = v;
+      state(pid).dateErr = '';
       render(pid);
     }
   };
@@ -400,6 +411,7 @@
     var s = state(pid);
     s.pending = null;
     s.gpending = null;
+    s.dateErr = '';
     render(pid);
   };
   window.basSave = async function (pid) {
@@ -415,7 +427,10 @@
       by: whoName(),
       id: newId(),
     });
-    if (res.error) return say(pid, res.error);
+    if (res.error) {
+      s.dateErr = res.error;
+      return render(pid);
+    }
     await DB.set('en_bas_hist_' + pid, res.hist);
     await DB.set('en_bas_snap_' + pid, res.snaps);
     // The same import also fills the Equipment Matrix schedules (Set Points tab, Facility Audit, reports).
@@ -475,6 +490,9 @@
     render(pid);
     var el = document.getElementById('bas-view-' + pid);
     if (el && el.scrollIntoView) el.scrollIntoView({ block: 'nearest' });
+  };
+  window.basToggle = function (pid, open) {
+    state(pid).open = !!open;
   };
   window.basPickDate = function (pid, d) {
     window.basView(pid, d);
