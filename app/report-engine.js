@@ -2839,48 +2839,18 @@ function _rptQEnergyPage(n, d, f) {
       )
     : '';
 
-  var wRows = f.wxMonths
-    .map(function (w) {
-      return (
-        '<tr><td>' +
-        w.name +
-        ' ' +
-        f.year +
-        '</td><td class="rpt-n">' +
-        _rptQN(w.cddBl) +
-        '</td><td class="rpt-n">' +
-        _rptQN(w.cddCur) +
-        '</td><td class="rpt-n">' +
-        (w.cddBl > 0 && w.cddCur != null ? _rptQPct(((w.cddCur - w.cddBl) / w.cddBl) * 100, 0) : '-') +
-        '</td><td class="rpt-n">' +
-        _rptQN(w.hddBl) +
-        '</td><td class="rpt-n">' +
-        _rptQN(w.hddCur) +
-        '</td></tr>'
-      );
+  // Weather in one sentence: the full table is on the Energy Use Intensity and Weather page.
+  var wxBits = f.wxMonths
+    .filter(function (w) {
+      return w.cddBl > 0 && w.cddCur != null && Math.abs(((w.cddCur - w.cddBl) / w.cddBl) * 100) >= 10;
     })
-    .join('');
-  var hddBlT = d.weather.totals.hddBl,
-    hddCurT = d.weather.totals.hddCur;
-  var wTot =
-    '<tr class="rpt-tot"><td>' +
-    f.ordinal +
-    ' quarter</td><td class="rpt-n">' +
-    _rptQN(f.cddBl) +
-    '</td><td class="rpt-n">' +
-    _rptQN(f.cddCur) +
-    '</td><td class="rpt-n">' +
-    (f.cddBl > 0 ? _rptQPct(((f.cddCur - f.cddBl) / f.cddBl) * 100, 0) : '-') +
-    '</td><td class="rpt-n">' +
-    _rptQN(hddBlT) +
-    '</td><td class="rpt-n">' +
-    _rptQN(hddCurT) +
-    '</td></tr>';
-  var t3 = _rptQTable(
-    [28, 17, 17, 12, 13, 13],
-    ['Month', 'Cooling degree days ' + (f.year - 1), 'Cooling degree days ' + f.year, 'Change', 'Heating degree days ' + (f.year - 1), 'Heating degree days ' + f.year],
-    wRows + wTot,
-  );
+    .map(function (w) {
+      var pc = ((w.cddCur - w.cddBl) / w.cddBl) * 100;
+      return w.name + ' was ' + Math.round(Math.abs(pc)) + '% ' + (pc > 0 ? 'hotter' : 'cooler');
+    });
+  var wxSentence = wxBits.length
+    ? (wxBits.length > 1 ? wxBits.slice(0, -1).join(', ') + ' and ' + wxBits[wxBits.length - 1] : wxBits[0]) + ' than ' + (f.year - 1) + ', by cooling degree days.'
+    : 'Weather was close to ' + (f.year - 1) + ', by cooling degree days.';
 
   var gasWord = (function () {
     var th = d.totals.thermsCur - d.totals.thermsBl;
@@ -2904,10 +2874,7 @@ function _rptQEnergyPage(n, d, f) {
     _rptQNote('Energy use is in kilowatt-hours. Kilowatts are each month' + "'" + 's highest billed demand, added over three months. Savings include the demand change.') +
     (t2 ? '<h2>Natural Gas and Propane</h2>' + t2 : '') +
     '<h2>Weather</h2>' +
-    t3 +
-    _rptQNote(
-      'A cooling degree day measures how far a day' + "'" + 's average temperature is above 60 degrees Fahrenheit, so more means hotter.',
-    );
+    _rptQPara(wxSentence);
   return rptPage(n, 'Energy Use and Weather', body, { data: d, letterhead: false, label: 'Page ' + n + ' - Energy Use and Weather' });
 }
 
@@ -3109,44 +3076,6 @@ function _rptQContractPage(n, d, f) {
   }
   var t1 = _rptQTable([46, 18, 18, 18], ['Contract year ' + d.contract.currentYear, 'Savings target', 'Savings billed', 'Billed minus target'], qRows);
 
-  // Savings by month, the whole year to date (the same month map the quarterly pages use)
-  var year = String(f.year);
-  var mo = {};
-  d.buildings.forEach(function (b) {
-    var map = _rptBuildingMonthMap(b);
-    Object.keys(map).forEach(function (ym) {
-      if (ym.slice(0, 4) !== year) return;
-      if (!mo[ym]) mo[ym] = 0;
-      mo[ym] += map[ym].sav;
-    });
-  });
-  var yms = Object.keys(mo).sort();
-  var perB = {};
-  d.buildings.forEach(function (b) {
-    perB[b.id] = {};
-    var map = _rptBuildingMonthMap(b);
-    yms.forEach(function (ym) {
-      if (map[ym]) perB[b.id][ym] = map[ym].sav;
-    });
-  });
-  var nb = savingsNotBilledWithPresented(d.project.id, yms, perB);
-  var bill = billableSavingsWithPresented(d.project.id, yms, perB);
-  var rowsRounded = yms.reduce(function (s, ym) {
-    return s + Math.round(mo[ym]);
-  }, 0);
-  var shortDisp = nb.shortfall >= 0.5 ? Math.round(nb.shortfall) : 0;
-  var presDisp = Math.round(bill.total) - rowsRounded - shortDisp;
-  var mRows = yms
-    .map(function (ym) {
-      return '<tr><td>' + _rptQMonthName(ym) + ' ' + year + '</td>' + _rptQSavTd(mo[ym]) + '</tr>';
-    })
-    .join('');
-  if (shortDisp) mRows += '<tr><td>Add back: shortfall not billed (contract minimum $0)</td><td class="rpt-n">' + _fmtUSD(shortDisp, '$0') + '</td></tr>';
-  if (presDisp)
-    mRows += '<tr><td>Earlier quarters: amount billed as presented, less monthly figures above</td><td class="rpt-n">' + _fmtUSD(presDisp, '$0') + '</td></tr>';
-  mRows += '<tr class="rpt-tot"><td>Savings billed to date</td><td class="rpt-n">' + _fmtUSD(bill.total, '$0') + '</td></tr>';
-  var t2 = _rptQTable([70, 30], ['Month', 'Savings measured'], mRows);
-
   // Projection - the one shared projection
   var proj = _rptContractProjection(d);
   var pRows = proj.years
@@ -3179,10 +3108,6 @@ function _rptQContractPage(n, d, f) {
   var body =
     '<h2>Contract to Date</h2>' +
     t1 +
-    '<h2>Savings Measured by Month, ' +
-    year +
-    '</h2>' +
-    t2 +
     '<h2>Contract Projection</h2>' +
     t3 +
     _rptQNote(
@@ -3198,7 +3123,6 @@ function _rptQWeatherTable(d, f) {
   var wx = (d.weather && d.weather.monthly) || [];
   var yr = f.year,
     py = f.year - 1;
-  var tot = [0, 0, 0, 0];
   var rows = '';
   for (var i = 1; i <= 12; i++) {
     var mm = String(i).padStart(2, '0');
@@ -3209,10 +3133,6 @@ function _rptQWeatherTable(d, f) {
       return w && w[key] != null ? w[key] : null;
     };
     var v = [get(py + '-' + mm, 'hddBl'), get(yr + '-' + mm, 'hddCur'), get(py + '-' + mm, 'cddBl'), get(yr + '-' + mm, 'cddCur')];
-    v.forEach(function (x, k) {
-      // a baseline month counts in the total only when the same month of the report year has happened
-      if (x != null && v[k % 2 === 0 ? k + 1 : k] != null) tot[k] += x;
-    });
     rows +=
       '<tr><td>' +
       _rptQMonthName(yr + '-' + mm) +
@@ -3224,14 +3144,6 @@ function _rptQWeatherTable(d, f) {
         .join('') +
       '</tr>';
   }
-  rows +=
-    '<tr class="rpt-tot"><td>Months reported</td>' +
-    tot
-      .map(function (x) {
-        return '<td class="rpt-n">' + _rptQN(x) + '</td>';
-      })
-      .join('') +
-    '</tr>';
   return _rptQTable(
     [28, 18, 18, 18, 18],
     ['Month', 'Heating degree days ' + py + ' (baseline)', 'Heating degree days ' + yr, 'Cooling degree days ' + py + ' (baseline)', 'Cooling degree days ' + yr],
