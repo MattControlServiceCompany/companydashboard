@@ -2507,6 +2507,11 @@ async function siteResetAllMeterTableSettings() {
    site-ui.js delegates to this array and should NOT maintain its own copy.
 */
 var RELEASE_NOTES = [
+  { v: 'v2026.10.31.192', date: '2026-10-31', title: 'Utility Data > Weather: loads on every page open',
+    items: [
+      { type: 'fix', text: 'Utility Data > Weather: new monthly weather now loads on every page open, without signing in. September 2026 weather now appears.' }
+    ]
+  },
   { v: 'v2026.10.31.191', date: '2026-10-31', title: 'Utility Data > Weather: degree day base temperature',
     items: [
       { type: 'change', text: 'Utility Data > Weather: HDD and CDD now show their base temperature (60°F). The CSV import help says uploaded degree days must use base 60°F.' }
