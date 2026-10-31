@@ -94,7 +94,9 @@ const sb = {
   _rptMeterEligible: (pid, m) => (m.id === 'mExcluded' ? 'excluded' : ''),
   billMonth: (b) => b.ym,
   // pT1: electric bills through 2026-09, gas through 2026-08 (September gas not issued). Every other project: complete.
+  // Weather: a meter lists the months it has no weather for (the real getMeterSavings flags them from expectedUsageForMonth).
   getUDBldgs: (pid) => {
+    if (pid === 'pWx') return [{ id: 'bW', meters: [{ id: 'mW', commodity: 'Electric', baseline: BL, bills: Array.from({ length: 12 }, (_, i) => ({ ym: '2026-' + String(i + 1).padStart(2, '0'), end: '2026-' + String(i + 1).padStart(2, '0') + '-28' })), wxMissing: ['2026-09'] }] }];
     const ymsTo = (last) => Array.from({ length: 12 }, (_, i) => '2026-' + String(i + 1).padStart(2, '0')).filter((y) => y <= last).map((ym) => ({ ym, end: ym + '-28' }));
     return [
       {
@@ -113,6 +115,7 @@ vm.createContext(sb);
 vm.runInContext(fs.readFileSync(RATES, 'utf8'), sb);
 vm.runInContext(fs.readFileSync(REPO + '/computations/report-data.js', 'utf8'), sb);
 vm.runInContext(fs.readFileSync(SAV, 'utf8'), sb);
+sb.getMeterSavings = (m) => ({ rows: (m.wxMissing || []).map((ym) => ({ ym, weatherMissing: true })) }); // the real one needs bills and a regression
 vm.runInContext(fs.readFileSync(REPO + '/computations/csc.js', 'utf8'), sb);
 vm.runInContext(
   [
@@ -192,6 +195,19 @@ assert(Object.keys(ev(`billableSavingsWithPresented('pNone', ['2026-07','2026-08
 assert(ev(`quarterMissingBills('pT1', '2026-Q1')`).length === 0, 'a presented quarter lacks nothing');
 const cum9 = ev(`billableSavingsWithPresented('pT1', ['2026-01','2026-02','2026-03','2026-04','2026-05','2026-06','2026-07','2026-08','2026-09'], ${perP})`);
 assert(cum9.total === 3000, 'cumulative = 1000 + 2000 + floored open Q3 (0), got ' + cum9.total);
+
+console.log('=== 6b. a quarter with a month without weather has no figure ===');
+const wxPer = JSON.stringify({ bW: { '2026-04': 100, '2026-05': 100, '2026-06': 100, '2026-07': 3000, '2026-08': 1559, '2026-09': -9000 } });
+const wxQ3 = ev(`billableSavingsWithPresented('pWx', ['2026-07','2026-08','2026-09'], ${wxPer})`);
+assert(wxQ3.total === 0 && JSON.stringify(wxQ3.weatherWaiting) === '{"2026-Q3":["2026-09"]}', 'Q3 waiting for weather: no figure, named, got ' + JSON.stringify(wxQ3));
+assert(wxQ3.byBldg.bW === 0, 'building row has no partial figure either');
+const wxCum = ev(`billableSavingsWithPresented('pWx', ['2026-04','2026-05','2026-06','2026-07','2026-08','2026-09'], ${wxPer})`);
+assert(wxCum.total === 300, 'cumulative leaves the waiting quarter out (300), got ' + wxCum.total);
+const wxNb = ev(`savingsNotBilledWithPresented('pWx', ['2026-07','2026-08','2026-09'], ${wxPer})`);
+assert(wxNb.shortfall === 0 && wxNb.presented === 0, 'waiting quarter: nothing billed, no shortfall line');
+const wxFull = ev(`billableSavingsWithPresented('pNone', ['2026-07','2026-08','2026-09'], ${JSON.stringify({ bX: { '2026-07': 3000, '2026-08': 1559, '2026-09': -9000 } })})`);
+assert(wxFull.total === 0, 'the complete quarter is floored and billed $0; the partial quarter never shows more');
+assert(ev("weatherWaitingLabel(['2026-09'])") === 'Sep 2026', 'label names the month');
 
 console.log('=== 7. contract rates cannot be typed or reset ===');
 vm.runInContext(

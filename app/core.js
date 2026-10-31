@@ -1918,6 +1918,7 @@ function initDashboardTab(projId) {
   const actualByQtr = [0, 0, 0, 0];
   const actualQtrHasData = [false, false, false, false]; // a quarter with savings months shows $0.00, not a dash, when floored
   const qtrMissing = {};
+  const qtrWeather = {}; // { 'YYYY-Qn': [ym] } months with no weather yet: the quarter shows words, not a dollar figure
   const cumSavByBldg = {}; // { bldgId: { ym: dollars } } for the cumulative total
   const qtrByYr = {}; // { year: { bldgId: { ym: dollars } } } collected by addBldgQuarters
   // Add one building's savings by quarter. As before, each METER contributes the quarters of its own
@@ -1956,6 +1957,7 @@ function initDashboardTab(projId) {
       if (!Object.values(qtrByYr[yr]).some((o) => qYMs.some((y) => y in o))) continue;
       actualQtrHasData[qi] = true;
       actualByQtr[qi] = qr.total;
+      Object.assign(qtrWeather, qr.weatherWaiting);
       Object.assign(qtrMissing, qr.missing); // { 'YYYY-Qn': [missing bill lines] } for the Waiting for bills chip
     }
   };
@@ -2258,13 +2260,16 @@ function initDashboardTab(projId) {
 
   // Use the directly-accumulated per-building savings (same source as Project Performance page).
   // Cumulative savings to date: the sum of the floored quarters, never the net of the building rows (billableSavingsWithPresented).
-  const totalSavCum = Object.keys(cumSavByBldg).length
+  const _cumBill = Object.keys(cumSavByBldg).length
     ? billableSavingsWithPresented(
         projId,
         Array.from(new Set(Object.values(cumSavByBldg).flatMap((o) => Object.keys(o)))).sort(),
         cumSavByBldg,
-      ).total
-    : 0;
+      )
+    : { total: 0, weatherWaiting: {} };
+  const totalSavCum = _cumBill.total;
+  // Quarters with no weather yet are left out of the cumulative; the card says so.
+  const cumWeatherWaiting = [].concat.apply([], Object.values(_cumBill.weatherWaiting)).sort();
   const totalSav = totalSavCum; // the one billable function; no second accumulator
   const totalPct = totalBl > 0 ? (totalSav / totalBl) * 100 : 0;
   const $c = (n) => '$' + Math.round(Math.abs(n)).toLocaleString();
@@ -2286,6 +2291,7 @@ function initDashboardTab(projId) {
       })
     : '';
   const curQtrActual = headQtr ? actualByQtr[curQtr] : 0;
+  const curQtrWeather = headQtr ? qtrWeather[headQtr.year + '-Q' + (curQtr + 1)] || [] : [];
   const curQtrWaiting = headQtr ? qtrMissing[headQtr.year + '-Q' + (curQtr + 1)] || [] : [];
   const curQtrProjected = headQtr ? projectedByQtr[curQtr] : 0;
   const curQtrPct = curQtrProjected > 0 ? ((curQtrActual / curQtrProjected) * 100).toFixed(1) : null;
@@ -2332,7 +2338,7 @@ function initDashboardTab(projId) {
                             i,
                           ) => `<div style="flex:1;text-align:center;background:rgba(34,197,94,0.10);border-radius:6px;padding:6px 4px">
                         <div style="font-size:9px;color:var(--text3);text-transform:uppercase;letter-spacing:.5px">Q${i + 1}</div>
-                        <div style="font-size:13px;font-weight:700;font-family:var(--mono);color:var(--green)">${v !== 0 || actualQtrHasData[i] ? $c2(v) : '—'}</div>
+                        <div style="font-size:13px;font-weight:700;font-family:var(--mono);color:var(--green)">${qtrWeather[(headQtr ? headQtr.year : '') + '-Q' + (i + 1)] ? 'Waiting for weather' : v !== 0 || actualQtrHasData[i] ? $c2(v) : '—'}</div>
                       </div>`,
                         )
                         .join('')}
@@ -2348,7 +2354,7 @@ function initDashboardTab(projId) {
                 ${headQtr ? `                <div>
                   <div style="font-size:11px;color:var(--text3);text-transform:uppercase;letter-spacing:.6px">${curQtrTitle} Total Savings</div>
                   ${curQtrThrough ? '<div style="font-size:11px;color:var(--text3)">' + curQtrThrough + '</div>' : ''}
-                  <div style="font-size:28px;font-weight:800;font-family:var(--mono);color:var(--green);margin:4px 0">${$c(curQtrActual)}</div>
+                  <div style="font-size:28px;font-weight:800;font-family:var(--mono);color:var(--green);margin:4px 0">${curQtrWeather.length ? '<span style="font-size:15px">Waiting for weather data: ' + _escHtml(weatherWaitingLabel(curQtrWeather)) + '</span>' : $c(curQtrActual)}</div>
                   ${curQtrWaiting.length ? '<div style="display:inline-block;font-size:11px;color:var(--text2);background:var(--s2);border:1px solid var(--border);border-radius:10px;padding:2px 8px;margin-bottom:4px">Waiting for bills: ' + _escHtml(curQtrWaiting.join(', ')) + '</div>' : ''}
                   <div style="font-size:12px;color:var(--text2)">${curQtrPct !== null ? '<span style="color:var(--green);font-weight:600">' + curQtrPct + '%</span> of ' + curQtrLabel + ' projected (' + $c2(curQtrProjected) + ')' : _eligBldgs.length + ' building' + (_eligBldgs.length !== 1 ? 's' : '') + ' · <span style="color:var(--text3)">' + (useNormalized ? 'Normalized' : 'Actual') + '</span>'}</div>
                 </div>` : ''}
@@ -2356,6 +2362,7 @@ function initDashboardTab(projId) {
                   <div style="font-size:11px;color:var(--text3);text-transform:uppercase;letter-spacing:.6px">Total Cumulative Savings</div>
                   <div style="font-size:28px;font-weight:800;font-family:var(--mono);color:${totalSav >= 0 ? 'var(--green)' : 'var(--danger)'};margin:4px 0">${totalSav >= 0 ? '' : '-'}${$c(totalSav)}</div>
                   <div style="font-size:12px;color:var(--text2)">${throughDate ? 'through ' + throughDate : _eligBldgs.length + ' building' + (_eligBldgs.length !== 1 ? 's' : '')} · <span style="color:var(--text3)">${useNormalized ? 'Normalized' : 'Actual'}</span></div>
+                  ${cumWeatherWaiting.length ? '<div style="font-size:11px;color:var(--text2);margin-top:4px">Does not include ' + _escHtml(weatherWaitingLabel(cumWeatherWaiting)) + ': waiting for weather data</div>' : ''}
                 </div>
               </div>
               <div style="display:flex;flex-direction:column;gap:12px;justify-content:center">

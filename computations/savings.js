@@ -8,7 +8,7 @@
 // clear or an unrelated data edit to bust it. CH_VERSION (site-ui.js) is not
 // reachable here (scoped inside an IIFE, not exposed on window), so this file
 // carries its own version marker.
-const SAVINGS_CALC_VERSION = '2026.10.31.rptwx';
+const SAVINGS_CALC_VERSION = '2026.10.31.rptwx2';
 
 /* ─────────────────────────────────────────────────────────────
    Expected (baseline) usage for a meter-month - THE one rule (Matt, 2026-10-31).
@@ -43,8 +43,9 @@ function baselineUsageByCalMo(m, moMaps) {
 //        meter has a fitted baseline regression, so a month without weather cannot be evaluated)
 function expectedUsageForMonth(row, ctx) {
   if (ctx.weatherDriven && ctx.hasRegr && row.ym >= REPORTING_WEATHER_FROM_YM) {
+    // One missing of HDD / CDD is a missing month: never fall back to the baseline-year weather.
+    if (row.hdd == null || row.cdd == null) return { usage: null, weatherMissing: true };
     if (row.regrBaseline != null) return { usage: row.regrBaseline, weatherMissing: false };
-    if (row.hdd == null && row.cdd == null) return { usage: null, weatherMissing: true };
   }
   const calMo = parseInt(row.ym.split('-')[1]) - 1;
   const hasBlCalMap = Object.keys(ctx.blByCalMo).length > 0;
@@ -1008,20 +1009,76 @@ function quarterMissingBills(projId, qKey) {
 // period, or all months to date, it is the CUMULATIVE savings to date = the sum of the floored quarters
 // (Matt, 2026-10-27; the 60% cap in Agreement 3.1 is for rebates and incentives and does not net a shortfall
 // quarter). To change the cumulative rule, change it here only.
-// Returns { total, byBldg, applied, missing }. byBldg stays the NET per-building sum over all yms (building
+// A quarter with a month that has no weather yet (quarterWeatherMissing) is left out of total AND byBldg and named
+// in weatherWaiting ({ 'YYYY-Qn': [ym] }): it is never floored, billed or added to the cumulative.
+// Returns { total, byBldg, applied, missing, weatherWaiting }. byBldg stays the NET per-building sum over the other yms (building
 // rows are not floored). Monthly and per-meter values are never floored.
 function billableSavingsWithPresented(projId, yms, perBldg) {
-  const net = totalSavingsWithPresented(projId, yms, perBldg);
   const byQtr = {};
   yms.forEach((y) => (byQtr[quarterKeyOfYM(y)] = byQtr[quarterKeyOfYM(y)] || []).push(y));
+  const wx = _weatherSplit(projId, yms);
+  const net = totalSavingsWithPresented(projId, wx.open, perBldg);
   let total = 0;
   const missing = {};
   Object.keys(byQtr).forEach((q) => {
     const gaps = quarterMissingBills(projId, q);
     if (gaps.length) missing[q] = gaps;
+    if (wx.waiting[q]) return; // no weather for a month: no figure for the quarter, never floored or billed
     total += floorQuarterSavings(totalSavingsWithPresented(projId, byQtr[q], perBldg).total);
   });
-  return { total, byBldg: net.byBldg, applied: net.applied, missing };
+  return { total, byBldg: net.byBldg, applied: net.applied, missing, weatherWaiting: wx.waiting };
+}
+
+// quarterWeatherMissing(projId, qKey) - the months ('YYYY-MM') of a calendar quarter ('YYYY-Qn') for which
+// some meter has bills but no weather yet (getMeterSavings row.weatherMissing, from expectedUsageForMonth, the
+// one rule). A quarter with any such month has no savings figure: the app and every report show "Waiting for
+// weather data: <month>" in place of a dollar amount, and leave the quarter out of the cumulative and contract
+// totals. A presented quarter keeps its printed figure and is never waiting. [] = every month has weather.
+function quarterWeatherMissing(projId, qKey) {
+  const y = qKey.slice(0, 4);
+  const q = Number(qKey.slice(6)) - 1;
+  const yms = [1, 2, 3].map((k) => y + '-' + String(q * 3 + k).padStart(2, '0'));
+  if (_presentedApplied(projId, yms).some((a) => a.months.length === 3)) return [];
+  const out = {};
+  getUDBldgs(projId).forEach((b) =>
+    (b.meters || []).forEach((m) => {
+      if (isBaselineExcluded(projId, m.id)) return;
+      const bills = (m.bills || []).slice().sort((a, c) => (a.start || '').localeCompare(c.start || ''));
+      getMeterSavings(m, bills, m.inclusive !== false, projId, b.id).rows.forEach((r) => {
+        if (r.weatherMissing && yms.indexOf(r.ym) >= 0) out[r.ym] = true;
+      });
+    }),
+  );
+  return Object.keys(out).sort();
+}
+
+// "Sep 2026" style names for a list of 'YYYY-MM', for the "Waiting for weather data: ..." line.
+function weatherWaitingLabel(yms) {
+  const MON = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+  return yms.map((y) => MON[Number(y.slice(5, 7)) - 1] + ' ' + y.slice(0, 4)).join(', ');
+}
+
+// savingsOrWaiting(waitingYMs, dollars) - the text a savings figure is shown as: the dollars, or, when the
+// period has a month with no weather yet (weatherWaiting from billableSavingsWithPresented), the words in
+// place of the dollars. The ONE wording; every report and page uses it.
+function savingsOrWaiting(waitingYMs, dollars) {
+  return waitingYMs && waitingYMs.length
+    ? 'Waiting for weather data: ' + weatherWaitingLabel(waitingYMs)
+    : _fmtUSD(dollars, '$0');
+}
+
+// _weatherSplit(projId, yms) -> { waiting: { 'YYYY-Qn': [ym] }, open: yms outside the waiting quarters }.
+function _weatherSplit(projId, yms) {
+  const waiting = {};
+  const seen = {};
+  yms.forEach((y) => {
+    const q = quarterKeyOfYM(y);
+    if (seen[q]) return;
+    seen[q] = true;
+    const w = quarterWeatherMissing(projId, q);
+    if (w.length) waiting[q] = w;
+  });
+  return { waiting, open: yms.filter((y) => !waiting[quarterKeyOfYM(y)]) };
 }
 
 // savingsNotBilledWithPresented(projId, yms, perBldg) - the gap between the real rows a report prints and
@@ -1035,11 +1092,12 @@ function billableSavingsWithPresented(projId, yms, perBldg) {
 // Building rows (totalSavingsWithPresented byBldg) add up to total - shortfall; month rows (current values)
 // add up to total - shortfall - presented. This is the ONE rule for that gap; every report table calls it.
 function savingsNotBilledWithPresented(projId, yms, perBldg) {
+  const open = _weatherSplit(projId, yms).open; // a quarter waiting for weather has no figure to compare
   const billable = billableSavingsWithPresented(projId, yms, perBldg).total;
-  const net = totalSavingsWithPresented(projId, yms, perBldg).total;
+  const net = totalSavingsWithPresented(projId, open, perBldg).total;
   let rows = 0;
   Object.keys(perBldg).forEach((b) => {
-    yms.forEach((y) => (rows += (perBldg[b] || {})[y] || 0));
+    open.forEach((y) => (rows += (perBldg[b] || {})[y] || 0));
   });
   return { shortfall: billable - net, presented: net - rows };
 }

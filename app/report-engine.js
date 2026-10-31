@@ -655,12 +655,18 @@ function collectReportData(projId, buildingIds, reportDateStr, reportType, selec
   // --- Project totals ---
   // Period and cumulative savings totals: current values, except a period already presented to the
   // client uses the printed figures (computations/savings.js totalSavingsWithPresented).
-  totSavings = billableSavingsWithPresented(projId, _reportYMsSorted, perBldgSavByYM).total;
-  totCumSavings = billableSavingsWithPresented(
+  // A quarter with a month that has no weather yet has NO savings figure (billableSavingsWithPresented):
+  // it is left out of the period total and of the cumulative, and named here for the page to say so.
+  const _periodBill = billableSavingsWithPresented(projId, _reportYMsSorted, perBldgSavByYM);
+  totSavings = _periodBill.total;
+  const _cumBill = billableSavingsWithPresented(
     projId,
     Array.from(new Set(Object.values(perBldgSavByYM).flatMap((m2) => Object.keys(m2)))).sort(),
     perBldgSavByYM,
-  ).total;
+  );
+  totCumSavings = _cumBill.total;
+  const _wxWaitYMs = [].concat.apply([], Object.values(_periodBill.weatherWaiting)).sort();
+  const _wxWaitCumYMs = [].concat.apply([], Object.values(_cumBill.weatherWaiting)).sort();
   const totSavingsPct = totBlCost > 0 ? (totSavings / totBlCost) * 100 : 0;
   // What the contract does not bill (a quarter below baseline is floored at $0): the gap between the real
   // building rows and the billable total. Reports print it as one line, so the columns add up.
@@ -1048,6 +1054,8 @@ function collectReportData(projId, buildingIds, reportDateStr, reportType, selec
       shortfallNotBilled: _notBilled.shortfall,
       presentedAdjustment: _notBilled.presented,
       cumulativeSavings: totCumSavings,
+      weatherWaiting: _wxWaitYMs, // months of the period with no weather yet: no savings figure, see weatherWaitingLabel
+      cumulativeWeatherWaiting: _wxWaitCumYMs, // same, over all months to date (those quarters are left out of the cumulative)
       blCost: totBlCost,
       curCost: totCurCost,
       savingsPct: totSavingsPct,
@@ -2481,19 +2489,22 @@ function rptPageCover(n, d) {
     ' of the projected savings contract. ' +
     'Across all ' +
     _nBldgs +
-    ' buildings, the portfolio is ' +
-    perfWord +
-    ' the ' +
-    _periodWord +
-    ' savings target of <strong>' +
-    _fmtUSD(target, '$0') +
-    '</strong>, ' +
-    'having achieved <strong>' +
-    _fmtUSD(d.totals.savings, '$0') +
-    '</strong> in verified cost avoidance ' +
-    '(' +
-    $p(d.totals.savingsPct) +
-    ' of baseline spend). ' +
+    ' buildings, ' +
+    (d.totals.weatherWaiting && d.totals.weatherWaiting.length
+      ? 'savings for this period are not reported yet. <strong>' + savingsOrWaiting(d.totals.weatherWaiting, 0) + '</strong>. '
+      : 'the portfolio is ' +
+        perfWord +
+        ' the ' +
+        _periodWord +
+        ' savings target of <strong>' +
+        _fmtUSD(target, '$0') +
+        '</strong>, ' +
+        'having achieved <strong>' +
+        savingsOrWaiting(d.totals.weatherWaiting, d.totals.savings) +
+        '</strong> in verified cost avoidance ' +
+        '(' +
+        $p(d.totals.savingsPct) +
+        ' of baseline spend). ') +
     'Energy reductions have been driven by operational improvements, setpoint optimization, and scheduling adjustments.';
 
   // Key findings
@@ -2792,14 +2803,14 @@ function rptPageCover(n, d) {
     '</div>' +
     '<div class="rpt-big-number">' +
     '<div class="rpt-bn-amount" contenteditable="true">' +
-    _fmtUSD(d.totals.savings, '$0') +
+    savingsOrWaiting(d.totals.weatherWaiting, d.totals.savings) +
     '</div>' +
     '<div class="rpt-bn-label" contenteditable="true">' +
     periodTitle +
     ' Actual Savings</div>' +
     '<div class="rpt-bn-badge" contenteditable="true">' +
-    pctOfTarget +
-    '% of target</div>' +
+    (d.totals.weatherWaiting && d.totals.weatherWaiting.length ? 'not yet reported' : pctOfTarget + '% of target') +
+    '</div>' +
     '</div>' +
     '<div class="rpt-hero-sub" contenteditable="true">' +
     aheadLabel +
@@ -2823,7 +2834,7 @@ function rptPageCover(n, d) {
     '<div class="rpt-vs-val" style="color:' +
     (d.totals.savings >= target ? 'var(--rpt-green-dark)' : 'var(--rpt-orange)') +
     '" contenteditable="true">' +
-    _fmtUSD(d.totals.savings, '$0') +
+    savingsOrWaiting(d.totals.weatherWaiting, d.totals.savings) +
     '</div>' +
     '<div class="rpt-vs-lbl">Actual ' +
     _vsWord +
@@ -3021,7 +3032,7 @@ function rptPageFinancial(n, d) {
         '<td class="rpt-n ' +
         saveClass +
         '" contenteditable="true">' +
-        _fmtUSD(b.savings, '$0') +
+        (d.totals.weatherWaiting && d.totals.weatherWaiting.length ? savingsOrWaiting(d.totals.weatherWaiting, 0) : _fmtUSD(b.savings, '$0')) +
         '</td>' +
         '<td class="rpt-n ' +
         saveClass +
@@ -3094,7 +3105,7 @@ function rptPageFinancial(n, d) {
     '<td class="rpt-n ' +
     totSaveClass +
     '" contenteditable="true">' +
-    _fmtUSD(d.totals.savings, '$0') +
+    savingsOrWaiting(d.totals.weatherWaiting, d.totals.savings) +
     '</td>' +
     '<td class="rpt-n ' +
     totSaveClass +
@@ -3145,7 +3156,7 @@ function rptPageFinancial(n, d) {
     qLabel +
     ' Actual Savings</td>' +
     '<td class="rpt-n rpt-g" contenteditable="true">' +
-    _fmtUSD(d.totals.savings, '$0') +
+    savingsOrWaiting(d.totals.weatherWaiting, d.totals.savings) +
     '</td>' +
     (pw.isAnnual ? '' : '<td class="rpt-n" contenteditable="true">' + _fmtUSD(annSavings, '$0') + '</td>') +
     '<td class="rpt-n" contenteditable="true">' +
@@ -3212,7 +3223,7 @@ function rptPageFinancial(n, d) {
     _fmtUSD(qCurCost, '$0') +
     '</td>' +
     '<td class="rpt-n rpt-g" contenteditable="true">' +
-    _fmtUSD(d.totals.savings, '$0') +
+    savingsOrWaiting(d.totals.weatherWaiting, d.totals.savings) +
     '</td>' +
     '</tr>';
   const qtrTable =
@@ -5363,7 +5374,9 @@ function rptPageYearToDate(n, d) {
   var trendTable;
   if (_sorted.length) {
     // Total: a period already presented to the client uses the presented figures (WP-04a).
-    _tSav = billableSavingsWithPresented(d.project.id, _sorted, _savPerBldg).total;
+    var _tBill = billableSavingsWithPresented(d.project.id, _sorted, _savPerBldg);
+    _tSav = _tBill.total;
+    var _wxWait = [].concat.apply([], Object.values(_tBill.weatherWaiting)).sort();
     // The month rows above are the real month math. The total is billable (each quarter floored at $0,
     // a presented quarter at its printed figure). Lines under the rows close the gap so the Savings
     // column adds up: savingsNotBilledWithPresented (computations/savings.js) sizes them; the whole-dollar
@@ -5390,7 +5403,7 @@ function rptPageYearToDate(n, d) {
       '</td><td class="rpt-n">' +
       _fmtUSD(_tCur, '$0') +
       '</td><td class="rpt-n">' +
-      _fmtUSD(_tSav, '$0') +
+      savingsOrWaiting(_wxWait, _tSav) +
       '</td></tr>';
     trendTable =
       '<table class="rpt-table" style="font-size:10px"><thead><tr><th>Month</th><th class="rpt-n">Baseline Cost</th><th class="rpt-n">Actual Cost</th><th class="rpt-n">Savings $</th></tr></thead><tbody>' +

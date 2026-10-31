@@ -64,6 +64,9 @@ eq('presented quarter month keeps the baseline-year value', expectedUsageForMont
 eq('presented quarter month: weather does not matter', expectedUsageForMonth({ ym: '2026-06', regrBaseline: null, cdd: null, hdd: null }, { blByCalMo: { 5: 2000 }, blAvg: 1, weatherDriven: true, hasRegr: true }), { usage: 2000, weatherMissing: false });
 eq('no regression and weather present: baseline-year value', expectedUsageForMonth({ ym: '2026-08', regrBaseline: null, cdd: 500, hdd: 0 }, exCtx), { usage: 3000, weatherMissing: false });
 
+eq('one null of HDD / CDD is a missing month (CDD null)', expectedUsageForMonth({ ym: '2026-09', regrBaseline: null, cdd: null, hdd: 0 }, exCtx), { usage: null, weatherMissing: true });
+eq('one null of HDD / CDD is a missing month (HDD null)', expectedUsageForMonth({ ym: '2026-09', regrBaseline: 3000, cdd: 530, hdd: null }, exCtx), { usage: null, weatherMissing: true });
+eq('one null never falls back to the baseline-year weather', expectedUsageForMonth({ ym: '2026-09', regrBaseline: null, cdd: 530, hdd: null }, exCtx).usage, null);
 eq('water meter (not weather driven) is never flagged', expectedUsageForMonth(sepRow, { blByCalMo: { 8: 77 }, blAvg: 1, weatherDriven: false, hasRegr: true }), { usage: 77, weatherMissing: false });
 eq('meter with no fitted regression is never flagged', expectedUsageForMonth(sepRow, { blByCalMo: { 8: 77 }, blAvg: 1, weatherDriven: true, hasRegr: false }), { usage: 77, weatherMissing: false });
 
