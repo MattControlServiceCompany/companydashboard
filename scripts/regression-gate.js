@@ -14,7 +14,8 @@
 // USAGE
 //   node scripts/regression-gate.js [--data <backup.json>] [--oracle <oracle.json>]
 //        [--skip-reconcile] [--capture-baseline] [--json <out.json>]
-//   Default --data   = newest <home>\Downloads\CompanyHub-localdatafile-*.json
+//   Default --data   = the file named in the oracle (oracle._input.backupFile, looked up in <home>\Downloads). If it is
+//     missing the gate fails; it NEVER falls back to the newest file. --data overrides.
 //   Default --oracle = <context dir>\reference\known-good-values\regression-oracle.json  (context dir = CH_CONTEXT_DIR, default <home>\AI\_context)
 //   --capture-baseline: add every probe value that has NO oracle entry to the oracle file as tier
 //     "baseline-current" (value = what current code computes, NOT a verified truth), then exit 0.
@@ -74,14 +75,12 @@ function parseArgs(argv) {
 }
 const args = parseArgs(process.argv.slice(2));
 
-function newestBackup() {
-  const files = fs
-    .readdirSync(DOWNLOADS)
-    .filter((f) => /^CompanyHub-localdatafile-.*\.json$/i.test(f))
-    .map((f) => ({ f, t: fs.statSync(path.join(DOWNLOADS, f)).mtimeMs }))
-    .sort((a, b) => b.t - a.t);
-  if (!files.length) throw new Error('no CompanyHub-localdatafile-*.json in ' + DOWNLOADS);
-  return DOWNLOADS + '/' + files[0].f;
+function pinnedBackup(oracle) {
+  const name = oracle._input && oracle._input.backupFile;
+  if (!name) throw new Error('oracle has no _input.backupFile; set it to the backup the oracle was built from, or pass --data');
+  const p = DOWNLOADS + '/' + name;
+  if (!fs.existsSync(p)) throw new Error('the backup the oracle was built from is missing: ' + p + ' (oracle._input.backupFile). Restore it or pass --data. The gate does not use the newest file.');
+  return p;
 }
 
 // ---- where each page's "main control" is. One simple selector per page. ----
@@ -390,11 +389,11 @@ async function main() {
     }
     add('syntax', 'node --check on every tracked .js file (' + jsFiles.length + ')', 'PASS', '');
   }
-  const dataSrc = args.data && args.data !== true ? args.data : newestBackup();
   const oraclePath = args.oracle && args.oracle !== true ? args.oracle : DEFAULT_ORACLE;
-  if (!fs.existsSync(dataSrc)) throw new Error('backup not found: ' + dataSrc);
   if (!fs.existsSync(oraclePath)) throw new Error('oracle not found: ' + oraclePath + ' (lives outside the repo)');
   const oracle = JSON.parse(fs.readFileSync(oraclePath, 'utf8'));
+  const dataSrc = args.data && args.data !== true ? args.data : pinnedBackup(oracle);
+  if (!fs.existsSync(dataSrc)) throw new Error('backup not found: ' + dataSrc);
 
   // Temp-leak guard: every entry in these dirs before the run. After the tests, a new entry whose name starts with
   // this run's tag (made by the gate or its child tests) = FAIL + delete. Any other new entry is another process's: INFO only.
@@ -517,6 +516,8 @@ async function main() {
         });
         n++;
       });
+      oracle._input = oracle._input || {};
+      if (!oracle._input.backupFile) oracle._input.backupFile = path.basename(dataSrc); // the oracle always names its backup
       fs.writeFileSync(oraclePath, JSON.stringify(oracle, null, 1));
       console.log('CAPTURE: added ' + n + ' baseline-current entries to ' + oraclePath);
       await ctx.close();
