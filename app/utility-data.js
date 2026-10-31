@@ -6356,7 +6356,7 @@ function renderNormPane(pane, m, bills, incl) {
       '</div>' +
       '<div style="overflow-x:auto;border:1px solid var(--border);border-radius:8px;max-height:340px;overflow-y:auto">' +
       '<table class="ma-tbl">' +
-      '<thead><tr><th class="lbl">Month</th><th class="num">Days</th><th class="num">HDD</th><th class="num">CDD</th><th class="num">Average °F</th><th class="num">' +
+      '<thead><tr><th class="lbl">Month</th><th class="num">Days</th><th class="num">HDD (base ' + WX_DD_BASE_F + '°F)</th><th class="num">CDD (base ' + WX_DD_BASE_F + '°F)</th><th class="num">Average °F</th><th class="num">' +
       unit +
       '/' +
       weatherDDLabel +
@@ -6835,7 +6835,7 @@ function wddShowPreview(rows) {
     return;
   }
   tbl.innerHTML =
-    '<thead><tr><th>Month</th><th>HDD</th><th>CDD</th><th>Average °F</th></tr></thead>' +
+    '<thead><tr><th>Month</th><th>HDD (base ' + WX_DD_BASE_F + '°F)</th><th>CDD (base ' + WX_DD_BASE_F + '°F)</th><th>Average °F</th></tr></thead>' +
     '<tbody>' +
     rows
       .map(

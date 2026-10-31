@@ -16,6 +16,8 @@
 
 const WX_API_BASE = 'https://api.weatherdatadepot.com/api';
 const WX_FIRST_YEAR = 2020;
+// Degree-day base temperature in F. The ONE value: the fetch URLs and every HDD/CDD label use it.
+const WX_DD_BASE_F = 60;
 const WX_MONTHS = { jan: 1, feb: 2, mar: 3, apr: 4, may: 5, jun: 6, jul: 7, aug: 8, sep: 9, oct: 10, nov: 11, dec: 12 };
 
 // Last complete calendar month as 'YYYY-MM' (the month before `now`).
@@ -101,8 +103,8 @@ async function wxFetchRows(fetchFn, zip, startYear, endYear) {
   if (!st || !st.stationID) throw new Error('no station for ZIP ' + zip);
   const q = '?station_id=' + st.stationID + '&startYear=' + startYear + '&endYear=' + endYear;
   const [hdd, cdd, tmp] = await Promise.all([
-    get(WX_API_BASE + '/charts/heatingDegreeDays' + q + '&balancePoint=60&unit=f', 'hdd'),
-    get(WX_API_BASE + '/charts/coolingDegreeDays' + q + '&balancePoint=60&unit=f', 'cdd'),
+    get(WX_API_BASE + '/charts/heatingDegreeDays' + q + '&balancePoint=' + WX_DD_BASE_F + '&unit=f', 'hdd'),
+    get(WX_API_BASE + '/charts/coolingDegreeDays' + q + '&balancePoint=' + WX_DD_BASE_F + '&unit=f', 'cdd'),
     get(WX_API_BASE + '/charts/averageDailyTemperature' + q + '&unit=f', 'temp'),
   ]);
   return wxRowsFromBlocks(hdd, cdd, tmp);
@@ -169,6 +171,7 @@ if (typeof module !== 'undefined' && module.exports) {
     wxNewestYm,
     wxNeedsRefresh,
     wxCumulativeToMonthly,
+    WX_DD_BASE_F,
     wxMonthlyAverage,
     wxRowsFromBlocks,
     wxFetchRows,
