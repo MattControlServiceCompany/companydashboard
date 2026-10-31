@@ -2507,6 +2507,11 @@ async function siteResetAllMeterTableSettings() {
    site-ui.js delegates to this array and should NOT maintain its own copy.
 */
 var RELEASE_NOTES = [
+  { v: 'v2026.10.31.191', date: '2026-10-31', title: 'Utility Data > Weather: degree day base temperature',
+    items: [
+      { type: 'change', text: 'Utility Data > Weather: HDD and CDD now show their base temperature (60°F). The CSV import help says uploaded degree days must use base 60°F.' }
+    ]
+  },
   { v: 'v2026.10.30.190', date: '2026-10-30', title: 'PDF / OCR building creation, District Calendar change list grouping',
     items: [
       { type: 'feature', text: 'PDF / OCR: a bill with no matching building now offers "Create building + meter". The building is named from the service address on the bill, and bills with the same address go to the same new building.' },
