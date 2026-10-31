@@ -77,3 +77,55 @@ function computeMultiYearCscTotals(annualTarget, escalationPct, contractYears, c
   }
   return { totalSavings: totalSavings, totalCsc: totalCsc, totalClient: totalClient, years: years };
 }
+
+// computeContractProjection - the ONE contract-total projection that every report page prints (Financial
+// Summary "3-Year Total", Contract Projection "Total", Annualized). It is the expected value:
+// the current contract year = savings actually billed so far (quarterlyActuals, already floored at $0 per
+// quarter by billableSavingsWithPresented) + the targets of the quarters still to come; every other year =
+// that year's escalated target (computeMultiYearCscTotals). Each row is rounded to whole dollars and each
+// total is the sum of the printed rows, so the columns foot. When no actuals are given it is the pure
+// target projection. Matt 2026-10-28: "We should never show values that are higher than the expected value."
+//   o = { annualTarget, escalationPct, contractYears, cscPct, clientPct, currentYear, quarter (last reported
+//         quarter, 1-4), quarterlyActuals ([q1..q4] or null), quarterlyTargets ([q1..q4]) }
+// Returns { years: [{ year, savings, csc, client, annual, blended }], totalSavings, totalCsc, totalClient,
+//           targetOnly: computeMultiYearCscTotals(...) }  (annual = the year's full-year target)
+function computeContractProjection(o) {
+  var base = computeMultiYearCscTotals(o.annualTarget, o.escalationPct, o.contractYears, o.cscPct, o.clientPct);
+  var cscPct = o.cscPct || 0;
+  var clientPct = o.clientPct || 0;
+  var q = o.quarter || 0;
+  var acts = o.quarterlyActuals || null;
+  var tgts = o.quarterlyTargets || [0, 0, 0, 0];
+  var years = [];
+  var totalSavings = 0,
+    totalCsc = 0,
+    totalClient = 0;
+  base.years.forEach(function (y) {
+    var blended = !!(acts && y.year === o.currentYear && q > 0);
+    var savings = y.savings,
+      csc = y.csc,
+      client = y.client;
+    if (blended) {
+      var done = 0,
+        left = 0;
+      for (var i = 0; i < q; i++) done += acts[i] != null ? acts[i] : 0;
+      for (var j = q; j < 4; j++) left += tgts[j] || 0;
+      savings = done + left;
+      csc = (savings * cscPct) / 100;
+      client = (savings * clientPct) / 100;
+    }
+    var row = {
+      year: y.year,
+      savings: Math.round(savings),
+      csc: Math.round(csc),
+      client: Math.round(client),
+      annual: Math.round(y.savings),
+      blended: blended,
+    };
+    years.push(row);
+    totalSavings += row.savings;
+    totalCsc += row.csc;
+    totalClient += row.client;
+  });
+  return { years: years, totalSavings: totalSavings, totalCsc: totalCsc, totalClient: totalClient, targetOnly: base };
+}

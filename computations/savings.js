@@ -953,6 +953,26 @@ function billableSavingsWithPresented(projId, yms, perBldg) {
   return { total, byBldg: net.byBldg, applied: net.applied, missing };
 }
 
+// savingsNotBilledWithPresented(projId, yms, perBldg) - the gap between the real rows a report prints and
+// the billable total under them, so the columns add up. perBldg is the same { <bldgId>: { <ym>: dollars } }
+// that billableSavingsWithPresented takes (current values).
+//   shortfall = billable total - net total: what the contract does not bill, because a quarter below
+//               baseline is floored at $0 ("Shortfall not billed (contract minimum $0)"). Never negative.
+//   presented = net total - the sum of the current month values: a presented quarter keeps the figure that was
+//               printed to the client (never re-derived, Matt 2026-09-29), so it can differ from the current
+//               month rows. 0 when nothing in yms was presented.
+// Building rows (totalSavingsWithPresented byBldg) add up to total - shortfall; month rows (current values)
+// add up to total - shortfall - presented. This is the ONE rule for that gap; every report table calls it.
+function savingsNotBilledWithPresented(projId, yms, perBldg) {
+  const billable = billableSavingsWithPresented(projId, yms, perBldg).total;
+  const net = totalSavingsWithPresented(projId, yms, perBldg).total;
+  let rows = 0;
+  Object.keys(perBldg).forEach((b) => {
+    yms.forEach((y) => (rows += (perBldg[b] || {})[y] || 0));
+  });
+  return { shortfall: billable - net, presented: net - rows };
+}
+
 // Shared engine of the two functions below. perBldgVals = { <bldgId>: { <ym>: { <key>: number } } };
 // fieldOf maps each key to its printed field name on the presented building record.
 function _sumWithPresented(projId, yms, perBldgVals, fieldOf) {

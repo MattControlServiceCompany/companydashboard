@@ -80,6 +80,7 @@ const fns = [
   'rptPageEnvironmentalImpact',
   'rptPageObservations',
   'rptPageEUI',
+  '_rptContractProjection',
   'rptPageContractProjection',
   'rptPageAppendixWeather',
 ];

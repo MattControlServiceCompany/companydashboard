@@ -155,6 +155,16 @@ assert(bp(['2026-04', '2026-05', '2026-06']) === 2000, 'presented Q2 stays 2000'
 assert(bp(['2026-07', '2026-08', '2026-09']) === 0, 'open negative Q3 -> 0');
 assert(bp(['2026-01', '2026-02', '2026-03', '2026-04', '2026-05', '2026-06', '2026-07', '2026-08', '2026-09']) === 3000, 'cumulative = 1000 + 2000 + 0 (sum of floored quarters, not net 2850)');
 
+console.log('=== 3b. shortfall not billed: the gap that makes the columns add up ===');
+const nb = (y, per) => ev(`savingsNotBilledWithPresented('pNone', ${JSON.stringify(y)}, ${per})`);
+const q3 = ['2026-07', '2026-08', '2026-09'];
+assert(nb(q3, J).shortfall === 3000 && nb(q3, J).presented === 0, 'open negative quarter: shortfall = 3000 (rows -3000 + 3000 = billable 0)');
+assert(nb(['2026-10', '2026-11', '2026-12'], J).shortfall === 0, 'positive quarter: no shortfall');
+const nbp = nb(['2026-01', '2026-02', '2026-03', '2026-04', '2026-05', '2026-06', '2026-07', '2026-08', '2026-09'], perP);
+void nbp;
+const nbPres = ev(`savingsNotBilledWithPresented('pT1', ${JSON.stringify(['2026-01', '2026-02', '2026-03', '2026-04', '2026-05', '2026-06', '2026-07', '2026-08', '2026-09'])}, ${perP})`);
+assert(nbPres.shortfall === 150 && nbPres.presented === 3000 - 150 - (15 + 3 - 150), 'presented quarters: shortfall 150 (open Q3), presented = printed minus current month rows');
+
 console.log('=== 4. frozen values of a contracted project do not move ===');
 // Frozen: projected savings (saved rates x saved quantities) and every presented quarter. A rate refresh,
 // a changed baseline rate, a new bill month or a changed month inside a presented quarter must not change them.

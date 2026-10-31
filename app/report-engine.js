@@ -675,6 +675,9 @@ function collectReportData(projId, buildingIds, reportDateStr, reportType, selec
     perBldgSavByYM,
   ).total;
   const totSavingsPct = totBlCost > 0 ? (totSavings / totBlCost) * 100 : 0;
+  // What the contract does not bill (a quarter below baseline is floored at $0): the gap between the real
+  // building rows and the billable total. Reports print it as one line, so the columns add up.
+  const _notBilled = savingsNotBilledWithPresented(projId, _reportYMsSorted, perBldgSavByYM);
   // Project EUI: sqft-weighted average of per-building EUIs, via the canonical
   // computeProjectEUI (computations/eui.js) — same rollup used elsewhere in the app.
   const _projEUI = computeProjectEUI(buildingsData);
@@ -983,6 +986,27 @@ function collectReportData(projId, buildingIds, reportDateStr, reportType, selec
     }
   }
 
+  // The quarter the actuals run through: the reported quarter; for an annual report the last quarter with a
+  // bill. An annual report gets the same per-quarter billable values (each quarter floored at $0,
+  // billableSavingsWithPresented), so its contract projection is the same one a quarterly report prints.
+  var actualsThroughQuarter = periodQuarter || 0;
+  if (reportType === 'annual' && reportYMs.length) {
+    var _aYear = reportYMs[reportYMs.length - 1].slice(0, 4);
+    var _aYMs = reportYMs.filter(function (ym) {
+      return ym.slice(0, 4) === _aYear;
+    });
+    actualsThroughQuarter = Math.ceil(parseInt(_aYMs[_aYMs.length - 1].slice(5, 7), 10) / 3);
+    quarterlyActuals = [null, null, null, null];
+    for (var _aq = 1; _aq <= actualsThroughQuarter; _aq++) {
+      var _aqYMs = _aYMs.filter(function (ym) {
+        return Math.ceil(parseInt(ym.slice(5, 7), 10) / 3) === _aq;
+      });
+      quarterlyActuals[_aq - 1] = _aqYMs.length
+        ? billableSavingsWithPresented(projId, _aqYMs, perBldgSavByYM).total
+        : 0;
+    }
+  }
+
   // --- Assemble final object ---
   var _reportData = {
     project: {
@@ -1007,6 +1031,7 @@ function collectReportData(projId, buildingIds, reportDateStr, reportType, selec
       escalation: escalation,
       quarterlyTargets: quarterlyTargets,
       quarterlyActuals: quarterlyActuals,
+      actualsThroughQuarter: actualsThroughQuarter,
     },
     period: {
       type: reportType,
@@ -1023,6 +1048,8 @@ function collectReportData(projId, buildingIds, reportDateStr, reportType, selec
     buildings: buildingsData,
     totals: {
       savings: totSavings,
+      shortfallNotBilled: _notBilled.shortfall,
+      presentedAdjustment: _notBilled.presented,
       cumulativeSavings: totCumSavings,
       blCost: totBlCost,
       curCost: totCurCost,
@@ -2367,6 +2394,29 @@ function _rptContractProgressPct(d) {
   return Math.round(((asOf - start) / (end - start)) * 100);
 }
 
+// _rptContractProjection(d) - the ONE contract projection every report page prints (Financial Summary
+// "3-Year Total" and "Annualized", Contract Projection table and chart). It calls computeContractProjection
+// (computations/csc.js) with the contract the report data carries. Never rebuild these totals in a page.
+function _rptContractProjection(d) {
+  var c = (d && d.contract) || {};
+  var qT = c.quarterlyTargets || [0, 0, 0, 0];
+  return computeContractProjection({
+    annualTarget:
+      c.annualTarget ||
+      qT.reduce(function (s, v) {
+        return s + (v || 0);
+      }, 0),
+    escalationPct: c.escalation || 0,
+    contractYears: c.years || 3,
+    cscPct: c.cscPct || 0,
+    clientPct: c.clientPct || 0,
+    currentYear: c.currentYear || 1,
+    quarter: c.actualsThroughQuarter || (d.period && d.period.quarter) || 0,
+    quarterlyActuals: c.quarterlyActuals || null,
+    quarterlyTargets: qT,
+  });
+}
+
 // -- Stub page template functions (replaced by Tasks 6–17) --
 function rptPageCover(n, d) {
   const $p = function (v) {
@@ -2377,7 +2427,10 @@ function rptPageCover(n, d) {
   };
 
   const q = d.period.quarter || 1;
-  const target = d.contract.quarterlyTargets[q - 1] || d.contract.annualTarget;
+  // A quarterly report compares with the quarter target; an annual report with the annual target.
+  const _isQRpt = d.period.type === 'quarterly';
+  const _vsWord = _isQRpt ? 'Q' + q : d.period.year || '';
+  const target = _isQRpt ? d.contract.quarterlyTargets[q - 1] || d.contract.annualTarget : d.contract.annualTarget;
   const pctOfTarget = _rptPVn(
     d,
     'cover',
@@ -2774,8 +2827,8 @@ function rptPageCover(n, d) {
     '" contenteditable="true">' +
     _fmtUSD(d.totals.savings, '$0') +
     '</div>' +
-    '<div class="rpt-vs-lbl">Actual Q' +
-    q +
+    '<div class="rpt-vs-lbl">Actual ' +
+    _vsWord +
     ' Savings</div>' +
     '</div>' +
     '<div class="rpt-vs-mid">vs</div>' +
@@ -2783,9 +2836,10 @@ function rptPageCover(n, d) {
     '<div class="rpt-vs-val" style="color:var(--rpt-blue)" contenteditable="true">' +
     _fmtUSD(target, '$0') +
     '</div>' +
-    '<div class="rpt-vs-lbl">Q' +
-    q +
-    ' Target</div>' +
+    '<div class="rpt-vs-lbl">' +
+    _vsWord +
+    (_isQRpt ? ' Target' : ' Annual Target') +
+    '</div>' +
     '</div>' +
     '</div>' +
     '<div class="rpt-progress-bar">' +
@@ -2888,26 +2942,14 @@ function rptPageFinancial(n, d) {
   const q = d.period.quarter || 1;
   const pw = _rptPeriodWords(d);
   const qLabel = d.period.type === 'quarterly' ? 'Q' + q + ' ' + (d.period.year || '') : d.period.year || '';
-  // FIX 1 (2026-09-11): Annualized used to be a naive Q-times-4 (annFactor=4 * this
-  // quarter's savings) — wildly overstates a quarter running above/below its neighbors.
-  // Correct figure = realized YTD (sum of ACTUAL savings for quarters 1..this quarter,
-  // from d.contract.quarterlyActuals — collectReportData's own period-scoped totSavings
-  // for each completed quarter, NOT cumulativeSavings which leaks months beyond this
-  // quarter) + projected remaining quarters (sum of contract quarterly TARGETS for
-  // quarters after this one). Annual reports are unchanged: d.totals.savings already IS
+  // Both figures below come from the ONE shared projection (_rptContractProjection ->
+  // computations/csc.js computeContractProjection): the current contract year = savings billed so far
+  // (each quarter floored at $0) + the targets still to come. Annual reports: d.totals.savings already IS
   // the full-year actual, so Annualized = that figure with no adjustment.
+  var _proj = _rptContractProjection(d);
   var annSavings;
-  var qActuals = d.contract.quarterlyActuals;
-  if (d.period.type === 'quarterly' && qActuals) {
-    var _ytdActual = 0;
-    for (var _q = 1; _q <= q; _q++) {
-      _ytdActual += qActuals[_q - 1] != null ? qActuals[_q - 1] : 0;
-    }
-    var _remainingTarget = 0;
-    for (var _rq = q + 1; _rq <= 4; _rq++) {
-      _remainingTarget += d.contract.quarterlyTargets[_rq - 1] || 0;
-    }
-    annSavings = _ytdActual + _remainingTarget;
+  if (d.period.type === 'quarterly' && d.contract.quarterlyActuals) {
+    annSavings = _proj.years[(d.contract.currentYear || 1) - 1].savings;
   } else {
     annSavings = d.totals.savings;
   }
@@ -2921,25 +2963,12 @@ function rptPageFinancial(n, d) {
   var _annSplit = computeCscSplit(annSavings, d.contract.cscPct, 'pct');
   var cscAnnAmt = _rptPVn(d, 'csc table', 'csc', '', '', 'annualized', _annSplit.csc);
   var clientAnnAmt = _rptPVn(d, 'csc table', 'client', '', '', 'annualized', _annSplit.client);
-  // FIX 2 (2026-09-14): 3-Year Total used to be a flat annSavings * contractYrs — no
-  // escalation, so it disagreed with the Multi-Year Projection table on the Contract
-  // Projection page, which DOES compound the contract's escalation %/yr. Both tables now
-  // call the same computeMultiYearCscTotals() (computations/csc.js) so they can't drift
-  // apart. Uses contract.annualTarget (falling back to the sum of quarterlyTargets, same
-  // fallback rptPageContractProjection uses) and contract.escalation.
-  var _qTargetsForAnn = d.contract.quarterlyTargets || [0, 0, 0, 0];
-  var _annualTarget =
-    d.contract.annualTarget ||
-    _qTargetsForAnn.reduce(function (s, v) {
-      return s + (v || 0);
-    }, 0);
-  var _multiYr = computeMultiYearCscTotals(
-    _annualTarget,
-    d.contract.escalation || 0,
-    contractYrs,
-    d.contract.cscPct || 0,
-    d.contract.clientPct || 0,
-  );
+  // 3-Year Total (Matt 2026-10-28, never show a value above the expected value): the SAME projection
+  // the Contract Projection page prints. A presented report (d.printed) that printed no 3-Year Total keeps the
+  // original all-target projection: its printed numbers are frozen.
+  var _multiYr = d.printed
+    ? _proj.targetOnly
+    : { totalSavings: _proj.totalSavings, totalCsc: _proj.totalCsc, totalClient: _proj.totalClient };
   const yrTotalSavings = _rptPVn(d, 'csc table', 'actual', '', '', 'three_year', _multiYr.totalSavings);
   const yrTotalCsc = _rptPVn(d, 'csc table', 'csc', '', '', 'three_year', _multiYr.totalCsc);
   const yrTotalClient = _rptPVn(d, 'csc table', 'client', '', '', 'three_year', _multiYr.totalClient);
@@ -3032,6 +3061,23 @@ function rptPageFinancial(n, d) {
   const anyRealSavings = d.buildings.some(function (b) {
     return b.status !== 'no_data' && b.status !== 'no_contract';
   });
+  // "Shortfall not billed (contract minimum $0)": the real building rows above are not floored, the total is
+  // (billableSavingsWithPresented). The one line below makes the column add up. Its size is
+  // d.totals.shortfallNotBilled (savingsNotBilledWithPresented, computations/savings.js); the cell prints the
+  // whole-dollar gap between the printed total and the printed rows, so the printed column foots exactly.
+  const _bRowsSum = d.buildings.reduce(function (sum, b) {
+    return sum + Math.round(b.savings || 0);
+  }, 0);
+  const bShortfallRow =
+    (d.totals.shortfallNotBilled || 0) >= 0.5
+      ? '<tr>' +
+        '<td colspan="5" contenteditable="true">Shortfall not billed (contract minimum $0)</td>' +
+        '<td class="rpt-n" contenteditable="true">' +
+        _fmtUSD(Math.round(d.totals.savings) - _bRowsSum, '$0') +
+        '</td>' +
+        '<td></td><td></td>' +
+        '</tr>'
+      : '';
   const bTotRow =
     '<tr class="rpt-tot">' +
     '<td contenteditable="true">Total Portfolio</td>' +
@@ -3076,6 +3122,7 @@ function rptPageFinancial(n, d) {
     '</tr></thead>' +
     '<tbody>' +
     bRows +
+    bShortfallRow +
     bTotRow +
     '</tbody>' +
     '</table>';
@@ -4776,7 +4823,8 @@ function rptPageContractProjection(n, d) {
   const escalation = contract.escalation || 0;
   const contractYears = contract.years || 5;
   const currentYear = contract.currentYear || 1;
-  const q = (d && d.period && d.period.quarter) || 1;
+  const q = (d && d.period && d.period.quarter) || contract.actualsThroughQuarter || 1;
+  const isQuarterlyRpt = !!(d && d.period && d.period.type === 'quarterly');
   // Use cumulative REALIZED savings thru the reported quarter for the chart's "Actual
   // Cumulative" endpoint (not d.totals.cumulativeSavings, which sums every post-baseline
   // month regardless of calendar quarter and leaks months beyond the report's own quarter
@@ -4804,7 +4852,10 @@ function rptPageContractProjection(n, d) {
         : actualSavings;
 
   // -- Quarterly Targets table --
-  const qTarget = qTargets[q - 1] || 0;
+  // A quarterly report compares the quarter with its target; an annual report compares the year to date
+  // with the annual target (the same target the cover prints).
+  const qTarget = isQuarterlyRpt ? qTargets[q - 1] || 0 : annualTarget;
+  const vsPeriodWord = isQuarterlyRpt ? 'Q' + q : (d.period.year || '') + '';
   const annualSum = _rptPVn(
     d,
     'quarterly targets',
@@ -4881,7 +4932,7 @@ function rptPageContractProjection(n, d) {
     'target vs actual',
     'Portfolio',
     '',
-    'Q' + q,
+    vsPeriodWord,
     'pct',
     qTarget > 0 ? Math.round((actualSavings / qTarget) * 100) : 0,
   );
@@ -4893,8 +4944,8 @@ function rptPageContractProjection(n, d) {
     '">' +
     _fmtUSD(actualSavings, '$0') +
     '</div>' +
-    '<div class="rpt-vs-lbl">Actual Q' +
-    q +
+    '<div class="rpt-vs-lbl">Actual ' +
+    vsPeriodWord +
     ' Savings</div>' +
     '</div>' +
     '<div class="rpt-vs-mid" style="font-size:34px">' +
@@ -4904,9 +4955,9 @@ function rptPageContractProjection(n, d) {
     '<div class="rpt-vs-val" style="color:var(--rpt-page-text)">' +
     _fmtUSD(qTarget, '$0') +
     '</div>' +
-    '<div class="rpt-vs-lbl">Q' +
-    q +
-    ' Target (' +
+    '<div class="rpt-vs-lbl">' +
+    vsPeriodWord +
+    (isQuarterlyRpt ? ' Target (' : ' Annual Target (') +
     pctOfTarget +
     '%)</div>' +
     '</div>' +
@@ -4919,19 +4970,20 @@ function rptPageContractProjection(n, d) {
   // could disagree; now there's exactly one place the compounding math lives.
   let fiveYrRows = '';
   let totalActual = 0;
-  var isQuarterly = d.period && d.period.type === 'quarterly';
-  var _multiYrProj = computeMultiYearCscTotals(annualTarget, escalation, contractYears, cscPct, clientPct);
-  // WP-21 (math-05 M8): each Total is the SUM of the figures the rows print (the current quarterly
-  // year prints its blend of actual + remaining targets), so the columns foot. Per-year figures
-  // still come from computeMultiYearCscTotals, the one projection source. A presented report's
-  // printed Total wins (_rptPVn), as before. A presented report (d.printed, the WP-04a lock) that
-  // printed no Total keeps the original projection total: its printed numbers are frozen.
+  // The ONE shared projection (computations/csc.js computeContractProjection): the current contract year =
+  // savings billed so far (each quarter floored at $0) + the targets still to come; other years = the escalated
+  // target. The Financial Summary page prints the same Total. Each Total is the sum of the rows printed here,
+  // so the columns foot (WP-21). A presented report's (d.printed, WP-04a lock) printed Total wins (_rptPVn);
+  // one that printed no Total keeps the original all-target total: its printed numbers are frozen.
+  var _projC = _rptContractProjection(d);
+  var _multiYrProj = _projC.targetOnly;
   var sumProj = 0;
   var sumCsc = 0;
   var sumClient = 0;
   for (var yr = 1; yr <= contractYears; yr++) {
     const _yk = 'Year ' + yr;
-    const _curQtr = yr === currentYear && isQuarterly;
+    const _row = _projC.years[yr - 1];
+    const _curQtr = _row.blended;
     const yearProj = _rptPVn(
       d,
       'three year projection',
@@ -4939,59 +4991,38 @@ function rptPageContractProjection(n, d) {
       '',
       '',
       _curQtr ? 'annual_projected_note' : 'projected',
-      _multiYrProj.years[yr - 1].savings,
+      _curQtr ? _row.annual : _row.savings,
     );
-    const yearCsc = _curQtr ? _multiYrProj.years[yr - 1].csc : _rptPVn(d, 'three year projection', _yk, '', '', 'csc', _multiYrProj.years[yr - 1].csc);
+    const yearCsc = _curQtr
+      ? _multiYrProj.years[yr - 1].csc
+      : _rptPVn(d, 'three year projection', _yk, '', '', 'csc', _row.csc);
     const yearClient = _curQtr
       ? _multiYrProj.years[yr - 1].client
-      : _rptPVn(d, 'three year projection', _yk, '', '', 'client', _multiYrProj.years[yr - 1].client);
+      : _rptPVn(d, 'three year projection', _yk, '', '', 'client', _row.client);
     const isCurrentYr = yr === currentYear;
     var displayProj = yearProj;
     var displayCsc = yearCsc;
     var displayClient = yearClient;
     var periodNote = '';
-    if (isCurrentYr && isQuarterly) {
-      // Blend actual savings for completed quarters with projected for remaining
-      // q = reported (last completed) quarter (1-based)
-      // FIX (2026-09-13): this row was using actualSavings (CURRENT quarter only, e.g. Q2)
-      // as the "completed quarters" basis, silently dropping every prior completed quarter
-      // (e.g. Q1). Same defect rptPageFinancial's FIX 1 (2026-09-11, ~line 2587) already
-      // fixed for the "Annualized" figure — copy that pattern: sum realized per-quarter
-      // actuals from d.contract.quarterlyActuals for quarters 1..q (NOT
-      // d.totals.cumulativeSavings, which leaks months beyond the quarter — see FIX 1
-      // comment above), then add remaining-quarter targets.
-      var qActuals = d.contract.quarterlyActuals;
-      var ytdActual = 0;
-      if (qActuals) {
-        for (var _yq = 1; _yq <= q; _yq++) {
-          ytdActual += qActuals[_yq - 1] != null ? qActuals[_yq - 1] : 0;
-        }
-      } else {
-        ytdActual = actualSavings;
-      }
-      // Quarters (q+1)..4 are future ? sum their projected targets
-      var remainingProj = 0;
-      for (var qi = q; qi < 4; qi++) {
-        remainingProj += qTargets[qi] || 0;
-      }
-      displayProj = ytdActual + remainingProj;
-      displayCsc = (displayProj * cscPct) / 100;
-      displayClient = (displayProj * clientPct) / 100;
-      periodNote = ' (thru Q' + q + ')';
-      displayProj = _rptPVn(d, 'three year projection', _yk, '', '', 'projected', displayProj);
-      displayCsc = _rptPVn(d, 'three year projection', _yk, '', '', 'csc', displayCsc);
-      displayClient = _rptPVn(d, 'three year projection', _yk, '', '', 'client', displayClient);
+    if (_row.blended) {
+      // The current year = savings billed so far (quarters 1..q, each floored at $0) + the targets of the
+      // quarters still to come: the row computeContractProjection returns, the same one the Financial Summary
+      // page prints. q = the last reported quarter.
+      periodNote = ' (thru Q' + (d.contract.actualsThroughQuarter || q) + ')';
+      displayProj = _rptPVn(d, 'three year projection', _yk, '', '', 'projected', _row.savings);
+      displayCsc = _rptPVn(d, 'three year projection', _yk, '', '', 'csc', _row.csc);
+      displayClient = _rptPVn(d, 'three year projection', _yk, '', '', 'client', _row.client);
     }
     // Pace: compare actual-to-date against projected-to-date (sum of targets for completed quarters)
     var projToDate =
-      isCurrentYr && isQuarterly
-        ? qTargets.slice(0, q).reduce(function (s, v) {
+      isCurrentYr && _row.blended
+        ? qTargets.slice(0, d.contract.actualsThroughQuarter || q).reduce(function (s, v) {
             return s + (v || 0);
           }, 0)
         : displayProj;
     const pace = isCurrentYr && projToDate > 0 ? Math.round((actualSavings / projToDate) * 100) : null;
     if (isCurrentYr) totalActual += actualSavings;
-    var rowIsBlend = isCurrentYr && isQuarterly;
+    var rowIsBlend = _row.blended;
     sumProj += Math.round(rowIsBlend ? displayProj : yearProj);
     sumCsc += Math.round(rowIsBlend ? displayCsc : yearCsc);
     sumClient += Math.round(rowIsBlend ? displayClient : yearClient);
@@ -5007,7 +5038,7 @@ function rptPageContractProjection(n, d) {
       (isCurrentYr ? periodNote + ' (current)' : '') +
       '</td>' +
       '<td class="rpt-n">' +
-      (isCurrentYr && isQuarterly
+      (rowIsBlend
         ? _fmtUSD(displayProj, '$0') +
           '<div style="font-size:8px;color:var(--rpt-page-text)">Annual: ' +
           _fmtUSD(yearProj, '$0') +
@@ -5016,10 +5047,10 @@ function rptPageContractProjection(n, d) {
       '</td>' +
       (hasCsc
         ? '<td class="rpt-n">' +
-          _fmtUSD(isCurrentYr && isQuarterly ? displayCsc : yearCsc, '$0') +
+          _fmtUSD(rowIsBlend ? displayCsc : yearCsc, '$0') +
           '</td>' +
           '<td class="rpt-n">' +
-          _fmtUSD(isCurrentYr && isQuarterly ? displayClient : yearClient, '$0') +
+          _fmtUSD(rowIsBlend ? displayClient : yearClient, '$0') +
           '</td>'
         : '') +
       '</tr>';
@@ -5335,6 +5366,26 @@ function rptPageYearToDate(n, d) {
   if (_sorted.length) {
     // Total: a period already presented to the client uses the presented figures (WP-04a).
     _tSav = billableSavingsWithPresented(d.project.id, _sorted, _savPerBldg).total;
+    // The month rows above are the real month math. The total is billable (each quarter floored at $0,
+    // a presented quarter at its printed figure). Lines under the rows close the gap so the Savings
+    // column adds up: savingsNotBilledWithPresented (computations/savings.js) sizes them; the whole-dollar
+    // amounts below are the printed gaps, so the printed column foots exactly.
+    var _nb = savingsNotBilledWithPresented(d.project.id, _sorted, _savPerBldg);
+    var _rowsRounded = _sorted.reduce(function (sum, ym) {
+      return sum + Math.round(_moData[ym].sav);
+    }, 0);
+    var _shortDisp = _nb.shortfall >= 0.5 ? Math.round(_nb.shortfall) : 0;
+    var _presDisp = Math.round(_tSav) - _rowsRounded - _shortDisp;
+    if (_shortDisp)
+      _rows +=
+        '<tr><td colspan="3">Shortfall not billed (contract minimum $0)</td><td class="rpt-n">' +
+        _fmtUSD(_shortDisp, '$0') +
+        '</td></tr>';
+    if (_presDisp)
+      _rows +=
+        '<tr><td colspan="3">Presented quarters (figures locked as presented)</td><td class="rpt-n">' +
+        _fmtUSD(_presDisp, '$0') +
+        '</td></tr>';
     _rows +=
       '<tr class="rpt-tot"><td>Total</td><td class="rpt-n">' +
       _fmtUSD(_tBl, '$0') +
@@ -11712,6 +11763,19 @@ function rptPageBoardSummary(n, d) {
     var mo = parseInt(ym.split('-')[1]) - 1;
     return { label: moNames[mo] || ym, value: moMap[ym] };
   });
+  // Quarterly and annual reports chart the billable value of each quarter to date: the same per-quarter
+  // numbers (d.contract.quarterlyActuals, each quarter floored at $0, a presented quarter at its printed
+  // figure) that the Financial Summary and Contract Projection pages use. No bar is ever negative.
+  var chartTitle = 'Monthly Savings — Dollars Saved by Month';
+  var _qa = d.contract && d.contract.quarterlyActuals;
+  var _qaThru = (d.contract && d.contract.actualsThroughQuarter) || 0;
+  if (_qa && _qaThru) {
+    chartTitle = 'Quarterly Savings — Dollars Saved by Quarter';
+    chartData = [];
+    for (var _ci = 0; _ci < _qaThru; _ci++) {
+      chartData.push({ label: 'Q' + (_ci + 1), value: _qa[_ci] != null ? _qa[_ci] : 0 });
+    }
+  }
 
   // Progress bar HTML helper
   function progressBar(pct, color, label) {
@@ -11818,7 +11882,9 @@ function rptPageBoardSummary(n, d) {
     '</div>' +
     // Monthly savings chart
     '<div style="border:1px solid var(--rpt-progress-bg);border-radius:6px;padding:10px">' +
-    '<div style="font-size:11px;font-weight:700;color:var(--rpt-blue);text-transform:uppercase;letter-spacing:0.04em;margin-bottom:6px">Monthly Savings — Dollars Saved by Month</div>' +
+    '<div style="font-size:11px;font-weight:700;color:var(--rpt-blue);text-transform:uppercase;letter-spacing:0.04em;margin-bottom:6px">' +
+    chartTitle +
+    '</div>' +
     '<div style="text-align:center">' +
     chartSVG +
     '</div>' +

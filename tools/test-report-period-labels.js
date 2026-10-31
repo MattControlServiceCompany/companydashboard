@@ -18,7 +18,7 @@ const ctx = { console, Math, Number, String, Object, Array, Date, isFinite, pars
   rptPage: (n, t, body) => body };
 vm.createContext(ctx);
 ['computations/savings.js', 'computations/csc.js', 'lib/formatting.js', 'app/report-printed.js'].forEach((f) => vm.runInContext(fs.readFileSync(path.join(root, f), 'utf8'), ctx));
-['_rptUnit', '_rptPeriodWords', 'rptPageFinancial'].forEach((n) => vm.runInContext(grab(n), ctx));
+['_rptUnit', '_rptPeriodWords', '_rptContractProjection', 'rptPageFinancial'].forEach((n) => vm.runInContext(grab(n), ctx));
 
 function data(type) {
   const b = { name: 'Bldg A', sqft: 1000, blCost: 1000, curCost: 800, savings: 200, savingsPct: 20, status: 'on_track' };
