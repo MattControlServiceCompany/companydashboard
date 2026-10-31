@@ -25,15 +25,20 @@ ok('skip rule: newest stored = last complete month -> no fetch', async () => {})
   assert.strictEqual(calls, 0); n++; console.log('PASS skip rule makes no call');
   // wddRefreshAllProjectsWeather: load the real functions from app/utility-data.js with stubs
   const src = fs.readFileSync(path.join(REPO, 'app/utility-data.js'), 'utf8').split('\r\n').join('\n');
-  const a = src.indexOf('const _wddRefreshTried'), b = src.indexOf('function wddSetStatus(');
+  const a = src.indexOf('function _wddTriedToday'), b = src.indexOf('function wddSetStatus(');
   const fetched = [];
   const ctx = { console, Set, Promise, Date, String, Array, RegExp, wxProjectZips: sb.wxProjectZips, wxRefreshZip: async (z) => { fetched.push(z); return null; },
     sget: () => [{ id: 1 }, { id: 2 }, { id: 3 }], getUDBldgs: (pid) => ({ 1: [{ zip: '00000' }], 2: [{ zip: '00000' }, { zip: '00001' }], 3: [] })[pid],
-    wddLoadCache() { return []; }, wddSaveCache() {}, fetch() {}, projects: [], window: undefined, renderMeterWorkspace() {} };
+    wddLoadCache() { return []; }, wddSaveCache() {}, fetch() {}, projects: [], window: undefined, localStorage: (() => { const m = {}; return { getItem: (k) => (k in m ? m[k] : null), setItem: (k, v) => { m[k] = v; } }; })(), renderMeterWorkspace() {} };
   vm.createContext(ctx); vm.runInContext(src.slice(a, b), ctx);
   await ctx.wddRefreshAllProjectsWeather();
   assert.deepStrictEqual(fetched.sort(), ['00000', '00001']);
   await ctx.wddRefreshAllProjectsWeather();
-  assert.strictEqual(fetched.length, 2); n++; console.log('PASS all-project ZIPs once per page load (2 ZIPs, repeat = 0 more)');
+  assert.strictEqual(fetched.length, 2); n++; console.log('PASS all-project ZIPs once per day (2 ZIPs, repeat = 0 more)');
+  // Trigger: the refresh runs from loadUtilityData on every load, with no dbFullPull dependency.
+  const lu = src.slice(src.indexOf('function loadUtilityData()'), src.indexOf('function saveUtilityData'));
+  assert.ok(/wddRefreshAllProjectsWeather\(\);\s*}\s*$/.test(lu), 'loadUtilityData must end with the refresh call');
+  assert.ok(!src.slice(a, b).includes('dbFullPull'), 'weather refresh must not wait for dbFullPull');
+  n++; console.log('PASS refresh runs from loadUtilityData, no dbFullPull');
   console.log(n + ' passed');
 })().catch((e) => { console.error('FAIL', e); process.exit(1); });
