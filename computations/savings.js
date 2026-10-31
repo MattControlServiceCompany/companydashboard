@@ -8,7 +8,54 @@
 // clear or an unrelated data edit to bust it. CH_VERSION (site-ui.js) is not
 // reachable here (scoped inside an IIFE, not exposed on window), so this file
 // carries its own version marker.
-const SAVINGS_CALC_VERSION = '2026.09.28.wp04';
+const SAVINGS_CALC_VERSION = '2026.10.31.rptwx';
+
+/* ─────────────────────────────────────────────────────────────
+   Expected (baseline) usage for a meter-month - THE one rule (Matt, 2026-10-31).
+   From REPORTING_WEATHER_FROM_YM on (Q3-2026), the baseline regression is evaluated at the weather of
+   the month being reported (IPMVP avoided energy), for kWh, therms, gallons and kW alike. A month whose
+   weather is not yet available has NO expected usage: it is flagged weatherMissing and left out of the
+   savings until weather exists - never read as 0 degree days. Months before that (the quarters already
+   presented) keep the earlier rule: baseline-year calendar-month value, else regression, else average.
+   Callers: getMeterSavings (below) and, through its rows, every report and page.
+───────────────────────────────────────────────────────────── */
+const REPORTING_WEATHER_FROM_YM = '2026-07';
+
+// baselineUsageByCalMo(m, moMaps) - baseline-year usage by calendar month (0-11) from the buildMoMap
+// result {elecByMo, gasByMo, propaneByMo, waterByMo}. The one reader of those maps for usage.
+function baselineUsageByCalMo(m, moMaps) {
+  const isElec = m.commodity === 'Electric';
+  const isGas = m.commodity === 'Gas';
+  const isPropane = m.commodity === 'Propane';
+  const map = isElec ? moMaps.elecByMo : isGas ? moMaps.gasByMo : isPropane ? moMaps.propaneByMo : moMaps.waterByMo;
+  const out = {};
+  Object.entries(map).forEach(([mo, v]) => {
+    out[mo] = isElec ? v.kwhPredicted : isGas ? v.thermsPredicted : isPropane ? v.gallons : v.kgal;
+  });
+  return out;
+}
+
+// expectedUsageForMonth(row, ctx) -> { usage, weatherMissing }
+//   row: a getNormRows row ({ym, regrBaseline, hdd, cdd}); regrBaseline is the baseline regression at the
+//        row's own weather, null when the month has no weather.
+//   ctx: { blByCalMo, blAvg, weatherDriven, hasRegr }  (blByCalMo from baselineUsageByCalMo; weatherDriven = an
+//        energy meter - Electric, Gas, Propane - the only meters whose dollars weather decides; hasRegr = the
+//        meter has a fitted baseline regression, so a month without weather cannot be evaluated)
+function expectedUsageForMonth(row, ctx) {
+  if (ctx.weatherDriven && ctx.hasRegr && row.ym >= REPORTING_WEATHER_FROM_YM) {
+    if (row.regrBaseline != null) return { usage: row.regrBaseline, weatherMissing: false };
+    if (row.hdd == null && row.cdd == null) return { usage: null, weatherMissing: true };
+  }
+  const calMo = parseInt(row.ym.split('-')[1]) - 1;
+  const hasBlCalMap = Object.keys(ctx.blByCalMo).length > 0;
+  const usage =
+    hasBlCalMap && ctx.blByCalMo[calMo] != null
+      ? ctx.blByCalMo[calMo]
+      : row.regrBaseline != null
+        ? row.regrBaseline
+        : ctx.blAvg;
+  return { usage, weatherMissing: false };
+}
 
 /* ─────────────────────────────────────────────────────────────
    projHasContract(projId)
@@ -337,20 +384,17 @@ function getMeterSavings(m, bills, incl, projId, bldgId, opts) {
     propaneByMo: pMo,
     waterByMo: wMo,
   } = buildMoMap(m, blRows, bills, incl, !!opts.effectiveRows);
-  const _moMap = isElec ? eMo : isGas ? gMo : isPropane ? pMo : wMo;
-  const blByCalMo = {};
-  const blDemKWByCalMo = {};
-  Object.entries(_moMap).forEach(([mo, v]) => {
-    blByCalMo[mo] = isElec
-      ? v.kwhPredicted
-      : isGas
-        ? v.thermsPredicted
-        : isPropane
-          ? v.gallons
-          : v.kgal;
-    if (isElec) blDemKWByCalMo[mo] = v.billedKW || v.demandKW || 0;
+  const blByCalMo = baselineUsageByCalMo(m, {
+    elecByMo: eMo,
+    gasByMo: gMo,
+    propaneByMo: pMo,
+    waterByMo: wMo,
   });
-  const hasBlCalMap = Object.keys(blByCalMo).length > 0;
+  const blDemKWByCalMo = {};
+  if (isElec)
+    Object.entries(eMo).forEach(([mo, v]) => {
+      blDemKWByCalMo[mo] = v.billedKW || v.demandKW || 0;
+    });
   const hasRegrP = allRows.some((r) => r.regrBaseline != null);
   const blAvg = _fzBl
     ? _fzBl.blAvg
@@ -382,14 +426,9 @@ function getMeterSavings(m, bills, incl, projId, bldgId, opts) {
     });
   }
 
-  // The ONE baseline-usage rule for a month: baseline calendar-month map, else regression
-  // baseline, else the baseline average. Used by every row, including pinned rows below.
-  const expectedUsageFor = (calMo, regrBaseline) =>
-    hasBlCalMap && blByCalMo[calMo] != null
-      ? blByCalMo[calMo]
-      : hasRegrP && regrBaseline != null
-        ? regrBaseline
-        : blAvg;
+  // The ONE baseline-usage rule for a month: expectedUsageForMonth (above). Used by every row,
+  // including pinned rows below.
+  const expCtx = { blByCalMo, blAvg, weatherDriven: isElec || isGas || isPropane, hasRegr: hasRegrP };
 
   // 2026-09-11 (FIX 3, propane zeroFill savings booking): carry-forward propane rate -
   // updated to the most recent real all-in $/gal seen as postRows (sorted ascending by ym)
@@ -418,7 +457,39 @@ function getMeterSavings(m, bills, incl, projId, bldgId, opts) {
       moKwRate = 0,
       kwCostSav = 0;
 
-    const expUsage = expectedUsageFor(calMo, r.regrBaseline);
+    const _exp = expectedUsageForMonth(r, expCtx);
+    if (_exp.weatherMissing) {
+      // Weather for this month is not available yet: no expected usage, so no savings. The month is
+      // listed (incompleteYM, row flag) and booked as $0 until weather exists.
+      const _wxReason = "weather not yet available";
+      if (hasContract) {
+        incompleteYM[r.ym] = { commodity: m.commodity, reason: _wxReason };
+        byYM[r.ym] = byYM[r.ym] || 0;
+        byCalMo[calMo] = byCalMo[calMo] || 0;
+      }
+      rowsOut.push({
+        ym: r.ym,
+        normDays: r.normDays,
+        expUsage: null,
+        actUsage: rawUsageByYm[r.ym] != null ? rawUsageByYm[r.ym] : r.usage,
+        kwhRate: 0,
+        kwhCostSav: 0,
+        unitRate: 0,
+        unitCostSav: 0,
+        blExpKW: 0,
+        demKW: 0,
+        bilKW: 0,
+        kwRate: 0,
+        kwCostSav: 0,
+        savings: 0,
+        pinned: false,
+        weatherMissing: true,
+        rateIncomplete: hasContract,
+        rateReason: hasContract ? _wxReason : "",
+      });
+      return;
+    }
+    const expUsage = _exp.usage;
     const actUsage = rawUsageByYm[r.ym] != null ? rawUsageByYm[r.ym] : r.usage;
 
     if (isElec) {
@@ -609,7 +680,7 @@ function getMeterSavings(m, bills, incl, projId, bldgId, opts) {
         rowsOut.push({
           ym: ym,
           normDays: null,
-          expUsage: expectedUsageFor(calMo, null),
+          expUsage: expectedUsageForMonth(allRows.find((x) => x.ym === ym) || { ym }, expCtx).usage,
           actUsage: _hasUsage ? rawUsageByYm[ym] : isPropane ? 0 : null,
           kwhRate: 0,
           kwhCostSav: 0,

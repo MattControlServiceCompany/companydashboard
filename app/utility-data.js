@@ -2404,7 +2404,7 @@ function renderUDProjAggPanel(content) {
         _ppIncomplete.length +
         ' month' +
         (_ppIncomplete.length !== 1 ? 's' : '') +
-        ' excluded from savings — rate data incomplete:</strong><ul style="margin:6px 0 0 18px;padding:0">' +
+        ' excluded from savings — data incomplete:</strong><ul style="margin:6px 0 0 18px;padding:0">' +
         _ppIncomplete
           .map((x) => '<li>' + _escHtml(x.bldg) + ' / ' + _escHtml(x.meter) + ' — ' + _escHtml(x.ym) + ' (' + _escHtml(x.reason) + ')</li>')
           .join('') +
@@ -9376,7 +9376,7 @@ function renderBldgPerfPane(pane, b) {
       _bpIncomplete.length +
       ' month' +
       (_bpIncomplete.length !== 1 ? 's' : '') +
-      ' excluded from savings — rate data incomplete:</strong><ul style="margin:6px 0 0 18px;padding:0">' +
+      ' excluded from savings — data incomplete:</strong><ul style="margin:6px 0 0 18px;padding:0">' +
       _bpIncomplete.map((x) => '<li>' + _escHtml(x.meter) + ' — ' + _escHtml(x.ym) + ' (' + _escHtml(x.reason) + ')</li>').join('') +
       '</ul></div>'
     : '';
@@ -10531,7 +10531,6 @@ function renderPerfPane(pane, m, bills, incl) {
       totalCost: v.totalCost ?? v.cost,
     };
   });
-  const hasBlCalMap = Object.keys(meterDataByMo).length > 0;
   const blByCalMo = Object.fromEntries(Object.entries(meterDataByMo).map(([mo, v]) => [mo, v.usage]));
   const blKwhCostByCalMo = Object.fromEntries(Object.entries(meterDataByMo).map(([mo, v]) => [mo, v.energyCost]));
   const blThermCostByCalMo = Object.fromEntries(Object.entries(meterDataByMo).map(([mo, v]) => [mo, v.gasCost]));
@@ -10594,7 +10593,14 @@ function renderPerfPane(pane, m, bills, incl) {
   // Avg" and "Reduction %" pill values for months nothing has been measured
   // on yet (the dollar Cost Delta pill is unaffected — it already sums the
   // per-row Savings ($) column, which lib/perf-table.js zeroes for these rows).
-  const statsRows = filteredPostRows.filter((r) => !r.zeroFill);
+  // Expected usage per month is expectedUsageForMonth (computations/savings.js), the one rule the savings
+  // and the reports use. A month without weather yet has none: it is left out of these stats.
+  const _expCtx = { blByCalMo, blAvg: blAvgMo, weatherDriven: isElec || m.commodity === 'Gas' || isPropane_p, hasRegr: hasRegr_p };
+  const _expByYm = {};
+  filteredPostRows.forEach((r) => {
+    _expByYm[r.ym] = expectedUsageForMonth(r, _expCtx);
+  });
+  const statsRows = filteredPostRows.filter((r) => !r.zeroFill && !_expByYm[r.ym].weatherMissing);
   const postRawMos = statsRows.map((r) => (rawUsageByYm[r.ym] != null ? rawUsageByYm[r.ym] : r.usage));
   const postAvgMo = postRawMos.length ? postRawMos.reduce((s, v) => s + v, 0) / postRawMos.length : 0;
   const postAvgDay = statsRows.length
@@ -10605,16 +10611,7 @@ function renderPerfPane(pane, m, bills, incl) {
     : 0;
 
   // Expected usage: baseline normalized value for matching calendar month
-  const totalExpected = statsRows.reduce((s, r) => {
-    const calMo = parseInt(r.ym.split('-')[1]) - 1;
-    const exp =
-      hasBlCalMap && blByCalMo[calMo] != null
-        ? blByCalMo[calMo]
-        : hasRegr_p && r.regrBaseline != null
-          ? r.regrBaseline
-          : blAvgMo;
-    return s + exp;
-  }, 0);
+  const totalExpected = statsRows.reduce((s, r) => s + _expByYm[r.ym].usage, 0);
   const totalActual = postRawMos.reduce((s, v) => s + v, 0);
   const totalSavings = totalExpected - totalActual;
   const savPct = totalExpected > 0 ? (totalSavings / totalExpected) * 100 : 0;

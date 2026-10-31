@@ -276,7 +276,10 @@ function collectReportData(projId, buildingIds, reportDateStr, reportType, selec
     let bldgHasBillsInPeriod = false;
     let annBlKBtu = 0,
       annCurKBtu = 0;
+    let euiWindow = null; // {first, last, months} of the months behind this building's EUI
+    const euiByYM = {}; // ym -> {bl, cur} kBtu of the meter-months that entered the EUI
     const commoditySet = new Set();
+    const weatherMissingYMs = new Set();
 
     // Per-commodity accumulators for this building
     const elec = {
@@ -288,6 +291,7 @@ function collectReportData(projId, buildingIds, reportDateStr, reportType, selec
       costBl: 0,
       costCur: 0,
       costSaved: 0,
+      kwCostSaved: 0,
       monthly: [],
     };
     const gas = { thermsBl: 0, thermsCur: 0, thermsSaved: 0, costBl: 0, costCur: 0, costSaved: 0, monthly: [] };
@@ -311,27 +315,10 @@ function collectReportData(projId, buildingIds, reportDateStr, reportType, selec
       const isElec = m.commodity === 'Electric';
       const isPropane = m.commodity === 'Propane';
 
-      // Expected usage by calendar month — use buildMoMap (matches canonical savings function)
-      const _moMapR = isElec ? eM : m.commodity === 'Gas' ? gM : isPropane ? pM : wM;
-      const blByCalMo = {};
-      Object.entries(_moMapR).forEach(([mo, v]) => {
-        blByCalMo[mo] = isElec
-          ? v.kwhPredicted
-          : m.commodity === 'Gas'
-            ? v.thermsPredicted
-            : isPropane
-              ? v.gallons
-              : v.kgal;
-      });
-      const hasBlCalMap = Object.keys(blByCalMo).length >= 3;
-      const hasRegrP = allRows.some((r) => r.regrBaseline != null);
-      const blAvg = blRows.length ? blRows.reduce((s, r) => s + r.usage, 0) / blRows.length : 0;
-
-      // Baseline demand kW by calendar month (electric only)
-      const blDemKWByCalMo = {};
-      Object.entries(eM).forEach(([mo, v]) => {
-        blDemKWByCalMo[mo] = v.billedKW || v.demandKW || 0;
-      });
+      // Baseline-year usage by calendar month: the one reader (computations/savings.js). It feeds the
+      // baseline EUI below. The expected usage of each post-baseline month is NOT recomputed here: it is
+      // the row getMeterSavings returns (expectedUsageForMonth), so the report and the site cannot differ.
+      const blByCalMo = baselineUsageByCalMo(m, { elecByMo: eM, gasByMo: gM, propaneByMo: pM, waterByMo: wM });
 
       // Raw usage by year-month
       const rawUsageByYm = {};
@@ -376,7 +363,10 @@ function collectReportData(projId, buildingIds, reportDateStr, reportType, selec
       // Actual cost savings + per-ym unit savings from single source of truth
       const meterSav = getMeterSavings(m, bills, incl, projId, b.id);
       const meterSavByYM = meterSav.byYM;
-      const meterUnitsByYM = meterSav.unitsByYM;
+      const meterRowByYM = {};
+      meterSav.rows.forEach((row) => {
+        meterRowByYM[row.ym] = row;
+      });
 
       // Process post-baseline rows within the reporting period
       postRows.forEach((r) => {
@@ -384,11 +374,17 @@ function collectReportData(projId, buildingIds, reportDateStr, reportType, selec
         const bfr = isPropane ? [] : bills.filter((b2) => billMonth(b2, bills) === r.ym);
         if (!isPropane && !bfr.length) return;
 
-        const expUsage =
-          hasBlCalMap && blByCalMo[calMo] != null ? blByCalMo[calMo] : r.regrBaseline != null ? r.regrBaseline : blAvg;
-        const actUsage = rawUsageByYm[r.ym] != null ? rawUsageByYm[r.ym] : r.usage;
+        const _savRow = meterRowByYM[r.ym] || {};
         const inPeriod = reportYMs.includes(r.ym);
         if (inPeriod) bldgHasBillsInPeriod = true;
+        // Weather for the month is not available yet: the month is left out of the savings and the
+        // usage totals until it is (getMeterSavings flags it; never read as 0 degree days).
+        if (_savRow.weatherMissing) {
+          weatherMissingYMs.add(r.ym);
+          return;
+        }
+        const expUsage = _savRow.expUsage;
+        const actUsage = rawUsageByYm[r.ym] != null ? rawUsageByYm[r.ym] : r.usage;
 
         const totalCostSav = meterSavByYM[r.ym] || 0;
 
@@ -410,7 +406,7 @@ function collectReportData(projId, buildingIds, reportDateStr, reportType, selec
           const actBilKW = bfr.length
             ? Math.max(...bfr.map((b2) => parseBillNumberOrZero(b2.billedKW) || parseBillNumberOrZero(b2.demandKW)))
             : 0;
-          const blExpKW = meterUnitsByYM[r.ym] ? meterUnitsByYM[r.ym].kw + actBilKW : blDemKWByCalMo[calMo] || 0;
+          const blExpKW = _savRow.blExpKW || 0;
           const kwhCostAmt = bfr.reduce((s, b2) => s + getBillKwhCost(b2), 0);
           const kwCostAmt = bfr.reduce((s, b2) => s + getBillKwCost(b2), 0);
           // getBillFacKWCost (computations/rates.js) — the ONE accessor for Facilities kW
@@ -437,6 +433,7 @@ function collectReportData(projId, buildingIds, reportDateStr, reportType, selec
             elec.costBl += blCostByCalMo[calMo] || 0;
             elec.costCur += kwhCostAmt + kwCostAmt + facKWCostAmt;
             elec.costSaved += totalCostSav;
+            elec.kwCostSaved += _savRow.kwCostSav || 0;
           }
         } else if (isPropane) {
           // Always populate monthly map (full year for charts)
@@ -483,41 +480,33 @@ function collectReportData(projId, buildingIds, reportDateStr, reportType, selec
         bldgSavByYM[r.ym] = (bldgSavByYM[r.ym] || 0) + totalCostSav;
       });
 
-      // Annual EUI accumulation — all-fuel (Electric + Gas + Propane; Water/Sewer/
-      // Stormwater are excluded above by energyCommodities). Baseline uses the SAME
-      // per-calendar-month baseline (blByCalMo, built via buildMoMap just above) that
-      // getMeterSavings() uses for $ savings, so the reported Baseline EUI is
-      // consistent with reported savings and does not depend on which report
-      // period/quarter is selected (quarter-invariant). Current uses the trailing
-      // 12 months of actual post-baseline usage. Canonical eui.js functions
-      // (computeKBtu/computeBaselineEUI/computeRolling12EUI) do the unit math;
-      // sqft=1 here is a pure kBtu-annualization call — the real building sqft is
-      // applied once, below, when blEUI/curEUI are derived from these totals.
-      const blCalMoCt = Object.keys(blByCalMo).length;
-      if (blCalMoCt > 0) {
-        let meterBlKBtu = 0;
-        Object.values(blByCalMo).forEach((v) => {
-          meterBlKBtu +=
-            m.commodity === 'Gas' ? computeKBtu(0, v, 0) : isPropane ? computeKBtu(0, 0, v) : computeKBtu(v, 0, 0);
-        });
-        annBlKBtu += computeBaselineEUI(meterBlKBtu, blCalMoCt, 1);
-      }
-
-      const last12Rows = postRows.slice(-12);
-      if (last12Rows.length) {
-        let meterCurKBtu = 0;
-        last12Rows.forEach((r) => {
-          const actUsage = rawUsageByYm[r.ym] != null ? rawUsageByYm[r.ym] : r.usage;
-          meterCurKBtu +=
-            m.commodity === 'Gas'
-              ? computeKBtu(0, actUsage, 0)
-              : isPropane
-                ? computeKBtu(0, 0, actUsage)
-                : computeKBtu(actUsage, 0, 0);
-        });
-        annCurKBtu += computeRolling12EUI(meterCurKBtu, last12Rows.length, 1);
-      }
+      // EUI window (one rule for baseline and current): every post-baseline meter-month that has a bill and
+      // a weather-available baseline. For each such meter-month the SAME month enters both sides: the
+      // actual usage (current) and the baseline-year usage of that calendar month (blByCalMo, the same map
+      // the savings baseline year uses). Both sides are all fuels (Electric + Gas + Propane; Water/Sewer/
+      // Stormwater are excluded above by energyCommodities). Canonical eui.js unit math (computeKBtu).
+      postRows.forEach((r) => {
+        const calMo = parseInt(r.ym.split('-')[1]) - 1;
+        const _eRow = meterRowByYM[r.ym];
+        if (!_eRow || _eRow.weatherMissing || blByCalMo[calMo] == null) return;
+        const _kb = (v) =>
+          m.commodity === 'Gas' ? computeKBtu(0, v, 0) : isPropane ? computeKBtu(0, 0, v) : computeKBtu(v, 0, 0);
+        const _act = rawUsageByYm[r.ym] != null ? rawUsageByYm[r.ym] : r.usage;
+        if (!euiByYM[r.ym]) euiByYM[r.ym] = { bl: 0, cur: 0 };
+        euiByYM[r.ym].bl += _kb(blByCalMo[calMo]);
+        euiByYM[r.ym].cur += _kb(_act);
+      });
     });
+
+    // Building EUI: the last 12 months of that window, annualized once for the building (x12/n).
+    const _euiYMs = Object.keys(euiByYM).sort().slice(-12);
+    if (_euiYMs.length) {
+      const _blSum = _euiYMs.reduce((t, y) => t + euiByYM[y].bl, 0);
+      const _curSum = _euiYMs.reduce((t, y) => t + euiByYM[y].cur, 0);
+      annBlKBtu = computeBaselineEUI(_blSum, _euiYMs.length, 1);
+      annCurKBtu = computeRolling12EUI(_curSum, _euiYMs.length, 1);
+      euiWindow = { first: _euiYMs[0], last: _euiYMs[_euiYMs.length - 1], months: _euiYMs.length };
+    }
 
     // Build monthly arrays from ALL available months (full year for charts)
     const allElecYMs = Object.keys(elecMonthly).sort();
@@ -553,15 +542,11 @@ function collectReportData(projId, buildingIds, reportDateStr, reportType, selec
       savings: (propaneMonthly[ym] || {}).savings || 0,
     }));
 
-    // EUI — single source of truth: computations/eui.js. Baseline is the
-    // normalized annual all-fuels total (annBlKBtu, accumulated per-meter above
-    // from the SAME blByCalMo baseline getMeterSavings() uses); Current is the
-    // trailing-12-months-actual all-fuels total (annCurKBtu). Both are already
-    // annualized (12-month-equivalent) sums across every energy meter on this
-    // building, so passing monthCount=12 here is a straight kBtu→EUI conversion,
-    // not a second annualization. This makes Baseline EUI independent of which
-    // report period/quarter is selected (quarter-invariant) — it no longer
-    // slices baseline bills down to only the report's 3 calendar months.
+    // EUI — single source of truth: computations/eui.js. Baseline and Current are built from the SAME
+    // meter-months (euiByYM above): the baseline-year usage of those calendar months and the actual
+    // usage of those months, all fuels, annualized once (x12/n). annBlKBtu / annCurKBtu are already
+    // annualized, so monthCount=12 here is a straight kBtu to EUI conversion. euiWindow names the
+    // months, and the report prints it (euiPeriodLabel).
     const blEUI = computeBaselineEUI(annBlKBtu, 12, sqft);
     const curEUI = computeRolling12EUI(annCurKBtu, 12, sqft);
     const cbecsEUI = CBECS_EUI[bType] || CBECS_EUI['Other'] || 52.4;
@@ -644,6 +629,8 @@ function collectReportData(projId, buildingIds, reportDateStr, reportType, selec
       address: b.addr || '',
       commodities: Array.from(commoditySet),
       electric: elec,
+      euiWindow: euiWindow,
+      weatherMissingYMs: Array.from(weatherMissingYMs).sort(),
       gas,
       propane,
       savings: bldgSavings,
@@ -682,6 +669,16 @@ function collectReportData(projId, buildingIds, reportDateStr, reportType, selec
   // computeProjectEUI (computations/eui.js) — same rollup used elsewhere in the app.
   const _projEUI = computeProjectEUI(buildingsData);
   const euiBaseline = _projEUI.baseline;
+  // The months behind the EUI, as one label: earliest first month to latest last month over the buildings.
+  const _euiWins = buildingsData.map((x) => x.euiWindow).filter(Boolean);
+  const _euiMonthLabel = (ym) => monthNames[parseInt(ym.slice(5, 7)) - 1].slice(0, 3) + ' ' + ym.slice(0, 4);
+  const euiPeriodLabel = _euiWins.length
+    ? _euiMonthLabel(_euiWins.map((w) => w.first).sort()[0]) +
+      ' to ' +
+      _euiMonthLabel(_euiWins.map((w) => w.last).sort().pop()) +
+      (_euiWins.every((w) => w.months === 12) ? ', ' : ' annualized, ') +
+      'all fuels'
+    : '';
   const euiCurrent = _projEUI.current;
 
   // Quarterly targets from measures only — no percentage fallback
@@ -1066,6 +1063,7 @@ function collectReportData(projId, buildingIds, reportDateStr, reportType, selec
       peakKwBl: totPeakKwBl,
       peakKwCur: totPeakKwCur,
       euiBaseline: euiBaseline,
+      euiPeriodLabel: euiPeriodLabel,
       euiCurrent: euiCurrent,
     },
     chartImages,
@@ -2860,7 +2858,7 @@ function rptPageCover(n, d) {
     '<div class="rpt-gauge-row">' +
     gaugeSVG(pctOfTarget, 'var(--rpt-green)', 'vs Target', pctOfTarget + '%') +
     gaugeSVG(energyRedPct, 'var(--rpt-blue-btn)', 'Energy Reduced', energyRedPct + '%') +
-    gaugeSVG(Math.max(0, euiImpPct), 'var(--rpt-green-dark)', 'Site Energy Use Intensity Improved', euiImpPct + '%') +
+    gaugeSVG(Math.max(0, euiImpPct), 'var(--rpt-green-dark)', 'Site Energy Use Intensity Improved' + (d.totals.euiPeriodLabel ? '<br><span style="font-size:9px">' + d.totals.euiPeriodLabel + '</span>' : ''), euiImpPct + '%') +
     gaugeSVG(contractDonePct, 'var(--rpt-eui-purple)', 'Contract Progress', contractDonePct + '%') +
     '</div>' +
     '</div>' +
@@ -3945,7 +3943,7 @@ function rptPageEUI(n, d) {
     // Year-to-Date / Overall Performance section instead of the current-quarter body (see
     // generateReportHTML's page order).
     _rptYtdKicker() +
-    '<p contenteditable="true" style="font-size:14px;color:var(--rpt-page-text);line-height:1.6;margin:0 0 8px">Site Energy Use Intensity measures total energy consumption at the utility meter per square foot per year in kBtu/ft². Lower Site Energy Use Intensity values indicate more efficient buildings. Buildings are benchmarked against national CBECS (Commercial Buildings Energy Consumption Survey) median values for their building type. Buildings performing below the CBECS median are more efficient than the national average. The rolling 12-month Site Energy Use Intensity accounts for seasonal variation and provides a stable year-round performance indicator.</p>' +
+    '<p contenteditable="true" style="font-size:14px;color:var(--rpt-page-text);line-height:1.6;margin:0 0 8px">Site Energy Use Intensity measures total energy consumption at the utility meter per square foot per year in kBtu/ft². Lower Site Energy Use Intensity values indicate more efficient buildings. Buildings are benchmarked against national CBECS (Commercial Buildings Energy Consumption Survey) median values for their building type. Buildings performing below the CBECS median are more efficient than the national average. Baseline and current Site Energy Use Intensity cover the same months and the same meters: ' + (d.totals.euiPeriodLabel || '12 months') + '.</p>' +
     '<h2>Building Performance Rankings</h2>' +
     rankTable +
     '<div style="font-size:9px;color:var(--rpt-page-text);margin:2px 0 6px;line-height:1.3">' +
@@ -6855,7 +6853,8 @@ function rptPageBuildingSummary(n, d, b) {
   var tableRows = '';
   if (hasElec) {
     var elSavPct = b.electric.kwhBl > 0 ? (b.electric.kwhSaved / b.electric.kwhBl) * 100 : 0;
-    var elCostSaved = b.electric.costSaved || 0;
+    // Electric Energy $ = the electric total less its demand part, so the two rows add up to the electric savings.
+    var elCostSaved = (b.electric.costSaved || 0) - (b.electric.kwCostSaved || 0);
     tableRows +=
       '<tr>' +
       '<td contenteditable="true">Electric Energy</td>' +
@@ -6877,25 +6876,9 @@ function rptPageBuildingSummary(n, d, b) {
       '</td>' +
       '</tr>';
     var elDemSavPct = b.electric.kwBl > 0 ? ((b.electric.kwBl - b.electric.kwCur) / b.electric.kwBl) * 100 : 0;
-    // Derive demand cost saved from monthly data: sum (kwBl - kwCur) * avg kW rate per month.
-    // 2026-09-15 (SA-gate fix): this $ is derived here from usage, not from getMeterSavings,
-    // so it needs its own contract gate — no Service Agreement means $0.
-    var _elDemCostSaved = 0;
-    var _demHasSA = projHasContract(d.project && d.project.id);
-    (b.electric.monthly || []).forEach(function (mo) {
-      if (!_demHasSA) return;
-      var kwSav = (mo.kwBl || 0) - (mo.kwCur || 0);
-      var blCostMo = mo.blCost || 0;
-      var curCostMo = mo.curCost || 0;
-      var blUsage = mo.bl || 0;
-      var curUsage = mo.cur || 0;
-      // kW rate = (blCost - kWhCost portion) / kwBl — approximate using cost ratio
-      // Simpler: proportional split of cost delta attributable to kW
-      var totalKwSav = kwSav;
-      var kwRate = blCostMo > 0 && (mo.kwBl || 0) > 0 ? blCostMo / (mo.kwBl || 1) : 0;
-      _elDemCostSaved += totalKwSav > 0 ? totalKwSav * kwRate : 0;
-    });
-    var elDemCostSaved = _elDemCostSaved;
+    // Demand $ is the kW part of the one savings result (getMeterSavings kwCostSav, summed in
+    // buildReportData as electric.kwCostSaved). Zero without a Service Agreement (getMeterSavings gates it).
+    var elDemCostSaved = b.electric.kwCostSaved || 0;
     tableRows +=
       '<tr>' +
       '<td contenteditable="true">Electric Demand</td>' +
