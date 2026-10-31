@@ -477,6 +477,8 @@ function loadUtilityData() {
   if (typeof migrateHvacLoadToBuildings === 'function') migrateHvacLoadToBuildings();
   // One-time move of the old implementation cost and incentive fields of each measure to cost lines (app/energy-savings.js).
   if (typeof migrateOldCostFieldsToLines === 'function') migrateOldCostFieldsToLines();
+  // Monthly weather refresh (computations/weather-refresh.js). Every page load, whatever the sign-in state.
+  if (typeof wddRefreshAllProjectsWeather === 'function') wddRefreshAllProjectsWeather();
 }
 
 function saveUtilityData(pid) {
@@ -6600,14 +6602,24 @@ function wddSaveCache(zip, rows) {
 // For each distinct ZIP of the project's buildings (and the project's own ZIP) whose newest stored month is
 // older than last calendar month, computations/weather-refresh.js fetches the missing months straight from
 // the weather source (browser, CORS open: no Netlify function) and they are appended to en_wdd_<zip>.
-// Stored months are never changed; a month the source has not published stays absent. Once per ZIP per page load.
-const _wddRefreshTried = new Set();
+// Stored months are never changed; a month the source has not published stays absent.
+// Throttle: each ZIP is tried at most once per calendar day (stamp ch_wdd_try_<zip>, a local-only key), so a month
+// the source has not published yet is asked for again the next day.
+function _wddTriedToday(zip, now) {
+  const day = now.getFullYear() + '-' + String(now.getMonth() + 1).padStart(2, '0') + '-' + String(now.getDate()).padStart(2, '0');
+  const key = 'ch_wdd_try_' + zip;
+  try {
+    if (localStorage.getItem(key) === day) return true;
+    localStorage.setItem(key, day);
+  } catch (e) {}
+  return false;
+}
 async function wddRefreshProjectWeather(pid) {
   const proj = (typeof projects !== 'undefined' ? projects : []).find((p) => String(p.id) === String(pid));
   return wddRefreshZips(wxProjectZips(proj, getUDBldgs(pid)));
 }
-// Once per page load (event dbFullPull, same hook as the calendar): every ZIP of every project's buildings.
-// Each ZIP is tried once per page load; wxRefreshZip makes no call when the newest stored month is the last
+// Runs at the end of loadUtilityData (every page load, signed in or not): every ZIP of every project's buildings.
+// Each ZIP is tried once per day; wxRefreshZip makes no call when the newest stored month is the last
 // complete month. No timers, no polling.
 function wddRefreshAllProjectsWeather() {
   const list = sget('en_projects', []) || [];
@@ -6617,16 +6629,10 @@ function wddRefreshAllProjectsWeather() {
   });
   return wddRefreshZips(Array.from(zips));
 }
-if (typeof window !== 'undefined' && window.addEventListener) {
-  window.addEventListener('dbFullPull', function () {
-    wddRefreshAllProjectsWeather();
-  });
-}
 async function wddRefreshZips(allZips) {
-  const zips = allZips.filter((z) => !_wddRefreshTried.has(z));
+  const zips = allZips.filter((z) => !_wddTriedToday(z, new Date()));
   let changed = false;
   for (const zip of zips) {
-    _wddRefreshTried.add(zip);
     try {
       const res = await wxRefreshZip(zip, {
         loadFn: wddLoadCache,
