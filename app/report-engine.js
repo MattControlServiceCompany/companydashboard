@@ -5727,12 +5727,11 @@ function rptPageObservations(n, d) {
       subtitle = _escHtml(_res.word);
       narrative =
         _escHtml(b.name) +
-        (_res.key === 'over' ? ' used more than its baseline' : ' saved') +
-        ' at ' +
+        ' is at ' +
         $p(rawSavPct) +
-        ' (' +
+        ' savings (' +
         _fmtUSD(rawSav, '$0') +
-        ') against a baseline cost of ' +
+        ' saved) against a baseline cost of ' +
         _fmtUSD(b.blCost, '$0') +
         ', with current costs at ' +
         _fmtUSD(b.curCost, '$0') +
