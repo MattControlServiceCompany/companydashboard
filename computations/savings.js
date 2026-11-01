@@ -267,7 +267,7 @@ function freezeContractBaselines() {
      byCalMo:      {0-11: totalCostSav},
      unitsByYM:    {YYYY-MM: {kwh, kw, therms, gallons}},
      unitsByCalMo: {0-11: {kwh, kw, therms, gallons}},
-     incompleteYM: {YYYY-MM: {commodity, reason}},
+     incompleteYM: {YYYY-MM: {commodity, reason, weather?}} (weather:true = month waits for weather; pages show "Waiting for weather data", not the rate warning),
      rows:         [one detail row per post-baseline month, oldest first - see `rowsOut` below]
    }
    A project with no Service Agreement gets `rows` with every dollar set to 0 and empty
@@ -464,7 +464,7 @@ function getMeterSavings(m, bills, incl, projId, bldgId, opts) {
       // listed (incompleteYM, row flag) and booked as $0 until weather exists.
       const _wxReason = "weather not yet available";
       if (hasContract) {
-        incompleteYM[r.ym] = { commodity: m.commodity, reason: _wxReason };
+        incompleteYM[r.ym] = { commodity: m.commodity, reason: _wxReason, weather: true };
         byYM[r.ym] = byYM[r.ym] || 0;
         byCalMo[calMo] = byCalMo[calMo] || 0;
       }
@@ -1065,6 +1065,19 @@ function savingsOrWaiting(waitingYMs, dollars) {
   return waitingYMs && waitingYMs.length
     ? 'Waiting for weather data: ' + weatherWaitingLabel(waitingYMs)
     : _fmtUSD(dollars, '$0');
+}
+
+// weatherWaitingMonths(projId, yms) -> the months ('YYYY-MM') of yms that have no weather yet and so block their
+// quarter from billing. Pages pass it to savingsOrWaiting to show "Waiting for weather data" instead of dollars.
+// [] = nothing is blocked. weatherWaitingQuarters names the blocked quarters.
+function weatherWaitingMonths(projId, yms) {
+  const w = _weatherSplit(projId, yms).waiting;
+  return [].concat.apply([], Object.values(w)).sort();
+}
+
+// weatherWaitingQuarters(projId, yms) -> { 'YYYY-Qn': [ym] } of the quarters of yms that are waiting for weather.
+function weatherWaitingQuarters(projId, yms) {
+  return _weatherSplit(projId, yms).waiting;
 }
 
 // _weatherSplit(projId, yms) -> { waiting: { 'YYYY-Qn': [ym] }, open: yms outside the waiting quarters }.
