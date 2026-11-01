@@ -2157,9 +2157,13 @@ function _rptQuarterLayout(d) {
 }
 
 // The target for one building: its share of the quarter target, in proportion to baseline cost.
+// An annual or cumulative report uses the annual target in place of the quarter target.
 function _rptBuildingTarget(d, b) {
   var q = d.period.quarter || 1;
-  var qT = (d.contract.quarterlyTargets && d.contract.quarterlyTargets[q - 1]) || 0;
+  var qT =
+    d.period.type === 'quarterly'
+      ? (d.contract.quarterlyTargets && d.contract.quarterlyTargets[q - 1]) || 0
+      : d.contract.annualTarget || 0;
   var tot = d.totals.blCost || 1;
   return qT > 0 ? qT * (b.blCost / tot) : 0;
 }
@@ -2184,6 +2188,20 @@ function _rptResultOf(b, d) {
     return legacy[b.status] || { key: 'over', word: 'Below Target', cls: 'rpt-r' };
   }
   return _rptResultKind(b.savings, b.savingsPct || 0, _rptBuildingTarget(d, b));
+}
+
+// _rptResultVar(r, dark) - the report colour variable for a _rptResultOf result (rpt-g green, rpt-o orange,
+// rpt-r red, none = page text). Every page that colours a building result uses this.
+function _rptResultVar(r, dark) {
+  return r.cls === 'rpt-g'
+    ? dark
+      ? 'var(--rpt-green-dark)'
+      : 'var(--rpt-green)'
+    : r.cls === 'rpt-o'
+      ? 'var(--rpt-orange)'
+      : r.cls === 'rpt-r'
+        ? 'var(--rpt-red)'
+        : 'var(--rpt-page-text)';
 }
 
 // Net energy result for the period in thousand Btu (constants: computations/physics.js).
@@ -3724,7 +3742,7 @@ function rptPageCover(n, d) {
     '',
     'buildings_exceeding',
     d.buildings.filter(function (b) {
-      return b.status === 'on_track';
+      return _rptResultOf(b, d).key === 'met';
     }).length,
   );
   const _nBldgs = _rptPVn(d, 'cover', 'Portfolio', '', '', 'buildings_total', d.buildings.length);
@@ -3816,8 +3834,9 @@ function rptPageCover(n, d) {
     });
   }
   // Underperformers
+  // Wording comes from _rptResultOf (the quarterly report's wording); a saving is never called a shortfall.
   const below = d.buildings.filter(function (b) {
-    return b.status === 'below_target';
+    return _rptResultOf(b, d).key === 'over';
   });
   if (below.length) {
     findings.push({
@@ -3825,14 +3844,16 @@ function rptPageCover(n, d) {
       text:
         below.length +
         ' building' +
-        (below.length > 1 ? 's are' : ' is') +
-        ' currently below target: <strong>' +
+        (below.length > 1 ? 's' : '') +
+        ' with result "' +
+        _escHtml(_rptResultOf(below[0], d).word) +
+        '": <strong>' +
         below
           .map(function (b) {
-            return b.name;
+            return _escHtml(b.name);
           })
           .join(', ') +
-        '</strong>. Review recommended.',
+        '</strong>.',
     });
   }
   // ENERGY STAR eligibility
@@ -3975,34 +3996,13 @@ function rptPageCover(n, d) {
       // missing bill is not the same fact as a building that is billed and underperforming.
       // 'no_contract' (2026-09-24, fix/report-followup, problem 3): same neutral treatment for
       // a building with bills but no Service Agreement on file (no dollar savings computed).
-      const cardClass = b.status === 'on_track' ? 'rpt-ok' : b.status === 'near_target' ? 'rpt-warn' : '';
-      const statusIcon =
-        b.status === 'on_track'
-          ? '&#9650; On Track'
-          : b.status === 'near_target'
-            ? '&#9658; Near Target'
-            : b.status === 'no_data'
-              ? 'No Bills This Period'
-              : b.status === 'no_contract'
-                ? 'No Service Agreement'
-                : '&#9658; Below Target';
-      const cardStyle = b.status === 'below_target' ? 'border-color:var(--rpt-red-light);' : '';
-      const valColor =
-        b.status === 'on_track'
-          ? 'var(--rpt-green-dark)'
-          : b.status === 'near_target'
-            ? 'var(--rpt-orange)'
-            : b.status === 'no_data' || b.status === 'no_contract'
-              ? 'var(--rpt-page-text)'
-              : 'var(--rpt-red)';
-      const labelColor =
-        b.status === 'on_track'
-          ? 'var(--rpt-green)'
-          : b.status === 'near_target'
-            ? 'var(--rpt-orange)'
-            : b.status === 'no_data' || b.status === 'no_contract'
-              ? 'var(--rpt-page-text)'
-              : 'var(--rpt-red)';
+      // Wording and colour come from _rptResultOf, the same as the quarterly report.
+      const _res = _rptResultOf(b, d);
+      const cardClass = _res.cls === 'rpt-g' ? 'rpt-ok' : _res.cls === 'rpt-o' ? 'rpt-warn' : '';
+      const statusIcon = _escHtml(_res.word);
+      const cardStyle = _res.cls === 'rpt-r' ? 'border-color:var(--rpt-red-light);' : '';
+      const valColor = _rptResultVar(_res, true);
+      const labelColor = _rptResultVar(_res, false);
       return (
         '<div class="rpt-status-card ' +
         cardClass +
@@ -4256,22 +4256,9 @@ function rptPageFinancial(n, d) {
       // neutral treatment -- this building has bills, but no Service Agreement on file, so no
       // dollar savings are ever computed for it (by design; see computations/savings.js).
       const saveClass = b.status === 'no_data' || b.status === 'no_contract' ? '' : b.savings >= 0 ? 'rpt-g' : 'rpt-r';
-      const statusIcon =
-        b.status === 'on_track'
-          ? '&#9650;'
-          : b.status === 'near_target'
-            ? '&#9658;'
-            : b.status === 'no_data' || b.status === 'no_contract'
-              ? ''
-              : '&#9660;';
-      const statusClass =
-        b.status === 'on_track'
-          ? 'rpt-g'
-          : b.status === 'near_target'
-            ? 'rpt-o'
-            : b.status === 'no_data' || b.status === 'no_contract'
-              ? ''
-              : 'rpt-r';
+      // Wording and colour come from _rptResultOf, the same as the quarterly report.
+      const _res = _rptResultOf(b, d);
+      const statusClass = _res.cls;
       const bldgProjSav = qTarget > 0 ? qTarget * (b.blCost / totBlCostForPct) : 0;
       const bldgProjCost = _rptPVn(d, 'building table', b.id, '', '', 'projected_cost', b.blCost - bldgProjSav);
       return (
@@ -4304,17 +4291,7 @@ function rptPageFinancial(n, d) {
         '<td class="' +
         statusClass +
         '" contenteditable="true">' +
-        statusIcon +
-        (statusIcon ? ' ' : '') +
-        (b.status === 'on_track'
-          ? 'On Track'
-          : b.status === 'near_target'
-            ? 'Near Target'
-            : b.status === 'no_data'
-              ? 'No bills for this period'
-              : b.status === 'no_contract'
-                ? 'No Service Agreement on file'
-                : 'Below Target') +
+        _escHtml(_res.word) +
         '</td>' +
         '</tr>'
       );
@@ -5630,7 +5607,7 @@ function rptPageObservations(n, d) {
   const pctOfTarget = target > 0 ? Math.round((totalSav / target) * 100) : 0;
   const onTrackCount = d.buildings
     ? d.buildings.filter(function (b) {
-        return b.status === 'on_track';
+        return _rptResultOf(b, d).key === 'met';
       }).length
     : 0;
   const totalBldgs = d.buildings ? d.buildings.length : 0;
@@ -5666,32 +5643,10 @@ function rptPageObservations(n, d) {
     // underperformance this building has no bills to support. 'no_contract' (2026-09-24,
     // fix/report-followup, problem 3) gets the same neutral treatment -- this building has
     // bills, but no Service Agreement on file, so no dollar savings are ever computed for it.
-    const statusColor =
-      b.status === 'on_track'
-        ? 'var(--rpt-green)'
-        : b.status === 'near_target'
-          ? 'var(--rpt-orange)'
-          : b.status === 'no_data' || b.status === 'no_contract'
-            ? 'var(--rpt-page-text)'
-            : 'var(--rpt-red)';
-    const arrow =
-      b.status === 'on_track'
-        ? '&#9650;'
-        : b.status === 'near_target'
-          ? '&#9658;'
-          : b.status === 'no_data' || b.status === 'no_contract'
-            ? '&#9679;'
-            : '&#9660;';
-    const statusLabel =
-      b.status === 'on_track'
-        ? 'On Track'
-        : b.status === 'near_target'
-          ? 'Approaching Target'
-          : b.status === 'no_data'
-            ? 'No Bills for This Period'
-            : b.status === 'no_contract'
-              ? 'No Service Agreement on File'
-              : 'Below Target';
+    // Wording and colour come from _rptResultOf, the same as the quarterly report.
+    const _res = _rptResultOf(b, d);
+    const statusColor = _rptResultVar(_res, false);
+    const arrow = _res.cls === 'rpt-g' ? '&#9650;' : _res.cls === 'rpt-o' ? '&#9658;' : _res.cls === 'rpt-r' ? '&#9660;' : '&#9679;';
 
     // Determine the strongest commodity by savings
     const comSavings = [
@@ -5766,55 +5721,24 @@ function rptPageObservations(n, d) {
         (d.period ? _escHtml(d.period.label) : 'this period') +
         ', but this project has no Service Agreement on file, so contracted savings are not calculated for this building.';
       rec = 'Confirm the Service Agreement number on the project record if this building is under contract.';
-    } else if (b.status === 'on_track') {
-      subtitle = 'On Track';
-      narrative =
-        _escHtml(b.name) +
-        ' is performing at ' +
-        $p(rawSavPct) +
-        ' savings (' +
-        _fmtUSD(rawSav, '$0') +
-        ' saved) against a baseline cost of ' +
-        _fmtUSD(b.blCost, '$0') +
-        ', with current costs at ' +
-        _fmtUSD(b.curCost, '$0') +
-        '. ' +
-        strongWeak;
-      rec = 'Continue current operating strategy. Monitor for seasonal load shifts entering the next quarter.';
-    } else if (b.status === 'near_target') {
-      subtitle = 'Approaching Target';
-      narrative =
-        _escHtml(b.name) +
-        ' is tracking at ' +
-        $p(rawSavPct) +
-        ' savings (' +
-        _fmtUSD(rawSav, '$0') +
-        ' saved) against a baseline cost of ' +
-        _fmtUSD(b.blCost, '$0') +
-        ', with current costs at ' +
-        _fmtUSD(b.curCost, '$0') +
-        '. ' +
-        strongWeak;
-      rec =
-        'Review scheduling and setpoints for optimization opportunities. Confirm occupancy schedules are aligned with current use patterns.';
     } else {
-      subtitle = 'Below Target';
+      // met / short / over / on_baseline: the heading is the _rptResultOf word. No standard
+      // recommendation text is added; a result is stated, not advised on.
+      subtitle = _escHtml(_res.word);
       narrative =
         _escHtml(b.name) +
-        ' is currently below the performance target at ' +
+        (_res.key === 'over' ? ' used more than its baseline' : ' saved') +
+        ' at ' +
         $p(rawSavPct) +
-        ' savings (' +
+        ' (' +
         _fmtUSD(rawSav, '$0') +
-        ' saved) against a baseline cost of ' +
+        ') against a baseline cost of ' +
         _fmtUSD(b.blCost, '$0') +
         ', with current costs at ' +
         _fmtUSD(b.curCost, '$0') +
         '. ' +
         strongWeak;
-      rec =
-        'Review ' +
-        (weakCom ? weakCom.name.toLowerCase() : 'utility') +
-        ' meter data and trend logs for anomalies. Confirm BAS setpoints are active and not in override.';
+      rec = _res.key === 'met' ? 'Continue current operating strategy. Monitor for seasonal load shifts entering the next quarter.' : '';
     }
 
     return (
@@ -5830,9 +5754,11 @@ function rptPageObservations(n, d) {
       '<p contenteditable="true">' +
       narrative +
       '</p>' +
-      '<p contenteditable="true" style="font-size:14px;color:var(--rpt-page-text);margin-top:2px"><strong>Recommendation:</strong> ' +
-      rec +
-      '</p>'
+      (rec
+        ? '<p contenteditable="true" style="font-size:14px;color:var(--rpt-page-text);margin-top:2px"><strong>Recommendation:</strong> ' +
+          rec +
+          '</p>'
+        : '')
     );
   });
 
