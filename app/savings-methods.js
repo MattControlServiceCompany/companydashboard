@@ -94,7 +94,7 @@ function smQuarterHtml(q) {
 function smProjectionHtml(pr) {
   if (!pr) return '';
   const usd = (v) => '$' + Math.round(v).toLocaleString('en-US');
-  const head = ['Method', 'Savings to date', 'Projected remaining', '3-year total', 'Contract target']
+  const head = ['Method', 'Savings to date', 'Projected remaining', '3-year total', 'Contract 3-year savings target']
     .map((h, i) => '<th style="' + SM_HDR + (i === 0 ? ';text-align:left' : '') + '">' + _escHtml(h) + '</th>')
     .join('');
   const body = pr.rows
@@ -118,6 +118,8 @@ function smProjectionHtml(pr) {
     '<div class="ch-tbl-outer" style="border:1px solid var(--border);border-radius:6px;overflow:auto;background:var(--s2)">' +
     '<table class="ch-tbl" style="border-collapse:separate;border-spacing:0;width:100%"><thead><tr>' + head + '</tr></thead><tbody>' + body + '</tbody></table></div>' +
     '<div style="font-size:12px;color:var(--text);margin-top:6px" data-sm-basis="1">' + _escHtml(basis) + '</div>' +
+    '<div style="font-size:12px;color:var(--text);margin-top:4px" data-sm-m4note="1">' +
+    _escHtml('M4 uses the billed quarter figures (a presented quarter keeps the figure printed to the client). The quarter tables below show recomputed values, so they can differ.') + '</div>' +
     '</div>'
   );
 }
