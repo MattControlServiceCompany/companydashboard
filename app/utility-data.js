@@ -2394,6 +2394,7 @@ function renderUDProjAggPanel(content) {
         _ppB[ym] = (_ppB[ym] || 0) + v;
       });
       Object.entries(_ppSavResult.incompleteYM || {}).forEach(([ym, info]) => {
+        if (info.weather) return; // waiting for weather: shown as "Waiting for weather data", not as a rate warning
         if (_ppSavResult.byYM[ym] === 0)
           _ppIncomplete.push({ bldg: bldg.name || bldg.id, meter: m.name || m.id, ym, reason: info.reason });
       });
@@ -9369,6 +9370,7 @@ function renderBldgPerfPane(pane, b) {
       actualSavingsByYM[ym] = (actualSavingsByYM[ym] || 0) + v;
     });
     Object.entries(_mSavResult.incompleteYM || {}).forEach(([ym, info]) => {
+      if (info.weather) return; // waiting for weather: shown as "Waiting for weather data", not as a rate warning
       if (_mSavResult.byYM[ym] === 0) _bpIncomplete.push({ meter: m.name || m.id, ym, reason: info.reason });
     });
   });

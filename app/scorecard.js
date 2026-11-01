@@ -332,7 +332,12 @@ function renderBuildingScorecardPane(pane, b, projId) {
   // ── Last 12 months of savings (sparkline) ──
   var ymKeys = Object.keys(savByYM).sort();
   var last12YM = ymKeys.slice(-12);
-  var sparkVals = last12YM.map(function (ym) {
+  // A month with no weather yet has no savings figure, so it is not drawn (weatherWaitingMonths, computations/savings.js).
+  var scWaitYms = weatherWaitingMonths(projId, last12YM.length === 12 ? last12YM : ymKeys);
+  var sparkYM = last12YM.filter(function (ym) {
+    return scWaitYms.indexOf(ym) < 0;
+  });
+  var sparkVals = sparkYM.map(function (ym) {
     return savByYM[ym] || 0;
   });
 
@@ -345,8 +350,6 @@ function renderBuildingScorecardPane(pane, b, projId) {
     o[b.id] = savByYM;
     return o;
   })()).byBldg[b.id];
-  // Months with no weather yet block their quarter: not in the figure above (weatherWaitingMonths, computations/savings.js).
-  var scWaitYms = weatherWaitingMonths(projId, last12YM.length === 12 ? last12YM : ymKeys);
 
   // ── EUI (site kBtu/sqft/yr, rolling last 12) ──
   var euiVal = 0;
@@ -454,7 +457,7 @@ function renderBuildingScorecardPane(pane, b, projId) {
 
   // ── Month labels for sparkline ──
   var MO_SHORT = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
-  var sparkLabels = last12YM.map(function (ym) {
+  var sparkLabels = sparkYM.map(function (ym) {
     var parts = ym.split('-');
     return MO_SHORT[parseInt(parts[1]) - 1] || ym;
   });
