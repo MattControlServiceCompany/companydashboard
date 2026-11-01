@@ -2180,6 +2180,9 @@ function _rptResultKind(sav, pct, target) {
 function _rptResultOf(b, d) {
   if (b.status === 'no_data') return { key: 'no_data', word: 'No bills for this period', cls: '' };
   if (b.status === 'no_contract') return { key: 'no_contract', word: 'No Service Agreement on file', cls: '' };
+  // A period with a month that has no weather yet has no savings figure, so no result (savingsOrWaiting words).
+  if (!d.printed && d.totals && d.totals.weatherWaiting && d.totals.weatherWaiting.length)
+    return { key: 'waiting', word: 'Waiting for weather data', cls: '' };
   if (d.printed) {
     var legacy = {
       on_track: { key: 'met', word: 'On Track', cls: 'rpt-g' },
@@ -2608,7 +2611,7 @@ function _rptQResultsPage(n, d, f) {
   var rowHtml = d.buildings
     .map(function (b) {
       var r = _rptResultOf(b, d);
-      var plainSav = r.key === 'no_data' || r.key === 'no_contract';
+      var plainSav = r.key === 'no_data' || r.key === 'no_contract' || r.key === 'waiting';
       return (
         '<tr><td>' +
         _escHtml(b.name) +
@@ -2631,7 +2634,9 @@ function _rptQResultsPage(n, d, f) {
     })
     .join('');
   var totalPct = d.totals.blCost > 0 ? (f.rowsMeasured / d.totals.blCost) * 100 : 0;
-  var totRes = _rptResultKind(f.rowsMeasured, totalPct, tgtTotal);
+  var totRes = f.waiting
+    ? { key: 'waiting', word: 'Waiting for weather data', cls: '' }
+    : _rptResultKind(f.rowsMeasured, totalPct, tgtTotal);
   var foot;
   if (f.notBilled > 0) {
     foot =
@@ -2644,7 +2649,7 @@ function _rptQResultsPage(n, d, f) {
       '<td class="rpt-n ' +
       _rptQSavCls(f.rowsMeasured) +
       '">' +
-      _rptQPct(totalPct) +
+      (f.waiting ? '-' : _rptQPct(totalPct)) +
       '</td><td class="' +
       totRes.cls +
       '">' +
@@ -2669,7 +2674,7 @@ function _rptQResultsPage(n, d, f) {
       '</td><td class="rpt-n ' +
       _rptQSavCls(d.totals.savings) +
       '">' +
-      _rptQPct(totalPct) +
+      (f.waiting ? '-' : _rptQPct(totalPct)) +
       '</td><td class="' +
       totRes.cls +
       '">' +
@@ -3011,7 +3016,11 @@ function _rptQFindingsPage(n, d, f) {
       'The result was electricity: use was ' + _rptQN(Math.abs(f.kwhDiff)) + ' kilowatt-hours (' + Math.abs(f.kwhPct).toFixed(1) + '%) ' + (f.kwhDiff > 0 ? 'above' : 'below') + ' baseline.',
     );
   }
-  var blocks = order
+  var blocks = f.waiting
+    ? '<div style="font-size:14px;line-height:1.35">' +
+      _escHtml(savingsOrWaiting(d.totals.weatherWaiting, 0)) +
+      '. Building findings are given when the weather data is loaded.</div>'
+    : order
     .map(function (x) {
       var fd = _rptQFinding(d, f, x);
       return (
