@@ -5681,29 +5681,10 @@ function rptPageObservations(n, d) {
     }
 
     // A presented period: the building's printed savings and percent (the observations page repeats them).
-    var rawSav = _rptPVn(
-      d,
-      'observations',
-      b.id,
-      '',
-      '',
-      'saved',
-      d.printed
-        ? b.savings
-        : ((b.electric && b.electric.costSaved) || 0) +
-            ((b.gas && b.gas.costSaved) || 0) +
-            ((b.propane && b.propane.costSaved) || 0),
-    );
-    var blAtCurRate = b.blCost || 0;
-    var rawSavPct = _rptPVn(
-      d,
-      'observations',
-      b.id,
-      '',
-      '',
-      'pct',
-      d.printed ? b.savingsPct : blAtCurRate > 0 ? (rawSav / blAtCurRate) * 100 : 0,
-    );
+    // Savings and percent are the building's own result (b.savings, b.savingsPct), the same
+    // figures the Financial table shows. A presented period overrides both with its printed value.
+    var rawSav = _rptPVn(d, 'observations', b.id, '', '', 'saved', b.savings);
+    var rawSavPct = _rptPVn(d, 'observations', b.id, '', '', 'pct', b.savingsPct);
     var _pStrong = _rptPV(d, 'observations', b.id, '', '', 'strongest', null);
     var _pWeak = _rptPV(d, 'observations', b.id, '', '', 'weakest', null);
     if (_pStrong) {
