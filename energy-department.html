@@ -9920,6 +9920,14 @@
                     <button class="btn btn-ghost btn-sm" id="ud-proj-audit-btn" onclick="toggleUDProjPanel('audit')">
                       🧾 Audit / Energy Use Intensity Report
                     </button>
+                    <button
+                      class="btn btn-ghost btn-sm"
+                      id="ud-proj-methods-btn"
+                      onclick="toggleUDProjPanel('methods')"
+                      title="Internal only. Never shown to a client."
+                    >
+                      🔒 Savings Methods (internal)
+                    </button>
                   </div>
                 </div>
                 <!-- Project-level panel content -->
@@ -16685,6 +16693,7 @@
     <script src="app/sched-actions.js?v=191"></script>
     <script src="app/scope-tree.js?v=191"></script>
     <script src="app/utility-data.js?v=191"></script>
+    <script src="app/savings-methods.js?v=191"></script>
     <script src="app/pipeline-diagram.js?v=191"></script>
     <script src="app/csv-import.js?v=191"></script>
     <script src="app/bill-pdf-attach.js?v=191"></script>

@@ -1649,6 +1649,7 @@ function udSelectBldg(bid) {
       'ud-proj-perf-btn',
       'ud-proj-compare-btn',
       'ud-proj-audit-btn',
+      'ud-proj-methods-btn',
     ].forEach((id) => {
       const btn = document.getElementById(id);
       if (btn) {
@@ -1670,6 +1671,7 @@ function toggleUDProjPanel(key) {
     perf: 'ud-proj-perf-btn',
     compare: 'ud-proj-compare-btn',
     audit: 'ud-proj-audit-btn',
+    methods: 'ud-proj-methods-btn',
   };
   Object.entries(map).forEach(([k, id]) => {
     const btn = document.getElementById(id);
@@ -2017,6 +2019,12 @@ function renderUDProjAggPanel(content) {
   if (!bldgs.length) {
     content.innerHTML =
       '<div style="padding:20px;font-size:13px;color:var(--text2)">No buildings in this project yet.</div>';
+    return;
+  }
+
+  // Internal savings methods panel (app/savings-methods.js): its own numbers, none of the code below.
+  if (_udProjPanel === 'methods') {
+    renderSavingsMethodsPanel(content, udSelProjId);
     return;
   }
 
