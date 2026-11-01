@@ -2507,6 +2507,15 @@ async function siteResetAllMeterTableSettings() {
    site-ui.js delegates to this array and should NOT maintain its own copy.
 */
 var RELEASE_NOTES = [
+  { v: 'v2026.11.01.193', date: '2026-11-01', title: 'Savings / Reports: Q3 report rewrite, baseline at actual weather',
+    items: [
+      { type: 'feature', text: 'Reports: the third quarter report is now 8 pages. Weather is one sentence on page 3, and the Contract Position page no longer repeats the monthly savings table.' },
+      { type: 'change', text: 'Savings: from third quarter 2026 the baseline uses the actual weather of the reporting months. A quarter with missing weather shows "Waiting for weather data" and is not counted as zero.' },
+      { type: 'feature', text: 'Savings / Reports: a quarter with no savings now shows the line "Shortfall not billed (contract minimum $0)". The quarter is billed $0, never a negative amount.' },
+      { type: 'change', text: 'Savings / Reports: the 3-year total now uses the same numbers on the Savings page and in the report.' },
+      { type: 'fix', text: 'Reports: names and notes typed by users now show as plain text in the report.' }
+    ]
+  },
   { v: 'v2026.10.31.192', date: '2026-10-31', title: 'Utility Data > Weather: loads on every page open',
     items: [
       { type: 'fix', text: 'Utility Data > Weather: new monthly weather now loads on every page open, without signing in. September 2026 weather now appears.' }
