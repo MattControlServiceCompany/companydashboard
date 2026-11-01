@@ -18,7 +18,7 @@ const ok = (c, m) => {
   if (!c) fails++;
 };
 const P = '<img src=x onerror=alert(1)>';
-const PLAIN = 'Rockville & Sons #416';
+const PLAIN = 'Acme & Sons #416';
 
 (async () => {
   const ctx = await launchBrowser('report-escape');
@@ -59,7 +59,7 @@ const PLAIN = 'Rockville & Sons #416';
     );
     ok(out.rawImg < 0, 'payload <img onerror> never appears as a tag');
     ok(out.html.indexOf('&lt;img src=x onerror=alert(1)&gt;') >= 0, 'payload appears as escaped text');
-    ok(out.html.indexOf('Rockville &amp; Sons #416') >= 0, 'plain name escaped once');
+    ok(out.html.indexOf('Acme &amp; Sons #416') >= 0, 'plain name escaped once');
     ok(out.html.indexOf('&amp;amp;') < 0 && out.html.indexOf('&amp;lt;') < 0, 'nothing is escaped twice');
     ok(errs.length === 0, 'no page errors' + (errs.length ? ': ' + errs[0] : ''));
   } finally {
