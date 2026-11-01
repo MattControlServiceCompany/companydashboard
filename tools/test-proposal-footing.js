@@ -71,6 +71,7 @@ const reFns = [
   '_rptA36TierDetailAggByPhase',
   '_rptA36HardwareCategoryAgg',
   '_rptA36TierDetailPanelHTML',
+  '_rptContractProjection',
   'rptPageContractProjection',
 ];
 vm.runInContext(

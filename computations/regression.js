@@ -214,11 +214,14 @@ function regressionBaseline(row, reg, commodity, normBasis) {
   var normDays = normBasis === 'calendar' ? calDaysInMonth(row.ym) : row.days;
   if (!normDays) return null;
 
+  // Missing weather is never degree days = 0. A month whose degree days are absent has NO baseline
+  // (null); callers leave that month out until weather exists (Matt, 2026-10-31).
+  function hasDD(v) {
+    return v != null && isFinite(v);
+  }
   if (reg.dual) {
-    var hdd = row.hdd != null && isFinite(row.hdd) ? row.hdd : 0;
-    var cdd = row.cdd != null && isFinite(row.cdd) ? row.cdd : 0;
-    var baseline = reg.dual.intercept * normDays + reg.dual.slopeHDD * hdd + reg.dual.slopeCDD * cdd;
-    return Math.max(0, baseline);
+    if (!hasDD(row.hdd) || !hasDD(row.cdd)) return null;
+    return Math.max(0, reg.dual.intercept * normDays + reg.dual.slopeHDD * row.hdd + reg.dual.slopeCDD * row.cdd);
   }
 
   var isElec = commodity === 'Electric';
@@ -227,19 +230,11 @@ function regressionBaseline(row, reg, commodity, normBasis) {
   var primaryDD = isElec ? row.cdd : row.hdd;
   var fallbackDD = isElec ? row.hdd : row.cdd;
 
-  function applyReg(r, dd) {
-    if (!r) return null;
-    var ddVal = dd != null && isFinite(dd) ? dd : 0;
-    return r.intercept * normDays + r.slope * ddVal;
-  }
-
   var baseline = null;
-  if (primary && primaryDD != null) {
-    baseline = applyReg(primary, primaryDD);
-  } else if (fallback && fallbackDD != null) {
-    baseline = applyReg(fallback, fallbackDD);
-  } else if (primary) {
-    baseline = applyReg(primary, 0);
+  if (primary && hasDD(primaryDD)) {
+    baseline = primary.intercept * normDays + primary.slope * primaryDD;
+  } else if (fallback && hasDD(fallbackDD)) {
+    baseline = fallback.intercept * normDays + fallback.slope * fallbackDD;
   }
   return baseline != null ? Math.max(0, baseline) : null;
 }
@@ -267,10 +262,11 @@ function computeKwCddRegression(blRows, allRows, bills, incl) {
             return s + (parseBillNumberOrZero(b.billedKW) || parseBillNumberOrZero(b.demandKW));
           }, 0) / bfr.length
         : 0;
-      return { x: r.cdd != null ? r.cdd : 0, y: kw };
+      return { x: r.cdd, y: kw };
     })
     .filter(function (p) {
-      return p.y > 0;
+      // a baseline month with no weather is left out of the fit, never read as CDD 0
+      return p.y > 0 && p.x != null && isFinite(p.x);
     });
   if (pts.length >= 3) {
     var n = pts.length;
@@ -292,8 +288,9 @@ function computeKwCddRegression(blRows, allRows, bills, incl) {
       var slope = ssxy / ssxx;
       var intercept = my - slope * mx;
       allRows.forEach(function (r) {
-        var cdd = r.cdd != null ? r.cdd : 0;
-        result[r.ym] = Math.max(0, intercept + slope * cdd);
+        // no weather for the month = no kW baseline for it (never CDD 0)
+        if (r.cdd == null || !isFinite(r.cdd)) return;
+        result[r.ym] = Math.max(0, intercept + slope * r.cdd);
       });
     }
   }
