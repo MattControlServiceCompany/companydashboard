@@ -6522,7 +6522,8 @@ function rptPageYearToDate(n, d) {
     _tBl = 0,
     _tCur = 0,
     _tSav = 0;
-  _sorted.forEach(function (ym) {
+  // Rows run newest month first. _sorted stays oldest first for the total and presented-quarter helpers.
+  _sorted.slice().reverse().forEach(function (ym) {
     var mi = parseInt(ym.split('-')[1]) - 1;
     var bl = _moData[ym].bl,
       cur = _moData[ym].cur,
