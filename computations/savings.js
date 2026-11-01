@@ -1067,6 +1067,19 @@ function savingsOrWaiting(waitingYMs, dollars) {
     : _fmtUSD(dollars, '$0');
 }
 
+// weatherWaitingMonths(projId, yms) -> the months ('YYYY-MM') of yms that have no weather yet and so block their
+// quarter from billing. Pages pass it to savingsOrWaiting to show "Waiting for weather data" instead of dollars.
+// [] = nothing is blocked. weatherWaitingQuarters names the blocked quarters.
+function weatherWaitingMonths(projId, yms) {
+  const w = _weatherSplit(projId, yms).waiting;
+  return [].concat.apply([], Object.values(w)).sort();
+}
+
+// weatherWaitingQuarters(projId, yms) -> { 'YYYY-Qn': [ym] } of the quarters of yms that are waiting for weather.
+function weatherWaitingQuarters(projId, yms) {
+  return _weatherSplit(projId, yms).waiting;
+}
+
 // _weatherSplit(projId, yms) -> { waiting: { 'YYYY-Qn': [ym] }, open: yms outside the waiting quarters }.
 function _weatherSplit(projId, yms) {
   const waiting = {};

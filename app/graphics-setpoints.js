@@ -203,10 +203,17 @@ function _pvRenderBldgPerf(b, projId) {
     );
   };
   var annAct = 0;
+  // Months with no weather yet: no savings figure (weatherWaitingMonths, computations/savings.js).
+  var waitYms = hasActual ? weatherWaitingMonths(projId, Object.keys(actualSavByYM).sort()) : [];
+  var waitMo = {};
+  waitYms.forEach(function (y) {
+    waitMo[Number(y.slice(5, 7)) - 1] = true;
+  });
+  var waitCell = '<td colspan="2" style="' + tdS('var(--text2)') + '">Waiting for weather data</td>';
   var rows = MN.map(function (mn, mo) {
     var base = moBase[mo];
     var projSav = msrSav ? msrSav[mo] || 0 : _hasSA ? base * savPct : 0;
-    var act = actualSavByCalMo[mo] != null ? actualSavByCalMo[mo] : null;
+    var act = actualSavByCalMo[mo] != null && !waitMo[mo] ? actualSavByCalMo[mo] : null;
     if (act != null) annAct += act;
     var pct = act != null && base > 0 ? (act / base) * 100 : null;
     return (
@@ -224,16 +231,18 @@ function _pvRenderBldgPerf(b, projId) {
       '">' +
       $f(projSav) +
       '</td>' +
-      '<td style="' +
-      tdS(act != null ? savColor(act) : 'var(--text3)') +
-      '">' +
-      (act != null ? (act < 0 ? '−' : '') + $f(act) : '—') +
-      '</td>' +
-      '<td style="' +
-      tdS(pct != null ? savColor(pct) : 'var(--text3)') +
-      '">' +
-      (pct != null ? (pct < 0 ? '−' : '') + Math.abs(pct).toFixed(1) + '%' : '—') +
-      '</td>' +
+      (waitMo[mo]
+        ? waitCell
+        : '<td style="' +
+          tdS(act != null ? savColor(act) : 'var(--text3)') +
+          '">' +
+          (act != null ? (act < 0 ? '−' : '') + $f(act) : '—') +
+          '</td>' +
+          '<td style="' +
+          tdS(pct != null ? savColor(pct) : 'var(--text3)') +
+          '">' +
+          (pct != null ? (pct < 0 ? '−' : '') + Math.abs(pct).toFixed(1) + '%' : '—') +
+          '</td>') +
       '</tr>'
     );
   }).join('');
@@ -295,7 +304,13 @@ function _pvRenderBldgPerf(b, projId) {
     '">' +
     (annPct != null ? (annPct < 0 ? '−' : '') + Math.abs(annPct).toFixed(1) + '%' : '—') +
     '</td>' +
-    '</tr></tfoot></table></div></div>'
+    '</tr></tfoot></table></div>' +
+    (waitYms.length
+      ? '<div style="font-size:11px;color:var(--text2);margin-top:4px">Annual does not include ' +
+        _escHtml(weatherWaitingLabel(waitYms)) +
+        ': waiting for weather data</div>'
+      : '') +
+    '</div>'
   );
 }
 
@@ -345,9 +360,22 @@ function _pvRenderProjPerf(bldgs, projId) {
     );
   };
   var annAct = 0;
+  // Months with no weather yet: no savings figure (weatherWaitingMonths, computations/savings.js).
+  var _allYms = {};
+  Object.keys(actSavByBldgYM).forEach(function (id) {
+    Object.keys(actSavByBldgYM[id]).forEach(function (ym) {
+      _allYms[ym] = true;
+    });
+  });
+  var waitYms = hasActual ? weatherWaitingMonths(projId, Object.keys(_allYms).sort()) : [];
+  var waitMo = {};
+  waitYms.forEach(function (y) {
+    waitMo[Number(y.slice(5, 7)) - 1] = true;
+  });
+  var waitCell = '<td colspan="2" style="' + tdS('var(--text2)') + '">Waiting for weather data</td>';
   var rows = MN.map(function (mn, mo) {
     var base = moBase[mo] || 0;
-    var act = actSavByMo[mo] != null ? actSavByMo[mo] : null;
+    var act = actSavByMo[mo] != null && !waitMo[mo] ? actSavByMo[mo] : null;
     if (act != null) annAct += act;
     var pct = act != null && base > 0 ? (act / base) * 100 : null;
     return (
@@ -360,16 +388,18 @@ function _pvRenderProjPerf(bldgs, projId) {
       '">' +
       $f(base) +
       '</td>' +
-      '<td style="' +
-      tdS(act != null ? savColor(act) : 'var(--text3)') +
-      '">' +
-      (act != null ? (act < 0 ? '−' : '') + $f(act) : '—') +
-      '</td>' +
-      '<td style="' +
-      tdS(pct != null ? savColor(pct) : 'var(--text3)') +
-      '">' +
-      (pct != null ? (pct < 0 ? '−' : '') + Math.abs(pct).toFixed(1) + '%' : '—') +
-      '</td>' +
+      (waitMo[mo]
+        ? waitCell
+        : '<td style="' +
+          tdS(act != null ? savColor(act) : 'var(--text3)') +
+          '">' +
+          (act != null ? (act < 0 ? '−' : '') + $f(act) : '—') +
+          '</td>' +
+          '<td style="' +
+          tdS(pct != null ? savColor(pct) : 'var(--text3)') +
+          '">' +
+          (pct != null ? (pct < 0 ? '−' : '') + Math.abs(pct).toFixed(1) + '%' : '—') +
+          '</td>') +
       '</tr>'
     );
   }).join('');
@@ -424,7 +454,13 @@ function _pvRenderProjPerf(bldgs, projId) {
     '">' +
     (annPct != null ? (annPct < 0 ? '−' : '') + Math.abs(annPct).toFixed(1) + '%' : '—') +
     '</td>' +
-    '</tr></tfoot></table></div></div>'
+    '</tr></tfoot></table></div>' +
+    (waitYms.length
+      ? '<div style="font-size:11px;color:var(--text2);margin-top:4px">Annual does not include ' +
+        _escHtml(weatherWaitingLabel(waitYms)) +
+        ': waiting for weather data</div>'
+      : '') +
+    '</div>'
   );
 }
 
@@ -987,6 +1023,14 @@ function egfxRefresh(projId) {
   egfxCostSavedByCommodity.Propane = _egfxC.propane;
   const hasEgfxSav = Object.keys(egfxSavByYm).some((ym) => ym.startsWith(curYear));
   // A period presented to the client uses the presented figure (computations/savings.js).
+  const egfxWaitYms = hasEgfxSav
+    ? weatherWaitingMonths(
+        projId,
+        Object.keys(egfxSavByYm)
+          .filter((ym) => ym.startsWith(curYear))
+          .sort(),
+      )
+    : [];
   const totalEgfxSav = hasEgfxSav
     ? billableSavingsWithPresented(
         projId,
@@ -1036,6 +1080,8 @@ function egfxRefresh(projId) {
       curSavEl.textContent = (totalEgfxSav >= 0 ? '' : '-') + '$' + Math.abs(Math.round(totalEgfxSav)).toLocaleString();
       curSavEl.style.color = totalEgfxSav >= 0 ? 'var(--green)' : 'var(--danger)';
       if (curSavSubEl) curSavSubEl.textContent = pct.toFixed(1) + '% actual savings';
+      if (curSavSubEl && egfxWaitYms.length)
+        curSavSubEl.textContent += '. Does not include ' + weatherWaitingLabel(egfxWaitYms) + ': waiting for weather data';
     } else {
       curSavEl.textContent = '—';
       curSavEl.style.fontSize = '14px';
@@ -2171,6 +2217,10 @@ function egfxRefresh(projId) {
             qMonths[qi].map((mi) => y + '-' + String(mi + 1).padStart(2, '0')),
             egfxSavByBldgYm,
           );
+          const _qWait = weatherWaitingMonths(
+            projId,
+            qMonths[qi].map((mi) => y + '-' + String(mi + 1).padStart(2, '0')),
+          );
           const costSav = _qr.total;
           const costPct = qBlCost > 0 ? (costSav / qBlCost) * 100 : 0;
           const savColor = costSav >= 0 ? 'var(--green)' : 'var(--red)';
@@ -2199,19 +2249,26 @@ function egfxRefresh(projId) {
               '</td>';
           qHtml += '<td style="text-align:right;font-family:var(--mono)">' + $f(qBlCost) + '</td>';
           qHtml += '<td style="text-align:right;font-family:var(--mono)">' + $f(qActCost) + '</td>';
-          qHtml +=
-            '<td style="text-align:right;font-family:var(--mono);color:' +
-            savColor +
-            '">' +
-            $f(costSav) +
-            '</td>';
-          qHtml +=
-            '<td style="text-align:right;font-family:var(--mono);color:' +
-            savColor +
-            '">' +
-            (costSav >= 0 ? '+' : '') +
-            costPct.toFixed(1) +
-            '%</td></tr>';
+          if (_qWait.length)
+            qHtml +=
+              '<td colspan="2" style="text-align:right;font-family:var(--mono)">' +
+              _escHtml(savingsOrWaiting(_qWait, 0)) +
+              '</td></tr>';
+          else {
+            qHtml +=
+              '<td style="text-align:right;font-family:var(--mono);color:' +
+              savColor +
+              '">' +
+              $f(costSav) +
+              '</td>';
+            qHtml +=
+              '<td style="text-align:right;font-family:var(--mono);color:' +
+              savColor +
+              '">' +
+              (costSav >= 0 ? '+' : '') +
+              costPct.toFixed(1) +
+              '%</td></tr>';
+          }
         }
       }
       qHtml += '</tbody></table></div></div>';

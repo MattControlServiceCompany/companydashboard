@@ -345,6 +345,8 @@ function renderBuildingScorecardPane(pane, b, projId) {
     o[b.id] = savByYM;
     return o;
   })()).byBldg[b.id];
+  // Months with no weather yet block their quarter: not in the figure above (weatherWaitingMonths, computations/savings.js).
+  var scWaitYms = weatherWaitingMonths(projId, last12YM.length === 12 ? last12YM : ymKeys);
 
   // ── EUI (site kBtu/sqft/yr, rolling last 12) ──
   var euiVal = 0;
@@ -572,6 +574,11 @@ function renderBuildingScorecardPane(pane, b, projId) {
     ';font-weight:700">' +
     _scFmt$(annualSavings) +
     '</span></div>' +
+    (scWaitYms.length
+      ? '<div style="margin-top:4px;font-size:11px;color:var(--text3)">Does not include ' +
+        _escHtml(weatherWaitingLabel(scWaitYms)) +
+        ': waiting for weather data</div>'
+      : '') +
     '</div>' +
     // Environmental impact
     '<div class="sc-env-card">' +
