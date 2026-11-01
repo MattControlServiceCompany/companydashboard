@@ -32,7 +32,7 @@
 //     "FIXED" -- remove the knownDefect then.
 //
 // SAFETY: local http server over THIS tree only (127.0.0.1, random port). Bundled Playwright
-// Chromium, headless, fresh profile per run, deleted after. Requests to /.netlify/ or any
+// Chromium, headless, fresh profile per run, deleted after. Requests to /.netlify/, the live weather host, or any
 // supabase/netlify host are aborted -- the gate never reaches live Supabase/Netlify. The backup is
 // copied first; the original is never opened for write.
 'use strict';
@@ -436,7 +436,7 @@ async function main() {
     ctx = await resolvePlaywright().chromium.launchPersistentContext(profile, { headless: true, viewport: { width: 1600, height: 1100 } });
     const page = await ctx.newPage();
     // Never reach live Supabase/Netlify. (The app is already hard-wired to 'off' on non-netlify hosts.)
-    await page.route(/\/\.netlify\/|supabase\.|netlify\.app/i, (r) => r.abort());
+    await page.route(/\/\.netlify\/|supabase\.|netlify\.app|weatherdatadepot\./i, (r) => r.abort());
     let pageErrors = [];
     page.on('pageerror', (e) => pageErrors.push('pageerror: ' + e.message));
     page.on('console', (m) => {
@@ -628,7 +628,7 @@ async function main() {
       pg.on('console', (m) => {
         if (m.type() === 'error' && JS_FAILURE_RE.test(m.text())) errs.push('console.error: ' + m.text().slice(0, 200));
       });
-      await pg.route(/\/\.netlify\/|supabase\.|netlify\.app/i, (r) => r.abort());
+      await pg.route(/\/\.netlify\/|supabase\.|netlify\.app|weatherdatadepot\./i, (r) => r.abort());
       let has = 0;
       try {
         await pg.goto(base + o.url);
