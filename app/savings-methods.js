@@ -2,7 +2,7 @@
 // Utility Data > project panel bar > "Savings Methods (internal)". Never shown to a client: no report,
 // export, portal or print code may call renderSavingsMethodsPanel / savingsMethodsHtml
 // (test-savings-methods-internal.js proves the report engine and the exports do not).
-// All numbers come from getProjectSavingsMethods (computations/savings.js). This file only draws them.
+// All numbers come from getProjectSavingsMethods and getProjectSavingsMethodsProjection (computations/savings.js). This file only draws them.
 
 const SM_HDR =
   'padding:6px 10px;text-align:right;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.5px;color:var(--text);background:var(--s1);border-right:1px solid var(--border);border-bottom:1px solid var(--border2);white-space:nowrap;position:sticky;top:0;z-index:2';
@@ -90,6 +90,38 @@ function smQuarterHtml(q) {
   );
 }
 
+// The 3-year projection block: one row per method, from getProjectSavingsMethodsProjection.
+function smProjectionHtml(pr) {
+  if (!pr) return '';
+  const usd = (v) => '$' + Math.round(v).toLocaleString('en-US');
+  const head = ['Method', 'Savings to date', 'Projected remaining', '3-year total', 'Contract target']
+    .map((h, i) => '<th style="' + SM_HDR + (i === 0 ? ';text-align:left' : '') + '">' + _escHtml(h) + '</th>')
+    .join('');
+  const body = pr.rows
+    .map((r) => {
+      const mt = SM_METHODS.find((m) => m.k === r.k);
+      const accent = r.k === 'm4' ? ';font-weight:700;border-left:2px solid var(--em)' : '';
+      return (
+        '<tr data-sm-proj="' + _escHtml(r.k) + '"><td style="' + SM_CELL + ';text-align:left' + accent + '" title="' + _escHtml(mt.note) + '">' +
+        _escHtml(mt.name + (r.k === 'm4' ? ' contract method' : '')) + '</td>' +
+        [r.toDate, r.remaining, r.total, r.target].map((v) => '<td style="' + SM_CELL + (r.k === 'm4' ? ';font-weight:700' : '') + '">' + _escHtml(usd(v)) + '</td>').join('') +
+        '</tr>'
+      );
+    })
+    .join('');
+  const ex = pr.excluded.length ? ' Left out of savings to date: ' + pr.excluded.map((e) => e.label + ' (' + e.why + ')').join(', ') + '.' : '';
+  const basis =
+    'Projection basis: ' + pr.year + ' Q1 to Q' + pr.quarter + ' savings of each method (each quarter floored at $0; M4 uses the billed figure, the printed one for a presented quarter) plus the contract targets for the rest of that contract year; other contract years at their escalated target. The site uses the same projection.' + ex;
+  return (
+    '<div style="margin-bottom:22px" data-sm-projection="1">' +
+    '<div style="font-size:13px;font-weight:700;color:var(--text);margin-bottom:6px">3-year projection</div>' +
+    '<div class="ch-tbl-outer" style="border:1px solid var(--border);border-radius:6px;overflow:auto;background:var(--s2)">' +
+    '<table class="ch-tbl" style="border-collapse:separate;border-spacing:0;width:100%"><thead><tr>' + head + '</tr></thead><tbody>' + body + '</tbody></table></div>' +
+    '<div style="font-size:12px;color:var(--text);margin-top:6px" data-sm-basis="1">' + _escHtml(basis) + '</div>' +
+    '</div>'
+  );
+}
+
 function savingsMethodsHtml(projId) {
   const data = getProjectSavingsMethods(projId);
   if (!data) return '<div style="padding:20px;font-size:13px;color:var(--text)">This project has no service agreement.</div>';
@@ -101,6 +133,7 @@ function savingsMethodsHtml(projId) {
     'Presented quarters keep their frozen figures everywhere else; these are new calculations.<br>' +
     'M1 raw baseline vs raw actual. M2 fitted baseline at baseline-year weather vs raw actual. ' +
     'M3 raw baseline vs actual moved to baseline-year weather. M4 fitted baseline at actual weather vs raw actual: the contract method.</div>' +
+    smProjectionHtml(getProjectSavingsMethodsProjection(projId, data)) +
     data.quarters.map(smQuarterHtml).join('') +
     '</div>'
   );

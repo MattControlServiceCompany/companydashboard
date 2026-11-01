@@ -1483,3 +1483,54 @@ function getProjectSavingsMethods(projId) {
     });
   return { quarters };
 }
+
+// smProjectMethods(quarters, project) - the 3-year projection of each method (internal panel).
+// It adds NO projection rule: each method's completed quarters (each floored at $0, floorQuarterSavings, the
+// same floor billing uses) become the quarterlyActuals of the ONE shared projection, which `project(acts, q)`
+// runs (_rptContractProjection -> computeContractProjection, the call every report page prints).
+// billedOf(q) -> the site's billed dollars for quarter q (M4 only; omit to use the recomputed M4).
+// A quarter is complete when it has 3 billed months and none waits for weather; others are left out and named.
+// Returns null (no complete quarter) or { year, quarter, excluded:[{label, why}], rows:[{ k, toDate, remaining,
+// total, target }] }  toDate = all complete quarters; remaining = total - toDate; target = the contract target.
+function smProjectMethods(quarters, project, billedOf) {
+  const done = quarters.filter((q) => q.months.length === 3 && !q.total.waiting.length);
+  if (!done.length) return null;
+  const excluded = quarters
+    .filter((q) => done.indexOf(q) < 0)
+    .map((q) => ({ label: q.label, why: q.total.waiting.length ? 'waiting for weather' : q.months.length + ' of 3 months billed' }));
+  const last = done.slice().sort((a, b) => (a.key < b.key ? 1 : -1))[0]; // newest complete quarter
+  const year = last.key.slice(0, 4);
+  const qNum = Number(last.key.slice(6));
+  const byKey = {};
+  done.forEach((q) => (byKey[q.key] = q));
+  const rows = ['m1', 'm2', 'm3', 'm4'].map((k) => {
+    // M4 is the contract method: its quarter is the billed figure the site uses (billedOf; a presented quarter keeps
+    // its printed figure). M1 to M3 are the recomputed quarters, floored at $0.
+    const val = (q) => (k === 'm4' && billedOf ? billedOf(q) : floorQuarterSavings(q.total.E[k] + q.total.K[k]));
+    const acts = [null, null, null, null];
+    for (let i = 0; i < qNum; i++) acts[i] = byKey[year + '-Q' + (i + 1)] ? val(byKey[year + '-Q' + (i + 1)]) : 0;
+    const proj = project(acts, qNum);
+    const toDate = done.reduce((s, q) => s + val(q), 0);
+    return { k, toDate, remaining: proj.totalSavings - toDate, total: proj.totalSavings, target: proj.targetOnly.totalSavings };
+  });
+  return { year, quarter: qNum, excluded, rows };
+}
+
+// getProjectSavingsMethodsProjection(projId, data) -> smProjectMethods(...) with the project's own contract
+// (term, years, escalation, targets, split) read by collectReportData, the data every report page prints.
+function getProjectSavingsMethodsProjection(projId, data) {
+  const done = data.quarters.filter((q) => q.months.length === 3 && !q.total.waiting.length);
+  if (!done.length) return null;
+  const last = done.slice().sort((a, b) => (a.key < b.key ? 1 : -1))[0];
+  const ids = getUDBldgs(projId).map((b) => String(b.id));
+  const rd = (q) => collectReportData(projId, ids, null, 'quarterly', { quarter: Number(q.key.slice(6)), year: Number(q.key.slice(0, 4)), _noQuarterlyActuals: true });
+  const d = rd(last);
+  if (!d) return null;
+  return smProjectMethods(data.quarters, (acts, q) =>
+    _rptContractProjection({
+      contract: Object.assign({}, d.contract, { quarterlyActuals: acts, actualsThroughQuarter: q }),
+      period: { quarter: q },
+    }),
+    (q) => floorQuarterSavings(rd(q).totals.savings), // the site's billed quarter (totals.savings is already billable)
+  );
+}

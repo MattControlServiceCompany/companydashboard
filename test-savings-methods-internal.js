@@ -26,10 +26,15 @@ const sandbox = {};
 vm.createContext(sandbox);
 vm.runInContext(
   src +
-    '\nthis.savingsMethodsForRow = savingsMethodsForRow; this.expectedUsageForMonth = expectedUsageForMonth;',
+    '\nthis.savingsMethodsForRow = savingsMethodsForRow; this.expectedUsageForMonth = expectedUsageForMonth; this.smProjectMethods = smProjectMethods; this.floorQuarterSavings = floorQuarterSavings;',
   sandbox,
 );
-const { savingsMethodsForRow, expectedUsageForMonth } = sandbox;
+const { savingsMethodsForRow, expectedUsageForMonth, smProjectMethods } = sandbox;
+// the ONE shared projection (computations/csc.js), loaded the same way
+const cscSandbox = {};
+vm.createContext(cscSandbox);
+vm.runInContext(fs.readFileSync(path.join(ROOT, 'computations', 'csc.js'), 'utf8') + '\nthis.computeContractProjection = computeContractProjection;', cscSandbox);
+const { computeContractProjection } = cscSandbox;
 
 // ---- 1. math ----
 const row = {
@@ -66,7 +71,7 @@ ok(expectedUsageForMonth({ ym: '2026-02', regrBaseline: null, hdd: null, cdd: 0 
 ok(expectedUsageForMonth({ ym: '2026-08', regrBaseline: 900, hdd: 0, cdd: 5 }, ctx).usage === 900, 'from 2026-07 the contract rule applies without the flag');
 
 // ---- 4. the section is internal: nothing client-facing reaches it ----
-const NAMES = /getProjectSavingsMethods|getMeterSavingsMethods|savingsMethodsForRow|savingsMethodsHtml|renderSavingsMethodsPanel|savingsMethodsPanel|allMonthsAtReportingWeather|app\/savings-methods\.js/;
+const NAMES = /getProjectSavingsMethods|smProjectMethods|smProjectionHtml|getMeterSavingsMethods|savingsMethodsForRow|savingsMethodsHtml|renderSavingsMethodsPanel|savingsMethodsPanel|allMonthsAtReportingWeather|app\/savings-methods\.js/;
 const ALLOWED = new Set([
   'computations/savings.js', // the computation
   'app/savings-methods.js', // the panel
@@ -112,6 +117,37 @@ ok((ud.match(/renderSavingsMethodsPanel/g) || []).length === 1, 'utility-data.js
 // the panel text is escaped
 const panel = fs.readFileSync(path.join(ROOT, 'app', 'savings-methods.js'), 'utf8');
 ok(/_escHtml\(b\.name\)/.test(panel) && /_escHtml\(q\.label/.test(panel), 'panel escapes building and quarter text');
+
+// ---- 5. 3-year projection per method: synthetic quarters, the shared projection ----
+// Contract: 3 years, annual target 4000 (Q targets 1000 each), escalation 10%, split 60/40.
+const mkQ = (key, months, waiting, m) => ({
+  key, label: key.replace('-Q', ' Q'), months, total: { waiting, E: { m1: m[0], m2: m[1], m3: m[2], m4: m[3] }, K: { m1: 0, m2: 0, m3: 0, m4: 0 } },
+});
+const M3 = ['01', '02', '03'].map((x) => '2026-' + x);
+const quarters = [
+  mkQ('2026-Q4', ['2026-10'], ['2026-10'], [0, 0, 0, 0]), // 1 month, waiting: left out and named
+  mkQ('2026-Q3', M3, [], [-500, 100, -200, -300]), // negative: floored to 0
+  mkQ('2026-Q2', M3, [], [1500, 1800, 1400, 1700]),
+  mkQ('2026-Q1', M3, [], [800, 900, 700, 1000]),
+];
+const project = (acts, q) =>
+  computeContractProjection({ annualTarget: 4000, escalationPct: 10, contractYears: 3, cscPct: 60, clientPct: 40, currentYear: 1, quarter: q, quarterlyActuals: acts, quarterlyTargets: [1000, 1000, 1000, 1000] });
+const pr = smProjectMethods(quarters, project);
+ok(pr && pr.year === '2026' && pr.quarter === 3, 'projection runs through the newest complete quarter (2026 Q3)');
+ok(pr.excluded.length === 1 && pr.excluded[0].label === '2026 Q4' && /weather/.test(pr.excluded[0].why), 'a quarter waiting for weather is left out and named');
+const yr2 = Math.round(4000 * 1.1), yr3 = Math.round(4000 * 1.21);
+const byK = {};
+pr.rows.forEach((x) => (byK[x.k] = x));
+// M1: Q1 800 + Q2 1500 + Q3 floor(-500)=0, plus Q4 target 1000 in year 1
+ok(byK.m1.toDate === 2300 && byK.m1.total === 2300 + 1000 + yr2 + yr3 && byK.m1.remaining === byK.m1.total - 2300, 'M1: to date 2300 (Q3 floored at $0); total = year 1 + year 2 + year 3');
+ok(byK.m2.toDate === 900 + 1800 + 100 && byK.m4.toDate === 1000 + 1700, 'M2 and M4 sums of floored quarters');
+ok(byK.m4.total === 2700 + 1000 + yr2 + yr3 && byK.m4.target === 4000 + yr2 + yr3, 'M4 total and the contract target (4000 + escalated years 2 and 3)');
+const direct = project([1000, 1700, 0, null], 3).totalSavings;
+ok(byK.m4.total === direct, 'M4 equals the shared projection called directly');
+const billed = smProjectMethods(quarters, project, () => 1234);
+ok(billed.rows.find((x) => x.k === 'm4').toDate === 3 * 1234 && billed.rows.find((x) => x.k === 'm1').toDate === 2300, 'billedOf replaces M4 quarters only');
+ok(smProjectMethods([quarters[0]], project) === null, 'no complete quarter: no projection');
+ok(/_escHtml\(basis\)/.test(panel) && /_escHtml\(usd\(v\)\)/.test(panel) && /_escHtml\(h\)/.test(panel), 'projection block escapes its text');
 
 if (fails) {
   console.error(fails + ' check(s) failed');
