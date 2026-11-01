@@ -2168,6 +2168,15 @@ function _rptBuildingTarget(d, b) {
   return qT > 0 ? qT * (b.blCost / tot) : 0;
 }
 
+// _rptWaitingYMs(d) - the months with no weather yet that block the savings figure this report prints. A
+// cumulative report prints the savings of all months to date, so it uses totals.cumulativeWeatherWaiting;
+// every other report uses the months of its own period (totals.weatherWaiting). The ONE place that decides.
+function _rptWaitingYMs(d) {
+  var t = (d && d.totals) || {};
+  var isCum = d && d.period && d.period.type === 'cumulative';
+  return (isCum ? t.cumulativeWeatherWaiting : t.weatherWaiting) || [];
+}
+
 // _rptResultOf(b, d) - the ONE wording and colour for how a building did. The colour follows the sign of
 // the saving: a positive saving is never red. A result inside 1% of baseline is "On baseline".
 // A presented report (d.printed) keeps the earlier wording.
@@ -2181,7 +2190,7 @@ function _rptResultOf(b, d) {
   if (b.status === 'no_data') return { key: 'no_data', word: 'No bills for this period', cls: '' };
   if (b.status === 'no_contract') return { key: 'no_contract', word: 'No Service Agreement on file', cls: '' };
   // A period with a month that has no weather yet has no savings figure, so no result (savingsOrWaiting words).
-  if (!d.printed && d.totals && d.totals.weatherWaiting && d.totals.weatherWaiting.length)
+  if (!d.printed && d.totals && _rptWaitingYMs(d) && _rptWaitingYMs(d).length)
     return { key: 'waiting', word: 'Waiting for weather data', cls: '' };
   if (d.printed) {
     var legacy = {
@@ -2370,7 +2379,7 @@ function _rptQFacts(d) {
     savedSum: sum(saved),
     overSum: sum(over),
     cumulative: d.totals.cumulativeSavings || 0,
-    waiting: !!(d.totals.weatherWaiting && d.totals.weatherWaiting.length),
+    waiting: !!(_rptWaitingYMs(d) && _rptWaitingYMs(d).length),
   };
 }
 
@@ -2462,7 +2471,7 @@ function _rptQCoverPage(n, d, f) {
   var qLabel = f.ordinal + ' Quarter ' + f.year;
   var headline;
   if (f.waiting) {
-    headline = 'Savings for this quarter are not reported yet. ' + savingsOrWaiting(d.totals.weatherWaiting, 0) + '.';
+    headline = 'Savings for this quarter are not reported yet. ' + savingsOrWaiting(_rptWaitingYMs(d), 0) + '.';
   } else if (f.rowsMeasured < 0 || f.notBilled > 0) {
     headline =
       'Energy use for the quarter was above the baseline, so no savings are billed. The quarter measured ' +
@@ -2545,7 +2554,7 @@ function _rptQCoverPage(n, d, f) {
       ? '<tr><td>Shortfall not billed (contract minimum $0)</td><td class="rpt-n">' + _fmtUSD(f.notBilled, '$0') + '</td></tr>'
       : '') +
     '<tr class="rpt-tot"><td>Savings billed this quarter</td><td class="rpt-n">' +
-    savingsOrWaiting(d.totals.weatherWaiting, d.totals.savings) +
+    savingsOrWaiting(_rptWaitingYMs(d), d.totals.savings) +
     '</td></tr>' +
     '<tr><td>Savings billed to date, contract year ' +
     d.contract.currentYear +
@@ -2659,7 +2668,7 @@ function _rptQResultsPage(n, d, f) {
       _fmtUSD(f.notBilled, '$0') +
       '</td><td></td><td></td></tr>' +
       '<tr class="rpt-tot"><td>Total billed</td><td></td><td></td><td class="rpt-n">' +
-      savingsOrWaiting(d.totals.weatherWaiting, d.totals.savings) +
+      savingsOrWaiting(_rptWaitingYMs(d), d.totals.savings) +
       '</td><td></td><td></td></tr>';
   } else {
     foot =
@@ -2670,7 +2679,7 @@ function _rptQResultsPage(n, d, f) {
       '</td><td class="rpt-n ' +
       _rptQSavCls(d.totals.savings) +
       '">' +
-      savingsOrWaiting(d.totals.weatherWaiting, d.totals.savings) +
+      savingsOrWaiting(_rptWaitingYMs(d), d.totals.savings) +
       '</td><td class="rpt-n ' +
       _rptQSavCls(d.totals.savings) +
       '">' +
@@ -2740,7 +2749,7 @@ function _rptQResultsPage(n, d, f) {
         [46, 27, 27],
         ['', f.ordinal + ' quarter', 'Contract to date'],
         '<tr><td>Savings billed</td><td class="rpt-n">' +
-          savingsOrWaiting(d.totals.weatherWaiting, f.billed) +
+          savingsOrWaiting(_rptWaitingYMs(d), f.billed) +
           '</td><td class="rpt-n">' +
           _fmtUSD(f.cumulative, '$0') +
           '</td></tr>' +
@@ -3018,7 +3027,7 @@ function _rptQFindingsPage(n, d, f) {
   }
   var blocks = f.waiting
     ? '<div style="font-size:14px;line-height:1.35">' +
-      _escHtml(savingsOrWaiting(d.totals.weatherWaiting, 0)) +
+      _escHtml(savingsOrWaiting(_rptWaitingYMs(d), 0)) +
       '. Building findings are given when the weather data is loaded.</div>'
     : order
     .map(function (x) {
@@ -3777,8 +3786,8 @@ function rptPageCover(n, d) {
     'Across all ' +
     _nBldgs +
     ' buildings, ' +
-    (d.totals.weatherWaiting && d.totals.weatherWaiting.length
-      ? 'savings for this period are not reported yet. <strong>' + savingsOrWaiting(d.totals.weatherWaiting, 0) + '</strong>. '
+    (_rptWaitingYMs(d) && _rptWaitingYMs(d).length
+      ? 'savings for this period are not reported yet. <strong>' + savingsOrWaiting(_rptWaitingYMs(d), 0) + '</strong>. '
       : 'the portfolio is ' +
         perfWord +
         ' the ' +
@@ -3787,7 +3796,7 @@ function rptPageCover(n, d) {
         _fmtUSD(target, '$0') +
         '</strong>, ' +
         'having achieved <strong>' +
-        savingsOrWaiting(d.totals.weatherWaiting, d.totals.savings) +
+        savingsOrWaiting(_rptWaitingYMs(d), d.totals.savings) +
         '</strong> in verified cost avoidance ' +
         '(' +
         $p(d.totals.savingsPct) +
@@ -4074,13 +4083,13 @@ function rptPageCover(n, d) {
     '</div>' +
     '<div class="rpt-big-number">' +
     '<div class="rpt-bn-amount" contenteditable="true">' +
-    savingsOrWaiting(d.totals.weatherWaiting, d.totals.savings) +
+    savingsOrWaiting(_rptWaitingYMs(d), d.totals.savings) +
     '</div>' +
     '<div class="rpt-bn-label" contenteditable="true">' +
     periodTitle +
     ' Actual Savings</div>' +
     '<div class="rpt-bn-badge" contenteditable="true">' +
-    (d.totals.weatherWaiting && d.totals.weatherWaiting.length ? 'not yet reported' : pctOfTarget + '% of target') +
+    (_rptWaitingYMs(d) && _rptWaitingYMs(d).length ? 'not yet reported' : pctOfTarget + '% of target') +
     '</div>' +
     '</div>' +
     '<div class="rpt-hero-sub" contenteditable="true">' +
@@ -4105,7 +4114,7 @@ function rptPageCover(n, d) {
     '<div class="rpt-vs-val" style="color:' +
     (d.totals.savings >= target ? 'var(--rpt-green-dark)' : 'var(--rpt-orange)') +
     '" contenteditable="true">' +
-    savingsOrWaiting(d.totals.weatherWaiting, d.totals.savings) +
+    savingsOrWaiting(_rptWaitingYMs(d), d.totals.savings) +
     '</div>' +
     '<div class="rpt-vs-lbl">Actual ' +
     _vsWord +
@@ -4290,7 +4299,7 @@ function rptPageFinancial(n, d) {
         '<td class="rpt-n ' +
         saveClass +
         '" contenteditable="true">' +
-        (d.totals.weatherWaiting && d.totals.weatherWaiting.length ? savingsOrWaiting(d.totals.weatherWaiting, 0) : _fmtUSD(b.savings, '$0')) +
+        (_rptWaitingYMs(d) && _rptWaitingYMs(d).length ? savingsOrWaiting(_rptWaitingYMs(d), 0) : _fmtUSD(b.savings, '$0')) +
         '</td>' +
         '<td class="rpt-n ' +
         saveClass +
@@ -4353,7 +4362,7 @@ function rptPageFinancial(n, d) {
     '<td class="rpt-n ' +
     totSaveClass +
     '" contenteditable="true">' +
-    savingsOrWaiting(d.totals.weatherWaiting, d.totals.savings) +
+    savingsOrWaiting(_rptWaitingYMs(d), d.totals.savings) +
     '</td>' +
     '<td class="rpt-n ' +
     totSaveClass +
@@ -4404,7 +4413,7 @@ function rptPageFinancial(n, d) {
     qLabel +
     ' Actual Savings</td>' +
     '<td class="rpt-n rpt-g" contenteditable="true">' +
-    savingsOrWaiting(d.totals.weatherWaiting, d.totals.savings) +
+    savingsOrWaiting(_rptWaitingYMs(d), d.totals.savings) +
     '</td>' +
     (pw.isAnnual ? '' : '<td class="rpt-n" contenteditable="true">' + _fmtUSD(annSavings, '$0') + '</td>') +
     '<td class="rpt-n" contenteditable="true">' +
@@ -4471,7 +4480,7 @@ function rptPageFinancial(n, d) {
     _fmtUSD(qCurCost, '$0') +
     '</td>' +
     '<td class="rpt-n rpt-g" contenteditable="true">' +
-    savingsOrWaiting(d.totals.weatherWaiting, d.totals.savings) +
+    savingsOrWaiting(_rptWaitingYMs(d), d.totals.savings) +
     '</td>' +
     '</tr>';
   const qtrTable =
@@ -5622,28 +5631,33 @@ function rptPageObservations(n, d) {
   const totalBldgs = d.buildings ? d.buildings.length : 0;
   const periodLabel = d.period ? d.period.label : '';
   const clientName = d.project ? d.project.client : '';
-  const perfWord = pctOfTarget >= 100 ? 'exceeding' : pctOfTarget >= 80 ? 'approaching' : 'below';
-
-  const summaryPara =
-    '<p contenteditable="true">' +
-    'During ' +
-    periodLabel +
-    ', ' +
-    clientName +
-    ' achieved ' +
-    _fmtUSD(totalSav, '$0') +
-    ' in verified energy cost savings, representing ' +
-    pctOfTarget +
-    '% of the period target — ' +
-    perfWord +
-    ' the contracted performance benchmark. ' +
-    onTrackCount +
-    ' of ' +
-    totalBldgs +
-    ' building' +
-    (totalBldgs !== 1 ? 's are' : ' is') +
-    ' on track or ahead of target for the period.' +
-    '</p>';
+  const _obsWait = _rptWaitingYMs(d);
+  // Same wording as the quarterly report: the result word, no judgement against a benchmark.
+  const summaryPara = _obsWait.length
+    ? '<p contenteditable="true">During ' +
+      _escHtml(periodLabel) +
+      ', savings for ' +
+      _escHtml(clientName) +
+      ' are not reported yet. ' +
+      _escHtml(savingsOrWaiting(_obsWait, 0)) +
+      '.</p>'
+    : '<p contenteditable="true">' +
+      'During ' +
+      periodLabel +
+      ', ' +
+      clientName +
+      ' achieved ' +
+      _fmtUSD(totalSav, '$0') +
+      ' in verified energy cost savings, representing ' +
+      pctOfTarget +
+      '% of the period target. ' +
+      onTrackCount +
+      ' of ' +
+      totalBldgs +
+      ' building' +
+      (totalBldgs !== 1 ? 's are' : ' is') +
+      ' on track or ahead of target for the period.' +
+      '</p>';
 
   // -- Per-building narrative (array — used for pagination below) --
   const bldgSectionItems = (d.buildings || []).map(function (b) {
@@ -5711,6 +5725,11 @@ function rptPageObservations(n, d) {
         (d.period ? _escHtml(d.period.label) : 'this period') +
         ', but this project has no Service Agreement on file, so contracted savings are not calculated for this building.';
       rec = 'Confirm the Service Agreement number on the project record if this building is under contract.';
+    } else if (_res.key === 'waiting') {
+      // No weather yet: no savings figure. Null is never 0.
+      subtitle = _escHtml(_res.word);
+      narrative = _escHtml(b.name) + ': ' + _escHtml(savingsOrWaiting(_rptWaitingYMs(d), 0)) + '. ' + strongWeak;
+      rec = '';
     } else {
       // met / short / over / on_baseline: the heading is the _rptResultOf word. No standard
       // recommendation text is added; a result is stated, not advised on.
