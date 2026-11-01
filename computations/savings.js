@@ -662,11 +662,16 @@ function getMeterSavings(m, bills, incl, projId, bldgId, opts) {
       rateIncomplete: hasContract && flagIncomplete,
       rateReason: hasContract && flagIncomplete ? _rateReason : "",
       // Baseline-year references for the same calendar month (read by getMeterSavingsMethods only):
-      // raw billed usage / peak kW, and the fitted values at the baseline-year weather.
-      blRawUsage: isElec ? (eMo[calMo] || {}).kwh : isGas ? (gMo[calMo] || {}).therms : isPropane ? _blRawPropane(calMo) : null,
-      blFitUsage: blByCalMo[calMo] != null ? blByCalMo[calMo] : null,
-      blRawKW: isElec ? blDemKWByCalMo[calMo] || 0 : 0,
-      blFitKW: isElec ? _blFitKWOf(calMo) : null,
+      // raw billed usage / peak kW, and the fitted values at the baseline-year weather. Only present when
+      // opts.allMonthsAtReportingWeather is on, so the default rows are unchanged.
+      ...(opts.allMonthsAtReportingWeather
+        ? {
+            blRawUsage: isElec ? (eMo[calMo] || {}).kwh : isGas ? (gMo[calMo] || {}).therms : isPropane ? _blRawPropane(calMo) : null,
+            blFitUsage: blByCalMo[calMo] != null ? blByCalMo[calMo] : null,
+            blRawKW: isElec ? blDemKWByCalMo[calMo] || 0 : 0,
+            blFitKW: isElec ? _blFitKWOf(calMo) : null,
+          }
+        : {}),
     });
     // No Service Agreement: rows above show usage with $0; nothing books into the rollups.
     if (!hasContract) return;
@@ -1504,7 +1509,7 @@ function getProjectSavingsMethods(projId) {
 // billedOf(q) -> the site's billed dollars for quarter q (M4 only; omit to use the recomputed M4).
 // A quarter is complete when it has 3 billed months and none waits for weather; others are left out and named.
 // Returns null (no complete quarter) or { year, quarter, excluded:[{label, why}], rows:[{ k, toDate, remaining,
-// total, target }] }  toDate = all complete quarters; remaining = total - toDate; target = the contract target.
+// total, target }] }  toDate = the complete quarters of that year; remaining = total - toDate; target = the contract target.
 function smProjectMethods(quarters, project, billedOf) {
   const done = quarters.filter((q) => q.months.length === 3 && !q.total.waiting.length);
   if (!done.length) return null;
@@ -1523,7 +1528,7 @@ function smProjectMethods(quarters, project, billedOf) {
     const acts = [null, null, null, null];
     for (let i = 0; i < qNum; i++) acts[i] = byKey[year + '-Q' + (i + 1)] ? val(byKey[year + '-Q' + (i + 1)]) : 0;
     const proj = project(acts, qNum);
-    const toDate = done.reduce((s, q) => s + val(q), 0);
+    const toDate = done.filter((q) => q.key.slice(0, 4) === year).reduce((s, q) => s + val(q), 0); // same year the projection uses
     return { k, toDate, remaining: proj.totalSavings - toDate, total: proj.totalSavings, target: proj.targetOnly.totalSavings };
   });
   return { year, quarter: qNum, excluded, rows };
