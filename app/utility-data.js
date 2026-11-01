@@ -2425,15 +2425,21 @@ function renderUDProjAggPanel(content) {
     // A period presented to the client uses the presented figure (computations/savings.js).
     const _ppAllYms = Array.from(new Set(Object.values(_ppSavByBldgYM).flatMap((o) => Object.keys(o)))).sort();
     const annActSav = hasActual ? billableSavingsWithPresented(udSelProjId, _ppAllYms, _ppSavByBldgYM).total : null;
-    // Months with no weather yet: no savings figure (weatherWaitingMonths, computations/savings.js).
-    const _ppWaitYms = hasActual ? weatherWaitingMonths(udSelProjId, _ppAllYms) : [];
+    // A quarter with a month that has no weather yet has no savings figure, so every month of that quarter
+    // is shown as waiting (weatherWaitingQuarters, computations/savings.js). The annual total leaves the quarter out.
+    const _ppWaitQ = hasActual ? weatherWaitingQuarters(udSelProjId, _ppAllYms) : {};
+    const _ppWaitYms = _ppAllYms.filter((y) => _ppWaitQ[quarterKeyOfYM(y)]);
     const _ppWaitMo = new Set(_ppWaitYms.map((y) => Number(y.slice(5, 7)) - 1));
-    const _ppWaitNote = _ppWaitYms.length
-      ? `<div style="font-size:11px;color:var(--text2);margin-top:2px">Does not include ${_escHtml(weatherWaitingLabel(_ppWaitYms))}: waiting for weather data</div>`
+    const _ppWaitNote = Object.keys(_ppWaitQ).length
+      ? `<div style="font-size:11px;color:var(--text2);margin-top:2px">Does not include ${Object.keys(_ppWaitQ)
+          .sort()
+          .map((q) => _escHtml(q.slice(5) + ' ' + q.slice(0, 4)))
+          .join(', ')}: waiting for weather data (${_escHtml(weatherWaitingLabel(weatherWaitingMonths(udSelProjId, _ppAllYms)))})</div>`
       : '';
     const actPct = annBase > 0 && annActSav != null ? (annActSav / annBase) * 100 : null;
     // Compare actual vs projected for only the months that have actual data (YTD)
-    const actMonths = Object.keys(actSavByMo).map(Number);
+    // Same months on both sides: months in a waiting quarter are left out of the projected side too.
+    const actMonths = Object.keys(actSavByMo).map(Number).filter((mo) => !_ppWaitMo.has(mo));
     const ytdProjSav = actMonths.reduce((s, mo) => s + _perfProjSavByMo[mo], 0);
     const ytdDiff = annActSav != null ? annActSav - ytdProjSav : null;
     const tdV = (v, color) => {
