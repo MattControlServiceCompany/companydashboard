@@ -6514,23 +6514,18 @@ function rptPageYearToDate(n, d) {
   var _moNames = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
   var _moData = {};
   var _savPerBldg = {}; // current savings by building and month, for billableSavingsWithPresented()
+  // The month map is _rptBuildingMonthMap, the same one the quarterly report uses, so the two agree.
+  // Bounded to the report's calendar year: this table is labeled Year-to-Date, not a current-quarter figure.
   (d.buildings || []).forEach(function (b) {
     _savPerBldg[b.id] = {};
-    ['electric', 'gas', 'propane'].forEach(function (com) {
-      var mo = (b[com] && b[com].monthly) || [];
-      mo.forEach(function (m) {
-        // Year-to-date is bounded to the report's calendar year (not the current quarter) — the
-        // one intentional read of a raw "full year for charts" monthly array (see
-        // collectReportData) that is not scoped to d.period.yearMonths, because this table is
-        // explicitly labeled Year-to-Date, not a current-quarter figure.
-        if (String(periodYear) !== (m.month || '').slice(0, 4)) return;
-        if (!_moData[m.month]) _moData[m.month] = { bl: 0, cur: 0, sav: 0 };
-        _moData[m.month].bl += m.blCost || 0;
-        _moData[m.month].cur += m.curCost || 0;
-        var _mSav = m.savings != null ? m.savings : (m.blCost || 0) - (m.curCost || 0);
-        _moData[m.month].sav += _mSav;
-        _savPerBldg[b.id][m.month] = (_savPerBldg[b.id][m.month] || 0) + _mSav;
-      });
+    var map = _rptBuildingMonthMap(b);
+    Object.keys(map).forEach(function (ym) {
+      if (String(periodYear) !== ym.slice(0, 4)) return;
+      if (!_moData[ym]) _moData[ym] = { bl: 0, cur: 0, sav: 0 };
+      _moData[ym].bl += map[ym].bl;
+      _moData[ym].cur += map[ym].cur;
+      _moData[ym].sav += map[ym].sav;
+      _savPerBldg[b.id][ym] = map[ym].sav;
     });
   });
   var _sorted = Object.keys(_moData).sort();
