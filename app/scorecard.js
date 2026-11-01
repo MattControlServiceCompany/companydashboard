@@ -333,7 +333,11 @@ function renderBuildingScorecardPane(pane, b, projId) {
   var ymKeys = Object.keys(savByYM).sort();
   var last12YM = ymKeys.slice(-12);
   // A month with no weather yet has no savings figure, so it is not drawn (weatherWaitingMonths, computations/savings.js).
-  var scWaitYms = weatherWaitingMonths(projId, last12YM.length === 12 ? last12YM : ymKeys);
+  // The whole quarter waits (weatherWaitingQuarters), so Jul and Aug are not drawn while Sep has no weather.
+  var scWaitQ = weatherWaitingQuarters(projId, last12YM.length === 12 ? last12YM : ymKeys);
+  var scWaitYms = ymKeys.filter(function (ym) {
+    return scWaitQ[quarterKeyOfYM(ym)];
+  });
   var sparkYM = last12YM.filter(function (ym) {
     return scWaitYms.indexOf(ym) < 0;
   });
@@ -345,6 +349,9 @@ function renderBuildingScorecardPane(pane, b, projId) {
   // A period presented to the client uses the presented figure (computations/savings.js).
   // (last 12 months when there are 12 or more). A period presented to the client uses the presented
   // figure (one keeper, computations/savings.js).
+  // Period of this figure: the last 12 months of THIS building (all months to date when fewer than 12). The project
+  // total on Utility Data covers every building and every billed quarter, so the two differ by design.
+  var scPeriodWord = last12YM.length === 12 ? 'last 12 months' : 'months to date';
   var annualSavings = billableSavingsWithPresented(projId, last12YM.length === 12 ? last12YM : ymKeys, (function () {
     var o = {};
     o[b.id] = savByYM;
@@ -470,7 +477,7 @@ function renderBuildingScorecardPane(pane, b, projId) {
   var gauges = [
     {
       label: annualSavings > 0 ? '$' + Math.round(annualSavings / 1000) + 'k' : '—',
-      sublabel: 'Annual Savings',
+      sublabel: 'Savings, ' + scPeriodWord,
       pct: savPct,
       color: savColor,
     },
@@ -572,7 +579,7 @@ function renderBuildingScorecardPane(pane, b, projId) {
           : '') +
         '</div>'
       : '<div style="color:var(--text3);font-size:12px;padding:20px 0;text-align:center">No post-baseline savings data yet</div>') +
-    '<div style="margin-top:8px;font-size:11px;color:var(--text3)">Annual savings: <span style="color:' +
+    '<div style="margin-top:8px;font-size:11px;color:var(--text3)">' + _escHtml('Savings, ' + scPeriodWord + ' (this building)') + ': <span style="color:' +
     (annualSavings >= 0 ? 'var(--em)' : 'var(--red)') +
     ';font-weight:700">' +
     _scFmt$(annualSavings) +
