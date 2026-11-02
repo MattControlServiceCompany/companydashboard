@@ -2507,6 +2507,13 @@ async function siteResetAllMeterTableSettings() {
    site-ui.js delegates to this array and should NOT maintain its own copy.
 */
 var RELEASE_NOTES = [
+  { v: 'v2026.11.02.197', date: '2026-11-02', title: 'BAS Schedules: import audit log and baseline',
+    items: [
+      { type: 'feature', text: 'BAS Schedules card: new "Import audit log" button reads a BAS audit log file, including the daily scheduled audit log files.' },
+      { type: 'feature', text: 'BAS Schedules card: new "Import baseline (Set Points sheet)" button loads the baseline set points from a Set Points sheet.' },
+      { type: 'change', text: 'Quarterly report schedule page: the schedule and set point table now fills from these imports and from the Equipment Matrix points list.' }
+    ]
+  },
   { v: 'v2026.11.02.196', date: '2026-11-02', title: 'Quarterly report: schedule and set point table; clearer degree day text',
     items: [
       { type: 'feature', text: 'Quarterly report: a new page lists the schedule and set point table for the equipment in the report.' },
