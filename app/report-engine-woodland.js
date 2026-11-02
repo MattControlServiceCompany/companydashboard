@@ -225,8 +225,6 @@ var WD_TEXT = {
       '% CSC).'
     );
   },
-  nextSteps:
-    'To proceed, choose Option A, Option B, or Option C above, or contact CSC to request changes to the setpoints or the shared-savings split shown in this report. Once an option is chosen, CSC schedules the BAS setpoint change and confirms the effective date with the client. After the change is made, savings are checked against the building’s ongoing monthly utility billing.',
   hvacShares: function (h) {
     return (
       'Cooling kWh = billed kWh above the electric baseload (' +
@@ -2472,10 +2470,6 @@ function rptPageWoodlandCharts(n, d) {
     '<div style="margin:10px 0">' +
     shareChart +
     '</div>' +
-    '</div>' +
-    '<h2>Next Steps</h2>' +
-    '<div class="rpt-su">' +
-    WD_TEXT.nextSteps +
     '</div>';
 
   return rptPage(n, 'Charts — Savings Options Comparison', body, { data: { project: d.project }, letterhead: false });
@@ -3371,8 +3365,6 @@ async function exportWoodlandReportToXlsx(data) {
   data.options.forEach(function (o) {
     ws7.addRow(['Option ' + o.letter, o.annualGas$, o.annualElec$, o.annualDem$, o.clientShare$, o.cscShare$]);
   });
-  ws7.addRow([]);
-  ws7.addRow([WD_TEXT.nextSteps]);
   ws7.addRow([]);
   var chartAnchorRow = ws7.rowCount + 2;
   var chartsHost = document.getElementById('woodlandChartsPage');
