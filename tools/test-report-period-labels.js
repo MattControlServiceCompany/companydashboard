@@ -37,7 +37,7 @@ ok(/<h2>Annual Savings vs Baseline<\/h2>/.test(a), 'annual heading "Annual Savin
 ok(!/Quarterly Savings/.test(a), 'annual has no "Quarterly Savings"');
 ok(!/>Quarter</.test(a), 'annual has no "Quarter" column');
 ok(/>Year</.test(a), 'annual has "Year" column');
-ok(/Percent is savings divided by baseline cost, which is billed cost plus savings/.test(a), 'annual Financial Summary states the percent basis');
+ok(/Percent is savings divided by billed cost plus savings/.test(a), 'annual Financial Summary states the percent basis');
 ok(!/Annualized/.test(a), 'annual CSC table has no Annualized column');
 ok(/3-Year Total/.test(a), 'annual CSC table keeps 3-Year Total');
 ok(/<h2>Quarterly Savings vs Baseline<\/h2>/.test(q), 'quarterly heading unchanged');

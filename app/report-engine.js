@@ -2386,7 +2386,7 @@ function _rptApportion(values, total) {
 // _rptPctBasisText(d, word) - the ONE sentence that states the percent basis (savings divided by pctBase, set in
 // collectReportData). `word` is "quarter" or "period". Every report page that prints a savings percent uses it.
 function _rptPctBasisText(d, word) {
-  return 'Percent is savings divided by baseline cost, which is billed cost plus savings: ' + _fmtUSD(d.totals.pctBase, '$0') + ' for the ' + word + '.';
+  return 'Percent is savings divided by billed cost plus savings (' + _fmtUSD(d.totals.pctBase, '$0') + ' for the ' + word + ').';
 }
 
 // The facts the pages and the findings share, from d only.

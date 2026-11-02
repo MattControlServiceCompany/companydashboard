@@ -290,7 +290,7 @@ const fp = run(ctx, '(function(d){ return _rptQFacts(d); })')(dp);
 assert(fp.parts.A.electric + fp.parts.A.gas + fp.parts.A.propane === 3654, 'fuel parts add to the building total: ' + [fp.parts.A.electric, fp.parts.A.gas, fp.parts.A.propane].join('+'));
 const energy = run(ctx, '(function(d,f){ return _rptQEnergyPage(3,d,f); })')(dp, fp).replace(/<[^>]+>/g, ' ');
 assert(/\$3,295/.test(energy) && /\$359/.test(energy) && !/\$3,294/.test(energy), 'page 3 prints the apportioned parts (3,295 and 359)');
-assert(/billed cost plus savings/.test(results), 'percent note states the denominator');
+assert(/divided by billed cost plus savings/.test(results), 'percent note states the denominator');
 
 console.log('\n' + passed + ' passed, ' + failed + ' failed');
 process.exit(failed ? 1 : 0);
