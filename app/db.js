@@ -26,11 +26,13 @@ const DB = (() => {
   const BATCH_GET_TIMEOUT_MS = 60000; // one batched GET (a value can be several MB gzipped)
   const TOMBSTONE_RETRY_BASE_MS = 5000; // deletion-record fetch failed: retry 5s, 10s, 20s ... up to 5 min
   const TOMBSTONE_RETRY_MAX_MS = 5 * 60 * 1000;
-  // Netlify credit cost (2026-10-07): NO timer asks the server whether data changed. The check runs on
-  // page load (_hydrate), when the tab becomes visible, and when the window gains focus; at most once per
-  // REMOTE_CHECK_MIN_MS and never while the tab is hidden. The retry queue drains on load, 'online', after
-  // a write, and on a back-off timer only while sendable items are queued (it stops when the queue is empty).
-  const REMOTE_CHECK_MIN_MS = 5 * 60 * 1000;
+  // Netlify credit cost: the server is asked whether data changed on page load (_hydrate), when the tab becomes
+  // visible, when the window gains focus, and by ONE poll timer (REMOTE_POLL_MS) that runs ONLY while the tab is
+  // visible (it is cleared when the tab hides, so a hidden or idle tab makes 0 calls). The first checks never come
+  // closer than REMOTE_CHECK_MIN_MS since the last manifest GET of any kind. The retry queue drains on load,
+  // 'online', after a write, and on a back-off timer only while sendable items are queued.
+  const REMOTE_POLL_MS = 60 * 1000;
+  const REMOTE_CHECK_MIN_MS = 50 * 1000; // below REMOTE_POLL_MS so a poll tick is never skipped by its own throttle
   const DRAIN_BACKOFF_MIN_MS = 15000;
   const DRAIN_BACKOFF_MAX_MS = 5 * 60 * 1000;
 
@@ -1430,6 +1432,25 @@ const DB = (() => {
     return cfg.setItems(merge.value, items);
   }
 
+  function _sameCanonical(key, a, b) {
+    try {
+      return _canonicalJSON(stripDerivedCaches(key, a)) === _canonicalJSON(stripDerivedCaches(key, b));
+    } catch (e) {
+      return false;
+    }
+  }
+  function _isBackgroundList(key) {
+    const cfg = _collectionCfg(key);
+    return !!cfg && (cfg === MERGE_ONLY_CONFIG.calHist || cfg === MERGE_ONLY_CONFIG.audit);
+  }
+  // 2026-11-02: after a conflict is resolved the page still holds the old list in memory (the table showed
+  // the value the user just discarded until a reload). Announce it like a change from the other user:
+  // app/sync-ui.js reloads the page when that is safe (else shows the refresh bar).
+  function _announceResolvedView(key, epoch) {
+    if (epoch !== _identityEpoch || typeof window === 'undefined') return;
+    window.dispatchEvent(new CustomEvent('dbRemoteApplied', { detail: { keys: [key], reason: 'conflict-resolved' } }));
+  }
+
   // --- Conflict handling (write-time 409) -----------------------------------
   // `depth` counts re-sends after a merge; the queue takes over past the cap.
   // The identity epoch is captured here and re-checked after every await: a
@@ -1594,8 +1615,14 @@ const DB = (() => {
       window.dispatchEvent(new CustomEvent('dataUpdated', { detail: { key } }));
     }
     _setSynced(key, { version: current.version, hash: current.hash || null }, current.value);
+    // The merge result IS the server value (the other user already wrote every record we hold): nothing to send.
+    if (!merge.conflicts.length && _sameCanonical(key, value, current.value)) return true;
     await _resendMerged(key, value, epoch, depth);
-    if (epoch === _identityEpoch && typeof showToast === 'function') {
+    if (merge.conflicts.length) _announceResolvedView(key, epoch); // the user chose per record: redraw with the result
+    // Background history lists (calendar and BAS import history, audit log) are written by the app, not typed by the
+    // user, and often on page load: a merge there is not news, so no "merged with yours" message.
+    const quietMerge = !merge.conflicts.length && _isBackgroundList(key);
+    if (!quietMerge && epoch === _identityEpoch && typeof showToast === 'function') {
       showToast(
         merge.conflicts.length
           ? 'Your choices were saved. The other versions are in the conflict history.'
@@ -1681,6 +1708,7 @@ const DB = (() => {
       if (typeof showToast === 'function') {
         showToast('Loaded the latest saved version of this item.', 'info');
       }
+      _announceResolvedView(key, epoch);
       return;
     }
 
@@ -2707,15 +2735,34 @@ const DB = (() => {
     }
   }
 
-  // --- 2a.6 + M1: check for changes made by the other user (no timer) -----------
+  // --- 2a.6 + M1: check for changes made by the other user (visible-tab poll, see REMOTE_POLL_MS) -----------
   // A newer server version of a key this browser has NO pending edit for is
   // applied by the ONE hydration function (_hydrate: merge, never overwrite an
   // edit, archive what loses) and announced with `dbRemoteApplied`, so
   // app/sync-ui.js re-renders. A key that could not be applied (a pending local
   // edit waits in the queue, or the fetch failed) is announced with
   // `remoteChange`, which shows the passive "refresh" bar.
-  // _remoteCheckIfDue is the gate every trigger uses (tab visible again, window focus): never while the
+  // _remoteCheckIfDue is the gate every trigger uses (poll tick, tab visible again, window focus): never while the
   // tab is hidden, at most once per REMOTE_CHECK_MIN_MS since the last manifest GET of any kind.
+  // The poll (2026-11-02): the 60 s poll was removed 2026-10-07 and nothing replaced it, so a visible tab that never
+  // got a focus event never saw the other user's change (go-live test: 270 s). It is back, visible tab only.
+  let _remotePollTimer = null;
+  function _tabHidden() {
+    return typeof document !== 'undefined' && !!document.hidden;
+  }
+  function _armRemotePoll() {
+    if (_remotePollTimer || _tabHidden() || typeof window === 'undefined') return;
+    _remotePollTimer = setTimeout(() => {
+      _remotePollTimer = null;
+      if (_tabHidden()) return; // hidden: stop; the visibilitychange listener arms it again
+      _remoteCheckIfDue().catch((e) => console.warn('[DB] Remote poll failed:', e));
+      _armRemotePoll();
+    }, REMOTE_POLL_MS);
+  }
+  function _disarmRemotePoll() {
+    if (_remotePollTimer) clearTimeout(_remotePollTimer);
+    _remotePollTimer = null;
+  }
   function _remoteCheckIfDue() {
     if (typeof document !== 'undefined' && document.hidden) return Promise.resolve();
     if (Date.now() - _lastManifestAt < REMOTE_CHECK_MIN_MS) return Promise.resolve();
@@ -2970,10 +3017,15 @@ const DB = (() => {
     });
     if (typeof document !== 'undefined' && document.addEventListener) {
       document.addEventListener('visibilitychange', () => {
-        if (!document.hidden) _remoteCheckIfDue();
+        if (document.hidden) _disarmRemotePoll();
+        else {
+          _armRemotePoll();
+          _remoteCheckIfDue();
+        }
       });
     }
     window.addEventListener('focus', _remoteCheckIfDue);
+    _armRemotePoll();
     // Attempt an immediate drain in case the queue has leftover entries from
     // a prior offline session and we're already online.
     _drainQueueOnce();

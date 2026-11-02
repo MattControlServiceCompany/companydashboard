@@ -350,6 +350,27 @@
   // (and .ems-modal-bg.open on the EMS view).
   var OPEN_DIALOG_SELECTOR =
     '.modal-bg.open, .ems-modal-bg.open, .modal-overlay.open, .modal.open, #ch-conflict-overlay, dialog[open]';
+  // Any field on the page whose value differs from what the page loaded with holds
+  // an unsaved edit, even when it no longer has focus. A reload would destroy it.
+  function _hasUnsavedField() {
+    var els = document.querySelectorAll('input, textarea, select');
+    for (var i = 0; i < els.length; i++) {
+      var f = els[i];
+      var tag = f.tagName;
+      if (tag === 'SELECT') {
+        for (var j = 0; j < f.options.length; j++) {
+          if (f.options[j].selected !== f.options[j].defaultSelected) return true;
+        }
+      } else if (tag === 'TEXTAREA') {
+        if (f.value !== f.defaultValue) return true;
+      } else if (f.type === 'checkbox' || f.type === 'radio') {
+        if (f.checked !== f.defaultChecked) return true;
+      } else if (f.type !== 'hidden' && f.type !== 'button' && f.type !== 'submit' && f.type !== 'reset' && f.type !== 'file') {
+        if (f.value !== f.defaultValue) return true;
+      }
+    }
+    return false;
+  }
   function _safeToReload() {
     var a = document.activeElement;
     var typing =
@@ -358,7 +379,7 @@
     var unsent =
       (window.DB && typeof window.DB.getQueueDepth === 'function' && window.DB.getQueueDepth() > 0) ||
       (typeof window.pdfQueueDepth === 'function' && window.pdfQueueDepth() > 0);
-    return !typing && !dialog && !unsent;
+    return !typing && !dialog && !unsent && !_hasUnsavedField();
   }
   // A change that arrives while a reload is unsafe is KEPT (the stamp already
   // advanced, so no later poll would announce it again). It is retried every
@@ -384,12 +405,18 @@
   });
   window.addEventListener('dbRemoteApplied', function (e) {
     var keys = (e.detail && e.detail.keys) || [];
-    if (_safeToReload()) window.location.reload();
-    else {
-      renderRemoteChangeBanner(keys);
-      _reloadWhenSafe();
-    }
+    var go = function () {
+      if (_safeToReload()) window.location.reload();
+      else {
+        renderRemoteChangeBanner(keys);
+        _reloadWhenSafe();
+      }
+    };
+    // After a conflict choice (reason 'conflict-resolved') the "Your choices were saved" message shows first.
+    if (e.detail && e.detail.reason === 'conflict-resolved') setTimeout(go, CONFLICT_RELOAD_DELAY_MS);
+    else go();
   });
+  var CONFLICT_RELOAD_DELAY_MS = 2500;
 
   window.addEventListener('dbOfflineBanner', function (e) {
     var d = (e && e.detail) || {};
