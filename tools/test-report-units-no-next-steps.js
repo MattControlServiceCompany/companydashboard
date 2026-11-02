@@ -53,7 +53,12 @@ const ok = (c, m) => {
       const html = _rptQuarterReportHTML(d, { appendixD: false, environmentalImpact: false, approvedChanges: false });
       const text = html.replace(/<[^>]+>/g, ' ');
       window.__html = html;
-      return { text, pages: (html.match(/class="rpt-page/g) || []).length };
+      const wd = rptPageWoodlandCharts(7, {
+        cfg: { clientSharePct: 60 },
+        project: { name: 'Test Project' },
+        options: [{ letter: 'A', annualGas$: 100, annualElec$: 50, annualDem$: 20, clientShare$: 100, cscShare$: 70 }],
+      });
+      return { text, wdText: wd.replace(/<[^>]+>/g, ' '), pages: (html.match(/class="rpt-page/g) || []).length };
     });
     const t = out.text;
     ok(/\bkWh\b/.test(t), 'report text contains "kWh"');
@@ -65,6 +70,8 @@ const ok = (c, m) => {
     ok(!/next steps/i.test(t), 'report text has no "Next Steps"');
     ok(!/trend logs for anomalies/i.test(t), 'report text has no "trend logs for anomalies"');
     ok(!/trend logs/i.test(t), 'report text has no "trend logs" advice');
+    ok(out.wdText.length > 100 && /Savings Options Comparison/.test(out.wdText), 'savings options charts page renders');
+    ok(!/next steps/i.test(out.wdText) && !/To proceed, choose Option/i.test(out.wdText), 'savings options charts page has no "Next Steps"');
     ok(errs.length === 0, 'no page errors' + (errs.length ? ': ' + errs[0] : ''));
     console.log('INFO pages=' + out.pages);
   } finally {

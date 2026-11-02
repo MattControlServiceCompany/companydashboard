@@ -2507,6 +2507,13 @@ async function siteResetAllMeterTableSettings() {
    site-ui.js delegates to this array and should NOT maintain its own copy.
 */
 var RELEASE_NOTES = [
+  { v: 'v2026.11.02.196', date: '2026-11-02', title: 'Quarterly report: schedule and set point table; clearer degree day text',
+    items: [
+      { type: 'feature', text: 'Quarterly report: a new page lists the schedule and set point table for the equipment in the report.' },
+      { type: 'change', text: 'Quarterly report: the "Understanding Degree Days" text now has clearer examples.' },
+      { type: 'change', text: 'Database keep-alive: the nightly check now records its status so a missed run is easy to see.' }
+    ]
+  },
   { v: 'v2026.11.02.195', date: '2026-11-02', title: 'Energy Department: Generate Report "Bills through" note; faster sync',
     items: [
       { type: 'change', text: 'Energy Department > Generate Report: the "Bills through" line is now a plain note when the period is complete. The warning text shows only when the period is incomplete.' },
