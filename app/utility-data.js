@@ -2562,7 +2562,7 @@ function renderUDProjAggPanel(content) {
                     ? ' ' +
                       ctx.dataset.label +
                       ': ' +
-                      (ctx.parsed.y >= 0 ? '+' : '-') +
+                      (savingsSign(ctx.parsed.y, 2) === '+' ? '+' : savingsSign(ctx.parsed.y, 2) ? '-' : '') +
                       ' $' +
                       Math.abs(ctx.parsed.y).toLocaleString('en-US', {
                         minimumFractionDigits: 2,

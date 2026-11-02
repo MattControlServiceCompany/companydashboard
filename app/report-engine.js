@@ -5250,11 +5250,11 @@ function rptPageSavingsPerformance(n, d) {
         _fmtUSD(b.curCost, '$0') +
         '</td>' +
         '<td class="rpt-n ' +
-        (euiChange >= 0 ? 'rpt-g' : 'rpt-r') +
+        savingsSignColor(euiChange, 1, 'rpt-g', 'rpt-r', '') +
         '" contenteditable="true">' +
         curEUI +
         ' (' +
-        (euiChange >= 0 ? '+' : '') +
+        (savingsSign(euiChange, 1) === '+' ? '+' : '') +
         $p(euiChange) +
         ')</td>' +
         '</tr>'
@@ -5534,7 +5534,7 @@ function rptPageEUI(n, d) {
       const bl = b.eui.baseline || 0;
       const cur = b.eui.current || 0;
       const reduction = _rptPVn(d, 'eui trend', b.id, '', '', 'reduction_pct', bl > 0 ? ((bl - cur) / bl) * 100 : 0);
-      const redClass = reduction >= 0 ? 'rpt-g' : 'rpt-r';
+      const redClass = savingsSignColor(reduction, 1, 'rpt-g', 'rpt-r', '');
       const trendIcon =
         cur > 0 && bl > 0
           ? cur < bl
@@ -8429,7 +8429,7 @@ function rptPageBuildingSummary(n, d, b) {
     '<div style="font-size:14px;font-weight:700;color:' +
     _savColor(totalSaved) +
     '">' +
-    savingsSign(totalSaved, 0, true) +
+    (savingsSign(totalSaved, 0, true) ? '-' : '') +
     '$' +
     Math.abs(Math.round(totalSaved)).toLocaleString() +
     '</div>' +

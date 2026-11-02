@@ -105,7 +105,8 @@ async function part2() {
     }
     await page.goto(site);
     await page.waitForTimeout(5000);
-    const pid = await page.evaluate(() => (projects.find((p) => /louisburg/i.test(p.name)) || projects[0]).id);
+    const wantName = process.env.CH_TEST_PROJECT || ''; // optional project name; default is the first project
+    const pid = await page.evaluate((n) => (projects.find((p) => p.name === n) || projects[0]).id, wantName);
     // The colours the page resolves for the palette names, so a cell colour can be compared by name.
     const pal = await page.evaluate(() => {
       const probe = (v) => { const e = document.createElement('span'); e.style.color = v; document.body.appendChild(e); const c = getComputedStyle(e).color; e.remove(); return c; };
