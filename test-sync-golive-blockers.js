@@ -2239,12 +2239,16 @@ const ok = (body) => ({ ok: true, status: 200, json: async () => body });
       .split('\r')
       .join('');
     const sel = src.match(/var OPEN_DIALOG_SELECTOR =[\s\S]*?;\n/)[0];
-    const doc = { activeElement: st.active || null, querySelector: (q) => (st.dialog ? { matched: q } : null) };
+    const doc = {
+      activeElement: st.active || null,
+      querySelector: (q) => (st.dialog ? { matched: q } : null),
+      querySelectorAll: () => st.fields || [],
+    };
     const win = {
       DB: { getQueueDepth: () => st.queue || 0 },
       pdfQueueDepth: () => st.pdfQueue || 0,
     };
-    return new Function('document', 'window', sel + cutFn('sync-ui.js', '_safeToReload') + '; return _safeToReload();')(
+    return new Function('document', 'window', sel + cutFn('sync-ui.js', '_hasUnsavedField') + cutFn('sync-ui.js', '_safeToReload') + '; return _safeToReload();')(
       doc,
       win,
     );
@@ -2801,6 +2805,7 @@ const ok = (body) => ({ ok: true, status: 200, json: async () => body });
         return st.active || null;
       },
       querySelector: (q) => (st.dialog ? { matched: q } : null),
+      querySelectorAll: () => st.fields || [],
       getElementById: (id) => els[id] || null,
       createElement: () => mkEl(),
       body: mkEl(),
@@ -2876,6 +2881,24 @@ const ok = (body) => ({ ok: true, status: 200, json: async () => body });
     ui2.fire('dbRemoteApplied', { keys: ['a'] });
     ui2.fire('dbRemoteApplied', { keys: ['b'] });
     assert.strictEqual(ui2.intervals(), 1, 'one retry loop');
+  });
+  await t('POLL3 text typed in a blurred field blocks the reload and is kept; reloads once saved', () => {
+    const typed = { tagName: 'INPUT', type: 'text', value: 'half-written note', defaultValue: '' };
+    const st = { active: null, fields: [typed] };
+    const ui = loadSyncUi(st);
+    ui.fire('dbRemoteApplied', { keys: ['en_tasks'] });
+    assert.strictEqual(st.reloads, 0, 'unsaved text in a blurred field: no reload');
+    ui.tick();
+    assert.strictEqual(st.reloads, 0, 'still unsaved: still no reload');
+    assert.strictEqual(typed.value, 'half-written note', 'text kept');
+    typed.defaultValue = typed.value; // saved
+    ui.tick();
+    assert.strictEqual(st.reloads, 1, 'saved: reload');
+    const sel = { tagName: 'SELECT', options: [{ selected: true, defaultSelected: false }] };
+    const chk = { tagName: 'INPUT', type: 'checkbox', checked: true, defaultChecked: false };
+    assert.strictEqual(safeToReload({ fields: [sel] }), false, 'changed select');
+    assert.strictEqual(safeToReload({ fields: [chk] }), false, 'changed checkbox');
+    assert.strictEqual(safeToReload({ fields: [{ tagName: 'INPUT', type: 'text', value: 'a', defaultValue: 'a' }] }), true);
   });
   await t('POLL2 a change seen while safe reloads at once and starts no retry loop', () => {
     const st = {};
