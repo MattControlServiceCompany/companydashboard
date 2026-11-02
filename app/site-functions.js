@@ -2507,6 +2507,15 @@ async function siteResetAllMeterTableSettings() {
    site-ui.js delegates to this array and should NOT maintain its own copy.
 */
 var RELEASE_NOTES = [
+  { v: 'v2026.11.02.198', date: '2026-11-02', title: 'Quarterly and annual reports: clearer wording and layout',
+    items: [
+      { type: 'change', text: 'Quarterly and annual reports: clearer wording and labels throughout.' },
+      { type: 'change', text: 'Quarterly and annual reports: the findings and the contract now share one page.' },
+      { type: 'change', text: 'Quarterly and annual reports: schedule set points are now grouped together.' },
+      { type: 'fix', text: 'Quarterly and annual reports: weather for any missing months is now fetched before the report builds, so the figures are complete.' },
+      { type: 'feature', text: 'Report preview: a warning now shows when the hours and set points page is left out.' }
+    ]
+  },
   { v: 'v2026.11.02.197', date: '2026-11-02', title: 'BAS Schedules: import audit log and baseline',
     items: [
       { type: 'feature', text: 'BAS Schedules card: new "Import audit log" button reads a BAS audit log file, including the daily scheduled audit log files.' },
