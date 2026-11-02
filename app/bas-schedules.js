@@ -7,6 +7,7 @@
 //   en_bas_snap_<pid>    { "YYYY-MM-DD": { forDate, importedAt, importedBy, rows:{ "location|program": [[start,end,mode]] } } }
 //   en_bas_hist_<pid>    [ { id, kind, at, by, forDate, comparedTo, buildings, counts, byBuilding, added, removed, changed } ]  newest first, 50 (imports only; actions are in en_bas_acthist_<pid>, 50)
 //   en_bas_groups_<pid>  { importedAt, importedBy, groups:{ "building|group": { building, group, schedules, members } } }
+//   en_bas_schedhistory_<pid>  { version, buildings:[ { building, baselineWeekday, weekday, weekend, setPoints } ] }  written by "Import audit log" (BasAuditLog, app/bas-audit-log.js), read by the quarterly report
 //
 // Network: none. Opening the page or the tab reads saved data only. Files are read in the browser.
 // The CSV is read by emParseEffectiveSchedulesCSV and the time blocks by _emScheduleBlocks (app/equipment-matrix.js),
@@ -359,10 +360,14 @@
       '<div class="card pcal" style="margin-bottom:16px"><div class="card-hdr" style="justify-content:space-between"><span class="card-title">BAS schedules</span>' +
       '<span style="display:flex;gap:8px;flex-wrap:wrap">' +
       '<button class="btn btn-em btn-sm" onclick="document.getElementById(\'bas-file-' + pid + '\').click()">Import schedules</button>' +
-      '<button class="btn btn-ghost btn-sm" onclick="document.getElementById(\'bas-gfile-' + pid + '\').click()">Import scheduling groups</button></span></div>' +
+      '<button class="btn btn-ghost btn-sm" onclick="document.getElementById(\'bas-gfile-' + pid + '\').click()">Import scheduling groups</button>' +
+      '<button class="btn btn-ghost btn-sm" onclick="document.getElementById(\'bas-afile-' + pid + '\').click()">Import audit log</button>' +
+      '<button class="btn btn-ghost btn-sm" onclick="document.getElementById(\'bas-bfile-' + pid + '\').click()">Import baseline (Set Points sheet)</button></span></div>' +
       '<div style="padding:16px">' +
       '<input class="bas-file" type="file" id="bas-file-' + pid + '" accept=".csv,text/csv" multiple onchange="basPick(' + pid + ',this)">' +
       '<input class="bas-file" type="file" id="bas-gfile-' + pid + '" accept=".csv,text/csv" multiple onchange="basPickGroups(' + pid + ',this)">' +
+      '<input class="bas-file" type="file" id="bas-afile-' + pid + '" accept=".csv,text/csv" multiple onchange="basPickAudit(' + pid + ',this)">' +
+      '<input class="bas-file" type="file" id="bas-bfile-' + pid + '" accept=".csv,text/csv" multiple onchange="basPickBaseline(' + pid + ',this)">' +
       '<div class="pcal-msg" id="bas-msg-' + pid + '" role="status">' + esc(s.msg) + '</div>' +
       pendingBox(pid) +
       datesSection(pid, snaps) +
@@ -457,6 +462,93 @@
       (att && att.error ? ' Equipment Matrix schedules not filled: ' + att.error : '');
     render(pid);
     if (typeof window.pcalRender === 'function') window.pcalRender(pid); // the events list BAS column uses the new copy
+  };
+  // Audit log import: the WebCTRL audit log files (all buildings in one pick) -> the schedule history record the
+  // quarterly report prints (en_bas_schedhistory_<pid>). BasAuditLog does the reading and the merge; this is the one writer.
+  // Set points of the equipment in the stored WebCTRL points list (the Equipment Matrix, imported by emHandleImport):
+  // the matrix's own point reader (emGetNormalizedPoints) and type label (emFormatEquipTypeLabel), no second parser.
+  window.basPointSource = function (matrixRows) {
+    return BasBaseline.fromPoints(
+      (matrixRows || []).map(function (r) {
+        var pts = emGetNormalizedPoints(r) || {};
+        return { building: r.building, type: emFormatEquipTypeLabel(r), heat: pts.zoneHtgSetpoint, cool: pts.zoneCoolSetpoint };
+      }),
+    );
+  };
+  var _importing = {}; // pid -> true while an audit log or baseline import runs (one at a time; they write the same record)
+  function guarded(pid, input, work) {
+    if (_importing[pid]) {
+      input.value = '';
+      return say(pid, 'An import is already running. Wait for it to finish.');
+    }
+    _importing[pid] = true;
+    readFiles(input)
+      .then(function (files) {
+        return files.length ? work(files) : null;
+      })
+      .catch(function (e) {
+        say(pid, 'The import failed: ' + (e && e.message ? e.message : e));
+      })
+      .then(function () {
+        _importing[pid] = false;
+      });
+  }
+  window.basPickAudit = function (pid, input) {
+    guarded(pid, input, async function (files) {
+      var events = [];
+      var lastDay = '';
+      var bad = '';
+      files.forEach(function (f) {
+        var r = BasAuditLog.parseRows(baSplitCSV(f.text));
+        if (r.error) bad = bad || f.name + ': ' + r.error;
+        else {
+          events = events.concat(r.events);
+          if (r.lastDay > lastDay) lastDay = r.lastDay;
+        }
+      });
+      if (bad) return say(pid, bad);
+      // The history is rebuilt from every event read so far (en_bas_auditevents_<pid>), not from these files alone.
+      var store = BasAuditLog.mergeStore(DB.get('en_bas_auditevents_' + pid, null), events, lastDay);
+      var results = BasAuditLog.analyze(BasAuditLog.storeEvents(store), window.basPointSource(((typeof emLoadMatrix === 'function' && emLoadMatrix(pid)) || {}).rows), store.lastDay);
+      if (!results.length) return say(pid, 'No schedule or set point rows were found in these files.');
+      await DB.set('en_bas_auditevents_' + pid, store);
+      var sizeWarn = BasAuditLog.storeWarning(store);
+      var names = typeof getUDBldgs === 'function' ? (getUDBldgs(pid) || []).map(function (b) { return b.name; }) : [];
+      var res = BasAuditLog.apply(DB.get('en_bas_schedhistory_' + pid, null), results, names);
+      await DB.set('en_bas_schedhistory_' + pid, res.rec);
+      var lost = res.matched.filter(function (m) { return !m.project; }).map(function (m) { return m.log; });
+      var saved = res.matched.length - lost.length;
+      say(
+        pid,
+        'Saved schedule and set point history for ' + plural(saved, 'building', 'buildings') + ' from ' + plural(files.length, 'file', 'files') + '.' +
+          (lost.length ? ' Not imported, no single matching building in this project: ' + lost.join(', ') + '.' : '') + sizeWarn,
+      );
+    });
+  };
+  // Baseline import: the Optimization Strategy Sheet "Set Points" sheet (CSV) -> the baseline entries of the same
+  // record (en_bas_schedhistory_<pid>). BasBaseline reads and merges; a baseline typed by a person is kept.
+  window.basPickBaseline = function (pid, input) {
+    guarded(pid, input, async function (files) {
+      var parsed = [];
+      var bad = '';
+      files.forEach(function (f) {
+        var r = BasBaseline.parseRows(baSplitCSV(f.text));
+        if (r.error) bad = bad || f.name + ': ' + r.error;
+        else parsed = parsed.concat(r.buildings);
+      });
+      if (bad) return say(pid, bad);
+      if (!parsed.length) return say(pid, 'No building rows were found in these files.');
+      var names = typeof getUDBldgs === 'function' ? (getUDBldgs(pid) || []).map(function (b) { return b.name; }) : [];
+      var res = BasBaseline.apply(DB.get('en_bas_schedhistory_' + pid, null), parsed, names);
+      await DB.set('en_bas_schedhistory_' + pid, res.rec);
+      var lost = res.matched.filter(function (m) { return !m.project; }).map(function (m) { return m.log; });
+      var saved = res.matched.length - lost.length;
+      say(
+        pid,
+        'Saved the baseline hours and set points for ' + plural(saved, 'building', 'buildings') + '.' +
+          (lost.length ? ' Not imported, no single matching building in this project: ' + lost.join(', ') + '.' : ''),
+      );
+    });
   };
   window.basPickGroups = function (pid, input) {
     readFiles(input).then(function (files) {

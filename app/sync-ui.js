@@ -490,6 +490,7 @@
     ['en_bas_acthist_', 'this schedule action history'],
     ['en_bas_groups_', 'these scheduling groups'],
     ['en_bas_schedhistory_', 'this building automation schedule history record'],
+    ['en_bas_auditevents_', 'these stored audit log events'],
     ['en_bas_', 'this building automation trend data'],
     ['en_alarms_', 'this alarm log'],
     ['en_audit_', 'this facility audit'],
