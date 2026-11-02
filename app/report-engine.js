@@ -3773,13 +3773,14 @@ function _rptQuarterReportHTML(d, s) {
   if (s.financial !== false) pages.push(tag(_rptQResultsPage(n++, d, f), 'financial'));
   if (s.savingsPerformance !== false) pages.push(tag(_rptQEnergyPage(n++, d, f), 'savingsPerformance'));
   var _joinFC = s.observations !== false && (s.yearToDate !== false || s.contractProjection !== false);
+  var _joinTitle = s.contractProjection === false ? 'Findings' : 'Findings and Contract Position';
   if (_joinFC)
     pages.push(
       tag(
-        rptPage(n++, 'Findings and Contract Position', _rptQSub('observations', _rptQFindingsBody(d, f)) + _rptQSub('contractProjection', _rptQContractBody(d, f)), {
+        rptPage(n++, _joinTitle, _rptQSub('observations', _rptQFindingsBody(d, f)) + _rptQSub('contractProjection', _rptQContractBody(d, f)), {
           data: d,
           letterhead: false,
-          label: 'Page ' + (n - 1) + ' - Findings and Contract Position',
+          label: 'Page ' + (n - 1) + ' - ' + _joinTitle,
         }),
         'observations',
       ),

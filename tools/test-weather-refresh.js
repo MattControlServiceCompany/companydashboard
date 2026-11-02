@@ -266,6 +266,20 @@ const fakeFetch = (series) => async (url) => {
     n++;
     console.log('ok  CONTRACTED PROJECT: empty ZIP back-fill added baseline-period weather and changed no stored baseline');
   }
+  {
+    // Real getWeatherFingerprint: replacing a month in place (same array, same length) must change the fingerprint.
+    const fpSrc = udSrc.slice(udSrc.indexOf('function getWeatherFingerprint('), udSrc.indexOf('function getWeatherForBuilding('));
+    const arr = [{ ym: '2026-01', hdd: 100, cdd: 0 }, { ym: '2026-02', hdd: 80, cdd: 0 }];
+    const fsb = { arr, Math, Number, Object };
+    vm.createContext(fsb);
+    vm.runInContext("function _weatherZipFor() { return '55501'; } function wddLoadCache() { return arr; } " + fpSrc, fsb);
+    const before = vm.runInContext('getWeatherFingerprint("p1","b1")', fsb);
+    arr[1] = { ym: '2026-02', hdd: 95, cdd: 0 };
+    const after = vm.runInContext('getWeatherFingerprint("p1","b1")', fsb);
+    assert.notStrictEqual(before, after, 'fingerprint must change after an in-place month replace');
+    n++;
+    console.log('ok  getWeatherFingerprint changes when a month is replaced in place');
+  }
   console.log('ALL PASSED (' + n + ' checks)');
 })().catch((e) => {
   console.error('FAIL', e);
