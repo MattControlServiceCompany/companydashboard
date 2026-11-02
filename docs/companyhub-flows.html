@@ -327,6 +327,7 @@ var FLOWS = [
       { from:'user', to:'energy', label:'User imports Effective Schedules files and enters the date they cover', detail:'app/bas-schedules.js. emParseEffectiveSchedulesCSV and _emScheduleBlocks (app/equipment-matrix.js) read the files. The date is required.' },
       { from:'energy', to:'ls', label:'BasDiff compares with the earlier copy; history and copy are saved', detail:'app/bas-diff.js (the only comparison). Writes en_bas_hist_<pid> (merged by id) then en_bas_snap_<pid>. Scheduling groups: en_bas_groups_<pid>.' },
       { from:'user', to:'ls', label:'Import audit log: hours and set points by date range are saved for the quarterly report', detail:'app/bas-audit-log.js (the only reader of the audit log). One write: DB.set en_bas_schedhistory_<pid>, replacing that building and date window; importing the same files again changes nothing.' },
+      { from:'user', to:'ls', label:'Import baseline (Set Points sheet): baseline hours and set points are saved in the same record', detail:'app/bas-baseline.js. Only the baseline entries of en_bas_schedhistory_<pid>; a baseline typed by a person is kept; the same file again changes nothing.' },
     ]
   },
   {
