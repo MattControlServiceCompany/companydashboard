@@ -544,6 +544,17 @@ No timer, env var or host change. Internal only: no report, export, portal or pr
 - 3-year projection block (top of the panel): `getProjectSavingsMethodsProjection(projId, data)` -> `smProjectMethods` (computations/savings.js). It adds no projection rule: each method's complete quarters (3 billed months, none waiting for weather; each floored at $0) are the `quarterlyActuals` of `_rptContractProjection` -> `computeContractProjection` (computations/csc.js), with the contract terms from `collectReportData`. M4 uses the site's billed quarter (`totals.savings`, printed figure for a presented quarter), so M4 total equals the site's 3-year total; M1 to M3 use recomputed quarters.
 - Check: `node test-savings-methods-internal.js` (math, bridge, waiting, and a scan that proves no other file refers to the section). In the app, open the button on a contracted project and compare the M4 Q3 total with the project's billed Q3 savings.
 
+## Quarterly report review fixes (2026-11-02, branch fix/2026-11-02-q3-report-review-findings)
+
+No timer, env var or host change. Runs on report render only.
+- Billed to date: `_rptBilledToDate(contract, q)` (app/report-engine.js) is the one sum of `contract.quarterlyActuals` through quarter q. The cover, the compensation table, the contract table and the projection chart call it. `totals.cumulativeSavings` is no longer printed on the quarterly pages.
+- Rounding: `_rptApportion(values, total)` gives whole numbers that add to `Math.round(total)` (largest fraction first). `_rptBuildingTarget` uses it for the building targets; `_rptQFacts` uses it for each building's month cells (`f.shown`), and a month total is the sum of those cells.
+- Baseline cost: `collectReportData` sets each building `blCost` = amount billed in the period (the `rawBills` amounts, the same ones the bills table prints) + savings; `totals.blCost` is their sum. Every percent (`savingsPct`, the page 2 total percent and its note) reads it. `targetWeight` is the old baseline-year cost, kept only as the share basis for the building savings targets.
+- EUI period: `reportEndYM` in `collectReportData` is the quarter end of a quarterly report (else the last report month); EUI months after it are not used, so the label ends at the report quarter end.
+- Projection note: page 5 prints the billed-to-date and remaining-target amounts behind Year 1.
+- PDF text layer: the app print (window.print, Save as PDF) keeps every digit. A PDF run through the Bluebeam printer driver (Producer "Bluebeam Brewery") lost digit "1" in the text layer; that is the driver, not the app.
+- Check: `node tools/test-report-q3-review-findings.js` and `node tools/test-report-pdf-text-digits.js` (headless Chromium + pdftotext).
+
 ## 7. How to keep this file current
 
 Any commit that changes these facts must update this file in the same commit.

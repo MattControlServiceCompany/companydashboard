@@ -205,6 +205,12 @@ function collectReportData(projId, buildingIds, reportDateStr, reportType, selec
   const periodMonths = reportYMs.length;
   const reportStart = reportYMs[0] || '';
   const reportEnd = reportYMs[reportYMs.length - 1] || '';
+  // The last month the report covers: the quarter end for a quarterly report, else the last report month.
+  // EUI months after it are not in the report (their weather and bills are partial) and never enter the EUI.
+  const reportEndYM =
+    reportType === 'quarterly' && reportYMs._qStartMo
+      ? reportYMs._qYear + '-' + String(reportYMs._qStartMo + 2).padStart(2, '0')
+      : reportEnd;
 
   // Build period label
   let periodLabel = '';
@@ -265,6 +271,37 @@ function collectReportData(projId, buildingIds, reportDateStr, reportType, selec
 
   const perBldgSavByYM = {};
   const _reportYMsSorted = reportYMs.slice().sort();
+  // --- Raw utility bills for Appendix D ---
+  const rawBills = [];
+  allBldgMeters.forEach(({ b, m, bills }) => {
+    (bills || []).forEach((bill) => {
+      var _billYm = billMonth(bill, bills);
+      if (!reportYMs.includes(_billYm)) return;
+      rawBills.push({
+        // Month of THIS bill within its own meter's bill chain. Appendix D groups by this value and never
+        // re-runs month assignment on the pooled bills of several meters (WP-09).
+        ym: _billYm,
+        bid: b.id,
+        building: b.name || '—',
+        commodity: m.commodity,
+        provider: m.provider || bill.provider || '—',
+        account: m.account || bill.account || '—',
+        start: bill.start || '',
+        end: bill.end || '',
+        kwh: parseFloat(bill.kwh) || parseFloat(bill.usage) || 0,
+        kw: parseFloat(bill.demandKW) || 0,
+        therms: resolveGasUsageTherms(bill),
+        gallons: parseFloat(bill.gallonsDelivered) || 0,
+        amount: parseFloat(bill.totalCost) || parseFloat(bill.cost) || 0,
+        billDate: bill.billDate || bill.end || '',
+        pdfKey: bill.pdfKey || null,
+        // Estimated rows (feat/estimate-missing-period, 2026-09-25): pass through so
+        // rptPageAppendixBills can label the row "Estimated" instead of showing it as a real bill.
+        estimated: !!bill.estimated,
+      });
+    });
+  });
+
   const buildingsData = bldgs.map((b) => {
     const sqft = parseInt(b.sqft || 0);
     const bType = b.type || p.type || 'Other';
@@ -505,7 +542,10 @@ function collectReportData(projId, buildingIds, reportDateStr, reportType, selec
     });
 
     // Building EUI: the last 12 months of that window, annualized once for the building (x12/n).
-    const _euiYMs = Object.keys(euiByYM).sort().slice(-12);
+    const _euiYMs = Object.keys(euiByYM)
+      .filter((y) => !reportEndYM || y <= reportEndYM)
+      .sort()
+      .slice(-12);
     if (_euiYMs.length) {
       const _blSum = _euiYMs.reduce((t, y) => t + euiByYM[y].bl, 0);
       const _curSum = _euiYMs.reduce((t, y) => t + euiByYM[y].cur, 0);
@@ -585,8 +625,14 @@ function collectReportData(projId, buildingIds, reportDateStr, reportType, selec
 
     // Building savings percentage and status
     const bldgSavings = periodSavings;
-    const bldgBlCost = totalBldgBlCost;
     const bldgCurCost = totalBldgCurCost;
+    // ONE definition of baseline cost (Matt, 2026-11-02): what the period would have cost at baseline =
+    // the amount billed in the period (the bills listed in rawBills, the same amounts the report's bills table
+    // prints) + savings. The savings percent and the percent denominator the report prints both read it.
+    // targetWeight keeps the building's share basis for the savings target (baseline-year cost, unchanged).
+    const bldgBilled = rawBills.reduce((t, r) => (r.bid === b.id ? t + r.amount : t), 0);
+    const bldgBlCost = bldgBilled + bldgSavings;
+    const bldgTargetWeight = totalBldgBlCost;
     const bldgSavingsPct = bldgBlCost > 0 ? (bldgSavings / bldgBlCost) * 100 : 0;
     const targetPct = bldgSavPct * 100;
     let bldgStatus = 'on_track';
@@ -641,6 +687,7 @@ function collectReportData(projId, buildingIds, reportDateStr, reportType, selec
       propane,
       savings: bldgSavings,
       blCost: bldgBlCost,
+      targetWeight: bldgTargetWeight,
       curCost: bldgCurCost,
       savingsPct: bldgSavingsPct,
       targetPct: targetPct,
@@ -902,36 +949,6 @@ function collectReportData(projId, buildingIds, reportDateStr, reportType, selec
         usagePerYear: Math.round(annUsage / blYears),
         costPerYear: Math.round(annCost / blYears),
         regrCoeffs: regrCoeffs,
-      });
-    });
-  });
-
-  // --- Raw utility bills for Appendix D ---
-  const rawBills = [];
-  allBldgMeters.forEach(({ b, m, bills }) => {
-    (bills || []).forEach((bill) => {
-      var _billYm = billMonth(bill, bills);
-      if (!reportYMs.includes(_billYm)) return;
-      rawBills.push({
-        // Month of THIS bill within its own meter's bill chain. Appendix D groups by this value and never
-        // re-runs month assignment on the pooled bills of several meters (WP-09).
-        ym: _billYm,
-        building: b.name || '—',
-        commodity: m.commodity,
-        provider: m.provider || bill.provider || '—',
-        account: m.account || bill.account || '—',
-        start: bill.start || '',
-        end: bill.end || '',
-        kwh: parseFloat(bill.kwh) || parseFloat(bill.usage) || 0,
-        kw: parseFloat(bill.demandKW) || 0,
-        therms: resolveGasUsageTherms(bill),
-        gallons: parseFloat(bill.gallonsDelivered) || 0,
-        amount: parseFloat(bill.totalCost) || parseFloat(bill.cost) || 0,
-        billDate: bill.billDate || bill.end || '',
-        pdfKey: bill.pdfKey || null,
-        // Estimated rows (feat/estimate-missing-period, 2026-09-25): pass through so
-        // rptPageAppendixBills can label the row "Estimated" instead of showing it as a real bill.
-        estimated: !!bill.estimated,
       });
     });
   });
@@ -2167,8 +2184,23 @@ function _rptBuildingTarget(d, b) {
     d.period.type === 'quarterly'
       ? (d.contract.quarterlyTargets && d.contract.quarterlyTargets[q - 1]) || 0
       : d.contract.annualTarget || 0;
-  var tot = d.totals.blCost || 1;
-  return qT > 0 ? qT * (b.blCost / tot) : 0;
+  var wt = function (x) {
+    return x.targetWeight != null ? x.targetWeight : x.blCost || 0;
+  };
+  var tot =
+    d.buildings.reduce(function (s, x) {
+      return s + wt(x);
+    }, 0) || 1;
+  if (!(qT > 0)) return 0;
+  // Whole dollars that add to the target total (_rptApportion), so the building targets sum to the total row.
+  var whole = _rptApportion(
+    d.buildings.map(function (x) {
+      return qT * (wt(x) / tot);
+    }),
+    qT,
+  );
+  var idx = d.buildings.indexOf(b);
+  return idx >= 0 ? whole[idx] : qT * (wt(b) / tot);
 }
 
 // _rptWaitingYMs(d) - the months with no weather yet that block the savings figure this report prints. A
@@ -2314,6 +2346,37 @@ function _rptQuarterLabel(q, year) {
   return 'Q' + q + (year ? ' ' + year : '');
 }
 
+// _rptBilledToDate(contract, q) - savings billed from the first quarter through quarter q: the sum of
+// contract.quarterlyActuals (each quarter at its billable or printed figure). The ONE rule for "billed to
+// date"; the cover, the compensation table, the contract table and the projection chart all call it.
+function _rptBilledToDate(contract, q) {
+  return ((contract && contract.quarterlyActuals) || []).slice(0, q).reduce(function (s, v) {
+    return s + (v != null ? v : 0);
+  }, 0);
+}
+
+// _rptApportion(values, total) - whole numbers for `values` that add to Math.round(total): each value is
+// rounded down, then the units still owed go to the largest fractions (ties: first). The ONE rounding rule
+// for rows that must add to a total; nothing is adjusted by hand.
+function _rptApportion(values, total) {
+  var want = Math.round(total || 0);
+  var fl = values.map(function (v) {
+    return Math.floor(v || 0);
+  });
+  var left = want - fl.reduce(function (s, v) {
+    return s + v;
+  }, 0);
+  var order = values
+    .map(function (v, i) {
+      return { i: i, f: (v || 0) - fl[i] };
+    })
+    .sort(function (a, c) {
+      return c.f - a.f || a.i - c.i;
+    });
+  for (var k = 0; k < Math.abs(left) && order.length; k++) fl[order[left > 0 ? k % order.length : order.length - 1 - (k % order.length)].i] += left > 0 ? 1 : -1;
+  return fl;
+}
+
 // The facts the pages and the findings share, from d only.
 function _rptQFacts(d) {
   var q = d.period.quarter || 1;
@@ -2324,11 +2387,33 @@ function _rptQFacts(d) {
     return s + Math.round(b.savings || 0);
   }, 0);
   var notBilled = (d.totals.shortfallNotBilled || 0) >= 0.5 ? Math.round(billed) - rowsMeasured : 0;
+  // The month figures as printed: each building's months are whole dollars that add to its quarter figure
+  // (_rptApportion; plain rounding when the quarter figure is a printed one that the months do not add to).
+  // A month total is the sum of the printed building cells, so every row and column on the page adds up.
+  var shown = {};
+  d.buildings.forEach(function (b) {
+    var map = _rptBuildingMonthMap(b);
+    var vals = yms.map(function (ym) {
+      return (map[ym] || {}).sav || 0;
+    });
+    var sumVals = vals.reduce(function (s, v) {
+      return s + v;
+    }, 0);
+    var whole =
+      Math.abs(sumVals - (b.savings || 0)) < 1
+        ? _rptApportion(vals, b.savings || 0)
+        : vals.map(function (v) {
+            return Math.round(v);
+          });
+    shown[b.id] = {};
+    yms.forEach(function (ym, i) {
+      shown[b.id][ym] = whole[i];
+    });
+  });
   var months = yms.map(function (ym) {
     var sav = 0;
     d.buildings.forEach(function (b) {
-      var m = _rptBuildingMonthMap(b)[ym];
-      if (m) sav += m.sav;
+      sav += shown[b.id][ym];
     });
     return { ym: ym, name: _rptQMonthName(ym), sav: sav };
   });
@@ -2377,17 +2462,18 @@ function _rptQFacts(d) {
     rowsMeasured: rowsMeasured,
     notBilled: notBilled,
     months: months,
+    shown: shown,
     wxMonths: wxMonths,
     cddBl: d.weather && d.weather.totals ? d.weather.totals.cddBl : null,
     cddCur: d.weather && d.weather.totals ? d.weather.totals.cddCur : null,
     kwhPct: kwhPct,
-    kwhDiff: d.totals.kwhCur - d.totals.kwhBl,
+    kwhDiff: Math.round(d.totals.kwhCur) - Math.round(d.totals.kwhBl),
     saved: saved,
     over: over,
     flat: flat,
     savedSum: sum(saved),
     overSum: sum(over),
-    cumulative: d.totals.cumulativeSavings || 0,
+    cumulative: _rptBilledToDate(d.contract, q),
     waiting: !!(_rptWaitingYMs(d) && _rptWaitingYMs(d).length),
   };
 }
@@ -2716,10 +2802,9 @@ function _rptQResultsPage(n, d, f) {
   );
   var mRows = d.buildings
     .map(function (b) {
-      var map = _rptBuildingMonthMap(b);
       var cells = f.months
         .map(function (m) {
-          return _rptQSavTd((map[m.ym] || {}).sav || 0);
+          return _rptQSavTd(f.shown[b.id][m.ym]);
         })
         .join('');
       return '<tr><td>' + _escHtml(b.name) + '</td>' + cells + _rptQSavTd(b.savings) + '</tr>';
@@ -2786,9 +2871,9 @@ function _rptQResultsPage(n, d, f) {
     ' Results by Building</h2>' +
     t1 +
     _rptQNote(
-      'Percent is savings divided by the quarter' + "'" + 's baseline cost of ' +
+      'Percent is savings divided by baseline cost, which is billed cost plus savings: ' +
         _fmtUSD(d.totals.blCost, '$0') +
-        '. Savings price the change in usage at each month' + "'" + 's rate and include demand charges.',
+        ' for the quarter. Savings price the change in usage at each month' + "'" + 's rate and include demand charges.',
     ) +
     '<h2>Savings Measured by Month</h2>' +
     t2 +
@@ -2956,7 +3041,7 @@ function _rptQFinding(d, f, x) {
         'Electricity cost ' +
         money(e.costSaved) +
         ' more than baseline: ' +
-        _rptQN(Math.abs(e.kwhCur - e.kwhBl)) +
+        _rptQN(Math.abs(Math.round(e.kwhCur) - Math.round(e.kwhBl))) +
         ' kWh ' +
         (e.kwhCur > e.kwhBl ? 'above' : 'below') +
         ' (' +
@@ -3060,15 +3145,12 @@ function _rptQContractPage(n, d, f) {
   var qT = d.contract.quarterlyTargets || [0, 0, 0, 0];
   var acts = d.contract.quarterlyActuals || [];
   var qRows = '';
-  var tT = 0,
-    tB = 0;
+  var tT = 0;
+  var tB = f.cumulative; // billed to date: the same value the cover and the compensation table print
   for (var i = 0; i < 4; i++) {
     var done = i < f.q;
     var billed = done ? (acts[i] != null ? acts[i] : 0) : null;
-    if (done) {
-      tT += qT[i] || 0;
-      tB += billed;
-    }
+    if (done) tT += qT[i] || 0;
     qRows +=
       '<tr><td>' +
       _rptQuarterLabel(i + 1, f.year) +
@@ -3133,7 +3215,20 @@ function _rptQContractPage(n, d, f) {
     '<h2>Contract Projection</h2>' +
     t3 +
     _rptQNote(
-      'The projection assumes the remaining quarters meet their targets, with ' +
+      'Year ' +
+        d.contract.currentYear +
+        ' is the ' +
+        _fmtUSD(f.cumulative, '$0') +
+        ' billed through ' +
+        f.qLabel +
+        ' plus the ' +
+        _fmtUSD(
+          qT.slice(f.q).reduce(function (s, v) {
+            return s + (v || 0);
+          }, 0),
+          '$0',
+        ) +
+        ' target for the remaining quarters. Each later year is that year' + "'" + 's target, with ' +
         _escHtml(d.contract.escalation || 0) +
         '% annual utility rate escalation applied under the contract terms.',
     );
@@ -4360,7 +4455,9 @@ function rptPageFinancial(n, d) {
 
   // -- Building Performance table --
   const qTarget = d.contract.quarterlyTargets[q - 1] || 0;
-  const totBlCostForPct = d.totals.blCost || 1;
+  // The target share basis is targetWeight (baseline-year cost); blCost is billed cost + savings.
+  const _tw = (x) => (x.targetWeight != null ? x.targetWeight : x.blCost || 0);
+  const totBlCostForPct = d.buildings.reduce((t, x) => t + _tw(x), 0) || 1;
   const bRows = d.buildings
     .map(function (b) {
       // Problem 3 (2026-09-24, fix/report-headers-and-empty-period): 'no_data' renders its own
@@ -4373,7 +4470,7 @@ function rptPageFinancial(n, d) {
       // Wording and colour come from _rptResultOf, the same as the quarterly report.
       const _res = _rptResultOf(b, d);
       const statusClass = _res.cls;
-      const bldgProjSav = qTarget > 0 ? qTarget * (b.blCost / totBlCostForPct) : 0;
+      const bldgProjSav = qTarget > 0 ? qTarget * (_tw(b) / totBlCostForPct) : 0;
       const bldgProjCost = _rptPVn(d, 'building table', b.id, '', '', 'projected_cost', b.blCost - bldgProjSav);
       return (
         '<tr>' +
@@ -6145,9 +6242,7 @@ function rptPageContractProjection(n, d) {
   const actualSavings = (d && d.totals && d.totals.savings) || 0;
   const actCumSavings =
     currentYear === 1 && contract.quarterlyActuals
-      ? contract.quarterlyActuals.slice(0, q).reduce(function (s, v) {
-          return s + (v != null ? v : 0);
-        }, 0)
+      ? _rptBilledToDate(contract, q)
       : d && d.totals && d.totals.cumulativeSavings != null
         ? d.totals.cumulativeSavings
         : actualSavings;

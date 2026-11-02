@@ -75,6 +75,8 @@ const fns = [
   '_rptQuarterLabel',
   '_rptPeriodWords',
   '_rptContractProgressPct',
+  '_rptApportion',
+  '_rptBilledToDate',
   '_rptBuildingTarget',
   '_rptResultKind',
   '_rptWaitingYMs',
