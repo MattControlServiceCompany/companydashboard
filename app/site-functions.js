@@ -2511,7 +2511,10 @@ var RELEASE_NOTES = [
     items: [
       { type: 'change', text: 'Energy Department > Generate Report: the "Bills through" line is now a plain note when the period is complete. The warning text shows only when the period is incomplete.' },
       { type: 'fix', text: 'Sync: changes from the other user now appear within about a minute while the tab is open.' },
-      { type: 'fix', text: 'Sync: the table refreshes after a conflict, and the first sign-in no longer loses a save.' }
+      { type: 'fix', text: 'Sync: the table refreshes after a conflict, and the first sign-in no longer loses a save.' },
+      { type: 'change', text: 'Energy Department > Generate Report, quarterly report: quarters now show as "Q3 2026" in the text and page footers.' },
+      { type: 'change', text: 'Energy Department > Generate Report, quarterly report: energy and demand now show as kWh and kW.' },
+      { type: 'change', text: 'Energy Department > Generate Report: the Louisburg and Woodland client reports no longer have a Next Steps section.' }
     ]
   },
   { v: 'v2026.11.02.194', date: '2026-11-02', title: 'Savings / Reports: waiting-for-weather display, clearer labels',
