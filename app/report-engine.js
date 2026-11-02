@@ -1078,6 +1078,8 @@ function collectReportData(projId, buildingIds, reportDateStr, reportType, selec
     pollution,
     weather,
     setpoints,
+    // The project's BAS schedule history record (the one store: en_bas_schedhistory_<projectId>); null when none.
+    basScheduleHistory: _rptBasHistoryLoad(projId),
     meetings,
     approvedChanges: approvedChangesPeriod,
     approvedChangesYTDCount: approvedChangesYTD.length,
@@ -3264,6 +3266,110 @@ function _rptQBenchmarkPage(n, d, f) {
 
 // ---- Page 7: how savings are measured ---------------------------------------
 // ---- Page 7: results by meter and the bills behind them ----
+// ---- BAS schedule history table ----------------------------------------------
+// The project's BAS schedule history is one record in the project data store, key en_bas_schedhistory_<projectId>:
+//   { version: 1, buildings: [ { building, baselineWeekday: [{text}], weekday: [{text, from, to}],
+//     weekend: [{kind: 'baseline'|'period', text, from, to}], setPoints: [{kind: 'baseline'|'period', text, from, to}] } ] }
+// from and to are YYYY-MM-DD (to null = still in effect). The report prints the entries that fall in its period,
+// clipped to the period. No client value is in code: this function only lays out what the record holds.
+function _rptBasHistoryLoad(projId) {
+  var rec = typeof sget === 'function' ? sget('en_bas_schedhistory_' + projId, null) : null;
+  return rec && Array.isArray(rec.buildings) && rec.buildings.length ? rec : null;
+}
+function _rptBasDay(ymd) {
+  return _rptQMonthName(ymd) + ' ' + parseInt(ymd.slice(8, 10), 10);
+}
+// The entries of one cell that overlap the period [start, end], as text lines. A dated entry prints
+// "text, <from> to <to>" with the dates clipped to the period; an undated entry is the baseline.
+function _rptBasCellLines(entries, start, end, qLabel, labelled) {
+  var base = [];
+  var per = [];
+  (entries || []).forEach(function (e) {
+    if (!e || !e.text) return;
+    if (!e.from && !e.to) {
+      base.push((labelled ? 'Baseline: ' : '') + e.text);
+      return;
+    }
+    var from = e.from && e.from > start ? e.from : start;
+    var to = e.to && e.to < end ? e.to : end;
+    if (from > to) return;
+    per.push(e.text + ', ' + _rptBasDay(from) + ' to ' + _rptBasDay(to));
+  });
+  // A labelled cell (weekend, set points) names the quarter once, then lists its dated lines.
+  return labelled && per.length ? base.concat([qLabel + ':'], per) : base.concat(per);
+}
+// One row per report building that has a record, in report order: [name, baselineWeekday, weekday, weekend, setPoints] (each a list of lines).
+function _rptBasScheduleRows(d) {
+  var hist = d && d.basScheduleHistory;
+  var yms = ((d && d.period && d.period.yearMonths) || []).slice().sort();
+  if (!hist || !Array.isArray(hist.buildings) || !yms.length) return [];
+  var last = yms[yms.length - 1];
+  var start = yms[0] + '-01';
+  var end = last + '-' + new Date(parseInt(last.slice(0, 4), 10), parseInt(last.slice(5, 7), 10), 0).getDate();
+  var qLabel = 'Q' + (d.period.quarter || 1) + ' ' + (d.period.year || '');
+  var rows = [];
+  (d.buildings || []).forEach(function (b) {
+    var h = hist.buildings.filter(function (x) {
+      return x && x.building === b.name;
+    })[0];
+    if (!h) return;
+    var cells = [
+      _rptBasCellLines(h.baselineWeekday, start, end, qLabel, false),
+      _rptBasCellLines(h.weekday, start, end, qLabel, false),
+      _rptBasCellLines(
+        (h.weekend || []).map(function (e) {
+          return e.kind === 'baseline' ? { text: e.text } : e;
+        }),
+        start,
+        end,
+        qLabel,
+        true,
+      ),
+      _rptBasCellLines(
+        (h.setPoints || []).map(function (e) {
+          return e.kind === 'baseline' ? { text: e.text } : e;
+        }),
+        start,
+        end,
+        qLabel,
+        true,
+      ),
+    ];
+    if (cells.some(function (c) { return c.length; })) rows.push([b.name].concat(cells));
+  });
+  return rows;
+}
+// The table page, or '' when the project has no BAS schedule history for any building in the report.
+function _rptQSchedulePage(n, d) {
+  var rows = _rptBasScheduleRows(d);
+  if (!rows.length) return '';
+  var cell = function (lines) {
+    return lines.length
+      ? lines
+          .map(function (l) {
+            return '<div style="margin:0 0 1px">' + _escHtml(l) + '</div>';
+          })
+          .join('')
+      : '-';
+  };
+  var trs = rows
+    .map(function (r) {
+      return (
+        '<tr style="font-size:10px;line-height:1.2;vertical-align:top"><td style="font-weight:700">' +
+        _escHtml(r[0]) +
+        '</td><td>' + cell(r[1]) + '</td><td>' + cell(r[2]) + '</td><td>' + cell(r[3]) + '</td><td>' + cell(r[4]) + '</td></tr>'
+      );
+    })
+    .join('');
+  var t = _rptQTable(
+    [11, 12, 27, 22, 28],
+    ['Building', 'Baseline weekday occupied hours', 'Quarter weekday occupied hours', 'Weekend occupied hours', 'Occupied heating and cooling set points, degrees Fahrenheit'],
+    trs,
+  );
+  var body = '<h2>Operating Hours and Set Points</h2>' + t;
+  return rptPage(n, 'Operating Hours and Set Points', body, { data: d, letterhead: false, label: 'Page ' + n + ' - Operating Hours and Set Points' });
+}
+
 function _rptQMeterPage(n, d, f) {
   var rows = '';
   d.buildings.forEach(function (b) {
@@ -3411,6 +3517,13 @@ function _rptQuarterReportHTML(d, s) {
   if (s.yearToDate !== false || s.contractProjection !== false) pages.push(tag(_rptQContractPage(n++, d, f), 'contractProjection'));
   if (s.euiBenchmarking !== false || s.appendixC !== false) pages.push(tag(_rptQBenchmarkPage(n++, d, f), 'euiBenchmarking'));
   if (s.meterPerformance !== false) pages.push(tag(_rptQMeterPage(n++, d, f), 'meterPerformance'));
+  if (s.meterPerformance !== false) {
+    var _schedHtml = _rptQSchedulePage(n, d);
+    if (_schedHtml) {
+      pages.push(tag(_schedHtml, 'basSchedule'));
+      n++;
+    }
+  }
   if (s.appendixA !== false || s.appendixB !== false) pages.push(tag(_rptQMethodPage(n++, d, f), 'appendixA'));
   if (s.appendixD !== false) {
     var ap = rptPageAppendixBills(n, d, 'A');
