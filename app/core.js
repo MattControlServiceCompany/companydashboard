@@ -2266,13 +2266,15 @@ function initDashboardTab(projId) {
         Array.from(new Set(Object.values(cumSavByBldg).flatMap((o) => Object.keys(o)))).sort(),
         cumSavByBldg,
       )
-    : { total: 0, weatherWaiting: {} };
+    : { total: 0, measured: 0, weatherWaiting: {} };
   const totalSavCum = _cumBill.total;
   // Quarters with no weather yet are left out of the cumulative; the card says so.
   const cumWeatherWaiting = [].concat.apply([], Object.values(_cumBill.weatherWaiting)).sort();
   const totalSav = totalSavCum; // the one billable function; no second accumulator
+  const totalSavMeasured = _cumBill.measured; // before the $0 floor, shown beside a floored $0
   const totalPct = totalBl > 0 ? (totalSav / totalBl) * 100 : 0;
   const $c = (n) => '$' + Math.round(Math.abs(n)).toLocaleString();
+  const _totalSavShown = savingsFlooredShown(totalSavMeasured, totalSav, 0, $c, 'var(--green)', 'var(--danger)', 'var(--text)');
   const $c2 = (n) =>
     '$' +
     Math.abs(n).toLocaleString(undefined, {
@@ -2360,7 +2362,7 @@ function initDashboardTab(projId) {
                 </div>` : ''}
                 <div style="border-top:1px solid var(--border);padding-top:12px">
                   <div style="font-size:11px;color:var(--text3);text-transform:uppercase;letter-spacing:.6px">Total Cumulative Savings</div>
-                  <div style="font-size:28px;font-weight:800;font-family:var(--mono);color:${totalSav >= 0 ? 'var(--green)' : 'var(--danger)'};margin:4px 0">${totalSav >= 0 ? '' : '-'}${$c(totalSav)}</div>
+                  <div style="font-size:28px;font-weight:800;font-family:var(--mono);color:${_totalSavShown.color};margin:4px 0">${_totalSavShown.text}</div>
                   <div style="font-size:12px;color:var(--text2)">${throughDate ? 'through ' + throughDate : _eligBldgs.length + ' building' + (_eligBldgs.length !== 1 ? 's' : '')} · <span style="color:var(--text3)">${useNormalized ? 'Normalized' : 'Actual'}</span></div>
                   ${cumWeatherWaiting.length ? '<div style="font-size:11px;color:var(--text2);margin-top:4px">Does not include ' + _escHtml(weatherWaitingLabel(cumWeatherWaiting)) + ': waiting for weather data</div>' : ''}
                 </div>
@@ -2441,7 +2443,7 @@ function initDashboardTab(projId) {
                   <td style="text-align:right;font-family:var(--mono);font-size:11px;color:var(--text2)">${r.blEUI > 0 ? r.blEUI.toFixed(1) : '—'}</td>
                   <td style="text-align:right;font-family:var(--mono)">${r.curCost > 0 ? $c(r.curCost) : '—'}</td>
                   <td style="text-align:right;font-family:var(--mono);font-size:11px;color:var(--text2)">${r.curEUI > 0 ? r.curEUI.toFixed(1) : '—'}</td>
-                  <td style="text-align:right;font-family:var(--mono);color:${r.sav >= 0 ? 'var(--green)' : 'var(--danger)'}">${r.blCost > 0 ? (r.sav >= 0 ? '' : '-') + $c(r.sav) : '—'}</td>
+                  <td style="text-align:right;font-family:var(--mono);color:${savingsSignColor(r.sav, 0, 'var(--green)', 'var(--danger)', 'var(--text)')}">${r.blCost > 0 ? savingsSign(r.sav, 0, true) + $c(r.sav) : '—'}</td>
                   <td style="text-align:right;font-family:var(--mono)">${r.blCost > 0 ? r.savPct.toFixed(1) + '%' : '—'}</td>
                   <td style="text-align:center;font-weight:600;color:${r.statusColor}">${r.status}</td>
                 </tr>`;

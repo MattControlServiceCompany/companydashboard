@@ -4660,7 +4660,7 @@ function rptPageFinancial(n, d) {
       // support. 'no_contract' (2026-09-24, fix/report-followup, problem 3) gets the same
       // neutral treatment -- this building has bills, but no Service Agreement on file, so no
       // dollar savings are ever computed for it (by design; see computations/savings.js).
-      const saveClass = b.status === 'no_data' || b.status === 'no_contract' ? '' : b.savings >= 0 ? 'rpt-g' : 'rpt-r';
+      const saveClass = b.status === 'no_data' || b.status === 'no_contract' ? '' : savingsSignColor(b.savings, 0, 'rpt-g', 'rpt-r', '');
       // Wording and colour come from _rptResultOf, the same as the quarterly report.
       const _res = _rptResultOf(b, d);
       const statusClass = _res.cls;
@@ -4703,7 +4703,7 @@ function rptPageFinancial(n, d) {
     })
     .join('');
 
-  const totSaveClass = d.totals.savings >= 0 ? 'rpt-g' : 'rpt-r';
+  const totSaveClass = savingsSignColor(d.totals.savings, 0, 'rpt-g', 'rpt-r', '');
   const totProjCost = _rptPVn(d, 'building table', 'Total Portfolio', '', '', 'projected_cost', d.totals.blCost - qTarget);
   // 2026-09-24 (fix/report-followup, problem 2): Total Portfolio must never claim a computed
   // Savings Percent when no building behind it has one -- a building row with 'no_data' or
@@ -5147,7 +5147,7 @@ function rptPageSavingsPerformance(n, d) {
     (_curEuiPeriod > 0 ? _curEuiPeriod.toFixed(1) : '—') +
     '</td>' +
     '<td class="rpt-n ' +
-    (savPct >= 0 ? 'rpt-g' : 'rpt-r') +
+    savingsSignColor(savPct, 1, 'rpt-g', 'rpt-r', '') +
     '" contenteditable="true">' +
     $p(savPct) +
     '</td>' +
@@ -8370,7 +8370,7 @@ function rptPageBuildingSummary(n, d, b) {
   // Icon savings row — green for positive savings, red for negative
   var iconItems = '';
   function _savColor(v) {
-    return v >= 0 ? 'var(--rpt-green-dark)' : 'var(--rpt-red)';
+    return savingsSignColor(v, 0, 'var(--rpt-green-dark)', 'var(--rpt-red)', 'var(--rpt-page-text)');
   }
   if (hasElec) {
     var kwhSaved = b.electric.kwhSaved || 0;
@@ -8429,7 +8429,7 @@ function rptPageBuildingSummary(n, d, b) {
     '<div style="font-size:14px;font-weight:700;color:' +
     _savColor(totalSaved) +
     '">' +
-    (totalSaved >= 0 ? '' : '-') +
+    savingsSign(totalSaved, 0, true) +
     '$' +
     Math.abs(Math.round(totalSaved)).toLocaleString() +
     '</div>' +
@@ -8439,8 +8439,8 @@ function rptPageBuildingSummary(n, d, b) {
   rightHTML += '<div style="display:flex;gap:4px;flex-wrap:wrap;margin-bottom:10px">' + iconItems + '</div>';
 
   // Summary table
-  function _pctColor(v) {
-    return v >= 0 ? 'var(--rpt-green-dark)' : 'var(--rpt-red)';
+  function _pctColor(v, d) {
+    return savingsSignColor(v, d, 'var(--rpt-green-dark)', 'var(--rpt-red)', 'var(--rpt-page-text)');
   }
   var tableRows = '';
   if (hasElec) {
@@ -8457,12 +8457,12 @@ function rptPageBuildingSummary(n, d, b) {
       $p(targetPct) +
       '</td>' +
       '<td class="rpt-n" contenteditable="true" style="color:' +
-      _pctColor(elSavPct) +
+      _pctColor(elSavPct, 1) +
       ';font-weight:600">' +
       $p(elSavPct) +
       '</td>' +
       '<td class="rpt-n" contenteditable="true" style="color:' +
-      _pctColor(elCostSaved) +
+      _pctColor(elCostSaved, 0) +
       ';font-weight:600">' +
       _fmtUSD(elCostSaved, '$0') +
       '</td>' +
@@ -8481,12 +8481,12 @@ function rptPageBuildingSummary(n, d, b) {
       $p(targetPct) +
       '</td>' +
       '<td class="rpt-n" contenteditable="true" style="color:' +
-      _pctColor(elDemSavPct) +
+      _pctColor(elDemSavPct, 1) +
       ';font-weight:600">' +
       $p(elDemSavPct) +
       '</td>' +
       '<td class="rpt-n" contenteditable="true" style="color:' +
-      _pctColor(elDemCostSaved) +
+      _pctColor(elDemCostSaved, 0) +
       ';font-weight:600">' +
       _fmtUSD(elDemCostSaved, '$0') +
       '</td>' +
@@ -8505,12 +8505,12 @@ function rptPageBuildingSummary(n, d, b) {
       $p(targetPct) +
       '</td>' +
       '<td class="rpt-n" contenteditable="true" style="color:' +
-      _pctColor(gasSavPct) +
+      _pctColor(gasSavPct, 1) +
       ';font-weight:600">' +
       $p(gasSavPct) +
       '</td>' +
       '<td class="rpt-n" contenteditable="true" style="color:' +
-      _pctColor(gasCostSaved) +
+      _pctColor(gasCostSaved, 0) +
       ';font-weight:600">' +
       _fmtUSD(gasCostSaved, '$0') +
       '</td>' +
@@ -8529,12 +8529,12 @@ function rptPageBuildingSummary(n, d, b) {
       $p(targetPct) +
       '</td>' +
       '<td class="rpt-n" contenteditable="true" style="color:' +
-      _pctColor(propSavPct) +
+      _pctColor(propSavPct, 1) +
       ';font-weight:600">' +
       $p(propSavPct) +
       '</td>' +
       '<td class="rpt-n" contenteditable="true" style="color:' +
-      _pctColor(propCostSaved) +
+      _pctColor(propCostSaved, 0) +
       ';font-weight:600">' +
       _fmtUSD(propCostSaved, '$0') +
       '</td>' +
@@ -8767,8 +8767,8 @@ function rptPageElectric(n, d) {
   var $p = function (v) {
     return (v || 0).toFixed(1) + '%';
   };
-  function _sc(v) {
-    return v >= 0 ? 'var(--rpt-green-dark)' : 'var(--rpt-red)';
+  function _sc(v, d) {
+    return savingsSignColor(v, d, 'var(--rpt-green-dark)', 'var(--rpt-red)', 'var(--rpt-page-text)');
   }
 
   var MO_SHORT = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
@@ -8986,12 +8986,12 @@ function rptPageElectric(n, d) {
       $n(curKwh) +
       '</td>' +
       '<td class="rpt-n" contenteditable="true" style="color:' +
-      _sc(savKwh) +
+      _sc(savKwh, 0) +
       ';font-weight:600">' +
       $n(savKwh) +
       '</td>' +
       '<td class="rpt-n" contenteditable="true" style="color:' +
-      _sc(savPct) +
+      _sc(savPct, 1) +
       '">' +
       $p(savPct) +
       '</td>' +
@@ -9008,7 +9008,7 @@ function rptPageElectric(n, d) {
       _fmtUSD(curCost, '$0') +
       '</td>' +
       '<td class="rpt-n" contenteditable="true" style="color:' +
-      _sc(savCost) +
+      _sc(savCost, 0) +
       ';font-weight:600">' +
       _fmtUSD(savCost, '$0') +
       '</td>' +
@@ -9030,12 +9030,12 @@ function rptPageElectric(n, d) {
       $n(totCurKwh) +
       '</td>' +
       '<td class="rpt-n" style="color:' +
-      _sc(totSavKwh) +
+      _sc(totSavKwh, 0) +
       '">' +
       $n(totSavKwh) +
       '</td>' +
       '<td class="rpt-n" style="color:' +
-      _sc(totSavPct) +
+      _sc(totSavPct, 1) +
       '">' +
       $p(totSavPct) +
       '</td>' +
@@ -9052,7 +9052,7 @@ function rptPageElectric(n, d) {
       _fmtUSD(totCurCost, '$0') +
       '</td>' +
       '<td class="rpt-n" style="color:' +
-      _sc(totSavCost) +
+      _sc(totSavCost, 0) +
       ';font-weight:700">' +
       _fmtUSD(totSavCost, '$0') +
       '</td>' +
@@ -9118,8 +9118,8 @@ function rptPageGas(n, d) {
   var $p = function (v) {
     return (v || 0).toFixed(1) + '%';
   };
-  function _sc(v) {
-    return v >= 0 ? 'var(--rpt-green-dark)' : 'var(--rpt-red)';
+  function _sc(v, d) {
+    return savingsSignColor(v, d, 'var(--rpt-green-dark)', 'var(--rpt-red)', 'var(--rpt-page-text)');
   }
   var MO_SHORT = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
 
@@ -9285,12 +9285,12 @@ function rptPageGas(n, d) {
       $n(curT) +
       '</td>' +
       '<td class="rpt-n" contenteditable="true" style="color:' +
-      _sc(savT) +
+      _sc(savT, 0) +
       ';font-weight:600">' +
       $n(savT) +
       '</td>' +
       '<td class="rpt-n" contenteditable="true" style="color:' +
-      _sc(savPct) +
+      _sc(savPct, 1) +
       '">' +
       $p(savPct) +
       '</td>' +
@@ -9301,7 +9301,7 @@ function rptPageGas(n, d) {
       _fmtUSD(curCost, '$0') +
       '</td>' +
       '<td class="rpt-n" contenteditable="true" style="color:' +
-      _sc(savCost) +
+      _sc(savCost, 0) +
       ';font-weight:600">' +
       _fmtUSD(savCost, '$0') +
       '</td>' +
@@ -9321,12 +9321,12 @@ function rptPageGas(n, d) {
       $n(totCurTherms) +
       '</td>' +
       '<td class="rpt-n" style="color:' +
-      _sc(totSavTherms) +
+      _sc(totSavTherms, 0) +
       '">' +
       $n(totSavTherms) +
       '</td>' +
       '<td class="rpt-n" style="color:' +
-      _sc(tSavPct) +
+      _sc(tSavPct, 1) +
       '">' +
       $p(tSavPct) +
       '</td>' +
@@ -9337,7 +9337,7 @@ function rptPageGas(n, d) {
       _fmtUSD(totCurCost, '$0') +
       '</td>' +
       '<td class="rpt-n" style="color:' +
-      _sc(totSavCost) +
+      _sc(totSavCost, 0) +
       ';font-weight:700">' +
       _fmtUSD(totSavCost, '$0') +
       '</td>' +
@@ -9379,8 +9379,8 @@ function rptPagePropane(n, d) {
   var $p = function (v) {
     return (v || 0).toFixed(1) + '%';
   };
-  function _sc(v) {
-    return v >= 0 ? 'var(--rpt-green-dark)' : 'var(--rpt-red)';
+  function _sc(v, d) {
+    return savingsSignColor(v, d, 'var(--rpt-green-dark)', 'var(--rpt-red)', 'var(--rpt-page-text)');
   }
   var MO_SHORT = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
 
@@ -9552,12 +9552,12 @@ function rptPagePropane(n, d) {
       $n(curG) +
       '</td>' +
       '<td class="rpt-n" contenteditable="true" style="color:' +
-      _sc(savG) +
+      _sc(savG, 0) +
       ';font-weight:600">' +
       $n(savG) +
       '</td>' +
       '<td class="rpt-n" contenteditable="true" style="color:' +
-      _sc(savPct) +
+      _sc(savPct, 1) +
       '">' +
       $p(savPct) +
       '</td>' +
@@ -9568,7 +9568,7 @@ function rptPagePropane(n, d) {
       _fmtUSD(curCost, '$0') +
       '</td>' +
       '<td class="rpt-n" contenteditable="true" style="color:' +
-      _sc(savCost) +
+      _sc(savCost, 0) +
       ';font-weight:600">' +
       _fmtUSD(savCost, '$0') +
       '</td>' +
@@ -9588,12 +9588,12 @@ function rptPagePropane(n, d) {
       $n(totCurGal) +
       '</td>' +
       '<td class="rpt-n" style="color:' +
-      _sc(totSavGal) +
+      _sc(totSavGal, 0) +
       '">' +
       $n(totSavGal) +
       '</td>' +
       '<td class="rpt-n" style="color:' +
-      _sc(tSavPct) +
+      _sc(tSavPct, 1) +
       '">' +
       $p(tSavPct) +
       '</td>' +
@@ -9604,7 +9604,7 @@ function rptPagePropane(n, d) {
       _fmtUSD(totCurCost, '$0') +
       '</td>' +
       '<td class="rpt-n" style="color:' +
-      _sc(totSavCost) +
+      _sc(totSavCost, 0) +
       ';font-weight:700">' +
       _fmtUSD(totSavCost, '$0') +
       '</td>' +
@@ -9657,8 +9657,8 @@ function rptPageGasPropane(n, d) {
   var $p = function (v) {
     return (v || 0).toFixed(1) + '%';
   };
-  function _sc(v) {
-    return v >= 0 ? 'var(--rpt-green-dark)' : 'var(--rpt-red)';
+  function _sc(v, d) {
+    return savingsSignColor(v, d, 'var(--rpt-green-dark)', 'var(--rpt-red)', 'var(--rpt-page-text)');
   }
   var MO_SHORT = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
   function _barChart(monthly, blColor, curColor, unit, title) {
@@ -9747,11 +9747,11 @@ function rptPageGasPropane(n, d) {
         '</td><td class="rpt-n" contenteditable="true">' +
         $n(cur) +
         '</td><td class="rpt-n" contenteditable="true" style="color:' +
-        _sc(sav) +
+        _sc(sav, 0) +
         ';font-weight:600">' +
         $n(sav) +
         '</td><td class="rpt-n" contenteditable="true" style="color:' +
-        _sc(savPct) +
+        _sc(savPct, 1) +
         '">' +
         $p(savPct) +
         '</td><td class="rpt-n" contenteditable="true">' +
@@ -9759,7 +9759,7 @@ function rptPageGasPropane(n, d) {
         '</td><td class="rpt-n" contenteditable="true">' +
         _fmtUSD(curC, '$0') +
         '</td><td class="rpt-n" contenteditable="true" style="color:' +
-        _sc(savC) +
+        _sc(savC, 0) +
         ';font-weight:600">' +
         _fmtUSD(savC, '$0') +
         '</td></tr>';
@@ -9772,11 +9772,11 @@ function rptPageGasPropane(n, d) {
         '</td><td class="rpt-n">' +
         $n(totCur) +
         '</td><td class="rpt-n" style="color:' +
-        _sc(totSav) +
+        _sc(totSav, 0) +
         '">' +
         $n(totSav) +
         '</td><td class="rpt-n" style="color:' +
-        _sc(tPct) +
+        _sc(tPct, 1) +
         '">' +
         $p(tPct) +
         '</td><td class="rpt-n">' +
@@ -9784,7 +9784,7 @@ function rptPageGasPropane(n, d) {
         '</td><td class="rpt-n">' +
         _fmtUSD(totCurC, '$0') +
         '</td><td class="rpt-n" style="color:' +
-        _sc(totSavC) +
+        _sc(totSavC, 0) +
         ';font-weight:700">' +
         _fmtUSD(totSavC, '$0') +
         '</td></tr>';
@@ -10586,7 +10586,7 @@ function rptPageAppendixBaseline(n, d, appLetter, appMap) {
             $n(actual) +
             '</td>' +
             '<td class="rpt-n" style="color:' +
-            (saved >= 0 ? 'var(--rpt-green-dark)' : 'var(--rpt-red)') +
+            savingsSignColor(saved, 0, 'var(--rpt-green-dark)', 'var(--rpt-red)', 'var(--rpt-page-text)') +
             ';font-weight:600">' +
             $n(saved) +
             '</td>' +
@@ -10610,7 +10610,7 @@ function rptPageAppendixBaseline(n, d, appLetter, appMap) {
         $n(totCur) +
         '</td>' +
         '<td class="rpt-n" style="color:' +
-        (totSav >= 0 ? 'var(--rpt-green-dark)' : 'var(--rpt-red)') +
+        savingsSignColor(totSav, 0, 'var(--rpt-green-dark)', 'var(--rpt-red)', 'var(--rpt-page-text)') +
         '">' +
         $n(totSav) +
         '</td>' +

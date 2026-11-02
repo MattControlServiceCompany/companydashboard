@@ -1020,10 +1020,43 @@ function floorQuarterSavings(dollars) {
   return Math.max(0, dollars || 0);
 }
 
-// savingsSignColor(v, pos, neg, neutral) - the ONE colour rule for a savings figure: `pos` only when v > 0, `neg` only
-// when v < 0, `neutral` when v is 0 (or not a number). Pass the value as it is shown (rounded) so a "$0" is neutral.
-function savingsSignColor(v, pos, neg, neutral) {
-  return v > 0 ? pos : v < 0 ? neg : neutral;
+// savingsShown(v, decimals) - v rounded to the precision it is displayed at (0 for whole dollars). A value that
+// shows as "$0" is 0 here, whatever its raw size. Not a number -> 0.
+function savingsShown(v, decimals) {
+  const n = Number(v);
+  if (!isFinite(n)) return 0;
+  const f = Math.pow(10, decimals || 0);
+  return Math.round(Math.abs(n) * f) / f * (n < 0 ? -1 : 1) || 0;
+}
+
+// savingsSignColor(v, decimals, pos, neg, neutral) - the ONE colour rule for a savings (or use-change) figure, tested on
+// the value as DISPLAYED at `decimals`: `pos` only when it shows > 0, `neg` only when it shows < 0, `neutral` when it shows 0
+// (or is not a number). So "$0" and "-$0" are never green or red.
+function savingsSignColor(v, decimals, pos, neg, neutral) {
+  const s = savingsShown(v, decimals);
+  return s > 0 ? pos : s < 0 ? neg : neutral;
+}
+
+// savingsSign(v, decimals) - the ONE sign rule: '+' only when the figure shows > 0, the minus sign (U+2212) only when it shows
+// < 0, '' when it shows 0. Same rounding as savingsSignColor. minusOnly=true: no '+' (cost figures show no plus).
+function savingsSign(v, decimals, minusOnly) {
+  const s = savingsShown(v, decimals);
+  return s > 0 ? (minusOnly ? '' : '+') : s < 0 ? '−' : '';
+}
+
+// savingsFlooredShown(measured, billable, decimals, fmtAbs, pos, neg, neutral) -> { text, color, floored } - how to show a
+// billable (floored) figure. When the measured value is negative and the floor made it $0 (floorQuarterSavings), show both,
+// "−$2,023 → $0", in `neg` (floored = true). Otherwise the figure with savingsSign and savingsSignColor (plus = true adds '+' to a positive; a true zero has
+// no sign and is `neutral`). fmtAbs(n) formats |n|. The same call serves a percent: pass the two percents and a percent fmtAbs.
+function savingsFlooredShown(measured, billable, decimals, fmtAbs, pos, neg, neutral, plus) {
+  const floored = savingsShown(measured, decimals) < 0 && savingsShown(billable, decimals) === 0;
+  if (floored)
+    return { floored, color: neg, text: '−' + fmtAbs(Math.abs(measured)) + ' → ' + fmtAbs(0) };
+  return {
+    floored,
+    color: savingsSignColor(billable, decimals, pos, neg, neutral),
+    text: savingsSign(billable, decimals, !plus) + fmtAbs(Math.abs(billable)),
+  };
 }
 
 // sumPositiveSavings(values) - the total of only the positive savings values in a list (negatives and nulls left out).
@@ -1063,7 +1096,7 @@ function quarterMissingBills(projId, qKey) {
 // quarter). To change the cumulative rule, change it here only.
 // A quarter with a month that has no weather yet (quarterWeatherMissing) is left out of total AND byBldg and named
 // in weatherWaiting ({ 'YYYY-Qn': [ym] }): it is never floored, billed or added to the cumulative.
-// Returns { total, byBldg, applied, missing, weatherWaiting }. byBldg stays the NET per-building sum over the other yms (building
+// Returns { total, measured, byBldg, applied, missing, weatherWaiting }. measured = the same quarters before the floor. byBldg stays the NET per-building sum over the other yms (building
 // rows are not floored). Monthly and per-meter values are never floored.
 function billableSavingsWithPresented(projId, yms, perBldg) {
   const byQtr = {};
@@ -1071,14 +1104,17 @@ function billableSavingsWithPresented(projId, yms, perBldg) {
   const wx = _weatherSplit(projId, yms);
   const net = totalSavingsWithPresented(projId, wx.open, perBldg);
   let total = 0;
+  let measured = 0; // the same quarters NOT floored: what was measured, shown beside a floored $0
   const missing = {};
   Object.keys(byQtr).forEach((q) => {
     const gaps = quarterMissingBills(projId, q);
     if (gaps.length) missing[q] = gaps;
     if (wx.waiting[q]) return; // no weather for a month: no figure for the quarter, never floored or billed
-    total += floorQuarterSavings(totalSavingsWithPresented(projId, byQtr[q], perBldg).total);
+    const qNet = totalSavingsWithPresented(projId, byQtr[q], perBldg).total;
+    measured += qNet;
+    total += floorQuarterSavings(qNet);
   });
-  return { total, byBldg: net.byBldg, applied: net.applied, missing, weatherWaiting: wx.waiting };
+  return { total, measured, byBldg: net.byBldg, applied: net.applied, missing, weatherWaiting: wx.waiting };
 }
 
 // quarterWeatherMissing(projId, qKey) - the months ('YYYY-MM') of a calendar quarter ('YYYY-Qn') for which

@@ -2424,7 +2424,9 @@ function renderUDProjAggPanel(content) {
     const hasActual = Object.keys(actSavByMo).length > 0;
     // A period presented to the client uses the presented figure (computations/savings.js).
     const _ppAllYms = Array.from(new Set(Object.values(_ppSavByBldgYM).flatMap((o) => Object.keys(o)))).sort();
-    const annActSav = hasActual ? billableSavingsWithPresented(udSelProjId, _ppAllYms, _ppSavByBldgYM).total : null;
+    const _ppAnnB = hasActual ? billableSavingsWithPresented(udSelProjId, _ppAllYms, _ppSavByBldgYM) : null;
+    const annActSav = _ppAnnB ? _ppAnnB.total : null;
+    const annActMeas = _ppAnnB ? _ppAnnB.measured : null; // before the $0 floor
     // A quarter with a month that has no weather yet has no savings figure, so every month of that quarter
     // is shown as waiting (weatherWaitingQuarters, computations/savings.js). The annual total leaves the quarter out.
     const _ppWaitQ = hasActual ? weatherWaitingQuarters(udSelProjId, _ppAllYms) : {};
@@ -2437,16 +2439,20 @@ function renderUDProjAggPanel(content) {
           .join(', ')}: waiting for weather data (${_escHtml(weatherWaitingLabel(weatherWaitingMonths(udSelProjId, _ppAllYms)))})</div>`
       : '';
     const actPct = annBase > 0 && annActSav != null ? (annActSav / annBase) * 100 : null;
+    const actPctMeas = annBase > 0 && annActMeas != null ? (annActMeas / annBase) * 100 : null; // before the $0 floor
+    const _ppPctFmt = (n) => n.toFixed(1) + '%';
+    const _ppAnnShown = annActSav != null ? savingsFlooredShown(annActMeas, annActSav, 0, (n) => $f(n), 'var(--em)', 'var(--danger)', 'var(--text)') : null;
+    const _ppPctShown = actPct != null ? savingsFlooredShown(actPctMeas, actPct, 1, _ppPctFmt, 'var(--em)', 'var(--danger)', 'var(--text)') : null;
     // Compare actual vs projected for only the months that have actual data (YTD)
     // Same months on both sides: months in a waiting quarter are left out of the projected side too.
     const actMonths = Object.keys(actSavByMo).map(Number).filter((mo) => !_ppWaitMo.has(mo));
     const ytdProjSav = actMonths.reduce((s, mo) => s + _perfProjSavByMo[mo], 0);
     const ytdDiff = annActSav != null ? annActSav - ytdProjSav : null;
-    const tdV = (v, color) => {
+    const tdV = (v, color, meas) => {
       if (v == null)
         return `<td style="padding:6px 10px;text-align:right;font-family:var(--mono);font-size:12px;color:var(--text3);border:1px solid var(--border)">—</td>`;
-      const c = color || savingsSignColor(v, 'var(--em)', 'var(--danger)', 'var(--text)');
-      return `<td style="padding:6px 10px;text-align:right;font-family:var(--mono);font-size:12px;color:${c};border:1px solid var(--border);white-space:nowrap">${v < 0 ? '−' : ''}${$f(v, 2)}</td>`;
+      const sh = savingsFlooredShown(meas == null ? v : meas, v, 2, (n) => $f(n, 2), 'var(--em)', 'var(--danger)', 'var(--text)');
+      return `<td style="padding:6px 10px;text-align:right;font-family:var(--mono);font-size:12px;color:${color || sh.color};border:1px solid var(--border);white-space:nowrap">${sh.text}</td>`;
     };
     const rows = MN.map((mn, mo) => {
       const base = moBase[mo] || 0;
@@ -2455,7 +2461,7 @@ function renderUDProjAggPanel(content) {
       const pct = !waiting && act != null && base > 0 ? (act / base) * 100 : null;
       return `<tr><td style="padding:6px 10px;font-size:12px;font-weight:600;border:1px solid var(--border);background:var(--s2)">${mn}</td>
               ${waiting ? `<td style="padding:6px 10px;text-align:right;font-size:12px;color:var(--text2);border:1px solid var(--border);white-space:nowrap">Waiting for weather data</td>` : tdV(act)}
-              <td style="padding:6px 10px;text-align:right;font-family:var(--mono);font-size:12px;color:${pct == null ? 'var(--text3)' : savingsSignColor(pct, 'var(--em)', 'var(--danger)', 'var(--text)')};border:1px solid var(--border)">${pct != null ? (pct < 0 ? '−' : '') + Math.abs(pct).toFixed(1) + '%' : '—'}</td>
+              <td style="padding:6px 10px;text-align:right;font-family:var(--mono);font-size:12px;color:${pct == null ? 'var(--text3)' : savingsSignColor(pct, 1, 'var(--em)', 'var(--danger)', 'var(--text)')};border:1px solid var(--border)">${pct != null ? savingsSign(pct, 1, true) + Math.abs(pct).toFixed(1) + '%' : '—'}</td>
             </tr>`;
     }).join('');
     // Calendar quarters with all 3 months of savings and no month waiting for weather, newest first.
@@ -2469,9 +2475,9 @@ function renderUDProjAggPanel(content) {
               ${_ppIncompleteHTML}
               <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:8px">
                 <div style="background:var(--s1);border:1px solid var(--border);border-radius:7px;padding:8px 11px"><div style="font-size:10px;color:var(--text2);text-transform:uppercase;letter-spacing:.5px;margin-bottom:2px">Annual Baseline</div><div style="font-size:15px;font-weight:800">${$f(annBase)}</div></div>
-                ${hasActual ? `<div style="background:var(--s1);border:1px solid var(--border);border-radius:7px;padding:8px 11px"><div style="font-size:10px;color:var(--text2);text-transform:uppercase;letter-spacing:.5px;margin-bottom:2px">Current Savings</div><div style="font-size:15px;font-weight:800;color:${annActSav >= 0 ? 'var(--em)' : 'var(--danger)'}">${annActSav < 0 ? '−' : ''}${$f(annActSav)}</div>${_ppWaitNote}${actPct != null ? `<div style="font-size:11px;color:var(--text2);margin-top:2px">${actPct < 0 ? '−' : ''}${Math.abs(actPct).toFixed(1)}%</div>` : ''}</div>` : ''}
+                ${hasActual ? `<div style="background:var(--s1);border:1px solid var(--border);border-radius:7px;padding:8px 11px"><div style="font-size:10px;color:var(--text2);text-transform:uppercase;letter-spacing:.5px;margin-bottom:2px">Current Savings</div><div style="font-size:15px;font-weight:800;color:${_ppAnnShown.color}">${_ppAnnShown.text}</div>${_ppWaitNote}${actPct != null ? `<div style="font-size:11px;color:var(--text2);margin-top:2px">${_ppPctShown.text}</div>` : ''}</div>` : ''}
                 <div style="background:var(--s1);border:1px solid var(--border);border-radius:7px;padding:8px 11px"><div style="font-size:10px;color:var(--text3);text-transform:uppercase;letter-spacing:.5px;margin-bottom:2px">Projected Savings</div><div style="font-size:13px;font-weight:600;color:var(--text2)">${$f(annProjSav)}</div><div style="font-size:10px;color:var(--text3);margin-top:2px">${(avgSavPct * 100).toFixed(1)}%</div></div>
-                ${hasActual && ytdDiff != null ? `<div style="background:var(--s1);border:1px solid var(--border);border-radius:7px;padding:8px 11px"><div style="font-size:10px;color:var(--text2);text-transform:uppercase;letter-spacing:.5px;margin-bottom:2px">vs Projected (${actMonths.length}mo YTD)</div><div style="font-size:15px;font-weight:800;color:${ytdDiff >= 0 ? 'var(--em)' : 'var(--danger)'}">${ytdDiff >= 0 ? '+' : '−'}${$f(Math.abs(ytdDiff))}</div><div style="font-size:11px;color:var(--text2);margin-top:2px">${ytdDiff >= 0 ? '▲ Above' : '▼ Below'} target</div></div>` : ''}
+                ${hasActual && ytdDiff != null ? `<div style="background:var(--s1);border:1px solid var(--border);border-radius:7px;padding:8px 11px"><div style="font-size:10px;color:var(--text2);text-transform:uppercase;letter-spacing:.5px;margin-bottom:2px">vs Projected (${actMonths.length}mo YTD)</div><div style="font-size:15px;font-weight:800;color:${savingsSignColor(ytdDiff, 0, 'var(--em)', 'var(--danger)', 'var(--text)')}">${savingsSign(ytdDiff, 0)}${$f(Math.abs(ytdDiff))}</div><div style="font-size:11px;color:var(--text2);margin-top:2px">${ytdDiff >= 0 ? '▲ Above' : '▼ Below'} target</div></div>` : ''}
               </div>
             </div>
             <div style="overflow-x:auto"><table style="border-collapse:collapse;width:100%;font-size:12px">
@@ -2480,8 +2486,8 @@ function renderUDProjAggPanel(content) {
               <tbody>${rows}</tbody>
               <tfoot><tr style="background:var(--s1)">
                 <td style="padding:6px 10px;font-size:12px;font-weight:700;border:1px solid var(--border)">Annual</td>
-                ${tdV(hasActual ? annActSav : null)}
-                <td style="padding:6px 10px;text-align:right;font-family:var(--mono);font-size:12px;color:${actPct != null && actPct >= 0 ? 'var(--em)' : 'var(--danger)'};font-weight:700;border:1px solid var(--border)">${actPct != null ? (actPct < 0 ? '−' : '') + Math.abs(actPct).toFixed(1) + '%' : '—'}</td>
+                ${tdV(hasActual ? annActSav : null, null, annActMeas)}
+                <td style="padding:6px 10px;text-align:right;font-family:var(--mono);font-size:12px;color:${_ppPctShown ? _ppPctShown.color : 'var(--text3)'};font-weight:700;border:1px solid var(--border)">${_ppPctShown ? _ppPctShown.text : '—'}</td>
               </tr></tfoot>
             </table></div>
             <div style="padding:16px 18px 10px;font-size:12px;font-weight:700;color:var(--text2);text-transform:uppercase;letter-spacing:.5px;display:${_ppQtrs.length ? 'flex' : 'none'};gap:10px;align-items:center">Quarter Savings by Building
@@ -2496,16 +2502,19 @@ function renderUDProjAggPanel(content) {
       const body = document.getElementById('pp-qtr-body');
       if (!sel || !body) return;
       const yms = _ppAllYms.filter((y) => quarterKeyOfYM(y) === sel.value);
-      const cell = (v, bold) =>
-        `<td style="padding:6px 10px;text-align:right;font-family:var(--mono);font-size:12px;border:1px solid var(--border);white-space:nowrap;color:${savingsSignColor(Math.round(v), 'var(--em)', 'var(--danger)', 'var(--text)')}${bold ? ';font-weight:700' : ''}">${v < 0 ? '−' : ''}${$f(v, 2)}</td>`;
+      const cell = (v, bold, meas) => {
+        const sh = savingsFlooredShown(meas == null ? v : meas, v, 2, (n) => $f(n, 2), 'var(--em)', 'var(--danger)', 'var(--text)');
+        return `<td style="padding:6px 10px;text-align:right;font-family:var(--mono);font-size:12px;border:1px solid var(--border);white-space:nowrap;color:${sh.color}${bold ? ';font-weight:700' : ''}">${sh.text}</td>`;
+      };
       const lbl = 'padding:6px 10px;font-size:12px;font-weight:700;border:1px solid var(--border)';
       const bRows = bldgs
         .filter((b) => _ppSavByBldgYM[b.id])
         .map((b) => ({ name: b.name || b.id, v: yms.reduce((t, y) => t + (_ppSavByBldgYM[b.id][y] || 0), 0) }));
-      const tot = billableSavingsWithPresented(udSelProjId, yms, _ppSavByBldgYM).total;
+      const _qB = billableSavingsWithPresented(udSelProjId, yms, _ppSavByBldgYM);
+      const tot = _qB.total;
       body.innerHTML = `<table id="pp-qtr-table" style="border-collapse:collapse;width:100%;font-size:12px"><thead><tr style="background:var(--s1)"><th style="${thS};text-align:left">Building</th><th style="${thS}">Savings $</th></tr></thead><tbody>${bRows
         .map((r) => `<tr><td style="${lbl};font-weight:600;background:var(--s2)">${_escHtml(r.name)}</td>${cell(r.v)}</tr>`)
-        .join('')}</tbody><tfoot><tr style="background:var(--s1)"><td style="${lbl}">Total</td>${cell(tot, true)}</tr><tr id="pp-qtr-pos-row" style="background:var(--s1)"><td style="${lbl}">Total of positive savings only</td>${cell(sumPositiveSavings(bRows.map((r) => r.v)), true)}</tr></tfoot></table>`;
+        .join('')}</tbody><tfoot><tr style="background:var(--s1)"><td style="${lbl}">Total (billable, not below $0)</td>${cell(tot, true, _qB.measured)}</tr><tr id="pp-qtr-pos-row" style="background:var(--s1)"><td style="${lbl}">Total of positive savings only</td>${cell(sumPositiveSavings(bRows.map((r) => r.v)), true)}</tr></tfoot></table>`;
     };
     document.getElementById('pp-qtr-sel')?.addEventListener('change', _ppRenderQtr);
     _ppRenderQtr();
@@ -2799,7 +2808,7 @@ function renderBldgComparisonPanel(content, bldgs, projName, projId) {
       const color = PALETTE[i % PALETTE.length];
       const fmtEui = r.eui != null ? r.eui.toFixed(1) + ' kBtu/sf' : '—';
       const fmtCost = r.costPerSqft != null ? '$' + r.costPerSqft.toFixed(2) + '/sf' : '—';
-      const fmtSav = r.savingsPct != null ? (r.savingsPct >= 0 ? '+' : '') + r.savingsPct.toFixed(1) + '%' : '—';
+      const fmtSav = r.savingsPct != null ? savingsSign(r.savingsPct, 1) + r.savingsPct.toFixed(1) + '%' : '—';
       const fmtLF = r.loadFactor != null ? (r.loadFactor * 100).toFixed(0) + '%' : '—';
       const fmtES = r.energyStar != null ? '~' + r.energyStar : '—';
       const fmtDem = r.demandIntensity != null ? r.demandIntensity.toFixed(4) + ' kW/sf' : '—';
@@ -2814,7 +2823,7 @@ function renderBldgComparisonPanel(content, bldgs, projName, projId) {
       </td>
       <td style="padding:5px 8px;font-size:11px;font-family:var(--mono);color:var(--text2);text-align:right">${fmtEui}</td>
       <td style="padding:5px 8px;font-size:11px;font-family:var(--mono);color:var(--text2);text-align:right">${fmtCost}</td>
-      <td style="padding:5px 8px;font-size:11px;font-family:var(--mono);color:${r.savingsPct != null && r.savingsPct >= 0 ? 'var(--em)' : 'var(--danger)'};text-align:right">${fmtSav}</td>
+      <td style="padding:5px 8px;font-size:11px;font-family:var(--mono);color:${r.savingsPct != null ? savingsSignColor(r.savingsPct, 1, 'var(--em)', 'var(--danger)', 'var(--text)') : 'var(--danger)'};text-align:right">${fmtSav}</td>
       <td style="padding:5px 8px;font-size:11px;font-family:var(--mono);color:var(--text2);text-align:right">${fmtLF}</td>
       <td style="padding:5px 8px;font-size:11px;font-family:var(--mono);color:var(--text2);text-align:right">${fmtES}</td>
       <td style="padding:5px 8px;font-size:11px;font-family:var(--mono);color:var(--text2);text-align:right">${fmtDem}</td>
@@ -9681,8 +9690,8 @@ function bpRecalc() {
   const $cs = (v, force) => {
     if (v == null && !force) return '<span style="color:var(--text3)">—</span>';
     if (v == null) v = 0;
-    const c = v >= 0 ? 'var(--em)' : 'var(--danger)';
-    return `<span style="color:${c}">${v < 0 ? '−' : ''}${$f(v)}</span>`;
+    const c = savingsSignColor(v, 2, 'var(--em)', 'var(--danger)', 'var(--text)');
+    return `<span style="color:${c}">${savingsSign(v, 2, true)}${$f(v)}</span>`;
   };
 
   // Build columns
@@ -9825,7 +9834,7 @@ function bpRecalc() {
         if (colWaiting(col)) return _bpWaitCell(isLast);
         const v = colFn(col);
         const disp = v == null ? '<span style="color:var(--text3)">—</span>' : $cs(v);
-        return `<td style="${tdS(v == null ? 'var(--text3)' : v >= 0 ? 'var(--em)' : 'var(--danger)', isLast)}">${disp}</td>`;
+        return `<td style="${tdS(v == null ? 'var(--text3)' : savingsSignColor(v, 2, 'var(--em)', 'var(--danger)', 'var(--text)'), isLast)}">${disp}</td>`;
       })
       .join('');
     const pctLabel = typeof pctFn === 'function' ? pctFn() : pctFn;
@@ -9865,7 +9874,7 @@ function bpRecalc() {
         const disp =
           pct == null
             ? '<span style="color:var(--text3)">—</span>'
-            : `<span style="color:${pct >= 0 ? 'var(--em)' : 'var(--danger)'}">${pct < 0 ? '−' : ''}${Math.abs(pct).toFixed(1)}%</span>`;
+            : `<span style="color:${savingsSignColor(pct, 1, 'var(--em)', 'var(--danger)', 'var(--text)')}">${savingsSign(pct, 1, true)}${Math.abs(pct).toFixed(1)}%</span>`;
         return `<td style="padding:7px 10px;text-align:right;font-family:var(--mono);font-size:12px;border:1px solid var(--border);background:${isLast ? 'var(--s1)' : 'transparent'};white-space:nowrap">${disp}</td>`;
       })
       .join('');
@@ -9891,7 +9900,7 @@ function bpRecalc() {
     (hasActual
       ? makeRow(
           'Actual Utility Savings $',
-          annActSav >= 0 ? 'var(--em)' : 'var(--danger)',
+          savingsSignColor(annActSav, 2, 'var(--em)', 'var(--danger)', 'var(--text)'),
           (col) => getActSav(col),
           actPct,
         )
@@ -9952,7 +9961,7 @@ function bpRecalc() {
                 ? `
             <div style="background:var(--s2);border:1px solid var(--border);border-radius:9px;padding:12px 14px;cursor:pointer" onclick="showFormula(_fml('Current Savings','Sum of (Baseline − Actual) × Rate for each meter per month','${$f(annActSav)}','<div style=\\'font-size:11px;color:var(--text2)\\'>Source: each meter\\'s Performance tab calculates monthly savings from regression baseline vs actual bills</div>'),event)">
               <div style="font-size:10px;color:var(--text2);text-transform:uppercase;letter-spacing:.6px;font-weight:700;margin-bottom:4px">Current Savings <span style="font-size:9px;color:var(--em)">ℹ️</span></div>
-              <div style="font-size:18px;font-weight:800;font-family:var(--head);color:${annActSav >= 0 ? 'var(--em)' : 'var(--danger)'}">${annActSav < 0 ? '−' : ''}${$f(annActSav)}</div>
+              <div style="font-size:18px;font-weight:800;font-family:var(--head);color:${savingsSignColor(annActSav, 2, 'var(--em)', 'var(--danger)', 'var(--text)')}">${savingsSign(annActSav, 2, true)}${$f(annActSav)}</div>
               <div style="font-size:11px;color:var(--text2);margin-top:2px">${actPct || ''} of baseline</div>
               ${_bpWaitYms.length ? `<div style="font-size:11px;color:var(--text2);margin-top:2px">Does not include ${_escHtml(weatherWaitingLabel(_bpWaitYms))}: waiting for weather data</div>` : ''}
             </div>
@@ -11211,7 +11220,7 @@ function renderPerfPane(pane, m, bills, incl) {
 
   // ── Stats pills (built AFTER savings pre-computation) ──
   const _savFmtPill = (v) =>
-    (v < 0 ? '+' : '−') + ' $' + Math.abs(v).toLocaleString(undefined, { maximumFractionDigits: 0 });
+    ({ '+': '−', '−': '+', '': '' }[savingsSign(v, 0)]) + ' $' + Math.abs(v).toLocaleString(undefined, { maximumFractionDigits: 0 });
   const statsHTML =
     '<div style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:10px">' +
     blPill(blAvgMo.toLocaleString('en-US', { maximumFractionDigits: 0 }) + ' ' + unit + '/mo', 'Baseline Avg') +
@@ -11224,18 +11233,18 @@ function renderPerfPane(pane, m, bills, incl) {
       : '') +
     blPill(postAvgMo.toLocaleString('en-US', { maximumFractionDigits: 0 }) + ' ' + unit + '/mo', 'Post-BL Avg') +
     blPill(
-      (savPct >= 0 ? '+' : '−') + Math.abs(savPct).toFixed(1) + '%',
-      savPct >= 0 ? 'Reduction' : 'Increase',
-      savPct >= 0 ? 'var(--em)' : 'var(--danger)',
+      savingsSign(savPct, 1) + Math.abs(savPct).toFixed(1) + '%',
+      savingsSign(savPct, 1) === '−' ? 'Increase' : 'Reduction',
+      savingsSignColor(savPct, 1, 'var(--em)', 'var(--danger)', 'var(--text)'),
     ) +
-    (savCost !== null ? blPill(_savFmtPill(savCost), 'Cost Delta', savCost >= 0 ? 'var(--em)' : 'var(--danger)') : '') +
+    (savCost !== null ? blPill(_savFmtPill(savCost), 'Cost Delta', savingsSignColor(savCost, 0, 'var(--em)', 'var(--danger)', 'var(--text)')) : '') +
     (_qtrSavings.total !== null && _qtrSavings.waiting.length
       ? blPill(savingsOrWaiting(_qtrSavings.waiting, 0), _qtrSavings.label + ' Savings', 'var(--text2)')
       : _qtrSavings.total !== null
       ? blPill(
           _savFmtPill(_qtrSavings.total),
           _qtrSavings.label + ' Savings (' + _qtrSavings.monthsWithData + '/3 mo)',
-          _qtrSavings.total >= 0 ? 'var(--em)' : 'var(--danger)',
+          savingsSignColor(_qtrSavings.total, 0, 'var(--em)', 'var(--danger)', 'var(--text)'),
         )
       : '') +
     (_qtrSavings.projected !== null && _qtrSavings.monthsWithData < 3 && !_qtrSavings.waiting.length

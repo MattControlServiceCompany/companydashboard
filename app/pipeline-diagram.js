@@ -423,12 +423,12 @@ function _pdNodeDetail(nodeId, m, bills, incl) {
             _pdFmt(r.usage, 0) +
             '</td>' +
             '<td style="padding:4px 8px;text-align:right;font-variant-numeric:tabular-nums;color:' +
-            (sav >= 0 ? 'var(--green)' : 'var(--red)') +
+            savingsSignColor(sav, 0, 'var(--green)', 'var(--red)', 'var(--text)') +
             '">' +
             _pdFmt(sav, 0) +
             '</td>' +
             '<td style="padding:4px 8px;text-align:right;font-variant-numeric:tabular-nums;color:' +
-            (savDol >= 0 ? 'var(--green)' : 'var(--red)') +
+            savingsSignColor(savDol, 0, 'var(--green)', 'var(--red)', 'var(--text)') +
             '">' +
             (avgRate ? _pdFmtMoney(savDol) : '—') +
             '</td>' +

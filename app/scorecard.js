@@ -580,7 +580,7 @@ function renderBuildingScorecardPane(pane, b, projId) {
         '</div>'
       : '<div style="color:var(--text3);font-size:12px;padding:20px 0;text-align:center">No post-baseline savings data yet</div>') +
     '<div style="margin-top:8px;font-size:11px;color:var(--text3)">' + _escHtml('Savings, ' + scPeriodWord + ' (this building)') + ': <span style="color:' +
-    (annualSavings >= 0 ? 'var(--em)' : 'var(--red)') +
+    savingsSignColor(annualSavings, 0, 'var(--em)', 'var(--red)', 'var(--text)') +
     ';font-weight:700">' +
     _scFmt$(annualSavings) +
     '</span></div>' +

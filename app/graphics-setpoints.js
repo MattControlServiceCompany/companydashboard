@@ -190,8 +190,8 @@ function _pvRenderBldgPerf(b, projId) {
   var $f = function (v) {
     return '$' + Math.abs(v).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
   };
-  var savColor = function (v) {
-    return savingsSignColor(v, 'var(--em)', 'var(--danger)', 'var(--text)');
+  var savColor = function (v, d) {
+    return savingsSignColor(v, d, 'var(--em)', 'var(--danger)', 'var(--text)');
   };
   var thS =
     'padding:6px 10px;text-align:right;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.4px;color:var(--text2);background:var(--s1);border:1px solid var(--border2);white-space:nowrap';
@@ -234,14 +234,14 @@ function _pvRenderBldgPerf(b, projId) {
       (waitMo[mo]
         ? waitCell
         : '<td style="' +
-          tdS(act != null ? savColor(act) : 'var(--text3)') +
+          tdS(act != null ? savColor(act, 2) : 'var(--text3)') +
           '">' +
-          (act != null ? (act < 0 ? '−' : '') + $f(act) : '—') +
+          (act != null ? savingsSign(act, 2, true) + $f(act) : '—') +
           '</td>' +
           '<td style="' +
-          tdS(pct != null ? savColor(pct) : 'var(--text3)') +
+          tdS(pct != null ? savColor(pct, 1) : 'var(--text3)') +
           '">' +
-          (pct != null ? (pct < 0 ? '−' : '') + Math.abs(pct).toFixed(1) + '%' : '—') +
+          (pct != null ? savingsSign(pct, 1, true) + Math.abs(pct).toFixed(1) + '%' : '—') +
           '</td>') +
       '</tr>'
     );
@@ -295,14 +295,14 @@ function _pvRenderBldgPerf(b, projId) {
     ) +
     '</td>' +
     '<td style="' +
-    tdS(hasActual ? savColor(annAct) : 'var(--text3)') +
+    tdS(hasActual ? savColor(annAct, 2) : 'var(--text3)') +
     '">' +
-    (hasActual ? (annAct < 0 ? '−' : '') + $f(annAct) : '—') +
+    (hasActual ? savingsSign(annAct, 2, true) + $f(annAct) : '—') +
     '</td>' +
     '<td style="' +
-    tdS(annPct != null ? savColor(annPct) : 'var(--text3)') +
+    tdS(annPct != null ? savColor(annPct, 1) : 'var(--text3)') +
     '">' +
-    (annPct != null ? (annPct < 0 ? '−' : '') + Math.abs(annPct).toFixed(1) + '%' : '—') +
+    (annPct != null ? savingsSign(annPct, 1, true) + Math.abs(annPct).toFixed(1) + '%' : '—') +
     '</td>' +
     '</tr></tfoot></table></div>' +
     (waitYms.length
@@ -347,8 +347,8 @@ function _pvRenderProjPerf(bldgs, projId) {
   var $f = function (v) {
     return '$' + Math.abs(v).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
   };
-  var savColor = function (v) {
-    return savingsSignColor(v, 'var(--em)', 'var(--danger)', 'var(--text)');
+  var savColor = function (v, d) {
+    return savingsSignColor(v, d, 'var(--em)', 'var(--danger)', 'var(--text)');
   };
   var thS =
     'padding:6px 10px;text-align:right;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.4px;color:var(--text2);background:var(--s1);border:1px solid var(--border2);white-space:nowrap';
@@ -360,6 +360,7 @@ function _pvRenderProjPerf(bldgs, projId) {
     );
   };
   var annAct = 0;
+  var annActMeas = 0;
   // Months with no weather yet: no savings figure (weatherWaitingMonths, computations/savings.js).
   var _allYms = {};
   Object.keys(actSavByBldgYM).forEach(function (id) {
@@ -391,14 +392,14 @@ function _pvRenderProjPerf(bldgs, projId) {
       (waitMo[mo]
         ? waitCell
         : '<td style="' +
-          tdS(act != null ? savColor(act) : 'var(--text3)') +
+          tdS(act != null ? savColor(act, 2) : 'var(--text3)') +
           '">' +
-          (act != null ? (act < 0 ? '−' : '') + $f(act) : '—') +
+          (act != null ? savingsSign(act, 2, true) + $f(act) : '—') +
           '</td>' +
           '<td style="' +
-          tdS(pct != null ? savColor(pct) : 'var(--text3)') +
+          tdS(pct != null ? savColor(pct, 1) : 'var(--text3)') +
           '">' +
-          (pct != null ? (pct < 0 ? '−' : '') + Math.abs(pct).toFixed(1) + '%' : '—') +
+          (pct != null ? savingsSign(pct, 1, true) + Math.abs(pct).toFixed(1) + '%' : '—') +
           '</td>') +
       '</tr>'
     );
@@ -411,9 +412,17 @@ function _pvRenderProjPerf(bldgs, projId) {
         _allYMs[ym] = true;
       });
     });
-    annAct = billableSavingsWithPresented(projId, Object.keys(_allYMs).sort(), actSavByBldgYM).total;
+    var _annB = billableSavingsWithPresented(projId, Object.keys(_allYMs).sort(), actSavByBldgYM);
+    annAct = _annB.total;
+    annActMeas = _annB.measured; // before the $0 floor
   }
   var annPct = annBase > 0 && hasActual ? (annAct / annBase) * 100 : null;
+  var annPctMeas = annBase > 0 && hasActual ? (annActMeas / annBase) * 100 : null;
+  var _annShown = hasActual ? savingsFlooredShown(annActMeas, annAct, 2, $f, 'var(--em)', 'var(--danger)', 'var(--text)') : null;
+  var _annPctShown =
+    annPct != null
+      ? savingsFlooredShown(annPctMeas, annPct, 1, function (n) { return n.toFixed(1) + '%'; }, 'var(--em)', 'var(--danger)', 'var(--text)')
+      : null;
   var projMeta = projects.find(function (p) {
     return p.id === projId;
   });
@@ -445,14 +454,14 @@ function _pvRenderProjPerf(bldgs, projId) {
     $f(annBase) +
     '</td>' +
     '<td style="' +
-    tdS(hasActual ? savColor(annAct) : 'var(--text3)') +
+    tdS(hasActual ? _annShown.color : 'var(--text3)') +
     '">' +
-    (hasActual ? (annAct < 0 ? '−' : '') + $f(annAct) : '—') +
+    (hasActual ? _annShown.text : '—') +
     '</td>' +
     '<td style="' +
-    tdS(annPct != null ? savColor(annPct) : 'var(--text3)') +
+    tdS(annPct != null ? _annPctShown.color : 'var(--text3)') +
     '">' +
-    (annPct != null ? (annPct < 0 ? '−' : '') + Math.abs(annPct).toFixed(1) + '%' : '—') +
+    (annPct != null ? _annPctShown.text : '—') +
     '</td>' +
     '</tr></tfoot></table></div>' +
     (waitYms.length
@@ -1031,15 +1040,17 @@ function egfxRefresh(projId) {
           .sort(),
       )
     : [];
-  const totalEgfxSav = hasEgfxSav
+  const _egfxBill = hasEgfxSav
     ? billableSavingsWithPresented(
         projId,
         Object.keys(egfxSavByYm)
           .filter((ym) => ym.startsWith(curYear))
           .sort(),
         egfxSavByBldgYm,
-      ).total
-    : 0;
+      )
+    : { total: 0, measured: 0 };
+  const totalEgfxSav = _egfxBill.total;
+  const totalEgfxMeas = _egfxBill.measured; // before the $0 floor
 
   // Unit savings (kwh, therms, gallons) are now accumulated from getMeterSavings
   // via savResult.unitsByYM filtered to current year — weather-normalized, not rolling-12
@@ -1077,9 +1088,11 @@ function egfxRefresh(projId) {
   if (curSavEl) {
     if (hasEgfxSav) {
       const pct = totalBlCost > 0 ? (totalEgfxSav / totalBlCost) * 100 : 0;
-      curSavEl.textContent = (totalEgfxSav >= 0 ? '' : '-') + '$' + Math.abs(Math.round(totalEgfxSav)).toLocaleString();
-      curSavEl.style.color = totalEgfxSav >= 0 ? 'var(--green)' : 'var(--danger)';
-      if (curSavSubEl) curSavSubEl.textContent = pct.toFixed(1) + '% actual savings';
+      const _curShown = savingsFlooredShown(totalEgfxMeas, totalEgfxSav, 0, (n) => '$' + Math.round(n).toLocaleString(), 'var(--green)', 'var(--danger)', 'var(--text)');
+      const _pctShown = savingsFlooredShown(totalBlCost > 0 ? (totalEgfxMeas / totalBlCost) * 100 : 0, pct, 1, (n) => n.toFixed(1) + '%', 'var(--green)', 'var(--danger)', 'var(--text)');
+      curSavEl.textContent = _curShown.text;
+      curSavEl.style.color = _curShown.color;
+      if (curSavSubEl) curSavSubEl.textContent = _pctShown.text + ' actual savings';
       if (curSavSubEl && egfxWaitYms.length)
         curSavSubEl.textContent += '. Does not include ' + weatherWaitingLabel(egfxWaitYms) + ': waiting for weather data';
     } else {
@@ -1092,9 +1105,9 @@ function egfxRefresh(projId) {
   // Per-commodity savings cards
   const commSavContainer = document.getElementById(`egfx-commodity-savings-${projId}`);
   if (commSavContainer) {
-    const _$f = (v) => (v >= 0 ? '' : '-') + '$' + Math.abs(Math.round(v)).toLocaleString();
+    const _$f = (v) => savingsSign(v, 0, true) + '$' + Math.abs(Math.round(v)).toLocaleString();
     const _$n = (v) => Math.round(Math.abs(v)).toLocaleString();
-    const _clr = (v) => (v >= 0 ? 'var(--green)' : 'var(--danger)');
+    const _clr = (v) => savingsSignColor(v, 0, 'var(--green)', 'var(--danger)', 'var(--text)');
     let cards = '';
     if (totalBlKwh > 0) {
       cards +=
@@ -2223,7 +2236,9 @@ function egfxRefresh(projId) {
           );
           const costSav = _qr.total;
           const costPct = qBlCost > 0 ? (costSav / qBlCost) * 100 : 0;
-          const savColor = savingsSignColor(Math.round(costSav), 'var(--green)', 'var(--red)', 'var(--text)');
+          const costPctMeas = qBlCost > 0 ? (_qr.measured / qBlCost) * 100 : 0; // before the $0 floor
+          const _costShown = savingsFlooredShown(_qr.measured, costSav, 0, (n) => '$' + Math.round(n).toLocaleString(), 'var(--green)', 'var(--red)', 'var(--text)');
+          const _pctQShown = savingsFlooredShown(costPctMeas, costPct, 1, (n) => n.toFixed(1) + '%', 'var(--green)', 'var(--red)', 'var(--text)', true);
           const $f = (n) => '$' + Math.abs(Math.round(n)).toLocaleString();
           qHtml += '<tr><td>' + y + '</td><td>' + qNames[qi] + '</td>';
           if (hasElec)
@@ -2257,17 +2272,16 @@ function egfxRefresh(projId) {
           else {
             qHtml +=
               '<td style="text-align:right;font-family:var(--mono);color:' +
-              savColor +
+              _costShown.color +
               '">' +
-              $f(costSav) +
+              _costShown.text +
               '</td>';
             qHtml +=
               '<td style="text-align:right;font-family:var(--mono);color:' +
-              savColor +
+              _pctQShown.color +
               '">' +
-              (costSav > 0 ? '+' : '') +
-              costPct.toFixed(1) +
-              '%</td></tr>';
+              _pctQShown.text +
+              '</td></tr>';
           }
         }
       }
