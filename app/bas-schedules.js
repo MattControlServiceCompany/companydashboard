@@ -7,6 +7,7 @@
 //   en_bas_snap_<pid>    { "YYYY-MM-DD": { forDate, importedAt, importedBy, rows:{ "location|program": [[start,end,mode]] } } }
 //   en_bas_hist_<pid>    [ { id, kind, at, by, forDate, comparedTo, buildings, counts, byBuilding, added, removed, changed } ]  newest first, 50 (imports only; actions are in en_bas_acthist_<pid>, 50)
 //   en_bas_groups_<pid>  { importedAt, importedBy, groups:{ "building|group": { building, group, schedules, members } } }
+//   en_bas_schedhistory_<pid>  { version, buildings:[ { building, baselineWeekday, weekday, weekend, setPoints } ] }  written by "Import audit log" (BasAuditLog, app/bas-audit-log.js), read by the quarterly report
 //
 // Network: none. Opening the page or the tab reads saved data only. Files are read in the browser.
 // The CSV is read by emParseEffectiveSchedulesCSV and the time blocks by _emScheduleBlocks (app/equipment-matrix.js),
@@ -359,10 +360,12 @@
       '<div class="card pcal" style="margin-bottom:16px"><div class="card-hdr" style="justify-content:space-between"><span class="card-title">BAS schedules</span>' +
       '<span style="display:flex;gap:8px;flex-wrap:wrap">' +
       '<button class="btn btn-em btn-sm" onclick="document.getElementById(\'bas-file-' + pid + '\').click()">Import schedules</button>' +
-      '<button class="btn btn-ghost btn-sm" onclick="document.getElementById(\'bas-gfile-' + pid + '\').click()">Import scheduling groups</button></span></div>' +
+      '<button class="btn btn-ghost btn-sm" onclick="document.getElementById(\'bas-gfile-' + pid + '\').click()">Import scheduling groups</button>' +
+      '<button class="btn btn-ghost btn-sm" onclick="document.getElementById(\'bas-afile-' + pid + '\').click()">Import audit log</button></span></div>' +
       '<div style="padding:16px">' +
       '<input class="bas-file" type="file" id="bas-file-' + pid + '" accept=".csv,text/csv" multiple onchange="basPick(' + pid + ',this)">' +
       '<input class="bas-file" type="file" id="bas-gfile-' + pid + '" accept=".csv,text/csv" multiple onchange="basPickGroups(' + pid + ',this)">' +
+      '<input class="bas-file" type="file" id="bas-afile-' + pid + '" accept=".csv,text/csv" multiple onchange="basPickAudit(' + pid + ',this)">' +
       '<div class="pcal-msg" id="bas-msg-' + pid + '" role="status">' + esc(s.msg) + '</div>' +
       pendingBox(pid) +
       datesSection(pid, snaps) +
@@ -457,6 +460,32 @@
       (att && att.error ? ' Equipment Matrix schedules not filled: ' + att.error : '');
     render(pid);
     if (typeof window.pcalRender === 'function') window.pcalRender(pid); // the events list BAS column uses the new copy
+  };
+  // Audit log import: the WebCTRL audit log files (all buildings in one pick) -> the schedule history record the
+  // quarterly report prints (en_bas_schedhistory_<pid>). BasAuditLog does the reading and the merge; this is the one writer.
+  window.basPickAudit = function (pid, input) {
+    readFiles(input).then(async function (files) {
+      if (!files.length) return;
+      var events = [];
+      var bad = '';
+      files.forEach(function (f) {
+        var r = BasAuditLog.parseRows(baSplitCSV(f.text));
+        if (r.error) bad = bad || f.name + ': ' + r.error;
+        else events = events.concat(r.events);
+      });
+      if (bad) return say(pid, bad);
+      var results = BasAuditLog.analyze(events);
+      if (!results.length) return say(pid, 'No schedule or set point rows were found in these files.');
+      var names = typeof getUDBldgs === 'function' ? (getUDBldgs(pid) || []).map(function (b) { return b.name; }) : [];
+      var res = BasAuditLog.apply(DB.get('en_bas_schedhistory_' + pid, null), results, names);
+      await DB.set('en_bas_schedhistory_' + pid, res.rec);
+      var lost = res.matched.filter(function (m) { return names.indexOf(m.project) < 0; }).map(function (m) { return m.log; });
+      say(
+        pid,
+        'Saved schedule and set point history for ' + plural(res.matched.length, 'building', 'buildings') + ' from ' + plural(files.length, 'file', 'files') + '.' +
+          (lost.length ? ' Not matched to a building of this project (the report will not print them): ' + lost.join(', ') + '.' : ''),
+      );
+    });
   };
   window.basPickGroups = function (pid, input) {
     readFiles(input).then(function (files) {
