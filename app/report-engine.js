@@ -10713,11 +10713,11 @@ function rptPageAppendixWeather(n, d, appLetter) {
     // a measured ~17px overflow on this page — small enough not to need a further page split.
     '<div style="padding:8px 12px;font-size:11px;color:var(--rpt-page-text);line-height:1.4">' +
     '<div style="font-weight:700;font-size:11px;color:var(--rpt-page-text);margin-bottom:4px">What is a degree day?</div>' +
-    '<div style="margin-bottom:4px">A degree day is a measure of relative heating and cooling energy required by buildings. It&#39;s calculated as the difference between the average daily temperature and the balance point temperature (60 degrees). When the average daily temperature is above the balance point, the result is cooling degree days; when below, the result is heating degree days.</div>' +
-    '<div style="margin-bottom:4px"><strong>Example 1:</strong> Average daily temperature = 80. Balance point = 60. Cooling degree days = 20 CDD. (80-60=20)</div>' +
-    '<div style="margin-bottom:4px"><strong>Example 2:</strong> Average daily temperature = 45. Balance point = 60. Heating degree days = 15 HDD. (60-45=15)</div>' +
-    '<div style="margin-bottom:4px"><strong>Example 3:</strong> Average daily temperature = 60. Balance point = 60. No degree days.</div>' +
-    '<div>You may ask, &quot;Why not use average temperature instead of degree days?&quot; The problem with average temperature is that highs and lows cancel each other out. A warm day (80 average temp) combined with a cold day (40 average temp) averages 60. So do two mild days of 59 and 61. But in the first case there are 20 CDD and 20 HDD while in the second there are 1 CDD and 1 HDD. The further the average temperature deviates from the balance point, the greater the energy needed to keep the building in a comfortable temperature range.</div>' +
+    '<div style="margin-bottom:4px">A degree day counts how far a day&#39;s average outdoor temperature is from the balance point of 60&deg;F. A day warmer than 60&deg;F adds cooling degree days (CDD). A day colder than 60&deg;F adds heating degree days (HDD). Each degree of difference is one degree day, so the totals track how much heating or cooling a building needs.</div>' +
+    '<div style="margin-bottom:4px"><strong>Example 1:</strong> A day averages 72&deg;F. 72 &minus; 60 = 12 CDD.</div>' +
+    '<div style="margin-bottom:4px"><strong>Example 2:</strong> A day averages 38&deg;F. 60 &minus; 38 = 22 HDD.</div>' +
+    '<div style="margin-bottom:4px"><strong>Example 3:</strong> A day averages 60&deg;F. The result is 0 degree days.</div>' +
+    '<div>Degree days are summed day by day, so a hot day and a cold day do not cancel. A 75&deg;F day (15 CDD) and a 45&deg;F day (15 HDD) average 60&deg;F, but together they need both cooling and heating. Two mild days of 59&deg;F and 61&deg;F add only 1 HDD and 1 CDD.</div>' +
     '</div>';
 
   var page1 = rptPage(n, 'Appendix ' + appLetter + ': Weather Data', page1Body, {
