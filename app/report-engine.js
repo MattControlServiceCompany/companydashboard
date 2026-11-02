@@ -148,7 +148,7 @@ function collectReportData(projId, buildingIds, reportDateStr, reportType, selec
       reportYMs = qYMs.filter((ym) => allPostYMs.includes(ym));
       // No bill in the chosen quarter: no months. The label below still names the quarter, and no
       // actual bar is drawn for a month without a bill (never a future month).
-      reportYMs._qLabel = 'Q' + explicitQ + ' ' + explicitYr;
+      reportYMs._qLabel = _rptQuarterLabel(explicitQ, explicitYr);
       reportYMs._qStartMo = startMo;
       reportYMs._qYear = explicitYr;
       reportYMs._qNum = explicitQ;
@@ -172,7 +172,7 @@ function collectReportData(projId, buildingIds, reportDateStr, reportType, selec
         if (hasData && !isCurrent) {
           reportYMs = qYMs.filter((ym) => allPostYMs.includes(ym));
           if (reportYMs.length === 0) continue;
-          reportYMs._qLabel = 'Q' + qNum + ' ' + yr;
+          reportYMs._qLabel = _rptQuarterLabel(qNum, yr);
           reportYMs._qStartMo = startMo;
           reportYMs._qYear = yr;
           reportYMs._qNum = qNum;
@@ -1694,12 +1694,7 @@ function rptPage(pageNum, title, bodyHTML, options = {}) {
         '45px' +
         ';left:0;right:0">' +
         (data.period.type === 'quarterly'
-          ? (data.printed
-              ? 'Q' + (data.period.quarter || 1)
-              : ['First', 'Second', 'Third', 'Fourth'][(data.period.quarter || 1) - 1] + ' Quarter') +
-            ' ' +
-            _escHtml(data.period.year || '') +
-            ' Quarterly Report'
+          ? _rptQuarterLabel(data.period.quarter || 1, _escHtml(data.period.year || '')) + ' Quarterly Report'
           : data.period.type === 'annual' && data.period.year
             ? _escHtml(data.period.year) + ' Annual Report'
             : _escHtml(data.period.label || '')) +
@@ -2305,6 +2300,12 @@ function _rptQPara(text) {
   return '<p style="font-size:14px;line-height:1.4;color:var(--rpt-page-text);margin:2px 0 6px">' + text + '</p>';
 }
 
+// ONE formatter for a quarter label (Matt, 2026-11-02): "Q3 2026", never "Third Quarter".
+// Every quarterly-report page, chart label, table header and the cover title calls this.
+function _rptQuarterLabel(q, year) {
+  return 'Q' + q + (year ? ' ' + year : '');
+}
+
 // The facts the pages and the findings share, from d only.
 function _rptQFacts(d) {
   var q = d.period.quarter || 1;
@@ -2358,7 +2359,7 @@ function _rptQFacts(d) {
   return {
     q: q,
     yms: yms,
-    ordinal: ['First', 'Second', 'Third', 'Fourth'][q - 1],
+    qLabel: _rptQuarterLabel(q, d.period.year),
     year: d.period.year,
     target: qT[q - 1] || 0,
     targetToDate: qT.slice(0, q).reduce(function (s, v) {
@@ -2460,7 +2461,7 @@ function _rptQCoverPage(n, d, f) {
   var qBars = [];
   for (var i = 0; i < f.q; i++) {
     qBars.push({
-      label: ['First', 'Second', 'Third', 'Fourth'][i],
+      label: _rptQuarterLabel(i + 1),
       value: acts[i] != null ? acts[i] : 0,
       sub: ['Target ' + _fmtUSD(qT[i] || 0, '$0')],
     });
@@ -2468,7 +2469,7 @@ function _rptQCoverPage(n, d, f) {
   var mBars = f.months.map(function (m) {
     return { label: m.name, value: Math.round(m.sav), sub: [] };
   });
-  var qLabel = f.ordinal + ' Quarter ' + f.year;
+  var qLabel = f.qLabel;
   var headline;
   if (f.waiting) {
     headline = 'Savings for this quarter are not reported yet. ' + savingsOrWaiting(_rptWaitingYMs(d), 0) + '.';
@@ -2563,9 +2564,11 @@ function _rptQCoverPage(n, d, f) {
     '</td><td class="rpt-n rpt-g">' +
     _fmtUSD(f.cumulative, '$0') +
     '</td></tr>' +
-    '<tr><td>Savings target to date (first through ' +
-    ['first', 'second', 'third', 'fourth'][f.q - 1] +
-    ' quarter)</td><td class="rpt-n">' +
+    '<tr><td>Savings target to date (' +
+    _rptQuarterLabel(1, f.year) +
+    ' through ' +
+    f.qLabel +
+    ')</td><td class="rpt-n">' +
     _fmtUSD(f.targetToDate, '$0') +
     '</td></tr>' +
     '</tbody></table>';
@@ -2597,8 +2600,8 @@ function _rptQCoverPage(n, d, f) {
     }) +
     '</div>' +
     '<div style="flex:1"><div style="font-size:14px;font-weight:700;color:var(--rpt-blue);margin-bottom:2px">' +
-    f.ordinal +
-    ' quarter savings measured, by month</div>' +
+    f.qLabel +
+    ' savings measured, by month</div>' +
     _rptQBarsSVG(340, 215, mBars, function (v) {
       return _fmtUSD(v, '$0');
     }) +
@@ -2747,7 +2750,7 @@ function _rptQResultsPage(n, d, f) {
     : '<h2>Control Service Company Compensation</h2>' +
       _rptQTable(
         [46, 27, 27],
-        ['', f.ordinal + ' quarter', 'Contract to date'],
+        ['', f.qLabel, 'Contract to date'],
         '<tr><td>Savings billed</td><td class="rpt-n">' +
           savingsOrWaiting(_rptWaitingYMs(d), f.billed) +
           '</td><td class="rpt-n">' +
@@ -2771,8 +2774,8 @@ function _rptQResultsPage(n, d, f) {
 
   var body =
     '<h2>' +
-    f.ordinal +
-    ' Quarter Results by Building</h2>' +
+    f.qLabel +
+    ' Results by Building</h2>' +
     t1 +
     _rptQNote(
       'Percent is savings divided by the quarter' + "'" + 's baseline cost of ' +
@@ -2782,7 +2785,7 @@ function _rptQResultsPage(n, d, f) {
     '<h2>Savings Measured by Month</h2>' +
     t2 +
     comp;
-  return rptPage(n, f.ordinal + ' Quarter Results', body, { data: d, letterhead: false, label: 'Page ' + n + ' - Results' });
+  return rptPage(n, f.qLabel + ' Results', body, { data: d, letterhead: false, label: 'Page ' + n + ' - Results' });
 }
 
 // ---- Page 3: energy use and weather ------------------------------------------
@@ -3071,7 +3074,6 @@ function _rptQFindingsPage(n, d, f) {
 function _rptQContractPage(n, d, f) {
   var qT = d.contract.quarterlyTargets || [0, 0, 0, 0];
   var acts = d.contract.quarterlyActuals || [];
-  var names = ['First quarter', 'Second quarter', 'Third quarter', 'Fourth quarter'];
   var qRows = '';
   var tT = 0,
     tB = 0;
@@ -3084,9 +3086,7 @@ function _rptQContractPage(n, d, f) {
     }
     qRows +=
       '<tr><td>' +
-      names[i] +
-      ' ' +
-      f.year +
+      _rptQuarterLabel(i + 1, f.year) +
       (done ? '' : ' (not yet billed)') +
       '</td><td class="rpt-n">' +
       _fmtUSD(qT[i] || 0, '$0') +
@@ -3100,7 +3100,7 @@ function _rptQContractPage(n, d, f) {
     if (i === f.q - 1)
       qRows +=
         '<tr class="rpt-tot"><td>Through ' +
-        names[i].toLowerCase() +
+        _rptQuarterLabel(i + 1, f.year) +
         '</td><td class="rpt-n">' +
         _fmtUSD(tT, '$0') +
         '</td><td class="rpt-n">' +
@@ -3242,9 +3242,9 @@ function _rptQBenchmarkPage(n, d, f) {
     f.kwhDiff > 0 && tCh < 0
       ? ' The measure covers ' +
         label.split(' annualized')[0] +
-        ', so it includes the winter natural gas savings of the first half of the year. The ' +
-        f.ordinal.toLowerCase() +
-        ' quarter alone used ' +
+        ', so it includes the winter natural gas savings of the first half of the year. ' +
+        f.qLabel +
+        ' alone used ' +
         Math.abs(f.kwhPct).toFixed(1) +
         '% more electricity than baseline.'
       : '';
@@ -4230,7 +4230,7 @@ function rptPageFinancial(n, d) {
 
   const q = d.period.quarter || 1;
   const pw = _rptPeriodWords(d);
-  const qLabel = d.period.type === 'quarterly' ? 'Q' + q + ' ' + (d.period.year || '') : d.period.year || '';
+  const qLabel = d.period.type === 'quarterly' ? _rptQuarterLabel(q, d.period.year) : d.period.year || '';
   // Both figures below come from the ONE shared projection (_rptContractProjection ->
   // computations/csc.js computeContractProjection): the current contract year = savings billed so far
   // (each quarter floored at $0) + the targets still to come. Annual reports: d.totals.savings already IS
