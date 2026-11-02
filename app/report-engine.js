@@ -13178,25 +13178,41 @@ function _rptV2RefreshCoverageWarning() {
   var cfg = _rptV2ReadConfig();
   var req = reportRequestRange(_rptSelectedPeriod(cfg)) || {};
   var cov = getReportCoverage(_rptV2ProjId, cfg.meterIds, req.startYm, req.endYm, cfg.buildingIds);
-  // App-side only (never printed): latest bill date per commodity, inside the period.
+  var n = _rptV2CoverageNote(cov);
+  if (!n) return;
+  warnEl.style.display = '';
+  warnEl.innerHTML =
+    '<div style="font-size:12px;color:' + (n.warn ? 'var(--warn)' : 'var(--text2)') + (n.warn ? ';font-weight:600' : '') + '">' + _escHtml(n.text) + '</div>';
+}
+
+// The "Bills through" line under the Quarter picker. Neutral note when the bills cover the selected period
+// (getReportCoverage().complete); warning, in plain words, only when a month of the period has no bill.
+// Returns { text, warn } or null when there is nothing to say. App-side only (never printed).
+function _rptV2CoverageNote(cov) {
   var MO = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+  var FULL = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
   var fd = function (iso) {
     var p = String(iso).split('-');
     return MO[parseInt(p[1], 10) - 1] + ' ' + parseInt(p[2], 10) + ', ' + p[0];
   };
   var through =
     cov.electricThrough && cov.gasThrough && cov.electricThrough !== cov.gasThrough
-      ? 'Bills through ' + fd(cov.electricThrough) + ' (electric); ' + fd(cov.gasThrough) + ' (gas)'
+      ? fd(cov.electricThrough) + ' (electric); ' + fd(cov.gasThrough) + ' (gas)'
       : cov.lastBillDate
-        ? 'Bills through ' + fd(cov.lastBillDate)
+        ? fd(cov.lastBillDate)
         : '';
-  if (!through && (cov.complete || !cov.waitingText)) return;
-  warnEl.style.display = '';
-  warnEl.innerHTML =
-    (through ? '<div style="font-size:12px;color:var(--text)">' + _escHtml(through) + '</div>' : '') +
-    (!cov.complete && cov.waitingText
-      ? '<div style="font-size:12px;font-weight:600;color:var(--warn)">Not ready to present: ' + _escHtml(cov.waitingText) + '</div>'
-      : '');
+  if (cov.complete) return through ? { text: 'Bills through ' + through, warn: false } : null;
+  if (!through && !cov.waitingText) return null;
+  var seen = {};
+  var months = [];
+  (cov.missing || []).forEach(function (x) {
+    if (seen[x.ym]) return;
+    seen[x.ym] = true;
+    months.push(FULL[parseInt(x.ym.slice(5, 7), 10) - 1]);
+  });
+  var list = months.length > 1 ? months.slice(0, -1).join(', ') + ' and ' + months[months.length - 1] : months[0] || '';
+  var text = (through ? 'Bills only through ' + through : 'No bills yet') + (list ? '; ' + list + (months.length > 1 ? ' are' : ' is') + ' missing' : '');
+  return { text: text + (cov.waitingText ? '. Not ready to present: ' + cov.waitingText : ''), warn: true };
 }
 
 function openReportModalV2(projId) {
@@ -13282,7 +13298,7 @@ function openReportModalV2(projId) {
   // selected quarter — refreshed by _rptV2RefreshCoverageWarning() on open and on every Year/
   // Quarter change. Hidden (display:none) when there is nothing to warn about.
   html +=
-    '<div id="rptV2CoverageWarning" style="display:none;padding:8px 10px;border:1px solid var(--warn);border-radius:6px;background:var(--s1);margin-bottom:8px"></div>';
+    '<div id="rptV2CoverageWarning" style="display:none;margin-bottom:8px"></div>';
   // Custom date range
   html += '<div id="rptV2CustomWrap" style="display:none;margin-bottom:8px">';
   html += '<div style="display:flex;gap:12px">';
