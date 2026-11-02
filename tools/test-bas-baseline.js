@@ -67,7 +67,8 @@ eq(BBL.parseRows(split(q(H) + R2.map(q).join(''))).buildings[0].baselineWeekday,
 
 const names = ['Alpha Elementary School', 'Beta Hall'];
 const m1 = BBL.apply(null, p.buildings, names);
-eq(m1.rec.buildings.map((b) => b.building), ['Alpha Elementary School', 'Beta Hall', 'Gamma Wing'], 'project building names are used (same match as the audit log import)');
+eq(m1.rec.buildings.map((b) => b.building), ['Alpha Elementary School', 'Beta Hall'], 'project building names are used; Gamma Wing has no project building and is not saved (same match as the audit log import)');
+eq(m1.matched.filter((m) => !m.project).map((m) => m.log), ['Gamma Wing'], 'and is listed as not matched');
 const a1 = m1.rec.buildings[0];
 eq([a1.baselineWeekday[0].src, a1.weekend[0].kind, a1.setPoints[0].src], [BBL.SOURCE, 'baseline', BBL.SOURCE], 'baseline entries carry the source mark');
 eq(BBL.apply(m1.rec, p.buildings, names).rec, m1.rec, 'second import gives the same record');

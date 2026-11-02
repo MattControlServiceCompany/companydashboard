@@ -131,13 +131,15 @@
   function apply(existing, parsed, projectNames) {
     var rec = { version: 1, buildings: existing && Array.isArray(existing.buildings) ? existing.buildings.slice() : [] };
     var matched = [];
+    var names = BAL.resolveNames(parsed.map(function (p) { return p.building; }), projectNames);
     parsed.forEach(function (p) {
-      var name = BAL.matchName(p.building, projectNames);
+      var name = names.map[p.building];
       matched.push({ log: p.building, project: name });
+      if (!name) return;
       var idx = -1;
       rec.buildings.forEach(function (b, i) { if (b && b.building === name) idx = i; });
       var old = idx >= 0 ? rec.buildings[idx] : { building: name, weekday: [], weekend: [], setPoints: [] };
-      var merged = Object.assign({}, old, {
+      var merged = Object.assign({ building: '', baselineWeekday: [], weekday: [], weekend: [], setPoints: [] }, old, {
         baselineWeekday: setBase(old.baselineWeekday, p.baselineWeekday ? { text: p.baselineWeekday, src: SOURCE } : null),
         weekend: setBase(old.weekend, p.weekend ? { kind: 'baseline', text: p.weekend, src: SOURCE } : null),
         setPoints: setBase(old.setPoints, p.setPoints ? { kind: 'baseline', text: p.setPoints, src: SOURCE } : null),

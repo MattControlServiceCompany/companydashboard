@@ -62,7 +62,6 @@ const rows = [
   ['9/1/2026 7:01:00 AM', 'Edited Graphics', sp(0, '70', '68', '74', '72').d, A + '/Wing/Z2'],
   ['9/10/2026 7:00:00 AM', 'Edited Properties', sp(0, '', '', '74', '80').d, A + '/Wing/Z3'],
   ['7/1/2026 8:00:00 AM', 'Update schedule "Hall"', upd('Hall', 'Mon Tue Wed Thu Fri', 'Mon Tue Wed Thu Fri Sat Sun', '8:0', '17:0'), B],
-  ['9/30/2026 8:00:00 AM', 'Acknowledged all (9) alarms', '', B],
 ];
 function csvText(list) {
   return (
@@ -71,6 +70,7 @@ function csvText(list) {
   );
 }
 const text = csvText(rows);
+const rows_n = rows.length;
 
 // --- reading ---------------------------------------------------------------------------------------
 const grid = split(text);
@@ -86,7 +86,9 @@ ok(parsed.events.every((e) => e.building === 'Alpha Elementary' || e.building ==
 const res = BAL.analyze(parsed.events);
 const alpha = res.filter((r) => r.building === 'Alpha Elementary')[0];
 const beta = res.filter((r) => r.building === 'Beta Hall')[0];
-eq(alpha.window, ['2026-06-01', '2026-09-10'], 'window is the first to the last event day of the building');
+eq(alpha.window, ['2026-06-01', '2026-09-10'], 'window is the first event day of the building to the last event day of the export');
+eq(beta.window, ['2026-07-01', '2026-09-10'], 'a building whose last event is earlier is carried to the last event day of the export (its state is still in effect)');
+eq(beta.record.weekend.map((x) => x.to), ['2026-09-10'], 'and its final run ends there');
 const wd = alpha.record.weekday;
 eq(wd.map((x) => x.text), ['Mon-Thu 7:00 to 16:00', 'Mon-Fri 6:00 to 16:00'], 'weekday text by range (no day with hours is left out)');
 eq([wd[0].from, wd[0].to, wd[1].from, wd[1].to], ['2026-06-01', '2026-08-09', '2026-08-10', '2026-09-10'], 'Delete on Aug 10 and an update at 11:30 PM on Aug 10: end-of-day state applies from Aug 10');
@@ -106,14 +108,24 @@ eq([beta.baseline.weekday.text, beta.baseline.weekend.text, beta.baseline.setPoi
 const fbRes = BAL.analyze(parsed.events, [{ building: 'Beta Hall', text: 'Unit heaters: heating 45, cooling 90' }, { building: 'Alpha Elementary', text: 'heating 1, cooling 2' }]);
 const fbBeta = fbRes.filter((r) => r.building === 'Beta Hall')[0];
 const fbAlpha = fbRes.filter((r) => r.building === 'Alpha Elementary')[0];
-eq(fbBeta.record.setPoints.map((x) => [x.text, x.from, x.to]), [['Unit heaters: heating 45, cooling 90', '2026-07-01', '2026-09-30']], 'points list value is the set point of a building with no set point row in the log');
+eq(fbBeta.record.setPoints.map((x) => [x.text, x.from, x.to]), [['Unit heaters: heating 45, cooling 90', '2026-07-01', '2026-09-10']], 'points list value is the set point of a building with no set point row in the log');
 eq([fbBeta.baseline.setPoints.text, fbBeta.baseline.setPoints.src], ['Unit heaters: heating 45, cooling 90', BAL.POINTS_SRC], 'and its baseline (never changed since the log starts), with its source mark');
 ok(fbAlpha.record.setPoints.length === 2 && fbAlpha.record.setPoints[0].text === 'heating 70, cooling 74', 'a building that has set point rows in the log ignores the points list');
 
 // --- name match and merge --------------------------------------------------------------------------
 const names = ['Alpha Elementary School', 'Beta Hall'];
-eq(BAL.matchName('Alpha Elementary', names), 'Alpha Elementary School', 'a log name that starts the project name is matched');
-eq(BAL.matchName('Gamma Wing', names), 'Gamma Wing', 'no match: the log name stays');
+const rn = BAL.resolveNames(['Alpha Elementary', 'Gamma Wing'], names);
+eq(rn.map, { 'Alpha Elementary': 'Alpha Elementary School', 'Gamma Wing': null }, 'a log name that starts the project name is matched; no match gives null');
+eq(rn.unmatched, ['Gamma Wing'], 'unmatched names are listed');
+eq(BAL.resolveNames(['Alpha Elementary'], []).map, { 'Alpha Elementary': 'Alpha Elementary' }, 'no project list: names are kept');
+eq(BAL.resolveNames(['Rockville Elementary'], ['Rockville Elementary School', 'Other School']).map, { 'Rockville Elementary': 'Rockville Elementary School' }, 'Rockville Elementary matches Rockville Elementary School');
+eq(BAL.resolveNames(['Pine', 'Pine Annex'], ['Pine']).map, { 'Pine': 'Pine', 'Pine Annex': null }, 'Pine Annex is NOT merged onto Pine when Pine is in the same import');
+eq(BAL.resolveNames(['Pine Annex', 'Pine'], ['Pine']).map, { 'Pine Annex': null, 'Pine': 'Pine' }, 'same, other order');
+eq(BAL.resolveNames(['Pine', 'Pine Annex'], ['Pine', 'Pine Annex']).map, { 'Pine': 'Pine', 'Pine Annex': 'Pine Annex' }, 'both exact: both kept');
+eq(BAL.resolveNames(['Pine'], ['Pine East', 'Pine West']).map, { 'Pine': null }, 'two possible project buildings: skipped');
+const bad = BAL.apply(null, res, ['Alpha Elementary School']);
+eq(bad.rec.buildings.map((b) => b.building), ['Alpha Elementary School'], 'a log building with no project match is not saved');
+eq(bad.matched.filter((m) => !m.project).map((m) => m.log), ['Beta Hall'], 'and is listed as not matched');
 const m1 = BAL.apply(null, res, names);
 ok(m1.rec.buildings.map((b) => b.building).sort().join() === 'Alpha Elementary School,Beta Hall', 'record uses project building names');
 eq(BAL.apply(m1.rec, res, names).rec, m1.rec, 'second import of the same files gives the same record');
@@ -124,6 +136,63 @@ const m2 = BAL.apply(m1.rec, r2, names);
 const a2 = m2.rec.buildings.filter((b) => b.building === 'Alpha Elementary School')[0];
 ok(a2.weekday.some((x) => x.from === '2026-06-01'), 'days outside the new window stay');
 ok(m2.rec.buildings.filter((b) => b.building === 'Beta Hall')[0].weekday.length === m1.rec.buildings.filter((b) => b.building === 'Beta Hall')[0].weekday.length, 'a building not in the new files is not touched');
+// a log building with a later window start does not replace an earlier auto baseline, in either order of two files
+const bigR = BAL.analyze(BAL.parseRows(split(text)).events);
+const smallR = BAL.analyze(BAL.parseRows(split(csvText(rows.filter((r) => r[3].indexOf(A) === 0 && /^(9)\//.test(r[0]))))).events);
+const o1 = BAL.apply(BAL.apply(null, bigR, names).rec, smallR, names).rec;
+const o2 = BAL.apply(BAL.apply(null, smallR, names).rec, bigR, names).rec;
+const undated = (rec) => rec.buildings.map((b) => [b.building, b.baselineWeekday, (b.weekend || []).filter((e) => !e.from && !e.to), (b.setPoints || []).filter((e) => !e.from && !e.to)]);
+eq(undated(o1), undated(o2), 'two analyses with different window starts give the same baselines in either order');
+eq(o1.buildings.filter((b) => b.building === 'Alpha Elementary School')[0].setPoints.filter((e) => !e.from && !e.to).map((e) => e.text), ['heating 68, cooling 72'], 'the baseline kept is the one from the log that starts earlier');
+// a person-typed entry beside an auto entry stays untouched
+const beside = JSON.parse(JSON.stringify(m1.rec));
+beside.buildings[0].setPoints.unshift({ kind: 'baseline', text: 'typed set points' });
+const keptB = BAL.apply(beside, res, names).rec.buildings[0].setPoints.filter((e) => !e.from && !e.to);
+eq(keptB.map((e) => e.text), ['typed set points', 'heating 68, cooling 72'], 'a typed baseline beside an auto baseline: both stay as stored');
+// other fields on the stored building entry are kept
+const extra = JSON.parse(JSON.stringify(m1.rec));
+extra.buildings[0].note = 'kept';
+ok(BAL.apply(extra, res, names).rec.buildings[0].note === 'kept', 'other fields of the stored building entry are kept');
+
+// --- event store: one long export = the same events as daily files in any order -----------------------
+const csv6 = (list) =>
+  '"Date","Description","Details","Location","Operator","Reason"\r\n' +
+  list.slice().reverse().map((r) => [r[0], r[1], r[2], r[3], 'Test Operator (tester)', ''].map(q).join(',') + '\r\n').join('');
+const six = BAL.parseRows(split(csv6(rows)));
+ok(!six.error && six.events.length === rows.length, 'a six column file (Reason) is read by header name');
+const swapped = '"Operator","Location","Details","Description","Date"\r\n' + ['op', A, '', 'Update schedule x', '6/1/2026 8:00:00 AM'].map(q).join(',') + '\r\n';
+ok(BAL.parseRows(split(swapped)).events.length === 1, 'columns in another order are read by header name');
+const rebuild = (files) => {
+  let store = null;
+  files.forEach((f) => {
+    const p = BAL.parseRows(split(f));
+    store = BAL.mergeStore(store, p.events, p.lastDay);
+  });
+  return BAL.apply(null, BAL.analyze(BAL.storeEvents(store), null, store.lastDay), names).rec;
+};
+const ymdOf = (r) => { const m = r[0].match(/^(\d+)\/(\d+)\/(\d+)/); return m[3] + '-' + m[1] + '-' + m[2]; };
+const days = {};
+rows.forEach((r) => { (days[ymdOf(r)] = days[ymdOf(r)] || []).push(r); });
+const dayFiles = Object.keys(days).sort().map((d) => csv6(days[d]));
+const oneLong = rebuild([csv6(rows)]);
+eq(rebuild(dayFiles), oneLong, 'daily files (oldest first) give the same record as one long export');
+eq(rebuild(dayFiles.slice().reverse()), oneLong, 'daily files (newest first) give the same record');
+let seed = 7;
+const rnd = () => ((seed = (seed * 1103515245 + 12345) % 2147483648) / 2147483648);
+let shuffleOk = true;
+for (let k = 0; k < 8; k++) {
+  const f = dayFiles.slice();
+  for (let i = f.length - 1; i > 0; i--) { const j = Math.floor(rnd() * (i + 1)); [f[i], f[j]] = [f[j], f[i]]; }
+  if (JSON.stringify(rebuild(f)) !== JSON.stringify(oneLong)) shuffleOk = false;
+}
+ok(shuffleOk, '8 shuffled orders of the daily files give the same record');
+ok(JSON.stringify(rebuild(dayFiles.concat(dayFiles, [csv6(rows)]))) === JSON.stringify(oneLong), 'overlapping and repeated files do not double count');
+const storeAll = BAL.mergeStore(null, six.events, six.lastDay);
+ok(storeAll.events.length < rows.length && !JSON.stringify(storeAll).includes('Acknowledged'), 'the store keeps only schedule and set point events (' + storeAll.events.length + ' of ' + rows.length + ')');
+const alarmDay = csv6([['9/20/2026 8:00:00 AM', 'Acknowledged all (3) alarms', '', B]]);
+const withAlarm = BAL.analyze(BAL.storeEvents(storeAll), null, BAL.mergeStore(storeAll, BAL.parseRows(split(alarmDay)).events, '2026-09-20').lastDay);
+eq(withAlarm.filter((r) => r.building === 'Alpha Elementary')[0].window, ['2026-06-01', '2026-09-20'], 'a later day file with only an alarm row still carries the final state to that day');
+
 // a baseline typed by a person is kept
 const typed = JSON.parse(JSON.stringify(m1.rec));
 typed.buildings[0].baselineWeekday = [{ text: 'typed hours' }];
@@ -163,6 +232,19 @@ ok(kept.baselineWeekday[0].text === 'typed hours' && kept.setPoints[0].text === 
     await page.waitForTimeout(500);
     const again = await page.evaluate(() => DB.get('en_bas_schedhistory_9', null));
     eq(again, out.rec, 'importing the same file again leaves the record unchanged');
+    const stored = await page.evaluate(() => DB.get('en_bas_auditevents_9', null));
+    ok(stored && stored.events.length > 0 && stored.events.length < rows_n && !JSON.stringify(stored).includes('Acknowledged'), 'the button stores the schedule and set point events (en_bas_auditevents_9): ' + (stored ? stored.events.length : 0));
+    const busy = await page.evaluate((t) => {
+      const i = document.getElementById('bas-afile-9');
+      const dt = new DataTransfer();
+      dt.items.add(new File([t], 'x.csv', { type: 'text/csv' }));
+      i.files = dt.files;
+      window.basPickAudit(9, i);
+      window.basPickAudit(9, i);
+      return document.getElementById('bas-msg-9').textContent;
+    }, text);
+    ok(/already running/.test(busy), 'a second import while one runs is refused with a message');
+    await page.waitForTimeout(800);
     await page.setInputFiles('#bas-afile-9', [{ name: 'bad.csv', mimeType: 'text/csv', buffer: Buffer.from('"A","B"\r\n"1","2"\r\n') }]);
     await page.waitForFunction(() => /not a WebCTRL audit log/.test(document.getElementById('bas-msg-9').textContent), null, { timeout: 15000 });
     ok(true, 'a wrong file shows a message and saves nothing new');

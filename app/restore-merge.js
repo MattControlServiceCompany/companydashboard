@@ -83,7 +83,7 @@ const RestoreMerge = (() => {
     [(k) => k.indexOf('en_alarms_') === 0, 'BAS alarms'],
     [(k) => k.indexOf('en_audit_') === 0, 'Facility audit'],
     [(k) => /^en_bas_(snap|hist|acthist|groups)_/.test(k), 'District calendar'],
-    [(k) => k.indexOf('en_bas_schedhistory_') === 0, 'BAS schedule history'],
+    [(k) => /^en_bas_(schedhistory|auditevents)_/.test(k), 'BAS schedule history'],
     [(k) => k.indexOf('en_bas_') === 0, 'BAS trends'],
     [(k) => k.indexOf('en_pricing_') === 0, 'Pricing'],
     [(k) => k.indexOf('en_report_') === 0, 'Reports'],

@@ -58,18 +58,22 @@
     var head = rows2d[0].map(function (h) {
       return String(h).replace(/^﻿/, '').trim().toLowerCase();
     });
-    if (head.length < 5 || HEAD.some(function (h, i) { return head[i] !== h; })) {
-      return { error: 'This is not a WebCTRL audit log. The first row must be: Date, Description, Details, Location, Operator.' };
+    // Columns are found by header name. The scheduled report adds a sixth column (Reason); a manual export has five.
+    var col = {};
+    HEAD.forEach(function (h) { col[h] = head.indexOf(h); });
+    if (HEAD.some(function (h) { return col[h] < 0; })) {
+      return { error: 'This is not a WebCTRL audit log. The first row must have these columns: Date, Description, Details, Location, Operator.' };
     }
     var events = [];
+    var lastDay = '';
     rows2d.slice(1).forEach(function (r) {
-      if (r.length < 5) return;
-      var iso = isoOf(r[0]);
+      var iso = r.length > col.operator ? isoOf(r[col.date]) : null;
       if (!iso) return;
-      events.push({ iso: iso, ymd: iso.slice(0, 10), desc: String(r[1]), details: String(r[2]), loc: String(r[3]).trim(), building: BD.buildingOf(r[3]) });
+      if (iso.slice(0, 10) > lastDay) lastDay = iso.slice(0, 10);
+      events.push({ iso: iso, ymd: iso.slice(0, 10), desc: String(r[col.description]), details: String(r[col.details]), loc: String(r[col.location]).trim(), op: String(r[col.operator]), building: BD.buildingOf(r[col.location]) });
     });
     events.reverse(); // the export is newest first
-    return { events: events };
+    return { events: events, lastDay: lastDay };
   }
   function sortEvents(events) {
     return events
@@ -269,7 +273,39 @@
   // events from parseRows (one or many files joined). Returns [{ building, window:[from,to], record }] by building name.
   // pointsList = [{ building, text }] set points of the equipment in the stored WebCTRL points list (the Equipment Matrix),
   // used only for a building whose log has no occupied set point row: the value never changed since the log starts.
-  function analyze(allEvents, pointsList) {
+  // --- event store -------------------------------------------------------------------------------
+  // A scheduled report file covers one day. The site keeps every schedule and set point event it has read (the store,
+  // en_bas_auditevents_<pid>) and rebuilds the history from ALL of them, so the files can come in any order and may overlap.
+  var SP_LINE = /\S*\/(occupied_heating|occupied_cooling) changed from "[\d.]+" to "[\d.]+"/;
+  // The part of an event the history uses, or null (alarm acknowledgements and all other rows are not stored).
+  function compact(e) {
+    if (/^(Add|Update|Delete) schedule\b/.test(e.desc) && isRoot(e.loc)) {
+      return { iso: e.iso, desc: e.desc, details: e.details, loc: e.loc, op: e.op };
+    }
+    var lines = e.details.split('\n').filter(function (ln) { return SP_LINE.test(ln); });
+    return lines.length ? { iso: e.iso, desc: e.desc, details: lines.join('\n'), loc: e.loc, op: e.op } : null;
+  }
+  // store = { version:1, lastDay:'YYYY-MM-DD', events:[{iso,desc,details,loc,op}] } (oldest first). The same event is kept once.
+  function mergeStore(store, events, lastDay) {
+    var old = (store && store.events) || [];
+    var seen = {};
+    var all = [];
+    old.concat(events.map(compact).filter(Boolean)).forEach(function (e) {
+      var k = [e.iso, e.loc, e.details, e.op].join('|');
+      if (seen[k]) return;
+      seen[k] = true;
+      all.push({ iso: e.iso, desc: e.desc, details: e.details, loc: e.loc, op: e.op });
+    });
+    var ld = (store && store.lastDay) || '';
+    if ((lastDay || '') > ld) ld = lastDay;
+    return { version: 1, lastDay: ld, events: sortEvents(all) };
+  }
+  function storeEvents(store) {
+    return ((store && store.events) || []).map(function (e) {
+      return { iso: e.iso, ymd: e.iso.slice(0, 10), desc: e.desc, details: e.details, loc: e.loc, op: e.op, building: BD.buildingOf(e.loc) };
+    });
+  }
+  function analyze(allEvents, pointsList, endDay) {
     var evs = sortEvents(allEvents);
     var byB = {};
     var order = [];
@@ -281,6 +317,10 @@
       byB[e.building].push(e);
     });
     var out = [];
+    // The last run of every building ends on the latest day of the whole export, so a state still in effect is not cut short.
+    var lastDay = evs.length ? evs[evs.length - 1].ymd : '';
+    if (endDay && endDay > lastDay) lastDay = endDay;
+    var pointMap = resolveNames(order, (pointsList || []).map(function (x) { return x.building; }));
     order.forEach(function (b) {
       var list = byB[b];
       var sevs = scheduleEvents(list);
@@ -288,7 +328,7 @@
       var hasSp = Object.keys(zones).some(function (z) { return zones[z].H.length && zones[z].C.length; });
       if (!sevs.length && !hasSp) return; // nothing this module reads: the building gets no record
       var wFrom = list[0].ymd;
-      var wTo = list[list.length - 1].ymd;
+      var wTo = lastDay;
       var sch = scheduleDays(sevs, wFrom, wTo);
       var sp = setPointDays(zones, wFrom, wTo);
       var period = function (list) {
@@ -298,15 +338,15 @@
       };
       var fb = null;
       if (!sp && pointsList && pointsList.length) {
-        var pn = matchName(b, pointsList.map(function (x) { return x.building; }));
+        var pn = pointMap.map[b];
         fb = pointsList.filter(function (x) { return x.building === pn; })[0] || null;
       }
       var baseline = {
         // Earliest values in the log: the old values of the first change of each schedule, the old value of the first
         // change of each zone set point, or (no set point change in the log) the stored points list value.
-        weekday: sch.hasInitial ? { text: sch.wd0, src: AUDIT_SRC } : null,
-        weekend: sch.hasInitial ? { kind: 'baseline', text: sch.we0, src: AUDIT_SRC } : null,
-        setPoints: sp ? { kind: 'baseline', text: spText(sp.base), src: AUDIT_SRC } : fb ? { kind: 'baseline', text: fb.text, src: POINTS_SRC } : null,
+        weekday: sch.hasInitial ? { text: sch.wd0, src: AUDIT_SRC, windowStart: wFrom } : null,
+        weekend: sch.hasInitial ? { kind: 'baseline', text: sch.we0, src: AUDIT_SRC, windowStart: wFrom } : null,
+        setPoints: sp ? { kind: 'baseline', text: spText(sp.base), src: AUDIT_SRC, windowStart: wFrom } : fb ? { kind: 'baseline', text: fb.text, src: POINTS_SRC, windowStart: wFrom } : null,
       };
       var rec = {
         building: b,
@@ -327,18 +367,46 @@
   function norm(s) {
     return String(s || '').toLowerCase().replace(/\s+/g, ' ').trim();
   }
-  // The project building the log building belongs to: same name, else the one name that starts with the other.
-  function matchName(logName, projectNames) {
-    var n = norm(logName);
+  // Which project building each log building belongs to: { map:{ logName: projectName | null }, unmatched:[logName] }.
+  // An exact name (case and spacing ignored) wins. A name that only starts with the other ("X Elementary" for "X Elementary
+  // School") is accepted only when it is the one candidate AND no other log building could map to the same project building.
+  // Anything else is null: the building is not imported and the caller says so. No project list: names are kept as they are.
+  function resolveNames(logNames, projectNames) {
+    var map = {};
+    var unmatched = [];
     var list = projectNames || [];
-    var exact = list.filter(function (p) { return norm(p) === n; });
-    if (exact.length === 1) return exact[0];
-    var near = list.filter(function (p) {
-      var q = norm(p);
-      return q.indexOf(n + ' ') === 0 || n.indexOf(q + ' ') === 0;
+    if (!list.length) {
+      logNames.forEach(function (n) { map[n] = n; });
+      return { map: map, unmatched: unmatched };
+    }
+    var exactOf = function (n) { return list.filter(function (p) { return norm(p) === norm(n); }); };
+    var nearOf = function (n) {
+      var a = norm(n);
+      return list.filter(function (p) {
+        var q = norm(p);
+        return q.indexOf(a + ' ') === 0 || a.indexOf(q + ' ') === 0;
+      });
+    };
+    var claims = function (n) { return exactOf(n).concat(nearOf(n)); };
+    logNames.forEach(function (n) {
+      var ex = exactOf(n);
+      var pick = null;
+      if (ex.length === 1) pick = ex[0];
+      else if (!ex.length) {
+        var near = nearOf(n);
+        if (near.length === 1) {
+          var rivals = logNames.filter(function (o) {
+            return norm(o) !== norm(n) && claims(o).indexOf(near[0]) >= 0;
+          });
+          if (!rivals.length) pick = near[0];
+        }
+      }
+      map[n] = pick;
+      if (!pick) unmatched.push(n);
     });
-    return near.length === 1 ? near[0] : logName;
+    return { map: map, unmatched: unmatched };
   }
+
   // Entries of a list with the days inside [a, b] cut out. An entry with no dates (baseline) is kept.
   function cutWindow(list, a, b) {
     var out = [];
@@ -369,27 +437,33 @@
   function apply(existing, results, projectNames) {
     var rec = { version: 1, buildings: existing && Array.isArray(existing.buildings) ? existing.buildings.slice() : [] };
     var matched = [];
+    var names = resolveNames(results.map(function (r) { return r.building; }), projectNames);
     results.forEach(function (r) {
-      var name = matchName(r.building, projectNames);
-      matched.push({ log: r.building, project: name, inProject: name !== r.building || (projectNames || []).indexOf(name) >= 0 });
+      var name = names.map[r.building];
+      matched.push({ log: r.building, project: name });
+      if (!name) return;
       var idx = -1;
       rec.buildings.forEach(function (b, i) { if (b && b.building === name) idx = i; });
       var old = idx >= 0 ? rec.buildings[idx] : {};
       var a = r.window[0];
       var z = r.window[1];
       var n = r.record;
+      // An auto baseline is replaced only by one whose log starts EARLIER (a tie keeps the stored one), so the order of
+      // imports does not matter. One typed by a person (no mark) is never replaced and stays beside an auto one.
       var base = function (list, entry) {
         var oldBase = (list || []).filter(function (e) { return !e.from && !e.to; });
         var auto = oldBase.every(function (e) { return e.src === AUDIT_SRC || e.src === POINTS_SRC; });
-        return entry && auto ? [entry] : oldBase;
+        if (!entry || !auto) return oldBase;
+        var earlier = oldBase.some(function (e) { return !e.windowStart || entry.windowStart < e.windowStart; });
+        return !oldBase.length || earlier ? [entry] : oldBase;
       };
-      var merged = {
+      var merged = Object.assign({ building: '', baselineWeekday: [], weekday: [], weekend: [], setPoints: [] }, old, {
         building: name,
         baselineWeekday: base(old.baselineWeekday, r.baseline && r.baseline.weekday),
         weekday: joinRuns(cutWindow(old.weekday, a, z).concat(n.weekday)),
         weekend: base(old.weekend, r.baseline && r.baseline.weekend).concat(joinRuns(cutWindow(old.weekend, a, z).concat(n.weekend))),
         setPoints: base(old.setPoints, r.baseline && r.baseline.setPoints).concat(joinRuns(cutWindow(old.setPoints, a, z).concat(n.setPoints))),
-      };
+      });
       if (idx >= 0) rec.buildings[idx] = merged;
       else rec.buildings.push(merged);
     });
@@ -400,7 +474,9 @@
     parseRows: parseRows,
     analyze: analyze,
     apply: apply,
-    matchName: matchName,
+    resolveNames: resolveNames,
+    mergeStore: mergeStore,
+    storeEvents: storeEvents,
     AUDIT_SRC: AUDIT_SRC,
     POINTS_SRC: POINTS_SRC,
   };

@@ -216,9 +216,9 @@
             "BasDiff.applyScheduleImport compares with the earlier copy (same date, else latest earlier day of the same type), merges buildings into the copy for that date",
             "Record saved to en_bas_hist_<pid>, then the copy to en_bas_snap_<pid>; Import scheduling groups does the same for en_bas_groups_<pid>",
             "Import baseline (Set Points sheet): BasBaseline (app/bas-baseline.js) reads the Optimization Strategy Sheet Set Points CSV (Equipment Matrix export column names) and writes only the baseline entries of en_bas_schedhistory_<pid>, keeping any baseline typed by a person",
-            "Import audit log: the user picks WebCTRL audit log CSV files (all buildings at once); BasAuditLog (app/bas-audit-log.js) reads schedule and occupied set point rows, derives hours and set points by date range, and replaces that building and date window in en_bas_schedhistory_<pid> (the record the quarterly report prints)"
+            "Import audit log: the user picks WebCTRL audit log CSV files (all buildings at once); BasAuditLog (app/bas-audit-log.js) reads schedule and occupied set point rows, derives hours and set points by date range, keeps each event once in en_bas_auditevents_<pid> (files may be daily, overlapping, in any order), rebuilds the history from all stored events, and replaces that building and date window in en_bas_schedhistory_<pid> (the record the quarterly report prints)"
           ],
-          "storageKeys": ["en_bas_snap_<pid>", "en_bas_hist_<pid>", "en_bas_groups_<pid>", "en_bas_schedhistory_<pid>"],
+          "storageKeys": ["en_bas_snap_<pid>", "en_bas_hist_<pid>", "en_bas_groups_<pid>", "en_bas_schedhistory_<pid>", "en_bas_auditevents_<pid>"],
           "keyFiles": ["app/bas-schedules.js", "app/bas-diff.js", "app/bas-audit-log.js", "app/bas-baseline.js", "tools/test-bas-audit-log.js", "tools/test-bas-baseline.js", "app/equipment-matrix.js (emParseEffectiveSchedulesCSV, _emScheduleBlocks)", "tools/test-bas-diff.js"]
         },
         {

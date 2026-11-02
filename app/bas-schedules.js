@@ -475,35 +475,59 @@
       }),
     );
   };
+  var _importing = {}; // pid -> true while an audit log or baseline import runs (one at a time; they write the same record)
+  function guarded(pid, input, work) {
+    if (_importing[pid]) {
+      input.value = '';
+      return say(pid, 'An import is already running. Wait for it to finish.');
+    }
+    _importing[pid] = true;
+    readFiles(input)
+      .then(function (files) {
+        return files.length ? work(files) : null;
+      })
+      .catch(function (e) {
+        say(pid, 'The import failed: ' + (e && e.message ? e.message : e));
+      })
+      .then(function () {
+        _importing[pid] = false;
+      });
+  }
   window.basPickAudit = function (pid, input) {
-    readFiles(input).then(async function (files) {
-      if (!files.length) return;
+    guarded(pid, input, async function (files) {
       var events = [];
+      var lastDay = '';
       var bad = '';
       files.forEach(function (f) {
         var r = BasAuditLog.parseRows(baSplitCSV(f.text));
         if (r.error) bad = bad || f.name + ': ' + r.error;
-        else events = events.concat(r.events);
+        else {
+          events = events.concat(r.events);
+          if (r.lastDay > lastDay) lastDay = r.lastDay;
+        }
       });
       if (bad) return say(pid, bad);
-      var results = BasAuditLog.analyze(events, window.basPointSource(((typeof emLoadMatrix === 'function' && emLoadMatrix(pid)) || {}).rows));
+      // The history is rebuilt from every event read so far (en_bas_auditevents_<pid>), not from these files alone.
+      var store = BasAuditLog.mergeStore(DB.get('en_bas_auditevents_' + pid, null), events, lastDay);
+      var results = BasAuditLog.analyze(BasAuditLog.storeEvents(store), window.basPointSource(((typeof emLoadMatrix === 'function' && emLoadMatrix(pid)) || {}).rows), store.lastDay);
       if (!results.length) return say(pid, 'No schedule or set point rows were found in these files.');
+      await DB.set('en_bas_auditevents_' + pid, store);
       var names = typeof getUDBldgs === 'function' ? (getUDBldgs(pid) || []).map(function (b) { return b.name; }) : [];
       var res = BasAuditLog.apply(DB.get('en_bas_schedhistory_' + pid, null), results, names);
       await DB.set('en_bas_schedhistory_' + pid, res.rec);
-      var lost = res.matched.filter(function (m) { return names.indexOf(m.project) < 0; }).map(function (m) { return m.log; });
+      var lost = res.matched.filter(function (m) { return !m.project; }).map(function (m) { return m.log; });
+      var saved = res.matched.length - lost.length;
       say(
         pid,
-        'Saved schedule and set point history for ' + plural(res.matched.length, 'building', 'buildings') + ' from ' + plural(files.length, 'file', 'files') + '.' +
-          (lost.length ? ' Not matched to a building of this project (the report will not print them): ' + lost.join(', ') + '.' : ''),
+        'Saved schedule and set point history for ' + plural(saved, 'building', 'buildings') + ' from ' + plural(files.length, 'file', 'files') + '.' +
+          (lost.length ? ' Not imported, no single matching building in this project: ' + lost.join(', ') + '.' : ''),
       );
     });
   };
   // Baseline import: the Optimization Strategy Sheet "Set Points" sheet (CSV) -> the baseline entries of the same
   // record (en_bas_schedhistory_<pid>). BasBaseline reads and merges; a baseline typed by a person is kept.
   window.basPickBaseline = function (pid, input) {
-    readFiles(input).then(async function (files) {
-      if (!files.length) return;
+    guarded(pid, input, async function (files) {
       var parsed = [];
       var bad = '';
       files.forEach(function (f) {
@@ -516,11 +540,12 @@
       var names = typeof getUDBldgs === 'function' ? (getUDBldgs(pid) || []).map(function (b) { return b.name; }) : [];
       var res = BasBaseline.apply(DB.get('en_bas_schedhistory_' + pid, null), parsed, names);
       await DB.set('en_bas_schedhistory_' + pid, res.rec);
-      var lost = res.matched.filter(function (m) { return names.indexOf(m.project) < 0; }).map(function (m) { return m.log; });
+      var lost = res.matched.filter(function (m) { return !m.project; }).map(function (m) { return m.log; });
+      var saved = res.matched.length - lost.length;
       say(
         pid,
-        'Saved the baseline hours and set points for ' + plural(res.matched.length, 'building', 'buildings') + '.' +
-          (lost.length ? ' Not matched to a building of this project (the report will not print them): ' + lost.join(', ') + '.' : ''),
+        'Saved the baseline hours and set points for ' + plural(saved, 'building', 'buildings') + '.' +
+          (lost.length ? ' Not imported, no single matching building in this project: ' + lost.join(', ') + '.' : ''),
       );
     });
   };
