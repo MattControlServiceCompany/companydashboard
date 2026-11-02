@@ -49,7 +49,7 @@ const ok = (c, m) => {
         project: { id: 'synthetic-1', client: 'Test Client', name: 'Test Project', sqft: 20000, blStart: '2025-01', blEnd: '2025-12' },
         contract: { quarterlyTargets: [100, 100, 100, 100], quarterlyActuals: [100, 100, 100], currentYear: 1, years: 3, hasCsc: true, cscPct: 50, clientPct: 50, escalation: 3 },
         totals: { savings: 80, blCost: 6000, kwhBl: 600, kwhCur: 540, thermsBl: 600, thermsCur: 540, peakKwBl: 60, peakKwCur: 54, euiBaseline: 50, euiCurrent: 48, euiPeriodLabel: 'x', cumulativeSavings: 300, weatherWaiting: [] },
-        buildings: [bld('Alpha School'), bld('Beta Hall'), bld('Gamma Annex')],
+        buildings: [bld('Alpha School'), bld('Beta Hall'), bld('Gamma Annex'), bld('Delta Wing')],
         weather: { monthly: [], totals: { cddBl: 0, cddCur: 0 } },
         rawBills: [],
         basScheduleHistory: hist,
@@ -75,7 +75,11 @@ const ok = (c, m) => {
             ],
           },
           { building: 'Beta Hall', baselineWeekday: [{ text: '5:00 to 15:00' }], weekday: [], weekend: [], setPoints: [] },
-        ],
+          { building: 'Gamma Annex', baselineWeekday: [], weekday: [], weekend: [], setPoints: [
+            { kind: 'baseline', text: 'Unit heaters: heating 45, cooling 90' },
+            { kind: 'period', text: 'Unit heaters: heating 45, cooling 90', from: '2026-07-01', to: '2026-09-30' },
+          ] },
+                  ],
       };
       const opts = { appendixD: false, environmentalImpact: false, approvedChanges: false };
       const withHtml = _rptQuarterReportHTML(mk(hist), opts);
@@ -96,19 +100,24 @@ const ok = (c, m) => {
       return {
         heads, rows, hasPage: !!pg, noHistPage: !!pageOf(noHist), emptyPage: !!pageOf(emptyHist),
         generic: [withHtml, noHist].map((h) => /meter data and trend logs for anomalies|Confirm BAS setpoints/i.test(h)),
-        loadedOk: !!(loaded && loaded.buildings && loaded.buildings.length === 2), otherNull: other == null,
+        loadedOk: !!(loaded && loaded.buildings && loaded.buildings.length === 3), otherNull: other == null,
         pageCountWith: (withHtml.match(/class="rpt-page/g) || []).length, pageCountNo: (noHist.match(/class="rpt-page/g) || []).length,
       };
     });
     ok(out.hasPage, '1 table page renders when the project has a BAS schedule history');
     ok(out.heads.length === 5 && /Building/.test(out.heads[0]) && /Baseline weekday/i.test(out.heads[1]) && /Quarter weekday/i.test(out.heads[2]) && /Weekend/i.test(out.heads[3]) && /set point/i.test(out.heads[4]), '1 five column headers: ' + JSON.stringify(out.heads));
-    ok(out.rows.length === 2 && /Alpha School/.test(out.rows[0][0]) && /Beta Hall/.test(out.rows[1][0]), '1 one row per building that has a record, report order, no row for Gamma Annex: ' + out.rows.length + ' rows');
+    ok(out.rows.length === 3 && /Alpha School/.test(out.rows[0][0]) && /Beta Hall/.test(out.rows[1][0]) && /Gamma Annex/.test(out.rows[2][0]), '1 one row per building that has a record, report order, no row for Delta Wing: ' + out.rows.length + ' rows');
     if (out.rows.length) {
       const r = out.rows[0];
       ok(/6:00 to 16:00/.test(r[1]) && !/July/.test(r[1]), '1 baseline weekday hours, no dates: ' + JSON.stringify(r[1]));
       ok(/7:00 to 16:00, July 1 to July 26/.test(r[2]) && /6:00 to 18:00, July 27 to September 30/.test(r[2]), '1 quarter weekday hours clipped to the quarter: ' + JSON.stringify(r[2]));
       ok(/Baseline: None/.test(r[3]) && /Q3 2026:\n6:00 to 16:00, July 27 to September 4/.test(r[3]), '1 weekend baseline and quarter with dates: ' + JSON.stringify(r[3]));
       ok(/Baseline: heating 68, cooling 72/.test(r[4]) && /Q3 2026:\nheating 70, cooling 74, July 1 to August 11/.test(r[4]) && !/66/.test(r[4]), '1 set points baseline and quarter, out-of-quarter entry dropped: ' + JSON.stringify(r[4]));
+    }
+    ok(/°F/.test(out.heads[4]) && !/degrees Fahrenheit/i.test(out.heads[4]), '5 set point header uses °F: ' + out.heads[4]);
+    ok(!/zones/i.test(out.rows.map((r) => r.join(' ')).join(' ')), '5 no zone text in any cell');
+    if (out.rows.length === 3) {
+      ok(out.rows[2][4] === 'Baseline: Unit heaters: heating 45, cooling 90\nQ3 2026:\nUnit heaters: heating 45, cooling 90, July 1 to September 30', '5 unchanged set points show baseline and quarter: ' + JSON.stringify(out.rows[2][4]));
     }
     ok(!out.noHistPage, '2 no record -> no table page');
     ok(!out.emptyPage, '2 record with no matching building -> no table page');

@@ -3363,7 +3363,7 @@ function _rptQSchedulePage(n, d) {
     .join('');
   var t = _rptQTable(
     [11, 12, 27, 22, 28],
-    ['Building', 'Baseline weekday occupied hours', 'Quarter weekday occupied hours', 'Weekend occupied hours', 'Occupied heating and cooling set points, degrees Fahrenheit'],
+    ['Building', 'Baseline weekday occupied hours', 'Quarter weekday occupied hours', 'Weekend occupied hours', 'Occupied heating and cooling set points, °F'],
     trs,
   );
   var body = '<h2>Operating Hours and Set Points</h2>' + t;
