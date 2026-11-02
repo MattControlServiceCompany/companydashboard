@@ -320,16 +320,7 @@ function getMeterSavings(m, bills, incl, projId, bldgId, opts) {
   });
   // The weather the result was computed at is part of the key: a month whose weather arrives later (the
   // automatic weather refresh, a CSV upload) must not be served from a result computed while it was missing.
-  const { byYm: weatherByYm } = getWeatherForBuilding(projId, bldgId);
-  const _wxKeys = Object.keys(weatherByYm || {}).sort();
-  const _wxFp =
-    _wxKeys.length +
-    "_" +
-    (_wxKeys[_wxKeys.length - 1] || "") +
-    "_" +
-    Math.round(
-      _wxKeys.reduce((s, k) => s + (Number(weatherByYm[k].hdd) || 0) + (Number(weatherByYm[k].cdd) || 0), 0),
-    );
+  const _wxFp = getWeatherFingerprint(projId, bldgId);
   const cacheKey =
     "v3|p:" +
     projId +
@@ -363,6 +354,7 @@ function getMeterSavings(m, bills, incl, projId, bldgId, opts) {
   const incompleteYM = {};
   const rowsOut = [];
 
+  const { byYm: weatherByYm } = getWeatherForBuilding(projId, bldgId);
   const isElec = m.commodity === "Electric";
   const isGas = m.commodity === "Gas";
   const isPropane = m.commodity === "Propane";

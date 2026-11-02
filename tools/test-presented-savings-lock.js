@@ -73,7 +73,7 @@ vm.runInContext(
     "function getUDBldg(pid,bid){return getUDBldgs(pid).find(function(b){return b.id===bid;});}",
     "var DB={get:function(k,d){return sget(k,d===undefined?null:d);}};",
     "function isBaselineExcluded(){return false;}",
-    "function getWeatherForBuilding(){return {byYm:{}};}",
+    "function getWeatherFingerprint(){return 0;} function getWeatherForBuilding(){return {byYm:{}};}",
     "var DELIVERY_COMMODITIES=new Set(['Propane']);",
     "function isCalcCommodity(){return true;}",
     "function projHasContract(pid){return true;}",

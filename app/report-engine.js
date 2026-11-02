@@ -2630,7 +2630,10 @@ function _rptQBarsSVG(w, h, bars, fmt) {
         '" stroke="var(--rpt-page-text)" stroke-width="2" stroke-dasharray="4 3"/>';
     }
     var topY = y0 - bh;
-    if (b.target > 0) topY = Math.min(topY, y0 - (b.target / span) * plotH);
+    if (b.target > 0) {
+      var tyL = y0 - (b.target / span) * plotH;
+      if (tyL < topY && topY - tyL < 20) topY = tyL;
+    }
     var ly = pos ? topY - 5 : y0 + bh + 14;
     out +=
       '<text x="' +
@@ -2724,8 +2727,8 @@ function _rptQCoverPage(n, d, f) {
           }),
         ) +
           ' measured ' +
-          _fmtUSD(Math.abs(f.overSum), '$0') +
-          ' below baseline',
+          _fmtUSD(f.overSum, '$0') +
+          ' against the baseline',
       );
     detail = parts.join('. ') + '.';
     f.flat.forEach(function (x) {
@@ -3542,7 +3545,10 @@ function _rptBasScheduleRows(d) {
   // Set point lines shared by two or more buildings.
   var count = {};
   spParts.forEach(function (sp) {
+    var seenL = {};
     sp.per.forEach(function (l) {
+      if (seenL[l]) return;
+      seenL[l] = true;
       count[l] = (count[l] || 0) + 1;
     });
   });
@@ -3561,9 +3567,9 @@ function _rptBasScheduleRows(d) {
       var key = l;
       var g = groups[key] || (groups[key] = { line: l, names: [] });
       if (order.indexOf(key) < 0) order.push(key);
-      g.names.push(r[0]);
+      if (g.names.indexOf(r[0]) < 0) g.names.push(r[0]);
     });
-    r[4] = spParts[ri].base.concat(keep, ['Also: shared set points below the table']);
+    r[4] = spParts[ri].base.concat(keep, ['Also: shared set points above the table']);
   });
   // Lines with the same building list print together.
   var shared = [];
@@ -3702,9 +3708,9 @@ function _rptQMethodPage(n, d, f) {
         _escHtml(b.name) +
         '</td><td>' +
         (m.commodity === 'Electric' ? 'Electricity' : m.commodity === 'Gas' ? 'Natural gas' : _escHtml(m.commodity)) +
-        ' ' +
+        ' <span style="white-space:nowrap">' +
         _escHtml(m.account) +
-        '</td><td class="rpt-n">' +
+        '</span></td><td class="rpt-n">' +
         _rptQN(m.usagePerYear) +
         ' ' +
         unit +
@@ -3718,7 +3724,7 @@ function _rptQMethodPage(n, d, f) {
     });
   });
   var t1 = _rptQTable(
-    [28, 22, 18, 10, 11, 11],
+    [30, 24, 16, 9, 10, 11],
     ['Building', 'Meter', 'Baseline use for the year', 'R&sup2; (fit)', 'Per heating degree day', 'Per cooling degree day'],
     fitRows,
     [1],
@@ -3751,6 +3757,11 @@ function _rptQMethodPage(n, d, f) {
   return rptPage(n, 'How Savings Are Measured', body, { data: d, letterhead: false, label: 'Page ' + n + ' - Method' });
 }
 
+// One section of a merged page. The preview sidebar toggles it by its key (report-preview.js _setSectionVisible).
+function _rptQSub(key, html) {
+  return '<div data-subsection="' + key + '">' + html + '</div>';
+}
+
 function _rptQuarterReportHTML(d, s) {
   var pages = [];
   var tag = function (html, key) {
@@ -3765,7 +3776,7 @@ function _rptQuarterReportHTML(d, s) {
   if (_joinFC)
     pages.push(
       tag(
-        rptPage(n++, 'Findings and Contract Position', _rptQFindingsBody(d, f) + _rptQContractBody(d, f), {
+        rptPage(n++, 'Findings and Contract Position', _rptQSub('observations', _rptQFindingsBody(d, f)) + _rptQSub('contractProjection', _rptQContractBody(d, f)), {
           data: d,
           letterhead: false,
           label: 'Page ' + (n - 1) + ' - Findings and Contract Position',

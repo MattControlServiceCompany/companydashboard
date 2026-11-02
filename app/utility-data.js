@@ -4850,12 +4850,40 @@ function fmtDate(d) {
 // → canonical source: computations/normalization.js (inline copies removed)
 
 // Returns {byYm: {YYYY-MM: {hdd,cdd,avgTemp}}, cache: [...], zip: string}
-function getWeatherForBuilding(projId, bldgId) {
+function _weatherZipFor(projId, bldgId) {
   const pid = projId || udSelProjId;
   const bid = bldgId || udSelBldgId;
   const b = getUDBldg(pid, bid);
   const _projRec = (typeof projects !== 'undefined' ? projects : []).find((p) => String(p.id) === String(pid));
-  const zip = b?.zip || _projRec?.zip || '';
+  return b?.zip || _projRec?.zip || '';
+}
+// Short text that changes when the stored weather months change (count, newest month, degree-day total).
+// Memoized on the stored array itself (DB.get returns the same array until a save replaces it), so the
+// per-meter savings cache check costs one lookup, not a rebuild of the weather map.
+const _wxFpMemo = new WeakMap();
+function getWeatherFingerprint(projId, bldgId) {
+  const zip = _weatherZipFor(projId, bldgId);
+  if (!zip) return '0__0';
+  const cache = wddLoadCache(zip);
+  if (!cache.length) return '0__0';
+  const hit = _wxFpMemo.get(cache);
+  if (hit && hit.len === cache.length) return hit.fp;
+  const byYm = {};
+  cache.forEach((r) => {
+    byYm[r.ym] = r;
+  });
+  const keys = Object.keys(byYm).sort();
+  const fp =
+    keys.length +
+    '_' +
+    (keys[keys.length - 1] || '') +
+    '_' +
+    Math.round(keys.reduce((t, k) => t + (Number(byYm[k].hdd) || 0) + (Number(byYm[k].cdd) || 0), 0));
+  _wxFpMemo.set(cache, { len: cache.length, fp });
+  return fp;
+}
+function getWeatherForBuilding(projId, bldgId) {
+  const zip = _weatherZipFor(projId, bldgId);
   if (!zip) return { byYm: null, cache: [], zip: '' };
   const cache = wddLoadCache(zip);
   if (!cache.length) return { byYm: null, cache: [], zip };

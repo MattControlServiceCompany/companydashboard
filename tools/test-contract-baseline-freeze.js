@@ -73,7 +73,7 @@ const pre = [
   'var projects = __projects;',
   'var udSelProjId = 1;',
   'var __store = {}; function sget(k, d){ return k in __store ? __store[k] : d; } function sset(k, v){ __store[k] = v; }',
-  'function getWeatherForBuilding(){ return { byYm: null, cache: [] }; }',
+  'function getWeatherFingerprint(){return 0;} function getWeatherForBuilding(){ return { byYm: null, cache: [] }; }',
   'function getUDBldg(p, b){ return __bldgs[p]; }',
   'function getUDBldgs(p){ return [__bldgs[p]]; }',
   'function isBaselineExcluded(){ return false; } function isCalcCommodity(){ return true; }',

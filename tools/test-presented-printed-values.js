@@ -660,7 +660,7 @@ function meterHtml(printed) {
   );
 }
 ev(
-  'var projects = [{ id: 7, sa: "SA-1" }]; var udSelProjId = 7; function getWeatherForBuilding(){ return { byYm: null, cache: [] }; } function getUDBldg(){ return { id: "b1", meters: [] }; }',
+  'var projects = [{ id: 7, sa: "SA-1" }]; var udSelProjId = 7; function getWeatherFingerprint(){return 0;} function getWeatherForBuilding(){ return { byYm: null, cache: [] }; } function getUDBldg(){ return { id: "b1", meters: [] }; }',
 );
 const cur = meterHtml(undefined);
 const prt = meterHtml(ev('rptPrintedMeterCells(__dA, "b1", "Gas")'.replace('__dA', '__d')));

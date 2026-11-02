@@ -37,7 +37,7 @@ async function generateReportPreview(opts) {
         loadFn: wddLoadCache,
         saveFn: wddSaveCache,
         fetchFn: function (url) {
-          return fetch(url);
+          return fetch(url, { signal: AbortSignal.timeout(20000) });
         },
         now: new Date(),
       });
@@ -241,6 +241,13 @@ function _rebuildSidebar() {
     if (baseKey && !sk.endsWith('-cont') && !(baseKey in sectionPageMap)) {
       sectionPageMap[baseKey] = { pageIdx: i, isVisible: isVis, pageNum: isVis ? globalVisibleIdx : null };
     }
+    // Sections that share a page (data-subsection) each get their own sidebar row and checkbox.
+    pg.querySelectorAll('[data-subsection]').forEach(function (sub) {
+      var subKey = sub.getAttribute('data-subsection');
+      var subVis = isVis && sub.style.display !== 'none';
+      if (baseKey === subKey) sectionPageMap[subKey].isVisible = subVis;
+      else sectionPageMap[subKey] = { pageIdx: i, isVisible: subVis, pageNum: subVis ? globalVisibleIdx : null };
+    });
   }
 
   // Recalculate accurate page numbers for each section key (visible pages only, in DOM order)
@@ -256,6 +263,10 @@ function _rebuildSidebar() {
         sectionPageMap[pgBase].pageNum = visNum;
         _seenSectionForPageNum[pgBase] = true;
       }
+      pages[pi].querySelectorAll('[data-subsection]').forEach(function (sub) {
+        var subKey = sub.getAttribute('data-subsection');
+        if (sectionPageMap[subKey]) sectionPageMap[subKey].pageNum = sub.style.display !== 'none' ? visNum : null;
+      });
     }
   }
 
@@ -323,9 +334,9 @@ function _rebuildSidebar() {
       html +=
         '<input type="checkbox" ' +
         (isVisible ? 'checked' : '') +
-        ' onclick="event.stopPropagation();togglePreviewSection(' +
-        pgIdx +
-        ',this.checked)" style="accent-color:var(--em);width:13px;height:13px;flex-shrink:0;cursor:pointer">';
+        ' onclick="event.stopPropagation();_setSectionVisible(\'' +
+        sec.key +
+        '\',this.checked)" style="accent-color:var(--em);width:13px;height:13px;flex-shrink:0;cursor:pointer">';
       html +=
         '<span style="flex:1;white-space:nowrap;overflow:hidden;text-overflow:ellipsis" ' +
         'onclick="event.stopPropagation();_scrollToSection(\'' +
@@ -355,7 +366,33 @@ function _rebuildSidebar() {
   sidebarEl.innerHTML = html;
 }
 
+// Show or hide one sidebar section. A section that shares a page with another is a data-subsection block
+// inside that page: the block hides on its own, and the page hides only when every block on it is hidden.
+function _setSectionVisible(key, visible) {
+  var sub = document.querySelector('#rptPreviewPages [data-subsection="' + key + '"]');
+  if (sub) {
+    sub.style.display = visible ? '' : 'none';
+    var pageEl = sub.closest('.rpt-preview-page');
+    var anyShown = Array.prototype.some.call(pageEl.querySelectorAll('[data-subsection]'), function (x) {
+      return x.style.display !== 'none';
+    });
+    pageEl.style.display = anyShown ? '' : 'none';
+    _rebuildSidebar();
+    _updatePageNumbers();
+    return;
+  }
+  var page = document.querySelector('#rptPreviewPages .rpt-preview-page[data-section="' + key + '"]');
+  if (!page) return;
+  var all = document.querySelectorAll('#rptPreviewPages .rpt-preview-page');
+  togglePreviewSection(Array.prototype.indexOf.call(all, page), visible);
+}
+
 function _toggleSectionByKey(key) {
+  var sub = document.querySelector('#rptPreviewPages [data-subsection="' + key + '"]');
+  if (sub) {
+    _setSectionVisible(key, sub.style.display === 'none' || sub.closest('.rpt-preview-page').style.display === 'none');
+    return;
+  }
   var page = document.querySelector('#rptPreviewPages .rpt-preview-page[data-section="' + key + '"]');
   if (!page) return;
   var pages = document.querySelectorAll('#rptPreviewPages .rpt-preview-page');
@@ -366,7 +403,8 @@ function _toggleSectionByKey(key) {
 }
 
 function _scrollToSection(key) {
-  var page = document.querySelector('#rptPreviewPages .rpt-preview-page[data-section="' + key + '"]');
+  var subEl = document.querySelector('#rptPreviewPages [data-subsection="' + key + '"]');
+  var page = subEl ? subEl.closest('.rpt-preview-page') : document.querySelector('#rptPreviewPages .rpt-preview-page[data-section="' + key + '"]');
   if (page) page.scrollIntoView({ behavior: 'smooth', block: 'start' });
 }
 

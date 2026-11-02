@@ -50,7 +50,7 @@ function build(projects) {
     'var _bldg = { id: "b1", meters: [] };',
     'var __store = {}; function sget(k, d){ return k in __store ? __store[k] : d; }',
     'function sset(k, v){ __store[k] = v; }',
-    'function getWeatherForBuilding(){ return { byYm: null, cache: [] }; }',
+    'function getWeatherFingerprint(){return 0;} function getWeatherForBuilding(){ return { byYm: null, cache: [] }; }',
     'function getUDBldg(){ return _bldg; }',
     'function _rptUnit(s){ return s; }',
     loadFn(REPO + '/app/utility-data.js', '_fixISO'),

@@ -91,6 +91,7 @@ function makeSandbox(bldgOverrides, elecMonths, gasMonths, fields) {
     getUDBldg: () => bldg,
     getUDBldgs: () => [bldg],
     getWeatherForBuilding: () => ({ byYm: {} }),
+    getWeatherFingerprint: () => '0__0',
     getNormRows: () => YMS12.map((ym) => ({ ym })),
     _parseISO: (s) => new Date(s),
     sset: () => {},

@@ -116,6 +116,7 @@ function makeSandbox(opts) {
     console,
     getUDBldg: () => bldg,
     getWeatherForBuilding: () => ({ byYm: {} }),
+    getWeatherFingerprint: () => '0__0',
     getNormRows: () => YMS12.map((ym) => ({ ym })), // 12 baseline months; buildMoMap stub below ignores them
     _parseISO: (s) => new Date(s),
     buildMoMap: (meter) => {

@@ -72,12 +72,16 @@ const ok = (c, m) => {
               { kind: 'baseline', text: 'heating 68, cooling 72' },
               { kind: 'period', text: 'heating 70, cooling 74', from: '2026-05-27', to: '2026-08-11' },
               { kind: 'period', text: 'heating 66, cooling 70', from: '2026-01-01', to: '2026-02-01' },
+              { kind: 'period', text: 'heating 66, cooling 70', from: '2026-01-01', to: '2026-02-01' },
+              { kind: 'period', text: 'heating 69, cooling 73', from: '2026-08-12', to: '2026-09-30' },
+              { kind: 'period', text: 'heating 69, cooling 73', from: '2026-08-12', to: '2026-09-30' },
             ],
           },
-          { building: 'Beta Hall', baselineWeekday: [{ text: '5:00 to 15:00' }], weekday: [], weekend: [], setPoints: [] },
+          { building: 'Beta Hall', baselineWeekday: [{ text: '5:00 to 15:00' }], weekday: [], weekend: [], setPoints: [{ kind: 'period', text: 'heating 71, cooling 75', from: '2026-07-01', to: '2026-09-30' }] },
           { building: 'Gamma Annex', baselineWeekday: [], weekday: [], weekend: [], setPoints: [
             { kind: 'baseline', text: 'Unit heaters: heating 45, cooling 90' },
             { kind: 'period', text: 'Unit heaters: heating 45, cooling 90', from: '2026-07-01', to: '2026-09-30' },
+            { kind: 'period', text: 'heating 71, cooling 75', from: '2026-07-01', to: '2026-09-30' },
           ] },
                   ],
       };
@@ -93,12 +97,14 @@ const ok = (c, m) => {
       const pg = pageOf(withHtml);
       const rows = pg ? [...pg.querySelectorAll('tbody tr')].map((tr) => [...tr.children].map((td) => [...td.querySelectorAll('div')].map((v) => v.textContent).join('\n') || td.textContent)) : [];
       const heads = pg ? [...pg.querySelectorAll('thead th')].map((th) => th.textContent) : [];
+      const sharedP = pg ? [...pg.querySelectorAll('p')].filter((x) => /^Same set points at/.test(x.textContent)).map((x) => x.textContent) : [];
+      const sharedBeforeTable = pg && pg.querySelector('table') ? [...pg.querySelectorAll('p')].some((x) => /^Same set points at/.test(x.textContent) && (x.compareDocumentPosition(pg.querySelector('table')) & 4) !== 0) : false;
       // store load + restore import (synthetic key)
       await DB.set('en_bas_schedhistory_synthetic-1', hist);
       const loaded = _rptBasHistoryLoad('synthetic-1');
       const other = _rptBasHistoryLoad('synthetic-2');
       return {
-        heads, rows, hasPage: !!pg, noHistPage: !!pageOf(noHist), emptyPage: !!pageOf(emptyHist),
+        sharedP, sharedBeforeTable, heads, rows, hasPage: !!pg, noHistPage: !!pageOf(noHist), emptyPage: !!pageOf(emptyHist),
         generic: [withHtml, noHist].map((h) => /meter data and trend logs for anomalies|Confirm BAS setpoints/i.test(h)),
         loadedOk: !!(loaded && loaded.buildings && loaded.buildings.length === 3), otherNull: other == null,
         pageCountWith: (withHtml.match(/class="rpt-page/g) || []).length, pageCountNo: (noHist.match(/class="rpt-page/g) || []).length,
@@ -117,7 +123,10 @@ const ok = (c, m) => {
     ok(/°F/.test(out.heads[4]) && !/degrees Fahrenheit/i.test(out.heads[4]), '5 set point header uses °F: ' + out.heads[4]);
     ok(!/zones/i.test(out.rows.map((r) => r.join(' ')).join(' ')), '5 no zone text in any cell');
     if (out.rows.length === 3) {
-      ok(out.rows[2][4] === 'Baseline: Unit heaters: heating 45, cooling 90\nUnit heaters: heating 45, cooling 90, July 1 to September 30', '5 unchanged set points show baseline and quarter: ' + JSON.stringify(out.rows[2][4]));
+      ok(out.rows[2][4] === 'Baseline: Unit heaters: heating 45, cooling 90\nUnit heaters: heating 45, cooling 90, July 1 to September 30\nAlso: shared set points above the table', '5 unchanged set points show baseline and quarter, shared line moved to the paragraph: ' + JSON.stringify(out.rows[2][4]));
+      ok(/Also: shared set points above the table/.test(out.rows[1][4]) && out.sharedBeforeTable, '6 cell text says "above the table" and the paragraph prints above the table');
+      ok(out.sharedP.length === 1 && /Beta Hall and Gamma Annex/.test(out.sharedP[0]) && /heating 71, cooling 75/.test(out.sharedP[0]), '6 one shared paragraph for the two buildings: ' + JSON.stringify(out.sharedP));
+      ok(!/Alpha/.test(out.sharedP.join(' ')) && /heating 69, cooling 73/.test(out.rows[0][4]) && !/Also: shared/.test(out.rows[0][4]), '6 a line listed twice by one building is not shared: ' + JSON.stringify(out.rows[0][4]));
     }
     ok(!out.noHistPage, '2 no record -> no table page');
     ok(!out.emptyPage, '2 record with no matching building -> no table page');

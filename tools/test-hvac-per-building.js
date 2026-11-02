@@ -154,6 +154,7 @@ function makeEnv() {
     getUDBldg: (pid, id) => bldgs.find((b) => b.id === id),
     isBaselineExcluded: (pid, id) => id === 'eX',
     getWeatherForBuilding: () => ({ byYm: {} }),
+    getWeatherFingerprint: () => '0__0',
     getNormRows: () => YMS.map((ym) => ({ ym })),
     _parseISO: (s) => new Date(s),
     buildMoMap: (m) => {

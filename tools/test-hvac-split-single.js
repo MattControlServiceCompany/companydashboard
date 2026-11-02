@@ -134,6 +134,7 @@ const sandbox = {
   isBaselineExcluded: (pid, id) => !!EXCLUDED[id],
   getUDBldg: (pid, id) => (id === 'b2' ? bldg2 : bldg),
   getWeatherForBuilding: () => ({ byYm: {} }),
+  getWeatherFingerprint: () => '0__0',
   getNormRows: () => yms.map((ym) => ({ ym })),
   buildMoMap: (meter) => {
     if (meter.data) {

@@ -80,7 +80,7 @@ vm.createContext(sandbox);
 // projHasContract needs a `projects` array with a truthy `sa` on the test project.
 const stubs = [
   'var projects = [{ id: 1, sa: "SA-TEST-001" }];',
-  'function getWeatherForBuilding(){ return { byYm: {}, cache: [] }; }',
+  'function getWeatherFingerprint(){return 0;} function getWeatherForBuilding(){ return { byYm: {}, cache: [] }; }',
   'function getUDProj(){ return { id: 1, sa: "SA-TEST-001", inclMonths: {} }; }',
   'function getUDBldg(){ return { meters: [] }; }',
   'var udSelProjId = 1;',

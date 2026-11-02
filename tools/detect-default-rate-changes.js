@@ -47,7 +47,7 @@ function ctx(repo) {
   vm.runInContext(
     'function getUDBldgs(p){return (utilityData[p]||{buildings:[]}).buildings;}' +
       'function getUDBldg(p,b){return getUDBldgs(p).find(function(x){return x.id===b;});}' +
-      'function getWeatherForBuilding(){return {byYm:null,cache:[]};}' +
+      'function getWeatherFingerprint(){return 0;} function getWeatherForBuilding(){return {byYm:null,cache:[]};}' +
       ['_fixISO', '_parseISO', 'calcDays'].map(cutFn).join(String.fromCharCode(10)),
     sb,
   );
