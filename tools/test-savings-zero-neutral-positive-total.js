@@ -64,19 +64,12 @@ ok(pp.text === '+2.4%' && pp.color === 'G', 'plus option: ' + pp.text);
 // ---- Part 2: rendered tables ----
 function findBackup() {
   if (process.env.CH_TEST_BACKUP && fs.existsSync(process.env.CH_TEST_BACKUP)) return process.env.CH_TEST_BACKUP;
-  const root = 'C:/Users/Matt Miller/OneDrive - Control Service Company/CompanyHub Database Backups';
-  if (!fs.existsSync(root)) return null;
-  const dirs = fs.readdirSync(root).filter((n) => /^\d{4}-\d\d-\d\d-companyhub-db-backup$/.test(n)).sort().reverse();
-  for (const d of dirs) {
-    const f = fs.readdirSync(path.join(root, d)).find((n) => /^CompanyHub-localdatafile-\d+\.json$/.test(n));
-    if (f) return path.join(root, d, f);
-  }
   return null;
 }
 
 async function part2() {
   const bk = findBackup();
-  if (!bk) { console.log('  SKIP part 2 (no backup file)'); return; }
+  if (!bk) { console.log('  SKIP part 2 (set CH_TEST_BACKUP to a backup file)'); return; }
   const { launchBrowser } = require('./launch-browser.js');
   const bctx = await launchBrowser('zeroneutral', { viewport: { width: 1700, height: 1000 } });
   try {
