@@ -2507,6 +2507,12 @@ async function siteResetAllMeterTableSettings() {
    site-ui.js delegates to this array and should NOT maintain its own copy.
 */
 var RELEASE_NOTES = [
+  { v: 'v2026.11.02.199', date: '2026-11-02', title: 'Savings of $0 and quarter totals',
+    items: [
+      { type: 'fix', text: 'Energy Graphics: savings of $0 show in normal text; a quarter floored at $0 shows the measured value then $0 in red.' },
+      { type: 'feature', text: 'Project Performance: new quarter table with each building\'s savings, the billable total, and a total of positive savings only.' }
+    ]
+  },
   { v: 'v2026.11.02.198', date: '2026-11-02', title: 'Quarterly and annual reports: clearer wording and layout',
     items: [
       { type: 'change', text: 'Quarterly and annual reports: clearer wording and labels throughout.' },
