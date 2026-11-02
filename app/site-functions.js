@@ -2507,6 +2507,13 @@ async function siteResetAllMeterTableSettings() {
    site-ui.js delegates to this array and should NOT maintain its own copy.
 */
 var RELEASE_NOTES = [
+  { v: 'v2026.11.02.195', date: '2026-11-02', title: 'Energy Department: Generate Report "Bills through" note; faster sync',
+    items: [
+      { type: 'change', text: 'Energy Department > Generate Report: the "Bills through" line is now a plain note when the period is complete. The warning text shows only when the period is incomplete.' },
+      { type: 'fix', text: 'Sync: changes from the other user now appear within about a minute while the tab is open.' },
+      { type: 'fix', text: 'Sync: the table refreshes after a conflict, and the first sign-in no longer loses a save.' }
+    ]
+  },
   { v: 'v2026.11.02.194', date: '2026-11-02', title: 'Savings / Reports: waiting-for-weather display, clearer labels',
     items: [
       { type: 'change', text: 'Reports: savings wording now says annual and cumulative where the figure covers a year or the contract to date.' },
