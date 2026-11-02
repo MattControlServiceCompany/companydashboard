@@ -1,6 +1,6 @@
 // supabase-keepalive.js -- Netlify Scheduled Function (runs once a day).
 // WHY: the Supabase free plan pauses a project after a period of inactivity, which took the site
-// down (2026-10-06). One small READ-ONLY query each day counts as activity.
+// down (2026-10-06). One small READ-ONLY query each run counts as activity.
 // Env vars (same as kv-sync.js): SUPABASE_URL, SUPABASE_SECRET_KEY. No writes. No key is logged.
 // Schedule is declared in netlify.toml ([functions."supabase-keepalive"] schedule) -- one place only.
 
@@ -11,6 +11,7 @@ async function keepAlive(env, fetchImpl) {
     console.error('[supabase-keepalive] FAIL: SUPABASE_URL or SUPABASE_SECRET_KEY is not set');
     return { ok: false, status: 0 };
   }
+  const t0 = Date.now();
   try {
     // Reads at most one row of one column from the kv table.
     const res = await fetchImpl(`${url}/rest/v1/kv?select=key&limit=1`, {
@@ -18,11 +19,11 @@ async function keepAlive(env, fetchImpl) {
       headers: { apikey: key, Authorization: `Bearer ${key}` },
     });
     if (!res.ok) {
-      console.error('[supabase-keepalive] FAIL: HTTP', res.status);
+      console.error('[supabase-keepalive] FAIL: HTTP', res.status, (Date.now() - t0) + 'ms');
       return { ok: false, status: res.status };
     }
     await res.json();
-    console.log('[supabase-keepalive] OK: HTTP', res.status);
+    console.log('[supabase-keepalive] OK: HTTP', res.status, (Date.now() - t0) + 'ms');
     return { ok: true, status: res.status };
   } catch (err) {
     console.error('[supabase-keepalive] FAIL:', err && err.message);
@@ -33,5 +34,5 @@ async function keepAlive(env, fetchImpl) {
 exports.keepAlive = keepAlive;
 exports.handler = async () => {
   const r = await keepAlive(process.env, fetch);
-  return { statusCode: r.ok ? 200 : 502 };
+  return { statusCode: r.ok ? 200 : 500, body: r.ok ? 'ok' : 'keepalive failed' };
 };

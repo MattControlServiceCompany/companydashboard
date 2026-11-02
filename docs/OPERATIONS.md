@@ -24,11 +24,11 @@ No secrets are in this file. Only env var NAMES are listed.
 | kv-sync | Shared data store. GET manifest/keys/key. PUT with version check. Keeps change history. (kv-sync.js:210-245) | HTTP `/.netlify/functions/kv-sync` (app/db.js:10). No schedule. | SUPABASE_URL, SUPABASE_SECRET_KEY, AUTHORIZED_USERS, CH_TEST_JWKS_URL (test only) (kv-sync.js:78-79,91,125) |
 | pdf-sync | Stores and returns PDF files. Single or chunked PUT. (pdf-sync.js:323-342) | HTTP. No schedule. | SUPABASE_URL, SUPABASE_SECRET_KEY, AUTHORIZED_USERS, ALLOWED_ORIGIN (optional), CH_TEST_JWKS_URL (test only) (pdf-sync.js:120-121,135,155,226) |
 | calendar-fetch | Downloads one calendar feed (.ics) and returns a snapshot of its events. Stateless: it never reads or writes the database. Address must be https, host calendar.google.com, path ending .ics (lib/calendar/snapshot.mjs `checkFeedUrl`). Reader code: netlify/functions/lib/calendar/normalize.mjs (recurring events: 365 days back, 730 forward). Sign-in check: netlify/lib/auth.js `verifyAuth` (one copy, also used by kv-sync and pdf-sync). | HTTP POST `/.netlify/functions/calendar-fetch`, sent only when the user clicks Sync feed on the Project page, District Calendar tab (app/project-calendar.js `sync`). No schedule, no timer, no call on page open. About 2 MB download per call (the feed has no ETag). | SUPABASE_URL, AUTHORIZED_USERS, CH_TEST_JWKS_URL (test only) |
-| supabase-keepalive | One read of one row in table `kv`. Stops Supabase from pausing. Returns 200 on success, 502 on failure. (supabase-keepalive.js:1-37) | Schedule `@daily` (netlify.toml:26-27). `@daily` = 00:00 UTC = 19:00 Central (CDT, summer) or 18:00 Central (CST, winter). | SUPABASE_URL, SUPABASE_SECRET_KEY |
+| supabase-keepalive | One read of one row in table `kv`. Stops Supabase from pausing. Returns 200 on success, 500 on failure. Logs HTTP status and duration. (supabase-keepalive.js:1-40) | Schedule `@daily` (netlify.toml:26-27). `@daily` = 00:00 UTC = 19:00 Central (CDT, summer) or 18:00 Central (CST, winter). | SUPABASE_URL, SUPABASE_SECRET_KEY |
 
 How to check that a function works:
 - Netlify dashboard, site cscdashboard, Observability, then Functions. Open the function and read the invocation log.
-- keepalive: look for the log line `[supabase-keepalive] OK: HTTP 200` once each day. A line with `FAIL` means a problem
+- keepalive: look for the log line `[supabase-keepalive] OK: HTTP 200 <n>ms` once each day. A line with `FAIL` means a problem
   (supabase-keepalive.js:11,21,25,28).
 - kv-sync and pdf-sync: a 401 means a bad token. A 403 means the email is not in AUTHORIZED_USERS. A 502 means a Supabase failure.
   (kv-sync.js:152,160; pdf-sync.js header)
