@@ -76,6 +76,8 @@ const fns = [
   '_rptPeriodWords',
   '_rptContractProgressPct',
   '_rptApportion',
+  '_rptPctBasisText',
+  '_rptQNote',
   '_rptBilledToDate',
   '_rptBuildingTarget',
   '_rptResultKind',

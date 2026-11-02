@@ -2383,6 +2383,12 @@ function _rptApportion(values, total) {
   return fl;
 }
 
+// _rptPctBasisText(d, word) - the ONE sentence that states the percent basis (savings divided by pctBase, set in
+// collectReportData). `word` is "quarter" or "period". Every report page that prints a savings percent uses it.
+function _rptPctBasisText(d, word) {
+  return 'Percent is savings divided by baseline cost, which is billed cost plus savings: ' + _fmtUSD(d.totals.pctBase, '$0') + ' for the ' + word + '.';
+}
+
 // The facts the pages and the findings share, from d only.
 function _rptQFacts(d) {
   var q = d.period.quarter || 1;
@@ -2896,9 +2902,8 @@ function _rptQResultsPage(n, d, f) {
     ' Results by Building</h2>' +
     t1 +
     _rptQNote(
-      'Percent is savings divided by baseline cost, which is billed cost plus savings: ' +
-        _fmtUSD(d.totals.pctBase, '$0') +
-        ' for the quarter. Savings price the change in usage at each month' + "'" + 's rate and include demand charges.',
+      _rptPctBasisText(d, 'quarter') +
+        ' Savings price the change in usage at each month' + "'" + 's rate and include demand charges.',
     ) +
     '<h2>Savings Measured by Month</h2>' +
     t2 +
@@ -4016,7 +4021,7 @@ function rptPageCover(n, d) {
         '</strong> in verified cost avoidance ' +
         '(' +
         $p(d.totals.savingsPct) +
-        ' of baseline spend). ') +
+        ' of billed cost plus savings). ') +
     (d.printed || _rptEnergyResultPositive(d)
       ? 'Energy reductions have been driven by operational improvements, setpoint optimization, and scheduling adjustments.'
       : '');
@@ -4750,6 +4755,7 @@ function rptPageFinancial(n, d) {
     '<p contenteditable="true" style="font-size:14px;color:var(--rpt-page-text);line-height:1.6;margin:0 0 8px">This page summarizes the financial performance of each building in the portfolio for the reporting period. Baseline costs represent the expected energy spend based on historical consumption adjusted for weather. Projected costs reflect the target spend based on the contracted savings percentage. Current costs are the actual utility charges during the period. The difference between baseline and current represents verified cost avoidance.</p>' +
     '<h2>Building Performance</h2>' +
     bldgTable +
+    _rptQNote(_rptPctBasisText(d, 'period')) +
     '<h2>' +
     pw.adj +
     ' Savings vs Baseline</h2>' +
@@ -5127,7 +5133,7 @@ function rptPageSavingsPerformance(n, d) {
     _usageSummaryTitle +
     '</h2>' +
     annTable;
-  const page2Body = '<h2>Annual Summary by Building</h2>' + bldgTable;
+  const page2Body = '<h2>Annual Summary by Building</h2>' + bldgTable + _rptQNote(_rptPctBasisText(d, 'period'));
 
   const page1 = rptPage(n, 'Savings Performance', page1Body, {
     data: d,
@@ -6101,6 +6107,7 @@ function rptPageObservations(n, d) {
         '<div style="font-size:14px;line-height:1.6;margin-bottom:8px" contenteditable="true">' +
         summaryPara +
         '</div>' +
+        _rptQNote(_rptPctBasisText(d, 'period')) +
         chunkHTML;
     } else {
       pageBody = chunkHTML;
