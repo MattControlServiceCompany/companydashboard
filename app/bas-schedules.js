@@ -361,11 +361,13 @@
       '<span style="display:flex;gap:8px;flex-wrap:wrap">' +
       '<button class="btn btn-em btn-sm" onclick="document.getElementById(\'bas-file-' + pid + '\').click()">Import schedules</button>' +
       '<button class="btn btn-ghost btn-sm" onclick="document.getElementById(\'bas-gfile-' + pid + '\').click()">Import scheduling groups</button>' +
-      '<button class="btn btn-ghost btn-sm" onclick="document.getElementById(\'bas-afile-' + pid + '\').click()">Import audit log</button></span></div>' +
+      '<button class="btn btn-ghost btn-sm" onclick="document.getElementById(\'bas-afile-' + pid + '\').click()">Import audit log</button>' +
+      '<button class="btn btn-ghost btn-sm" onclick="document.getElementById(\'bas-bfile-' + pid + '\').click()">Import baseline (Set Points sheet)</button></span></div>' +
       '<div style="padding:16px">' +
       '<input class="bas-file" type="file" id="bas-file-' + pid + '" accept=".csv,text/csv" multiple onchange="basPick(' + pid + ',this)">' +
       '<input class="bas-file" type="file" id="bas-gfile-' + pid + '" accept=".csv,text/csv" multiple onchange="basPickGroups(' + pid + ',this)">' +
       '<input class="bas-file" type="file" id="bas-afile-' + pid + '" accept=".csv,text/csv" multiple onchange="basPickAudit(' + pid + ',this)">' +
+      '<input class="bas-file" type="file" id="bas-bfile-' + pid + '" accept=".csv,text/csv" multiple onchange="basPickBaseline(' + pid + ',this)">' +
       '<div class="pcal-msg" id="bas-msg-' + pid + '" role="status">' + esc(s.msg) + '</div>' +
       pendingBox(pid) +
       datesSection(pid, snaps) +
@@ -483,6 +485,31 @@
       say(
         pid,
         'Saved schedule and set point history for ' + plural(res.matched.length, 'building', 'buildings') + ' from ' + plural(files.length, 'file', 'files') + '.' +
+          (lost.length ? ' Not matched to a building of this project (the report will not print them): ' + lost.join(', ') + '.' : ''),
+      );
+    });
+  };
+  // Baseline import: the Optimization Strategy Sheet "Set Points" sheet (CSV) -> the baseline entries of the same
+  // record (en_bas_schedhistory_<pid>). BasBaseline reads and merges; a baseline typed by a person is kept.
+  window.basPickBaseline = function (pid, input) {
+    readFiles(input).then(async function (files) {
+      if (!files.length) return;
+      var parsed = [];
+      var bad = '';
+      files.forEach(function (f) {
+        var r = BasBaseline.parseRows(baSplitCSV(f.text));
+        if (r.error) bad = bad || f.name + ': ' + r.error;
+        else parsed = parsed.concat(r.buildings);
+      });
+      if (bad) return say(pid, bad);
+      if (!parsed.length) return say(pid, 'No building rows were found in these files.');
+      var names = typeof getUDBldgs === 'function' ? (getUDBldgs(pid) || []).map(function (b) { return b.name; }) : [];
+      var res = BasBaseline.apply(DB.get('en_bas_schedhistory_' + pid, null), parsed, names);
+      await DB.set('en_bas_schedhistory_' + pid, res.rec);
+      var lost = res.matched.filter(function (m) { return names.indexOf(m.project) < 0; }).map(function (m) { return m.log; });
+      say(
+        pid,
+        'Saved the baseline hours and set points for ' + plural(res.matched.length, 'building', 'buildings') + '.' +
           (lost.length ? ' Not matched to a building of this project (the report will not print them): ' + lost.join(', ') + '.' : ''),
       );
     });
