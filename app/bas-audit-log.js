@@ -15,7 +15,9 @@
 //   - Set points: lines "<path>/occupied_heating|occupied_cooling changed from "X" to "Y"" in Details, any Description.
 //     A zone is the Location of the row. Its value before its first logged change is the "from" of that change.
 //     The value of a day is the most common (heating, cooling) pair over the zones that have both points.
-//   - A value the log cannot show is printed as "Not found in the audit log"; nothing is invented.
+//   - Baseline columns are NOT read from the log (it starts after the original settings). This module never writes
+//     baseline entries and never touches ones already in the record. A value with no source is left out; the report
+//     prints a plain dash for an empty cell. Nothing is invented.
 // Output record: { version:1, buildings:[{ building, baselineWeekday:[{text}], weekday:[{text,from,to}],
 //   weekend:[{kind,text,from,to}], setPoints:[{kind,text,from,to}] }] }  (from, to are YYYY-MM-DD).
 (function (root) {
@@ -24,9 +26,6 @@
   var BD = root.BasDiff || (typeof require === 'function' ? require('./bas-diff.js') : null);
   var DAYS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
   var HEAD = ['date', 'description', 'details', 'location', 'operator'];
-  var NOT_FOUND = 'Not found in the audit log';
-  var NO_SETPOINTS = 'Not determinable (no occupied set point rows in the log)';
-  var AUTO = 'audit-log'; // marks a baseline entry this module wrote; an entry without it was typed by a person and is kept
 
   // --- dates -------------------------------------------------------------------------------------
   function pad(n) {
@@ -183,11 +182,7 @@
       for (var i = 0; i < 7; i++) week.push(dayHours(state, i));
       days.push({ ymd: d, wd: daysText(week, 0, 4), we: daysText(week, 5, 6) });
     }
-    var w0 = [];
-    for (var q = 0; q < 7; q++) w0.push(dayHours(initial, q));
-    var uniform = w0[0] && w0.slice(0, 5).every(function (x) { return x === w0[0]; });
-    // The baseline weekday cell is plain hours when all five weekdays agree.
-    return { days: days, hasInitial: Object.keys(initial).length > 0, wd0: uniform ? w0[0] : daysText(w0, 0, 4), we0: daysText(w0, 5, 6) };
+    return { days: days };
   }
 
   // --- set points --------------------------------------------------------------------------------
@@ -286,31 +281,17 @@
       var wTo = list[list.length - 1].ymd;
       var sch = scheduleDays(sevs, wFrom, wTo);
       var sp = setPointDays(zones, wFrom, wTo);
+      var period = function (list) {
+        return runs(list).map(function (r) {
+          return { kind: 'period', text: r.text, from: r.from, to: r.to };
+        });
+      };
       var rec = {
         building: b,
-        baselineWeekday: [{ text: sch.hasInitial ? sch.wd0 : NOT_FOUND, src: AUTO }],
-        weekday: runs(sch.days.map(function (d) { return { ymd: d.ymd, text: d.wd }; })),
-        weekend: [{ kind: 'baseline', text: sch.hasInitial ? sch.we0 : NOT_FOUND, src: AUTO }].concat(
-          runs(sch.days.map(function (d) { return { ymd: d.ymd, text: d.we }; })).map(function (r) {
-            return { kind: 'period', text: r.text, from: r.from, to: r.to };
-          }),
-        ),
-        setPoints: sp
-          ? [{ kind: 'baseline', text: spText(sp.base), src: AUTO }].concat(
-              runs(sp.days.map(function (d) { return { ymd: d.ymd, text: spText(d.pair) }; })).map(function (r) {
-                return { kind: 'period', text: r.text, from: r.from, to: r.to };
-              }),
-            )
-          : [
-              { kind: 'baseline', text: NOT_FOUND, src: AUTO },
-              { kind: 'period', text: NO_SETPOINTS, from: wFrom, to: wTo },
-            ],
+        weekday: sevs.length ? runs(sch.days.map(function (d) { return { ymd: d.ymd, text: d.wd }; })) : [],
+        weekend: sevs.length ? period(sch.days.map(function (d) { return { ymd: d.ymd, text: d.we }; })) : [],
+        setPoints: sp ? period(sp.days.map(function (d) { return { ymd: d.ymd, text: spText(d.pair) }; })) : [],
       };
-      if (!sch.hasInitial && !sevs.length) {
-        // no schedule row at all: say so for the periods too
-        rec.weekday = [{ text: NOT_FOUND, from: wFrom, to: wTo }];
-        rec.weekend = [{ kind: 'baseline', text: NOT_FOUND, src: AUTO }, { kind: 'period', text: NOT_FOUND, from: wFrom, to: wTo }];
-      }
       out.push({ building: b, window: [wFrom, wTo], record: rec });
     });
     return out;
@@ -357,14 +338,6 @@
     });
     return out;
   }
-  // The base entries: a baseline a person typed is kept; one this module wrote is replaced unless the new one says "not found".
-  function pickBase(oldList, newBase) {
-    var old = (oldList || []).filter(function (e) { return !e.from && !e.to; });
-    var typed = old.filter(function (e) { return e.src !== AUTO; });
-    if (typed.length) return typed;
-    if (newBase && newBase.text === NOT_FOUND && old.length) return old;
-    return newBase ? [newBase] : old;
-  }
   // existing = the stored record or null. results = analyze(...). Returns { rec, matched:[{log, project}] }.
   // The stored days inside each building's window are replaced; days outside it stay. Applying the same results twice gives the same record.
   function apply(existing, results, projectNames) {
@@ -379,16 +352,15 @@
       var a = r.window[0];
       var z = r.window[1];
       var n = r.record;
+      var undated = function (list) {
+        return (list || []).filter(function (e) { return !e.from && !e.to; });
+      };
       var merged = {
         building: name,
-        baselineWeekday: pickBase(old.baselineWeekday, n.baselineWeekday[0]),
+        baselineWeekday: old.baselineWeekday || [],
         weekday: joinRuns(cutWindow(old.weekday, a, z).concat(n.weekday)),
-        weekend: pickBase(old.weekend, n.weekend[0]).map(function (e) { return Object.assign({ kind: 'baseline' }, e); }).concat(
-          joinRuns(cutWindow(old.weekend, a, z).concat(n.weekend.slice(1))),
-        ),
-        setPoints: pickBase(old.setPoints, n.setPoints[0]).map(function (e) { return Object.assign({ kind: 'baseline' }, e); }).concat(
-          joinRuns(cutWindow(old.setPoints, a, z).concat(n.setPoints.slice(1))),
-        ),
+        weekend: undated(old.weekend).concat(joinRuns(cutWindow(old.weekend, a, z).concat(n.weekend))),
+        setPoints: undated(old.setPoints).concat(joinRuns(cutWindow(old.setPoints, a, z).concat(n.setPoints))),
       };
       if (idx >= 0) rec.buildings[idx] = merged;
       else rec.buildings.push(merged);
@@ -397,8 +369,6 @@
   }
 
   var api = {
-    NOT_FOUND: NOT_FOUND,
-    NO_SETPOINTS: NO_SETPOINTS,
     parseRows: parseRows,
     analyze: analyze,
     apply: apply,

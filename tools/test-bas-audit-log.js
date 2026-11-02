@@ -90,20 +90,17 @@ eq(alpha.window, ['2026-06-01', '2026-09-10'], 'window is the first to the last 
 const wd = alpha.record.weekday;
 eq(wd.map((x) => x.text), ['Mon-Thu 7:00 to 16:00', 'Mon-Fri 6:00 to 16:00'], 'weekday text by range (no day with hours is left out)');
 eq([wd[0].from, wd[0].to, wd[1].from, wd[1].to], ['2026-06-01', '2026-08-09', '2026-08-10', '2026-09-10'], 'Delete on Aug 10 and an update at 11:30 PM on Aug 10: end-of-day state applies from Aug 10');
-ok(alpha.record.weekend.length === 2 && alpha.record.weekend[0].kind === 'baseline' && alpha.record.weekend[1].text === 'None', 'weekend: baseline plus one "None" range');
+ok(alpha.record.weekend.length === 1 && alpha.record.weekend[0].text === 'None' && alpha.record.weekend[0].kind === 'period', 'weekend: one "None" range');
 ok(!JSON.stringify(alpha.record).includes('Wing Light') && !JSON.stringify(alpha.record).includes('1:00 to 2:00'), 'area schedules and date schedules are left out');
-eq(alpha.record.baselineWeekday.map((x) => x.text), ['6:00 to 16:00'], 'baseline weekday = hours before the first logged change');
+ok(!alpha.record.baselineWeekday && !alpha.record.weekend.some((x) => x.kind === 'baseline') && !alpha.record.setPoints.some((x) => x.kind === 'baseline'), 'no baseline entry is written from the log');
 const spA = alpha.record.setPoints;
-eq(spA[0], { kind: 'baseline', text: 'heating 68, cooling 72', src: 'audit-log' }, 'baseline set points = most common value before the first change');
-eq(spA.slice(1).map((x) => [x.text, x.from, x.to]), [
+eq(spA.map((x) => [x.text, x.from, x.to]), [
   ['heating 70, cooling 74', '2026-06-01', '2026-08-31'],
   ['heating 68, cooling 72', '2026-09-01', '2026-09-10'],
 ], 'set point ranges: 70/74 to Aug 31, 68/72 from Sep 1 (2 of 3 zones)');
-ok(beta.record.setPoints[1].text === BAL.NO_SETPOINTS, 'no set point rows: "Not determinable" text, no invented value');
-eq(beta.record.baselineWeekday.map((x) => x.text), ['8:00 to 17:00'], 'old values of the first update give the baseline');
-eq(beta.record.weekend[0].text, 'None', 'beta weekend baseline is None (old values had no weekend)');
-eq(beta.record.weekend.slice(1).map((x) => x.text), ['Sat-Sun 8:00 to 17:00'], 'beta weekend range after Jul 1');
-ok(beta.record.weekend[1].from === '2026-07-01', 'beta weekend starts the day of the change');
+eq(beta.record.setPoints, [], 'no set point rows: no entry (the report prints a dash), no invented value');
+eq(beta.record.weekend.map((x) => [x.text, x.from]), [['Sat-Sun 8:00 to 17:00', '2026-07-01']], 'beta weekend range starts the day of the change');
+ok(!/audit log|not found|not determinable/i.test(JSON.stringify(res)), 'no internal wording in the record');
 
 // --- name match and merge --------------------------------------------------------------------------
 const names = ['Alpha Elementary School', 'Beta Hall'];
@@ -122,7 +119,9 @@ ok(m2.rec.buildings.filter((b) => b.building === 'Beta Hall')[0].weekday.length 
 // a baseline typed by a person is kept
 const typed = JSON.parse(JSON.stringify(m1.rec));
 typed.buildings[0].baselineWeekday = [{ text: 'typed hours' }];
-eq(BAL.apply(typed, res, names).rec.buildings[0].baselineWeekday, [{ text: 'typed hours' }], 'a baseline without the audit-log mark is kept');
+typed.buildings[0].setPoints.unshift({ kind: 'baseline', text: 'typed set points' });
+const kept = BAL.apply(typed, res, names).rec.buildings[0];
+ok(kept.baselineWeekday[0].text === 'typed hours' && kept.setPoints[0].text === 'typed set points' && kept.setPoints.length === typed.buildings[0].setPoints.length, 'baseline entries already in the record are kept, none added');
 
 (async () => {
   // --- the button, in the browser ------------------------------------------------------------------
@@ -166,6 +165,17 @@ eq(BAL.apply(typed, res, names).rec.buildings[0].baselineWeekday, [{ text: 'type
       });
       await page.locator('#bas-panel-9').screenshot({ path: process.env.SHOT });
     }
+    const rowsOut = await page.evaluate(() => {
+      const d = { project: { client: 'Test Client', name: 'Test Project' }, contract: {}, period: { quarter: 3, year: 2026, yearMonths: ['2026-07', '2026-08', '2026-09'] }, buildings: [{ name: 'Beta Hall' }], basScheduleHistory: DB.get('en_bas_schedhistory_9', null) };
+      return _rptBasScheduleRows(d);
+    });
+    const beta = rowsOut[0];
+    ok(beta && beta[1].length === 0 && beta[4].length === 0, 'report rows: a cell with no source has no lines');
+    const html = await page.evaluate(() => {
+      const d = { project: { client: 'Test Client', name: 'Test Project' }, contract: {}, period: { quarter: 3, year: 2026, yearMonths: ['2026-07', '2026-08', '2026-09'] }, buildings: [{ name: 'Beta Hall' }], basScheduleHistory: DB.get('en_bas_schedhistory_9', null) };
+      return _rptQSchedulePage(8, d);
+    });
+    ok(html.indexOf('&mdash;') >= 0 && !/not found|not determinable|audit log/i.test(html), 'report page prints a dash for a cell with no source and no internal wording');
     ok(errs.length === 0, 'no page errors' + (errs.length ? ': ' + errs[0] : ''));
   } finally {
     await ctx.close();

@@ -3350,7 +3350,7 @@ function _rptQSchedulePage(n, d) {
             return '<div style="margin:0 0 1px">' + _escHtml(l) + '</div>';
           })
           .join('')
-      : '-';
+      : '&mdash;';
   };
   var trs = rows
     .map(function (r) {
