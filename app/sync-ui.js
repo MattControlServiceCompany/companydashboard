@@ -384,12 +384,18 @@
   });
   window.addEventListener('dbRemoteApplied', function (e) {
     var keys = (e.detail && e.detail.keys) || [];
-    if (_safeToReload()) window.location.reload();
-    else {
-      renderRemoteChangeBanner(keys);
-      _reloadWhenSafe();
-    }
+    var go = function () {
+      if (_safeToReload()) window.location.reload();
+      else {
+        renderRemoteChangeBanner(keys);
+        _reloadWhenSafe();
+      }
+    };
+    // After a conflict choice (reason 'conflict-resolved') the "Your choices were saved" message shows first.
+    if (e.detail && e.detail.reason === 'conflict-resolved') setTimeout(go, CONFLICT_RELOAD_DELAY_MS);
+    else go();
   });
+  var CONFLICT_RELOAD_DELAY_MS = 2500;
 
   window.addEventListener('dbOfflineBanner', function (e) {
     var d = (e && e.detail) || {};

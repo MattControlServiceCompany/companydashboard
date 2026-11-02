@@ -3576,7 +3576,7 @@ await t(
   },
 );
 await t(
-  "CREDIT2 tab visible again: exactly 1 manifest GET, then none inside 5 minutes, then 1 after",
+  "CREDIT2 tab visible again: exactly 1 manifest GET, none inside 50 s (focus + visible repeated), one poll a minute after",
   async () => {
     const env = makeEnv();
     const S = countingServer([kvRow("en_budget_a", { n: 1 }, 1)]);
@@ -3603,24 +3603,22 @@ await t(
     env.setHidden(true);
     env.setHidden(false);
     await tick(30);
-    await env.advance(4 * 60 * 1000);
+    await env.advance(30 * 1000);
     env.fire("window", "focus");
     env.setHidden(false);
     await tick(30);
     assert.strictEqual(
       countManifest(S.urls) - base,
       1,
-      "none inside 5 minutes (focus + visible repeated)",
+      "none inside 50 s (focus + visible repeated)",
     );
     await env.advance(2 * 60 * 1000);
-    env.fire("window", "focus");
     await tick(30);
-    assert.strictEqual(
-      countManifest(S.urls) - base,
-      2,
-      "one more after 5 minutes",
+    assert.ok(
+      countManifest(S.urls) - base >= 2,
+      "the visible-tab poll asks again after a minute",
     );
-    assert.strictEqual(env.intervals, 0);
+    assert.strictEqual(env.intervals, 0, "a setTimeout chain, never setInterval");
   },
 );
 await t(
@@ -3669,6 +3667,7 @@ await t(
       env,
     });
     await L.DB.warmCache();
+    env.setHidden(true); // the visible-tab poll timer is tested in CREDIT2 and SYNCDEF1; this test is about the drain
     const base = S.urls.length;
     env.fire("window", "online");
     await L.DB.__t._drainQueueOnce();
@@ -3691,6 +3690,7 @@ await t(
       env,
     });
     await L.DB.warmCache();
+    env.setHidden(true); // the visible-tab poll timer is tested in CREDIT2 and SYNCDEF1; this test is about the drain
     L.DB.set("en_budget_q", { n: 1 });
     await tick(60);
     assert.strictEqual(L.DB.getQueueDepth(), 1);
@@ -3736,6 +3736,7 @@ await t(
       env,
     });
     await L.DB.warmCache();
+    env.setHidden(true); // the visible-tab poll timer is tested in CREDIT2 and SYNCDEF1; this test is about the drain
     L.DB.set("en_budget_q", { n: 1 });
     await tick(60);
     await env.advance(15000);
@@ -4557,6 +4558,171 @@ await t(
     assert.strictEqual(a.entered, null);
     assert.strictEqual(b.entered, null);
     assert.strictEqual(c.entered.name, 'Saved Name', 'a saved name still wins');
+  });
+  // ---- 2026-11-02 sync defects (live go-live test v194): poll, stale view after conflict, load-time writes
+  await t('SYNCDEF1 POLL: a visible tab with no focus event sees the other user change within 60 s; a hidden tab makes 0 calls', async () => {
+    const env = makeEnv();
+    const rows = [kvRow('en_budget_a', { n: 1 }, 1)];
+    const S = countingServer(rows);
+    const L = load({ mode: 'on', syncHost: true, classify: true, fetchImpl: S.fetchImpl, env });
+    await L.DB.warmCache();
+    await L.DB.__t._hydrate();
+    L.DB.__t._startBackgroundSync();
+    rows[0] = kvRow('en_budget_a', { n: 2 }, 2);
+    await env.advance(65 * 1000);
+    await tick(60);
+    assert.deepStrictEqual(L.DB.get('en_budget_a'), { n: 2 }, 'applied without any focus event');
+    assert.ok(L.events.some((e) => e.type === 'dbRemoteApplied'), 'the page is told');
+    const m0 = countManifest(S.urls);
+    await env.advance(10 * 60 * 1000);
+    await tick(30);
+    const per = countManifest(S.urls) - m0;
+    assert.ok(per >= 9 && per <= 10, 'about 1 a minute while visible, got ' + per);
+    env.setHidden(true);
+    await tick(30);
+    const h0 = S.urls.length;
+    await env.advance(6 * 60 * 60 * 1000);
+    await tick(30);
+    assert.strictEqual(S.urls.length - h0, 0, 'hidden tab: 0 calls');
+    assert.strictEqual(env.pending(), 0, 'hidden tab: no poll timer pending');
+  });
+  await t('SYNCDEF2 after Keep theirs / Keep mine the page is told to redraw (dbRemoteApplied for the key)', async () => {
+    for (const choice of ['theirs', 'mine']) {
+      const { L, KEY } = await sameFieldConflict(choice);
+      const ev = L.events.filter((e) => e.type === 'dbRemoteApplied');
+      assert.strictEqual(ev.length, 1, choice + ': one redraw event, got ' + ev.length);
+      assert.strictEqual(JSON.stringify(ev[0].detail.keys), JSON.stringify([KEY]));
+      assert.strictEqual(ev[0].detail.reason, 'conflict-resolved');
+    }
+  });
+  await t('SYNCDEF2b "Load theirs" in the whole-key dialog also redraws the page', async () => {
+    const KEY = 'en_budget_plain';
+    const srv = makeServer({ [KEY]: { n: 'base' } });
+    const L2 = load({ mode: 'on', syncHost: true, classify: true, fetchImpl: srv.fetchImpl, modal: async () => ({ action: 'load-theirs' }) });
+    await L2.DB.warmCache();
+    await L2.DB.__t._hydrate();
+    srv.rows[KEY] = { value: { n: 'THEIRS' }, version: 2, hash: 'h2' };
+    await L2.DB.set(KEY, { n: 'MINE' });
+    await settle();
+    assert.deepStrictEqual(L2.DB.get(KEY), { n: 'THEIRS' });
+    assert.ok(L2.events.some((e) => e.type === 'dbRemoteApplied' && e.detail.keys[0] === KEY), 'redraw event');
+  });
+  // A server with real hashes and compare-and-set, so "identical to the server" can be seen.
+  function liveServer() {
+    const rows = {};
+    const puts = [];
+    const res = (status, body) => ({ ok: status >= 200 && status < 300, status, json: async () => body });
+    const fetchImpl = async (u, o) => {
+      if (o && o.method === 'PUT') {
+        const b = JSON.parse(o.body);
+        const rec = { key: b.key, baseVersion: b.baseVersion };
+        puts.push(rec);
+        const cur = rows[b.key];
+        if ((cur ? cur.version : null) !== (b.baseVersion === undefined ? null : b.baseVersion)) {
+          rec.status = 409;
+          return res(409, { conflict: true, current: Object.assign({ key: b.key, deleted: false }, cur) });
+        }
+        const version = cur ? cur.version + 1 : 1;
+        rows[b.key] = { value: b.value, version, hash: sha(b.value) };
+        rec.status = 200;
+        return res(200, { version, hash: rows[b.key].hash, deleted: false });
+      }
+      if (/manifest=1/.test(u)) return res(200, Object.keys(rows).map((k) => ({ key: k, version: rows[k].version, hash: rows[k].hash, deleted: false })));
+      const keys = decodeURIComponent(String(u).split('keys=')[1] || '').split(',').filter(Boolean);
+      return res(200, keys.filter((k) => rows[k]).map((k) => Object.assign({ key: k, deleted: false }, rows[k])));
+    };
+    return { rows, puts, fetchImpl };
+  }
+  const wddRows = () => [{ ym: '2026-01', hdd: 1100, cdd: 0, avg: 30 }, { ym: '2026-02', hdd: 900, cdd: 0, avg: 33 }];
+  await t('SYNCDEF3a weather cache: two users first-loading at once: the second write meets a 409, asks nobody and sends nothing more', async () => {
+    const srv = liveServer();
+    const asked = [];
+    const mk = () => load({ mode: 'on', syncHost: true, classify: true, fetchImpl: srv.fetchImpl, modal: async (d) => (asked.push(d), { action: 'dismiss' }) });
+    const A = mk();
+    const B = mk();
+    await A.DB.warmCache();
+    await B.DB.warmCache();
+    await A.DB.set('en_wdd_66053', wddRows());
+    await B.DB.set('en_wdd_66053', wddRows());
+    await tick(150);
+    const mine = srv.puts.filter((x) => x.key === 'en_wdd_66053');
+    assert.strictEqual(mine.length, 2, 'A 200 and B 409 only: ' + JSON.stringify(mine));
+    assert.strictEqual(asked.length, 0, 'no dialog');
+    assert.strictEqual(B.DB.getQueueDepth(), 0, 'nothing left in B queue');
+    assert.strictEqual(srv.rows['en_wdd_66053'].version, 1, 'the server row was not rewritten');
+  });
+  await t('SYNCDEF3b weather cache: a write queued before the first pull, identical to the server row, is not sent', async () => {
+    const srv = liveServer();
+    srv.rows['en_wdd_66006'] = { value: wddRows(), version: 3, hash: sha(wddRows()) };
+    let release;
+    const gate = new Promise((r) => (release = r));
+    const gated = async (u, o) => {
+      if (/manifest=1/.test(u)) await gate; // the first pull is still running when the page code writes
+      return srv.fetchImpl(u, o);
+    };
+    const L = load({ mode: 'on', syncHost: true, classify: true, fetchImpl: gated });
+    const warm = L.DB.warmCache();
+    await tick(40);
+    L.DB.set('en_wdd_66006', wddRows());
+    await tick(40);
+    release();
+    await warm;
+    await L.DB.__t._hydrate();
+    await L.DB.__t._drainQueueOnce();
+    await tick(100);
+    assert.strictEqual(srv.puts.length, 0, 'no PUT: ' + JSON.stringify(srv.puts));
+    assert.strictEqual(L.DB.getQueueDepth(), 0, 'the entry is released');
+  });
+  await t('SYNCDEF3c per-user flag ch_qs_seen goes to the signed-in user own wire key, so two users never conflict', async () => {
+    const srv = liveServer();
+    const mk = (uid) => {
+      const L = load({ mode: 'on', syncHost: true, classify: true, fetchImpl: srv.fetchImpl });
+      L.state.uid = uid;
+      return L;
+    };
+    const A = mk('uA');
+    const B = mk('uB');
+    await A.DB.warmCache();
+    await B.DB.warmCache();
+    await A.DB.set('ch_qs_seen', true);
+    await B.DB.set('ch_qs_seen', true);
+    await tick(100);
+    const ks = srv.puts.filter((x) => /ch_qs_seen/.test(x.key));
+    assert.deepStrictEqual(ks.map((x) => x.key).sort(), ['uA::ch_qs_seen', 'uB::ch_qs_seen']);
+    assert.ok(ks.every((x) => x.status === 200), 'no 409: ' + JSON.stringify(ks));
+  });
+  const calRec = (id, at) => ({ id, at, counts: { added: 0, removed: 0, changed: 0, unchanged: 5, total: 5 }, added: [], removed: [], changed: [] });
+  await t('SYNCDEF3d calendar history: two users sync at the same time: merged silently (no toast, no dialog), nothing lost', async () => {
+    const KEY = 'en_cal_hist_77';
+    const srv = liveServer();
+    const toasts = [];
+    const asked = [];
+    const mk = () => load({ mode: 'on', syncHost: true, classify: true, fetchImpl: srv.fetchImpl, toast: (m) => toasts.push(m), modal: async (d) => (asked.push(d), { action: 'dismiss' }) });
+    const A = mk();
+    const B = mk();
+    await A.DB.warmCache();
+    await B.DB.warmCache();
+    await A.DB.set(KEY, [calRec('calh_a', '2026-11-02T10:00:00Z')]);
+    await B.DB.set(KEY, [calRec('calh_b', '2026-11-02T10:00:01Z')]);
+    await tick(200);
+    assert.deepStrictEqual(srv.rows[KEY].value.map((r) => r.id).sort(), ['calh_a', 'calh_b']);
+    assert.strictEqual(asked.length, 0);
+    assert.strictEqual(toasts.filter((m) => /merged/.test(m)).length, 0, 'no "merged with yours" message for a background list: ' + toasts.join('|'));
+  });
+  await t('SYNCDEF3e collection key: when the merge result equals the server row, nothing is sent again', async () => {
+    const KEY = 'en_cal_hist_78';
+    const srv = liveServer();
+    const A = load({ mode: 'on', syncHost: true, classify: true, fetchImpl: srv.fetchImpl });
+    const B = load({ mode: 'on', syncHost: true, classify: true, fetchImpl: srv.fetchImpl });
+    await A.DB.warmCache();
+    await B.DB.warmCache();
+    await A.DB.set(KEY, [calRec('calh_x', '2026-11-02T10:00:00Z')]);
+    await B.DB.set(KEY, [calRec('calh_x', '2026-11-02T10:00:00Z')]); // the same record, written by both
+    await tick(200);
+    const mine = srv.puts.filter((x) => x.key === KEY);
+    assert.strictEqual(mine.length, 2, 'A 200, B 409, no third PUT: ' + JSON.stringify(mine));
+    assert.strictEqual(srv.rows[KEY].version, 1);
+    assert.strictEqual(B.DB.getQueueDepth(), 0);
   });
   console.log(pass + ' passed, ' + failed.length + ' failed');
   if (failed.length) {
