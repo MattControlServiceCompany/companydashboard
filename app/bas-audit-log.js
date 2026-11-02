@@ -390,8 +390,8 @@
       };
       var fb = null;
       if (!sp && pointsList && pointsList.length) {
-        var pn = pointMap.map[b];
-        fb = pointsList.filter(function (x) { return x.building === pn; })[0] || null;
+        var pointsBuilding = pointMap.map[b];
+        fb = pointsList.filter(function (x) { return x.building === pointsBuilding; })[0] || null;
       }
       var baseline = {
         // Earliest values in the log: the old values of the first change of each schedule, the old value of the first
