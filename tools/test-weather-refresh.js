@@ -32,7 +32,7 @@ const cdEnd = udSrc.indexOf('\n}\n', udSrc.indexOf('function calcDays(')) + 3;
 vm.runInContext(udSrc.slice(cdStart, cdEnd), sb);
 vm.runInContext("var udSelProjId = 'p1'; function getProjectNormBasis() { return 'calendar'; }", sb); // stubs for the app globals getNormRows reads
 const W = vm.runInContext(
-  '({wxLastCompleteYm, wxNeedsRefresh, wxCumulativeToMonthly, wxRowsFromBlocks, wxMergeAppend, wxRefreshZip, wxProjectZips, getNormRows, computeMeterRegression, getProjectContract})',
+  '({wxEnsureMonths, wxLastCompleteYm, wxNeedsRefresh, wxCumulativeToMonthly, wxRowsFromBlocks, wxMergeAppend, wxRefreshZip, wxProjectZips, getNormRows, computeMeterRegression, getProjectContract})',
   sb,
 );
 let n = 0;
@@ -150,6 +150,38 @@ const fakeFetch = (series) => async (url) => {
     assert.strictEqual(saved['33333'][0].ym, '2025-01');
     assert.strictEqual(saved['33333'].length, 21);
   });
+  {
+    // Generate Report needs Sep 2026; the cache stops at Aug 2026. The fetch is awaited and the month is stored.
+    const st2 = { 44444: asRows(ymRange('2025-01', '2026-08')) };
+    let calls = 0;
+    const inner = fakeFetch({ h: hddB, c: cddB, t: tmpB });
+    const d2 = {
+      loadFn: (z) => st2[z] || [],
+      saveFn: (z, r) => {
+        st2[z] = r;
+      },
+      fetchFn: (...a) => {
+        calls++;
+        return inner(...a);
+      },
+      now: NOW,
+    };
+    const e1 = await W.wxEnsureMonths(['44444'], ['2026-07', '2026-08', '2026-09'], d2);
+    ok('ensure: missing Sep is fetched and stored before the report is built', () => {
+      assert.ok(calls > 0);
+      assert.deepStrictEqual(J(e1.added), [{ zip: '44444', ym: '2026-09' }]);
+      assert.ok(st2['44444'].some((r) => r.ym === '2026-09'));
+      assert.deepStrictEqual(J(e1.errors), []);
+    });
+    const before = calls;
+    await W.wxEnsureMonths(['44444'], ['2026-07', '2026-08', '2026-09'], d2);
+    ok('ensure: nothing is fetched when the months are stored', () => assert.strictEqual(calls, before));
+    const e3 = await W.wxEnsureMonths(['55555'], ['2026-09'], { ...d2, loadFn: () => [], fetchFn: () => Promise.reject(new Error('network down')) });
+    ok('ensure: a failed fetch returns the reason and does not throw', () => {
+      assert.strictEqual(e3.errors.length, 1);
+      assert.ok(/network down/.test(e3.errors[0].message));
+    });
+  }
   ok('project ZIPs: distinct, 5 digits, project ZIP included, blanks dropped', () => {
     assert.deepStrictEqual(
       J(W.wxProjectZips({ zip: '33333' }, [{ zip: '11111' }, { zip: '11111' }, { zip: '' }, { zip: 'x' }])),

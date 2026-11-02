@@ -15,6 +15,8 @@
 // Browser entry: wddRefreshProjectWeather(projId) in app/utility-data.js (called from udSelectBldg).
 
 const WX_API_BASE = 'https://api.weatherdatadepot.com/api';
+// The source's name as a report prints it (the host of WX_API_BASE).
+const WX_SOURCE_NAME = 'Weather Data Depot';
 const WX_FIRST_YEAR = 2020;
 // Degree-day base temperature in F. The ONE value: the fetch URLs and every HDD/CDD label use it.
 const WX_DD_BASE_F = 60;
@@ -163,6 +165,31 @@ function wxPendingNotice(pending, monthLabel) {
   return 'Weather for ' + pending.map(monthLabel).join(', ') + ' not yet available';
 }
 
+// wxEnsureMonths(zips, yms, deps) - a report needs weather for `yms`. For each ZIP whose stored months do not reach
+// the newest of yms (and the source can have published it: not newer than last complete month), fetch the missing
+// months now and WAIT for the fetch. deps = {loadFn, saveFn, fetchFn, now}. Same rules as wxRefreshZip (append only,
+// unpublished months stay absent). Returns {added: [{zip, ym}], errors: [{zip, message}]}; a failed fetch is an error
+// entry (the reason), never thrown, so the report can still be built and say why weather is missing.
+async function wxEnsureMonths(zips, yms, deps) {
+  const now = deps.now || new Date();
+  const last = wxLastCompleteYm(now);
+  const need = (yms || []).filter((ym) => ym <= last).sort();
+  const out = { added: [], errors: [] };
+  if (!need.length) return out;
+  const want = need[need.length - 1];
+  for (const zip of zips || []) {
+    const newest = wxNewestYm(deps.loadFn(zip));
+    if (newest && newest >= want) continue;
+    try {
+      const res = await wxRefreshZip(zip, deps);
+      if (res) res.added.forEach((r) => out.added.push({ zip, ym: r.ym }));
+    } catch (e) {
+      out.errors.push({ zip, message: (e && e.message) || String(e) });
+    }
+  }
+  return out;
+}
+
 if (typeof module !== 'undefined' && module.exports) {
   module.exports = {
     wxPendingMonths,
@@ -177,6 +204,7 @@ if (typeof module !== 'undefined' && module.exports) {
     wxFetchRows,
     wxMergeAppend,
     wxRefreshZip,
+    wxEnsureMonths,
     wxProjectZips,
   };
 }

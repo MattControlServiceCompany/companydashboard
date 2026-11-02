@@ -27,7 +27,7 @@ function _rptMeterEligible(projId, m) {
 // _rptCommodityUnit(commodity) -- the one place the quarterly report picks the unit label for a
 // commodity. Standard symbols (Matt 2026-11-02): kWh for electricity; therms and gallons stay words.
 function _rptCommodityUnit(commodity) {
-  return commodity === 'Electric' ? 'kWh' : commodity === 'Gas' ? 'therms' : 'gallons';
+  return commodity === 'Electric' ? 'kWh' : commodity === 'Gas' ? 'therms' : 'gal';
 }
 
 function _rptUnit(s) {
@@ -1109,6 +1109,10 @@ function collectReportData(projId, buildingIds, reportDateStr, reportType, selec
     setpoints,
     // The project's BAS schedule history record (the one store: en_bas_schedhistory_<projectId>); null when none.
     basScheduleHistory: _rptBasHistoryLoad(projId),
+    // The newest day in the imported BAS audit log (en_bas_auditevents_<projectId>.lastDay), '' when none.
+    basAuditLastDay: _rptBasAuditLastDay(projId),
+    // ZIPs of the weather the report used (the stored weather is per ZIP).
+    weatherZips: typeof wxProjectZips === 'function' ? wxProjectZips(p, getUDBldgs(projId)) : [],
     meetings,
     approvedChanges: approvedChangesPeriod,
     approvedChangesYTDCount: approvedChangesYTD.length,
@@ -1721,8 +1725,8 @@ function rptPage(pageNum, title, bodyHTML, options = {}) {
   // rendering at the wrong spot / overlapping body content in the Word export.
   const footerLabelHtml =
     data && data.period
-      ? '<div class="rpt-footer-label" style="text-align:center;font-size:14px;color:var(--rpt-page-text);padding:4px 0 2px;position:absolute;bottom:' +
-        '45px' +
+      ? '<div class="rpt-footer-label" style="text-align:center;font-size:14px;color:var(--rpt-page-text);padding:0;line-height:1.2;position:absolute;bottom:' +
+        (isHero ? '45px' : '17px') +
         ';left:0;right:0">' +
         (data.period.type === 'quarterly'
           ? _rptQuarterLabel(data.period.quarter || 1, _escHtml(data.period.year || '')) + ' Quarterly Report'
@@ -2300,6 +2304,10 @@ function _rptQMonthName(ym) {
     'December',
   ][parseInt(ym.slice(5, 7), 10) - 1];
 }
+function _rptQListPlain(items) {
+  if (items.length <= 1) return items.join('');
+  return items.slice(0, -1).join(', ') + ' and ' + items[items.length - 1];
+}
 function _rptQList(items) {
   var e = items.map(_escHtml);
   if (e.length <= 1) return e.join('');
@@ -2319,7 +2327,8 @@ function _rptQSavCls(v) {
 function _rptQSavTd(v) {
   return '<td class="rpt-n ' + _rptQSavCls(v) + '">' + _fmtUSD(v, '$0') + '</td>';
 }
-function _rptQTable(widths, heads, rows) {
+function _rptQTable(widths, heads, rows, textCols) {
+  textCols = textCols || [];
   return (
     '<table class="rpt-table rpt-table-wrap" style="width:100%;table-layout:fixed">' +
     '<colgroup>' +
@@ -2331,7 +2340,8 @@ function _rptQTable(widths, heads, rows) {
     '</colgroup><thead><tr style="line-height:1.2">' +
     heads
       .map(function (h, i) {
-        return '<th' + (i > 0 ? ' class="rpt-n"' : '') + ' style="text-transform:none">' + h + '</th>';
+        var num = i > 0 && textCols.indexOf(i) < 0;
+        return '<th' + (num ? ' class="rpt-n"' : '') + ' style="text-transform:none;text-align:' + (num ? 'right' : 'left') + '">' + h + '</th>';
       })
       .join('') +
     '</tr></thead><tbody>' +
@@ -2340,7 +2350,7 @@ function _rptQTable(widths, heads, rows) {
   );
 }
 function _rptQNote(text) {
-  return '<p style="font-size:13.34px;line-height:1.35;color:var(--rpt-page-text);margin:3px 0 6px">' + text + '</p>';
+  return '<p style="font-size:13.34px;line-height:1.35;color:var(--rpt-page-text);margin:6px 0 6px">' + text + '</p>';
 }
 function _rptQPara(text) {
   return '<p style="font-size:14px;line-height:1.4;color:var(--rpt-page-text);margin:2px 0 6px">' + text + '</p>';
@@ -2386,7 +2396,72 @@ function _rptApportion(values, total) {
 // _rptPctBasisText(d, word) - the ONE sentence that states the percent basis (savings divided by pctBase, set in
 // collectReportData). `word` is "quarter" or "period". Every report page that prints a savings percent uses it.
 function _rptPctBasisText(d, word) {
-  return 'Percent is savings divided by billed cost plus savings (' + _fmtUSD(d.totals.pctBase, '$0') + ' for the ' + word + ').';
+  return 'Percent is savings divided by utility bill cost plus savings (' + _fmtUSD(d.totals.pctBase, '$0') + ' for the ' + word + ').';
+}
+
+// _rptQCddSentence(f) - the ONE sentence on cooling degree days against the year before, from the weather rows
+// in f.wxMonths: "Cooling degree days were 30% higher in August and 56% higher in September than in 2025; July was
+// 3% lower." Months that round to 0% are left out. '' when no month has both years. Pages 1 and 3 print it.
+function _rptQCddSentence(f) {
+  var up = [],
+    down = [];
+  f.wxMonths.forEach(function (w) {
+    if (!(w.cddBl > 0 && w.cddCur != null)) return;
+    var pc = Math.round(((w.cddCur - w.cddBl) / w.cddBl) * 100);
+    if (pc > 0) up.push({ name: w.name, pc: pc });
+    else if (pc < 0) down.push({ name: w.name, pc: -pc });
+  });
+  var py = f.year - 1;
+  var join = function (a) {
+    return a.length > 1 ? a.slice(0, -1).join(', ') + ' and ' + a[a.length - 1] : a[0];
+  };
+  if (!up.length && !down.length) return 'Cooling degree days were close to ' + py + '.';
+  if (!up.length)
+    return 'Cooling degree days were ' + join(down.map(function (x) { return x.pc + '% lower in ' + x.name; })) + ' than in ' + py + '.';
+  return (
+    'Cooling degree days were ' +
+    join(up.map(function (x) { return x.pc + '% higher in ' + x.name; })) +
+    ' than in ' + py +
+    down.map(function (x) { return '; ' + x.name + ' was ' + x.pc + '% lower'; }).join('') +
+    '.'
+  );
+}
+
+// _rptQDegreeDayNote(d) - the one source line under a degree-day table.
+function _rptQDegreeDayNote(d) {
+  var z = (d.weatherZips || []).join(', ');
+  return _rptQNote('Degree days base ' + WX_DD_BASE_F + '&deg;F, ' + WX_SOURCE_NAME + (z ? ', ZIP ' + _escHtml(z) : '') + '.');
+}
+
+// _rptQElecEnergyDollars(b, f) - the dollars of a building's electricity energy use against baseline: the electricity
+// savings as printed on page 3 (f.parts, whole dollars) less the demand part (kwCostSaved, rounded). Positive = saved.
+function _rptQElecEnergyDollars(b, f) {
+  var e = b.electric || {};
+  return f.parts[b.id].electric - Math.round(e.kwCostSaved || 0);
+}
+
+// _rptQFlatText(b) - the facts for a building inside 1% of baseline in cost: the dollars, and, when electricity use
+// differs from baseline, that use with the demand offset when billed kW is lower than baseline. Pages 1 and 4.
+function _rptQFlatText(b) {
+  var e = b.electric;
+  var sav = Math.round(b.savings || 0);
+  var out = _fmtUSD(Math.abs(sav), '$0') + (sav >= 0 ? ' below' : ' above') + ' baseline in cost.';
+  if (e && e.kwhBl > 0) {
+    var pc = ((e.kwhCur - e.kwhBl) / e.kwhBl) * 100;
+    if (Math.abs(pc) >= 1) {
+      out += ' Electricity use was ' + Math.abs(pc).toFixed(1) + '% ' + (pc > 0 ? 'above' : 'below') + ' baseline';
+      out += (pc > 0 && e.kwCur < e.kwBl) || (pc < 0 && e.kwCur > e.kwBl) ? '; ' + (pc > 0 ? 'lower' : 'higher') + ' demand offset it.' : '.';
+    }
+  }
+  return out;
+}
+
+// _rptQBaselineDefinition(d) - the one sentence that defines the baseline at its first use (page 1).
+function _rptQBaselineDefinition(d) {
+  return (
+    'The baseline is the energy use expected in each month at that month' + "'" + 's weather, from a weather model fitted to use from ' +
+    _escHtml(d.project.blStart) + ' to ' + _escHtml(d.project.blEnd) + '.'
+  );
 }
 
 // The facts the pages and the findings share, from d only.
@@ -2517,6 +2592,10 @@ function _rptQBarsSVG(w, h, bars, fmt) {
   var vals = bars.map(function (b) {
     return b.value;
   });
+  // A bar may carry a target: drawn as a dashed line across the bar and included in the scale.
+  bars.forEach(function (b) {
+    if (b.target > 0) vals.push(b.target);
+  });
   var max = Math.max.apply(null, vals.concat([0]));
   var min = Math.min.apply(null, vals.concat([0]));
   var span = max - min || 1;
@@ -2544,7 +2623,15 @@ function _rptQBarsSVG(w, h, bars, fmt) {
         '" fill="' +
         colour +
         '"/>';
-    var ly = pos ? y0 - bh - 5 : y0 + bh + 14;
+    if (b.target > 0) {
+      var ty = y0 - (b.target / span) * plotH;
+      out +=
+        '<line x1="' + (cx - bw / 2 - 8).toFixed(1) + '" y1="' + ty.toFixed(1) + '" x2="' + (cx + bw / 2 + 8).toFixed(1) + '" y2="' + ty.toFixed(1) +
+        '" stroke="var(--rpt-page-text)" stroke-width="2" stroke-dasharray="4 3"/>';
+    }
+    var topY = y0 - bh;
+    if (b.target > 0) topY = Math.min(topY, y0 - (b.target / span) * plotH);
+    var ly = pos ? topY - 5 : y0 + bh + 14;
     out +=
       '<text x="' +
       cx.toFixed(1) +
@@ -2588,6 +2675,7 @@ function _rptQCoverPage(n, d, f) {
     qBars.push({
       label: _rptQuarterLabel(i + 1),
       value: acts[i] != null ? acts[i] : 0,
+      target: qT[i] || 0,
       sub: ['Target ' + _fmtUSD(qT[i] || 0, '$0')],
     });
   }
@@ -2600,12 +2688,14 @@ function _rptQCoverPage(n, d, f) {
     headline = 'Savings for this quarter are not reported yet. ' + savingsOrWaiting(_rptWaitingYMs(d), 0) + '.';
   } else if (f.rowsMeasured < 0 || f.notBilled > 0) {
     headline =
-      'Energy use for the quarter was above the baseline, so no savings are billed. The quarter measured ' +
+      _rptQBaselineDefinition(d) +
+      ' Energy use for the quarter was above the baseline, so no savings are billed. The quarter measured ' +
       _fmtUSD(f.rowsMeasured, '$0') +
       ' against the baseline, and the contract minimum is $0.';
   } else {
     headline =
-      'The portfolio saved <strong>' +
+      _rptQBaselineDefinition(d) +
+      ' All buildings saved <strong>' +
       _fmtUSD(f.billed, '$0') +
       '</strong> against the baseline this quarter, ' +
       Math.round(f.target > 0 ? (f.billed / f.target) * 100 : 0) +
@@ -2633,41 +2723,16 @@ function _rptQCoverPage(n, d, f) {
             return x.b.name;
           }),
         ) +
-          ' used ' +
+          ' measured ' +
           _fmtUSD(Math.abs(f.overSum), '$0') +
-          ' more than baseline',
+          ' below baseline',
       );
     detail = parts.join('. ') + '.';
-    if (f.flat.length)
-      detail +=
-        ' ' +
-        _rptQList(
-          f.flat.map(function (x) {
-            return x.b.name;
-          }),
-        ) +
-        ' was on baseline.';
-  }
-  var hot = f.months
-    .map(function (m, i) {
-      return { m: m, w: f.wxMonths[i] };
-    })
-    .filter(function (x) {
-      return x.w.cddBl > 0 && x.w.cddCur != null && (x.w.cddCur - x.w.cddBl) / x.w.cddBl >= 0.15;
+    f.flat.forEach(function (x) {
+      detail += ' ' + _escHtml(x.b.name) + ': ' + _rptQFlatText(x.b);
     });
-  var hotText = hot.length
-    ? ' ' +
-      _rptQList(
-        hot.map(function (x) {
-          return x.m.name;
-        }),
-      ) +
-      ' ' +
-      (hot.length > 1 ? 'were' : 'was') +
-      ' much hotter than in ' +
-      (f.year - 1) +
-      '. The baseline is recalculated at each month' + "'" + 's own weather, so the heat is already allowed for.'
-    : '';
+  }
+  var hotText = _rptQCddSentence(f) ? ' ' + _rptQCddSentence(f) : '';
 
   var glance =
     '<table class="rpt-table" style="width:100%;margin:6px 0 10px"><tbody>' +
@@ -2677,7 +2742,7 @@ function _rptQCoverPage(n, d, f) {
     _fmtUSD(f.rowsMeasured, '$0') +
     '</td></tr>' +
     (f.notBilled > 0
-      ? '<tr><td>Shortfall not billed (contract minimum $0)</td><td class="rpt-n">' + _fmtUSD(f.notBilled, '$0') + '</td></tr>'
+      ? '<tr><td>Amount below baseline (not billed; contract minimum $0)</td><td class="rpt-n">' + _fmtUSD(f.notBilled, '$0') + '</td></tr>'
       : '') +
     '<tr class="rpt-tot"><td>Savings billed this quarter</td><td class="rpt-n">' +
     savingsOrWaiting(_rptWaitingYMs(d), d.totals.savings) +
@@ -2696,7 +2761,8 @@ function _rptQCoverPage(n, d, f) {
     ')</td><td class="rpt-n">' +
     _fmtUSD(f.targetToDate, '$0') +
     '</td></tr>' +
-    '</tbody></table>';
+    '</tbody></table>' +
+    _rptQNote('A minus sign on savings means use above baseline.');
 
   var body =
     '<div style="padding:8px 48px 0">' +
@@ -2717,23 +2783,23 @@ function _rptQCoverPage(n, d, f) {
     _rptQPara(headline + (detail ? ' ' + detail : '') + hotText) +
     glance +
     '<div style="display:flex;gap:20px;margin-top:6px">' +
-    '<div style="flex:1"><div style="font-size:14px;font-weight:700;color:var(--rpt-blue);margin-bottom:2px">Savings billed by quarter, ' +
+    '<div style="flex:1"><div style="font-size:14px;font-weight:700;color:var(--rpt-blue);margin-bottom:2px">Savings billed (dashed line = target), ' +
     f.year +
     '</div>' +
-    _rptQBarsSVG(340, 215, qBars, function (v) {
+    _rptQBarsSVG(340, 185, qBars, function (v) {
       return _fmtUSD(v, '$0');
     }) +
     '</div>' +
     '<div style="flex:1"><div style="font-size:14px;font-weight:700;color:var(--rpt-blue);margin-bottom:2px">' +
     f.qLabel +
     ' savings measured, by month</div>' +
-    _rptQBarsSVG(340, 215, mBars, function (v) {
+    _rptQBarsSVG(340, 185, mBars, function (v) {
       return _fmtUSD(v, '$0');
     }) +
     '</div></div>' +
     (f.notBilled > 0
       ? _rptQNote(
-          'The quarter bar shows $0 because the months added to ' +
+          'The quarter bar shows $0 because the three months together measured ' +
             _fmtUSD(f.rowsMeasured, '$0') +
             ' against the baseline. The contract bills savings only, so that amount is not billed.',
         )
@@ -2792,15 +2858,15 @@ function _rptQResultsPage(n, d, f) {
       '">' +
       totRes.word +
       '</td></tr>' +
-      '<tr><td colspan="3">Shortfall not billed (contract minimum $0)</td><td class="rpt-n">' +
+      '<tr><td colspan="3">Amount below baseline (not billed; contract minimum $0)</td><td class="rpt-n">' +
       _fmtUSD(f.notBilled, '$0') +
       '</td><td></td><td></td></tr>' +
-      '<tr class="rpt-tot"><td>Total billed</td><td></td><td></td><td class="rpt-n">' +
+      '<tr class="rpt-tot"><td>Total savings billed</td><td></td><td></td><td class="rpt-n">' +
       savingsOrWaiting(_rptWaitingYMs(d), d.totals.savings) +
       '</td><td></td><td></td></tr>';
   } else {
     foot =
-      '<tr class="rpt-tot"><td>Total billed</td><td class="rpt-n">' +
+      '<tr class="rpt-tot"><td>Total savings billed</td><td class="rpt-n">' +
       _rptQN(d.project.sqft) +
       '</td><td class="rpt-n">' +
       _fmtUSD(tgtTotal, '$0') +
@@ -2820,8 +2886,9 @@ function _rptQResultsPage(n, d, f) {
   }
   var t1 = _rptQTable(
     [31, 10, 11, 12, 10, 26],
-    ['Building', 'Square feet', 'Savings target', 'Savings measured', 'Percent', 'Result'],
+    ['Building', 'Area (ft&sup2;)', 'Savings target', 'Savings measured', 'Percent', 'Result'],
     rowHtml + foot,
+    [5],
   );
 
   // Savings by month
@@ -2887,7 +2954,7 @@ function _rptQResultsPage(n, d, f) {
           '</td><td class="rpt-n">' +
           _fmtUSD(splitTD.csc, '$0') +
           '</td></tr>' +
-          '<tr class="rpt-tot"><td>Client net (' +
+          '<tr class="rpt-tot"><td>Client share (' +
           _escHtml(d.contract.clientPct) +
           '%)</td><td class="rpt-n">' +
           _fmtUSD(split.client, '$0') +
@@ -2897,13 +2964,11 @@ function _rptQResultsPage(n, d, f) {
       );
 
   var body =
-    '<h2>' +
-    f.qLabel +
-    ' Results by Building</h2>' +
+    '<h2>Results by Building</h2>' +
     t1 +
     _rptQNote(
       _rptPctBasisText(d, 'quarter') +
-        ' Savings price the change in usage at each month' + "'" + 's rate and include demand charges.',
+        ' Savings price the change in usage at each month' + "'" + 's rate and include demand charges. Demand is the highest rate of electricity use in a month, in kW. The utility bills a charge for it.',
     ) +
     '<h2>Savings Measured by Month</h2>' +
     t2 +
@@ -2958,7 +3023,15 @@ function _rptQEnergyPage(n, d, f) {
     '</tr>';
   var t1 = _rptQTable(
     [28, 13, 13, 10, 12, 12, 12],
-    ['Building', 'Baseline energy use', 'Actual energy use', 'Change', 'Baseline kW', 'Actual kW', 'Savings'],
+    [
+      'Building',
+      'Baseline energy use (kWh)',
+      'Actual energy use (kWh)',
+      'Use change (+ = used more)',
+      'Baseline billed kW (sum of ' + f.yms.length + ' months)',
+      'Actual billed kW (sum of ' + f.yms.length + ' months)',
+      'Savings, electricity only',
+    ],
     eRows + eTot,
   );
 
@@ -2967,7 +3040,7 @@ function _rptQEnergyPage(n, d, f) {
   d.buildings.forEach(function (b) {
     [
       ['gas', 'Natural gas (therms)', 'thermsBl', 'thermsCur'],
-      ['propane', 'Propane (gallons)', 'galBl', 'galCur'],
+      ['propane', 'Propane delivered (gal)', 'galBl', 'galCur'],
     ].forEach(function (c) {
       var x = b[c[0]];
       if (!x || !x.monthly || !x.monthly.length) return;
@@ -2984,7 +3057,7 @@ function _rptQEnergyPage(n, d, f) {
         '</td><td class="rpt-n">' +
         _rptQN(cur) +
         '</td><td class="rpt-n">' +
-        (bl >= 10 ? _rptQPct(((cur - bl) / bl) * 100) : '-') +
+        (c[0] !== 'propane' && bl >= 10 ? _rptQPct(((cur - bl) / bl) * 100) : '-') +
         '</td>' +
         _rptQSavTd(f.parts[b.id][c[0]]) +
         '</tr>';
@@ -2993,47 +3066,58 @@ function _rptQEnergyPage(n, d, f) {
   var t2 = fuelRows
     ? _rptQTable(
         [27, 23, 14, 14, 11, 11],
-        ['Building', 'Fuel', 'Baseline', 'Actual', 'Change', 'Savings'],
+        ['Building', 'Fuel', 'Baseline', 'Actual', 'Use change (+ = used more)', 'Savings'],
         fuelRows + '<tr class="rpt-tot"><td colspan="5">Total, natural gas and propane</td>' + _rptQSavTd(fSav) + '</tr>',
+        [1],
       )
     : '';
 
-  // Weather in one sentence: the full table is on the Energy Use Intensity and Weather page.
-  var wxBits = f.wxMonths
-    .filter(function (w) {
-      return w.cddBl > 0 && w.cddCur != null && Math.abs(((w.cddCur - w.cddBl) / w.cddBl) * 100) >= 10;
-    })
-    .map(function (w) {
-      var pc = ((w.cddCur - w.cddBl) / w.cddBl) * 100;
-      return w.name + ' was ' + Math.round(Math.abs(pc)) + '% ' + (pc > 0 ? 'hotter' : 'cooler');
-    });
-  var wxSentence = wxBits.length
-    ? (wxBits.length > 1 ? wxBits.slice(0, -1).join(', ') + ' and ' + wxBits[wxBits.length - 1] : wxBits[0]) + ' than ' + (f.year - 1) + ', by cooling degree days.'
-    : 'Weather was close to ' + (f.year - 1) + ', by cooling degree days.';
-
+  // Natural gas in total, with the buildings above and below baseline named (computed from the building rows).
   var gasWord = (function () {
     var th = d.totals.thermsCur - d.totals.thermsBl;
-    return Math.abs(th) < 0.02 * (d.totals.thermsBl || 1)
-      ? 'Natural gas use was close to baseline (' + _rptQN(Math.abs(th)) + ' therms ' + (th > 0 ? 'above' : 'below') + ').'
-      : 'Natural gas use was ' + _rptQN(Math.abs(th)) + ' therms ' + (th > 0 ? 'above' : 'below') + ' baseline.';
+    if (!(d.totals.thermsBl > 0) && !(d.totals.thermsCur > 0)) return '';
+    var above = [],
+      below = [],
+      aSum = 0,
+      bSum = 0;
+    d.buildings.forEach(function (b) {
+      var g = b.gas;
+      if (!g || !g.monthly || !g.monthly.length) return;
+      var df = Math.round(g.thermsCur) - Math.round(g.thermsBl);
+      if (df > 0) {
+        above.push(b.name);
+        aSum += df;
+      } else if (df < 0) {
+        below.push(b.name);
+        bSum += -df;
+      }
+    });
+    var out = 'Natural gas use was ' + _rptQN(Math.abs(th)) + ' therms ' + (th > 0 ? 'above' : 'below') + ' baseline in total.';
+    if (above.length) out += ' ' + _rptQList(above) + ' used ' + _rptQN(aSum) + ' therms more' + (below.length ? ';' : '.');
+    if (below.length) out += (above.length ? ' ' : ' ') + _rptQList(below) + ' used ' + _rptQN(bSum) + ' therms less.';
+    return out;
   })();
+  var eWorth = d.buildings.reduce(function (s0, b) {
+    return s0 + _rptQElecEnergyDollars(b, f);
+  }, 0);
   var body =
     _rptQPara(
-      'Electricity decided the quarter. Use was ' +
+      'Electricity use was ' +
         _rptQN(Math.abs(f.kwhDiff)) +
         ' kWh (' +
         _rptQPct(Math.abs(f.kwhPct)).replace('+', '') +
         ') ' +
         (f.kwhDiff > 0 ? 'above' : 'below') +
-        ' baseline. ' +
-        gasWord,
+        ' baseline, worth ' +
+        _fmtUSD(Math.abs(eWorth), '$0') +
+        '. ' +
+        gasWord +
+        ' ' +
+        _rptQCddSentence(f),
     ) +
     '<h2>Electricity</h2>' +
     t1 +
-    _rptQNote('Energy use is in kWh. kW is each month' + "'" + 's highest billed demand, added over three months. Savings include the demand change.') +
-    (t2 ? '<h2>Natural Gas and Propane</h2>' + t2 : '') +
-    '<h2>Weather</h2>' +
-    _rptQPara(wxSentence);
+    (t2 ? '<h2>Natural Gas and Propane</h2>' + t2 : '');
   return rptPage(n, 'Energy Use and Weather', body, { data: d, letterhead: false, label: 'Page ' + n + ' - Energy Use and Weather' });
 }
 
@@ -3062,50 +3146,49 @@ function _rptQFinding(d, f, x) {
   };
   var line = '';
   var head =
-    '<strong>' + _escHtml(b.name) + '</strong> <span class="' + r.cls + '">' + r.word.toLowerCase() + '</span> (' + _fmtUSD(b.savings, '$0') + ', ' + _rptQPct(b.savingsPct) + ')';
+    '<strong>' + _escHtml(b.name) + '</strong> <span class="' + r.cls + '">' +
+    (r.key === 'on_baseline' ? 'within 1% of baseline in cost' : r.word.toLowerCase()) + '</span> (' + _fmtUSD(b.savings, '$0') + ', ' + _rptQPct(b.savingsPct) + ')';
   if (r.key === 'over') {
     var eMonths = overMonths('electric');
     var kwhPct = e.kwhBl > 0 ? ((e.kwhCur - e.kwhBl) / e.kwhBl) * 100 : 0;
     if (f.parts[b.id].electric < 0)
       line +=
-        'Electricity cost ' +
-        money(f.parts[b.id].electric) +
-        ' more than baseline: ' +
+        'Electricity use was ' +
         _rptQN(Math.abs(Math.round(e.kwhCur) - Math.round(e.kwhBl))) +
         ' kWh ' +
         (e.kwhCur > e.kwhBl ? 'above' : 'below') +
-        ' (' +
+        ' baseline (' +
         _rptQPct(kwhPct) +
-        '), over baseline in ' +
+        '), worth ' +
+        money(_rptQElecEnergyDollars(b, f)) +
+        '. Electricity savings were negative in ' +
         _rptQList(eMonths.length ? eMonths : ['no single month']) +
         '. ';
     if (g && f.parts[b.id].gas < -50)
-      line += 'Natural gas cost ' + money(f.parts[b.id].gas) + ' more: ' + _rptQN(g.thermsCur) + ' therms against a baseline of ' + _rptQN(g.thermsBl) + '. ';
+      line += 'Natural gas use was ' + _rptQN(g.thermsCur) + ' therms against a baseline of ' + _rptQN(g.thermsBl) + ', worth ' + money(f.parts[b.id].gas) + '. ';
     if (p && f.parts[b.id].propane > 0 && p.galBl > 0 && p.galCur === 0)
-      line += 'No propane was delivered in the quarter, which gives a credit of ' + money(f.parts[b.id].propane) + ' that reflects delivery timing. ';
+      line += 'No propane delivery in the quarter. The baseline of ' + _rptQN(p.galBl) + ' gal counts as ' + (money(f.parts[b.id].propane).charAt(0) === '8' ? 'an ' : 'a ') + money(f.parts[b.id].propane) + ' credit. ';
   } else if (r.key === 'short') {
-    var miss = _fmtUSD(_rptBuildingTarget(d, b) - b.savings, '$0');
-    line += 'Saved ' + money(b.savings) + ', ' + miss + ' below its share of the quarter target. ';
+    var tgt = _rptBuildingTarget(d, b);
+    line += 'Saved ' + money(b.savings) + ', which is ' + _fmtUSD(tgt - b.savings, '$0') + ' less than its target of ' + _fmtUSD(tgt, '$0') + '. ';
+    var emSum = scoped('electric')
+      .filter(function (m) {
+        return (m.savings || 0) < 0;
+      })
+      .reduce(function (s0, m) {
+        return s0 + m.savings;
+      }, 0);
     var em = overMonths('electric');
-    if (em.length)
-      line += 'Electricity was above baseline in ' + _rptQList(em) + ' (' + money(
-        scoped('electric')
-          .filter(function (m) {
-            return (m.savings || 0) < 0;
-          })
-          .reduce(function (s, m) {
-            return s + m.savings;
-          }, 0),
-      ) + ').';
+    if (em.length) line += 'Electricity savings were ' + _fmtUSD(emSum, '$0') + ' in ' + _rptQList(em) + '.';
   } else if (r.key === 'on_baseline') {
-    line += 'Within ' + money(b.savings) + ' of baseline for the quarter. Electricity cost ' + (e.kwhCur > e.kwhBl ? 'more' : 'less') + ' in ' + _rptQList(overMonths('electric').length ? overMonths('electric') : ['no month']) + ' and the demand charge offset it.';
+    line += _rptQFlatText(b);
   } else if (r.key === 'met') {
-    line += 'Saved ' + money(b.savings) + ', at or above its share of the quarter target.';
+    line += 'Saved ' + money(b.savings) + ', at or above its target of ' + _fmtUSD(_rptBuildingTarget(d, b), '$0') + '.';
   }
   return { head: head, line: line };
 }
 
-function _rptQFindingsPage(n, d, f) {
+function _rptQFindingsBody(d, f) {
   var order = f.over
     .slice()
     .sort(function (a, c) {
@@ -3117,26 +3200,6 @@ function _rptQFindingsPage(n, d, f) {
       }),
       f.flat,
     );
-  var sumLines = [];
-  if (!f.waiting) {
-    sumLines.push(
-      'The portfolio measured <strong class="' +
-        _rptQSavCls(f.rowsMeasured) +
-        '">' +
-        _fmtUSD(f.rowsMeasured, '$0') +
-        '</strong> against the baseline' +
-        (f.notBilled > 0 ? ', so nothing is billed for the quarter.' : '.'),
-    );
-    var mText = f.months
-      .map(function (m) {
-        return m.name + ' ' + (Math.round(m.sav) >= 0 ? 'saved ' : 'used ') + _fmtUSD(Math.abs(m.sav), '$0') + (Math.round(m.sav) >= 0 ? '' : ' more than baseline');
-      })
-      .join('; ');
-    sumLines.push(mText + '.');
-    sumLines.push(
-      'The result was electricity: use was ' + _rptQN(Math.abs(f.kwhDiff)) + ' kWh (' + Math.abs(f.kwhPct).toFixed(1) + '%) ' + (f.kwhDiff > 0 ? 'above' : 'below') + ' baseline.',
-    );
-  }
   var blocks = f.waiting
     ? '<div style="font-size:14px;line-height:1.35">' +
       _escHtml(savingsOrWaiting(_rptWaitingYMs(d), 0)) +
@@ -3145,7 +3208,7 @@ function _rptQFindingsPage(n, d, f) {
     .map(function (x) {
       var fd = _rptQFinding(d, f, x);
       return (
-        '<div style="margin:0 0 9px;page-break-inside:avoid">' +
+        '<div style="margin:0 0 6px;page-break-inside:avoid">' +
         '<div style="font-size:14px;line-height:1.35">' +
         fd.head +
         '</div>' +
@@ -3156,22 +3219,22 @@ function _rptQFindingsPage(n, d, f) {
       );
     })
     .join('');
-  var body =
-    '<h2>What Happened This Quarter</h2>' +
-    '<ul style="margin:2px 0 6px 20px;padding:0;font-size:14px;line-height:1.4">' +
-    sumLines
-      .map(function (s) {
-        return '<li>' + s + '</li>';
-      })
-      .join('') +
-    '</ul>' +
-    '<h2>Building Findings</h2>' +
-    blocks;
-  return rptPage(n, 'Findings', body, { data: d, letterhead: false, label: 'Page ' + n + ' - Findings' });
+  var body = '<h2>Building Findings</h2>' + blocks;
+  return body;
+}
+function _rptQFindingsPage(n, d, f) {
+  return rptPage(n, 'Findings', _rptQFindingsBody(d, f), { data: d, letterhead: false, label: 'Page ' + n + ' - Findings' });
 }
 
 // ---- Page 5: contract position -----------------------------------------------
-function _rptQContractPage(n, d, f) {
+// "Year 2" / "Years 2 and 3": the contract years after the current one.
+function _rptQLaterYears(d) {
+  var ys = [];
+  for (var y = (d.contract.currentYear || 1) + 1; y <= (d.contract.years || 3); y++) ys.push(y);
+  if (!ys.length) return '';
+  return (ys.length > 1 ? 'Years ' : 'Year ') + (ys.length > 1 ? ys.slice(0, -1).join(', ') + ' and ' + ys[ys.length - 1] : ys[0]);
+}
+function _rptQContractBody(d, f) {
   var qT = d.contract.quarterlyTargets || [0, 0, 0, 0];
   var acts = d.contract.quarterlyActuals || [];
   var qRows = '';
@@ -3208,7 +3271,7 @@ function _rptQContractPage(n, d, f) {
         _fmtUSD(tB - tT, '$0') +
         '</td></tr>';
   }
-  var t1 = _rptQTable([46, 18, 18, 18], ['Contract year ' + d.contract.currentYear, 'Savings target', 'Savings billed', 'Billed minus target'], qRows);
+  var t1 = _rptQTable([46, 18, 18, 18], ['Contract year ' + d.contract.currentYear, 'Savings target', 'Savings billed', 'Billed minus target (- = below)'], qRows);
 
   // Projection - the one shared projection
   var proj = _rptContractProjection(d);
@@ -3217,7 +3280,7 @@ function _rptQContractPage(n, d, f) {
       return (
         '<tr><td>Year ' +
         y.year +
-        (y.blended ? ' (billed to date plus remaining targets)' : '') +
+        (y.year === d.contract.currentYear ? ' (Year ' + y.year + ' target ' + _fmtUSD(proj.targetOnly.years[0].savings, '$0') + ')' : '') +
         '</td><td class="rpt-n">' +
         _fmtUSD(y.savings, '$0') +
         '</td>' +
@@ -3233,10 +3296,10 @@ function _rptQContractPage(n, d, f) {
     (d.contract.hasCsc ? '<td class="rpt-n">' + _fmtUSD(proj.totalCsc, '$0') + '</td><td class="rpt-n">' + _fmtUSD(proj.totalClient, '$0') + '</td>' : '') +
     '</tr>';
   var t3 = _rptQTable(
-    d.contract.hasCsc ? [46, 18, 18, 18] : [70, 30],
+    d.contract.hasCsc ? [34, 26, 21, 19] : [70, 30],
     d.contract.hasCsc
-      ? ['Contract year', 'Projected savings', 'Control Service Company (' + _escHtml(d.contract.cscPct) + '%)', 'Client (' + _escHtml(d.contract.clientPct) + '%)']
-      : ['Contract year', 'Projected savings'],
+      ? ['Contract year', 'Savings if remaining targets are met', 'Control Service Company (' + _escHtml(d.contract.cscPct) + '%)', 'Client share (' + _escHtml(d.contract.clientPct) + '%)']
+      : ['Contract year', 'Savings if remaining targets are met'],
     pRows,
   );
   var body =
@@ -3247,7 +3310,7 @@ function _rptQContractPage(n, d, f) {
     _rptQNote(
       'Year ' +
         d.contract.currentYear +
-        ' is the ' +
+        ' = the ' +
         _fmtUSD(f.cumulative, '$0') +
         ' billed through ' +
         f.qLabel +
@@ -3258,10 +3321,16 @@ function _rptQContractPage(n, d, f) {
           }, 0),
           '$0',
         ) +
-        ' target for the remaining quarters. Each later year is that year' + "'" + 's target, with ' +
+        ' target for the remaining quarters. ' +
+        _rptQLaterYears(d) +
+        ' = the Year ' + d.contract.currentYear + ' target, escalated ' +
         _escHtml(d.contract.escalation || 0) +
-        '% annual utility rate escalation applied under the contract terms.',
+        '% a year.',
     );
+  return body;
+}
+function _rptQContractPage(n, d, f) {
+  var body = _rptQContractBody(d, f);
   return rptPage(n, 'Contract Position', body, { data: d, letterhead: false, label: 'Page ' + n + ' - Contract Position' });
 }
 
@@ -3281,7 +3350,7 @@ function _rptQWeatherTable(d, f) {
     };
     var v = [get(py + '-' + mm, 'hddBl'), get(yr + '-' + mm, 'hddCur'), get(py + '-' + mm, 'cddBl'), get(yr + '-' + mm, 'cddCur')];
     rows +=
-      '<tr><td>' +
+      '<tr' + (f.yms.indexOf(yr + '-' + mm) >= 0 ? ' style="font-weight:700"' : '') + '><td>' +
       _rptQMonthName(yr + '-' + mm) +
       '</td>' +
       v
@@ -3299,11 +3368,27 @@ function _rptQWeatherTable(d, f) {
 }
 
 function _rptQBenchmarkPage(n, d, f) {
-  var rows = d.buildings
-    .slice()
-    .sort(function (a, c) {
-      return (a.eui.current || 0) - (c.eui.current || 0);
+  // The months behind the EUI (the same window collectReportData uses): first to last month over the buildings.
+  var wins = d.buildings
+    .map(function (b) {
+      return b.euiWindow;
     })
+    .filter(Boolean);
+  var first = wins.length ? wins.map(function (w) { return w.first; }).sort()[0] : '';
+  var last = wins.length ? wins.map(function (w) { return w.last; }).sort().pop() : '';
+  var nMonths = wins.length ? Math.max.apply(null, wins.map(function (w) { return w.months; })) : 12;
+  var monthYear = function (ym) {
+    return _rptQMonthName(ym) + ' ' + ym.slice(0, 4);
+  };
+  var windowText = first ? monthYear(first) + ' through ' + monthYear(last) : '';
+  // National median: one value per building type. One value for all buildings is printed once, in a note.
+  var medians = {};
+  d.buildings.forEach(function (b) {
+    var k = (b.type || 'Other') + '|' + (b.eui.cbecs || 0).toFixed(1);
+    (medians[k] = medians[k] || { type: b.type || 'Other', v: b.eui.cbecs || 0, names: [] }).names.push(b.name);
+  });
+  var mKeys = Object.keys(medians);
+  var rows = d.buildings
     .map(function (b) {
       var bl = b.eui.baseline || 0,
         cur = b.eui.current || 0;
@@ -3321,8 +3406,6 @@ function _rptQBenchmarkPage(n, d, f) {
         (Math.abs(ch) < 1 ? '' : ch < 0 ? 'rpt-g' : 'rpt-r') +
         '">' +
         _rptQPct(ch) +
-        '</td><td class="rpt-n">' +
-        (b.eui.cbecs || 0).toFixed(1) +
         '</td></tr>'
       );
     })
@@ -3341,34 +3424,41 @@ function _rptQBenchmarkPage(n, d, f) {
     (Math.abs(tCh) < 1 ? '' : tCh < 0 ? 'rpt-g' : 'rpt-r') +
     '">' +
     _rptQPct(tCh) +
-    '</td><td class="rpt-n"></td></tr>';
-  var label = _escHtml(d.totals.euiPeriodLabel || '');
+    '</td></tr>';
   var t1 = _rptQTable(
-    [32, 14, 14, 14, 12, 14],
-    ['Building', 'Square feet', 'Baseline', label.split(' annualized')[0], 'Change', 'National median'],
+    [36, 14, 18, 18, 14],
+    ['Building', 'Area (ft&sup2;)', 'Baseline (kBtu/ft&sup2;/yr)', 'Actual (kBtu/ft&sup2;/yr)', 'Change (- = used less)'],
     rows,
   );
+  var medianNote = mKeys
+    .map(function (k) {
+      var m = medians[k];
+      return 'National median, ' + _escHtml(m.type) + ': ' + m.v.toFixed(1) + ' kBtu/ft&sup2;/yr (CBECS)' + (mKeys.length > 1 ? ', ' + _rptQList(m.names) : '') + '.';
+    })
+    .join(' ');
   var reconcile =
     f.kwhDiff > 0 && tCh < 0
-      ? ' The measure covers ' +
-        label.split(' annualized')[0] +
-        ', so it includes the winter natural gas savings of the first half of the year. ' +
-        f.qLabel +
-        ' alone used ' +
-        Math.abs(f.kwhPct).toFixed(1) +
-        '% more electricity than baseline.'
+      ? ' ' + f.qLabel + ' alone, electricity use was ' + Math.abs(f.kwhPct).toFixed(1) + '% above baseline.'
       : '';
   var body =
     '<h2>Site Energy Use Intensity</h2>' +
     _rptQPara(
-      'Site energy use intensity is the energy a building uses in a year for each square foot, in thousand Btu. Every figure below is ' +
-        label +
-        '. Baseline and actual cover the same months and the same meters. The national median is for the building type.' +
-        reconcile,
+      'Site energy use intensity (EUI) is the energy a building uses in one year per square foot, all fuels. Lower is better. The figures cover ' +
+        windowText +
+        (nMonths < 12 ? ', multiplied by 12 and divided by ' + nMonths + ' to give a full year' : '') +
+        '. Baseline is the use of the same calendar months in the baseline year (' +
+        _escHtml(d.project.blStart) +
+        ' to ' +
+        _escHtml(d.project.blEnd) +
+        '), not adjusted to the weather of the months reported.' +
+        reconcile +
+        ' ' +
+        medianNote,
     ) +
     t1 +
     '<h2>Weather by Month</h2>' +
-    _rptQWeatherTable(d, f);
+    _rptQWeatherTable(d, f) +
+    _rptQDegreeDayNote(d);
   return rptPage(n, 'Energy Use Intensity and Weather', body, { data: d, letterhead: false, label: 'Page ' + n + ' - Energy Use Intensity and Weather' });
 }
 
@@ -3384,12 +3474,17 @@ function _rptBasHistoryLoad(projId) {
   var rec = typeof sget === 'function' ? sget('en_bas_schedhistory_' + projId, null) : null;
   return rec && Array.isArray(rec.buildings) && rec.buildings.length ? rec : null;
 }
+function _rptBasAuditLastDay(projId) {
+  var st = typeof sget === 'function' ? sget('en_bas_auditevents_' + projId, null) : null;
+  return st && typeof st.lastDay === 'string' ? st.lastDay : '';
+}
 function _rptBasDay(ymd) {
   return _rptQMonthName(ymd) + ' ' + parseInt(ymd.slice(8, 10), 10);
 }
-// The entries of one cell that overlap the period [start, end], as text lines. A dated entry prints
-// "text, <from> to <to>" with the dates clipped to the period; an undated entry is the baseline.
-function _rptBasCellLines(entries, start, end, qLabel, labelled) {
+// The entries of one cell that overlap the period [start, end]: { base, per } lists of text lines.
+// A dated entry prints "text, <from> to <to>" with the dates clipped to the period; an undated entry is the
+// baseline (printed "Baseline: text" when the cell is labelled).
+function _rptBasCellParts(entries, start, end, labelled) {
   var base = [];
   var per = [];
   (entries || []).forEach(function (e) {
@@ -3403,10 +3498,12 @@ function _rptBasCellLines(entries, start, end, qLabel, labelled) {
     if (from > to) return;
     per.push(e.text + ', ' + _rptBasDay(from) + ' to ' + _rptBasDay(to));
   });
-  // A labelled cell (weekend, set points) names the quarter once, then lists its dated lines.
-  return labelled && per.length ? base.concat([qLabel + ':'], per) : base.concat(per);
+  return { base: base, per: per };
 }
-// One row per report building that has a record, in report order: [name, baselineWeekday, weekday, weekend, setPoints] (each a list of lines).
+// One row per report building that has a record, in report order: [name, baselineWeekday, weekday, weekend, setPoints]
+// (each a list of lines). The weekend "None" entries read "No weekend hours". A set point line that is the same at
+// two or more buildings is taken out of their cells and returned once, with its building list, in rows.shared:
+// [{names:[...], lines:[...]}] (computed grouping, in report order).
 function _rptBasScheduleRows(d) {
   var hist = d && d.basScheduleHistory;
   var yms = ((d && d.period && d.period.yearMonths) || []).slice().sort();
@@ -3414,48 +3511,86 @@ function _rptBasScheduleRows(d) {
   var last = yms[yms.length - 1];
   var start = yms[0] + '-01';
   var end = last + '-' + new Date(parseInt(last.slice(0, 4), 10), parseInt(last.slice(5, 7), 10), 0).getDate();
-  var qLabel = 'Q' + (d.period.quarter || 1) + ' ' + (d.period.year || '');
   var rows = [];
+  var spParts = [];
+  var noWeekend = function (e) {
+    var t = e.text && /^none$/i.test(String(e.text).trim()) ? 'No weekend hours' : e.text;
+    return e.kind === 'baseline' ? { text: t } : Object.assign({}, e, { text: t });
+  };
   (d.buildings || []).forEach(function (b) {
     var h = hist.buildings.filter(function (x) {
       return x && x.building === b.name;
     })[0];
     if (!h) return;
-    var cells = [
-      _rptBasCellLines(h.baselineWeekday, start, end, qLabel, false),
-      _rptBasCellLines(h.weekday, start, end, qLabel, false),
-      _rptBasCellLines(
-        (h.weekend || []).map(function (e) {
-          return e.kind === 'baseline' ? { text: e.text } : e;
-        }),
-        start,
-        end,
-        qLabel,
-        true,
-      ),
-      _rptBasCellLines(
-        (h.setPoints || []).map(function (e) {
-          return e.kind === 'baseline' ? { text: e.text } : e;
-        }),
-        start,
-        end,
-        qLabel,
-        true,
-      ),
-    ];
-    if (cells.some(function (c) { return c.length; })) rows.push([b.name].concat(cells));
+    var wk0 = _rptBasCellParts(h.baselineWeekday, start, end, false);
+    var wk1 = _rptBasCellParts(h.weekday, start, end, false);
+    var we = _rptBasCellParts((h.weekend || []).map(noWeekend), start, end, true);
+    var sp = _rptBasCellParts(
+      (h.setPoints || []).map(function (e) {
+        return e.kind === 'baseline' ? { text: e.text } : e;
+      }),
+      start,
+      end,
+      true,
+    );
+    var cells = [wk0.base.concat(wk0.per), wk1.base.concat(wk1.per), we.base.concat(we.per), sp.base.concat(sp.per)];
+    if (cells.some(function (c) { return c.length; })) {
+      rows.push([b.name].concat(cells));
+      spParts.push(sp);
+    }
   });
+  // Set point lines shared by two or more buildings.
+  var count = {};
+  spParts.forEach(function (sp) {
+    sp.per.forEach(function (l) {
+      count[l] = (count[l] || 0) + 1;
+    });
+  });
+  var groups = {};
+  var order = [];
+  rows.forEach(function (r, ri) {
+    var removed = false;
+    var keep = spParts[ri].per.filter(function (l) {
+      if (count[l] < 2) return true;
+      removed = true;
+      return false;
+    });
+    if (!removed) return;
+    spParts[ri].per.forEach(function (l) {
+      if (count[l] < 2) return;
+      var key = l;
+      var g = groups[key] || (groups[key] = { line: l, names: [] });
+      if (order.indexOf(key) < 0) order.push(key);
+      g.names.push(r[0]);
+    });
+    r[4] = spParts[ri].base.concat(keep, ['Also: shared set points below the table']);
+  });
+  // Lines with the same building list print together.
+  var shared = [];
+  order.forEach(function (k) {
+    var g = groups[k];
+    var nk = g.names.join('|');
+    var hit = shared.filter(function (x) {
+      return x.key === nk;
+    })[0];
+    if (hit) hit.lines.push(g.line);
+    else shared.push({ key: nk, names: g.names, lines: [g.line] });
+  });
+  rows.shared = shared;
   return rows;
 }
 // The table page, or '' when the project has no BAS schedule history for any building in the report.
 function _rptQSchedulePage(n, d) {
   var rows = _rptBasScheduleRows(d);
   if (!rows.length) return '';
+  var fix = function (l) {
+    return _escHtml(l).replace(/(Mon|Tue|Wed|Thu|Fri|Sat|Sun)-(Mon|Tue|Wed|Thu|Fri|Sat|Sun)/g, '$1 to $2');
+  };
   var cell = function (lines) {
     return lines.length
       ? lines
           .map(function (l) {
-            return '<div style="margin:0 0 1px">' + _escHtml(l) + '</div>';
+            return '<div style="margin:0 0 2px">' + fix(l) + '</div>';
           })
           .join('')
       : '&mdash;';
@@ -3463,52 +3598,37 @@ function _rptQSchedulePage(n, d) {
   var trs = rows
     .map(function (r) {
       return (
-        '<tr style="font-size:10px;line-height:1.2;vertical-align:top"><td style="font-weight:700">' +
+        '<tr style="font-size:11.5px;line-height:1.25;vertical-align:top"><td style="font-weight:700">' +
         _escHtml(r[0]) +
         '</td><td>' + cell(r[1]) + '</td><td>' + cell(r[2]) + '</td><td>' + cell(r[3]) + '</td><td>' + cell(r[4]) + '</td></tr>'
       );
     })
     .join('');
+  var ql = _rptQuarterLabel(d.period.quarter || 1, d.period.year);
   var t = _rptQTable(
-    [11, 12, 27, 22, 28],
-    ['Building', 'Baseline weekday occupied hours', 'Quarter weekday occupied hours', 'Weekend occupied hours', 'Occupied heating and cooling set points, °F'],
+    [11, 10, 30, 29, 20],
+    ['Building', 'Baseline weekday occupied hours', ql + ' weekday occupied hours', ql + ' weekend occupied hours (dates in ' + ql + ')', ql + ' heating and cooling set points, &deg;F (dates in ' + ql + ')'],
     trs,
+    [1, 2, 3, 4],
   );
-  var body = t; // the page header already carries the title
+  var through = d.basAuditLastDay
+    ? ', through ' + _rptQMonthName(d.basAuditLastDay) + ' ' + parseInt(d.basAuditLastDay.slice(8, 10), 10) + ', ' + d.basAuditLastDay.slice(0, 4)
+    : '';
+  var allText = rows.map(function (r) { return r.slice(1).join(' '); }).join(' ');
+  var sharedHtml = (rows.shared || [])
+    .map(function (g) {
+      return '<p style="font-size:12px;line-height:1.3;margin:4px 0 6px">Same set points at ' + _escHtml(_rptQListPlain(g.names)) + ': ' + fix(g.lines.join('; ')) + '</p>';
+    })
+    .join('');
+  var body =
+    _rptQNote('From the building automation schedules and audit log' + through + '. Times use the 24-hour clock. Values are as stored in the system.') +
+    sharedHtml +
+    t +
+    (/Area [A-Z]/.test(allText) ? _rptQNote('Area B and Area C are areas of the building as named in the building automation system.') : '');
   return rptPage(n, 'Operating Hours and Set Points', body, { data: d, letterhead: false, label: 'Page ' + n + ' - Operating Hours and Set Points' });
 }
 
 function _rptQMeterPage(n, d, f) {
-  var rows = '';
-  d.buildings.forEach(function (b) {
-    [
-      ['electric', 'Electricity', _rptCommodityUnit('Electric'), 'kwhBl', 'kwhCur'],
-      ['gas', 'Natural gas', _rptCommodityUnit('Gas'), 'thermsBl', 'thermsCur'],
-      ['propane', 'Propane', _rptCommodityUnit('Propane'), 'galBl', 'galCur'],
-    ].forEach(function (c) {
-      var x = b[c[0]];
-      if (!x || !x.monthly || !x.monthly.length) return;
-      var bl = x[c[3]] || 0,
-        cur = x[c[4]] || 0;
-      rows +=
-        '<tr><td>' +
-        _escHtml(b.name) +
-        '</td><td>' +
-        c[1] +
-        '</td><td>' +
-        c[2] +
-        '</td><td class="rpt-n">' +
-        _rptQN(bl) +
-        '</td><td class="rpt-n">' +
-        _rptQN(cur) +
-        '</td><td class="rpt-n">' +
-        (bl >= 10 ? _rptQPct(((cur - bl) / bl) * 100) : '-') +
-        '</td>' +
-        _rptQSavTd(f.parts[b.id][c[0]]) +
-        '</tr>';
-    });
-  });
-  var t1 = _rptQTable([30, 13, 14, 11, 11, 9, 12], ['Building', 'Fuel', 'Unit', 'Baseline', 'Actual', 'Change', 'Savings'], rows);
   // bills by meter, from the bills the report used (d.rawBills)
   var groups = {};
   var order = [];
@@ -3549,14 +3669,26 @@ function _rptQMeterPage(n, d, f) {
       '</td></tr>';
   });
   billRows += '<tr class="rpt-tot"><td colspan="2">Total</td><td class="rpt-n">' + totBills + '</td><td></td><td class="rpt-n">' + _fmtUSD(totAmt, '$0') + '</td></tr>';
-  var t2 = _rptQTable([30, 29, 7, 20, 14], ['Building', 'Meter', 'Bills', 'Use', 'Amount billed'], billRows);
+  var t2 = _rptQTable([30, 29, 10, 17, 14], ['Building', 'Meter', 'Bills (count)', 'Use', 'Utility bill amount'], billRows, [1]);
+  // A building with propane in the report and no propane bill in the quarter.
+  var noPropane = d.buildings
+    .filter(function (b) {
+      return (
+        b.propane &&
+        b.propane.monthly &&
+        b.propane.monthly.length &&
+        !order.some(function (k) {
+          return groups[k].building === b.name && groups[k].commodity === 'Propane';
+        })
+      );
+    })
+    .map(function (b) {
+      return b.name;
+    });
   var body =
-    '<h2>Results by Fuel</h2>' +
-    t1 +
-    _rptQNote('Savings are for the quarter in dollars and include demand charges on electricity.') +
-    '<h2>Bills Used for the Quarter</h2>' +
-    t2;
-  return rptPage(n, 'Meter Results and Bills', body, { data: d, letterhead: false, label: 'Page ' + n + ' - Meter Results and Bills' });
+    t2 +
+    (noPropane.length ? _rptQNote('No propane bills in the quarter: ' + _escHtml(_rptQListPlain(noPropane)) + ' (0 gal, $0).') : '');
+  return rptPage(n, 'Utility Bills Used for the Quarter', body, { data: d, letterhead: false, label: 'Page ' + n + ' - Utility Bills' });
 }
 
 function _rptQMethodPage(n, d, f) {
@@ -3586,26 +3718,36 @@ function _rptQMethodPage(n, d, f) {
     });
   });
   var t1 = _rptQTable(
-    [22, 24, 20, 10, 12, 12],
-    ['Building', 'Meter', 'Baseline use for the year', 'Fit', 'Per heating degree day', 'Per cooling degree day'],
+    [28, 22, 18, 10, 11, 11],
+    ['Building', 'Meter', 'Baseline use for the year', 'R&sup2; (fit)', 'Per heating degree day', 'Per cooling degree day'],
     fitRows,
+    [1],
   );
   var li = function (t) {
     return '<li style="margin-bottom:3px">' + t + '</li>';
   };
+  var apos = "'";
+  // The quarters before the one where the reporting-month weather rule starts (REPORTING_WEATHER_FROM_YM, computations/savings.js).
+  var rwY = REPORTING_WEATHER_FROM_YM.slice(0, 4);
+  var rwQ = Math.ceil(parseInt(REPORTING_WEATHER_FROM_YM.slice(5, 7), 10) / 3);
+  var before = [];
+  for (var qq = 1; qq < rwQ; qq++) before.push('Q' + qq);
+  var rwLabel = _rptQuarterLabel(rwQ, rwY);
   var body =
-    '<h2>How Savings Are Measured</h2>' +
+    '<h2>Method</h2>' +
     '<ul style="margin:2px 0 4px 20px;padding:0;font-size:14px;line-height:1.4">' +
-    li('<strong>Baseline.</strong> Each meter' + "'" + 's baseline is its own use from ' + _escHtml(d.project.blStart) + ' to ' + _escHtml(d.project.blEnd) + '. A weather model is fitted to those twelve months.') +
-    li('<strong>Weather.</strong> The model estimates what a meter would have used in a month at that month' + "'" + 's heating and cooling degree days (base 60 °F). From July 2026 the baseline is calculated at the weather of the month being reported.') +
-    li('<strong>Savings.</strong> Savings are the baseline use minus the actual use, multiplied by that month' + "'" + 's rate, plus the change in billed demand. A negative result means the building used more than its baseline.') +
-    li('<strong>Billing.</strong> Savings are measured for each quarter. A quarter that measures below baseline is billed at $0, the contract minimum. Savings to date add the quarters billed.') +
-    li('<strong>Weather data.</strong> A quarter is reported only when weather for all three months is available.') +
+    li('<strong>Baseline.</strong> Each meter' + apos + 's baseline is its own use from ' + _escHtml(d.project.blStart) + ' to ' + _escHtml(d.project.blEnd) + '. A weather model is fitted to that use. The baseline is adjusted for weather only. Operating hours and set points are not adjusted.') +
+    li('<strong>Weather.</strong> The model estimates what a meter would have used in a month at that month' + apos + 's heating and cooling degree days (base ' + WX_DD_BASE_F + '&deg;F). ' +
+      (before.length
+        ? _rptQList(before) + ' ' + rwY + ' are as presented. For those quarters, energy use was compared at the weather of the baseline period and demand at the month' + apos + 's own weather. From ' + rwLabel + ', energy use and demand are both compared at the month' + apos + 's own weather.'
+        : 'Energy use and demand are both compared at the month' + apos + 's own weather.')) +
+    li('<strong>Savings.</strong> Savings are the baseline use minus the actual use, multiplied by that month' + apos + 's rate, plus demand savings: baseline kW minus actual kW, multiplied by that month' + apos + 's demand rate. Baseline kW is the fit of billed kW against cooling degree days over the baseline months, at the month' + apos + 's cooling degree days; with no fit, the billed kW of the same calendar month in the baseline.') +
+    li('<strong>Savings target.</strong> A quarter' + apos + 's savings target is the projected savings of the project' + apos + 's selected energy conservation measures for the months of that quarter. A building' + apos + 's target is its share in proportion to its baseline cost.') +
+    li('<strong>Billing.</strong> Savings are measured for each quarter. A quarter that measures below baseline is billed at $0, the contract minimum. Savings to date add the quarters billed. A quarter is reported only when weather for all three months is available.') +
     '</ul>' +
     '<h2>Baseline Fit by Meter</h2>' +
     t1 +
-    _rptQNote('Fit runs from 0 to 1. A value near 1 means the weather explains most of the month-to-month change in that meter' + "'" + 's use. Per degree day figures are the change in monthly use for each added degree day.') +
-    '';
+    _rptQNote('R&sup2; (fit): 1 is a perfect match. Per degree day figures are the change in monthly use for each added degree day. A minus value means use goes down as degree days go up.');
   return rptPage(n, 'How Savings Are Measured', body, { data: d, letterhead: false, label: 'Page ' + n + ' - Method' });
 }
 
@@ -3619,10 +3761,22 @@ function _rptQuarterReportHTML(d, s) {
   if (s.cover !== false || s.boardSummary) pages.push(tag(_rptQCoverPage(n++, d, f), 'cover'));
   if (s.financial !== false) pages.push(tag(_rptQResultsPage(n++, d, f), 'financial'));
   if (s.savingsPerformance !== false) pages.push(tag(_rptQEnergyPage(n++, d, f), 'savingsPerformance'));
-  if (s.observations !== false) pages.push(tag(_rptQFindingsPage(n++, d, f), 'observations'));
+  var _joinFC = s.observations !== false && (s.yearToDate !== false || s.contractProjection !== false);
+  if (_joinFC)
+    pages.push(
+      tag(
+        rptPage(n++, 'Findings and Contract Position', _rptQFindingsBody(d, f) + _rptQContractBody(d, f), {
+          data: d,
+          letterhead: false,
+          label: 'Page ' + (n - 1) + ' - Findings and Contract Position',
+        }),
+        'observations',
+      ),
+    );
+  else if (s.observations !== false) pages.push(tag(_rptQFindingsPage(n++, d, f), 'observations'));
   if (s.environmentalImpact !== false && _rptEnergyResultPositive(d)) pages.push(tag(rptPageEnvironmentalImpact(n++, d), 'environmentalImpact'));
   if (s.approvedChanges !== false && d.approvedChanges && d.approvedChanges.length) pages.push(tag(rptPageApprovedChanges(n++, d), 'approvedChanges'));
-  if (s.yearToDate !== false || s.contractProjection !== false) pages.push(tag(_rptQContractPage(n++, d, f), 'contractProjection'));
+  if (!_joinFC && (s.yearToDate !== false || s.contractProjection !== false)) pages.push(tag(_rptQContractPage(n++, d, f), 'contractProjection'));
   if (s.euiBenchmarking !== false || s.appendixC !== false) pages.push(tag(_rptQBenchmarkPage(n++, d, f), 'euiBenchmarking'));
   if (s.meterPerformance !== false) pages.push(tag(_rptQMeterPage(n++, d, f), 'meterPerformance'));
   if (s.meterPerformance !== false) {

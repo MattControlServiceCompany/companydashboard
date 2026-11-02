@@ -186,6 +186,7 @@ function buildCtx() {
     'computations/report-data.js',
     'computations/eui.js',
     'computations/csc.js',
+    'computations/weather-refresh.js',
     'computations/hvac-enduse.js',
     'app/scope-tree.js',
     'app/utility-data.js',
@@ -288,9 +289,28 @@ const bp = dp.buildings[0];
 bp.savings = 3653.8; bp.electric.costSaved = 3294.4; bp.gas = { monthly: bp.electric.monthly, thermsBl: 1, thermsCur: 1, costSaved: 359.4 };
 const fp = run(ctx, '(function(d){ return _rptQFacts(d); })')(dp);
 assert(fp.parts.A.electric + fp.parts.A.gas + fp.parts.A.propane === 3654, 'fuel parts add to the building total: ' + [fp.parts.A.electric, fp.parts.A.gas, fp.parts.A.propane].join('+'));
-const energy = run(ctx, '(function(d,f){ return _rptQEnergyPage(3,d,f); })')(dp, fp).replace(/<[^>]+>/g, ' ');
+let energy;
+try {
+  energy = run(ctx, '(function(d,f){ return _rptQEnergyPage(3,d,f); })')(dp, fp).replace(/<[^>]+>/g, ' ');
+} catch (e) {
+  console.log('ERR ' + String(e.stack).split(String.fromCharCode(10)).slice(0, 3).join(' / '));
+  energy = '';
+}
 assert(/\$3,295/.test(energy) && /\$359/.test(energy) && !/\$3,294/.test(energy), 'page 3 prints the apportioned parts (3,295 and 359)');
-assert(/divided by billed cost plus savings/.test(results), 'percent note states the denominator');
+assert(/divided by utility bill cost plus savings/.test(results), 'percent note states the denominator');
 
+// decision 1: utility invoices are "Utility bills"; "billed" is for contract savings
+let meterPg = '';
+try {
+  meterPg = run(ctx, '(function(d,f){ return _rptQMeterPage(6,d,f); })')(dp, fp).replace(/<[^>]+>/g, ' ');
+} catch (e) {
+  console.log('ERR meter ' + String(e.stack).split(String.fromCharCode(10)).slice(0, 2).join(' / '));
+}
+assert(/Bills \(count\)/.test(meterPg) && /Utility bill amount/.test(meterPg) && !/Amount billed/.test(meterPg), 'meter page: Bills (count) and Utility bill amount');
+// decision 2: signs
+assert(/Use change \(\+ = used more\)/.test(energy), 'energy page: use-change header states the sign');
+assert(/A minus sign on savings means use above baseline\./.test(cover), 'cover: minus sign line');
+// decision 7: propane unit symbol
+assert(run(ctx, '_rptCommodityUnit')('Propane') === 'gal', 'propane unit is gal');
 console.log('\n' + passed + ' passed, ' + failed + ' failed');
 process.exit(failed ? 1 : 0);

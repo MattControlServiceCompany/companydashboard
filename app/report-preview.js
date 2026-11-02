@@ -8,7 +8,61 @@ var _reportConfig = null;
 var _reportData = null;
 var _rptInspectActive = false;
 
-function generateReportPreview(opts) {
+// generateReportPreview(opts) - the Generate Preview button. A quarterly or annual report needs weather for every
+// month it reports: months missing from the stored weather are fetched first and the report waits for the fetch
+// (wxEnsureMonths, computations/weather-refresh.js). If the fetch fails the report is still built and the preview
+// states the reason. Nothing is cached besides the stored weather itself (the savings cache key holds the weather).
+async function generateReportPreview(opts) {
+  var wx = { added: [], errors: [] };
+  try {
+    var cfg = _rptV2ReadConfig();
+    if ((cfg.reportType === 'quarterly' || cfg.reportType === 'annual') && typeof wxEnsureMonths === 'function') {
+      var req = reportRequestRange(_rptSelectedPeriod(cfg)) || {};
+      var yms = [];
+      if (req.startYm && req.endYm) {
+        var y = parseInt(req.startYm.slice(0, 4), 10),
+          m = parseInt(req.startYm.slice(5, 7), 10);
+        while (y + '-' + String(m).padStart(2, '0') <= req.endYm) {
+          yms.push(y + '-' + String(m).padStart(2, '0'));
+          if (++m > 12) {
+            m = 1;
+            y++;
+          }
+        }
+      }
+      var proj = projects.find(function (p) {
+        return String(p.id) === String(cfg.projId);
+      });
+      wx = await wxEnsureMonths(wxProjectZips(proj, getUDBldgs(cfg.projId)), yms, {
+        loadFn: wddLoadCache,
+        saveFn: wddSaveCache,
+        fetchFn: function (url) {
+          return fetch(url);
+        },
+        now: new Date(),
+      });
+    }
+  } catch (e) {
+    wx.errors.push({ zip: '', message: (e && e.message) || String(e) });
+  }
+  _rptGeneratePreviewNow(opts, wx);
+}
+
+// Notes shown in the preview toolbar only (never in the printed report).
+function _rptPreviewNotes(data, wx) {
+  var notes = [];
+  if (!data) return notes;
+  var waiting = (data.totals && data.totals.weatherWaiting) || [];
+  if (waiting.length) {
+    var why = wx && wx.errors && wx.errors.length ? wx.errors.map(function (e) { return e.message; }).join('; ') : 'the weather source has not published it';
+    notes.push('Weather for ' + weatherWaitingLabel(waiting) + ' could not be loaded: ' + why + '.');
+  }
+  if (data.period && data.period.type === 'quarterly' && !data.basScheduleHistory)
+    notes.push('Operating hours and set points page left out: no BAS audit log imported.');
+  return notes;
+}
+
+function _rptGeneratePreviewNow(opts, wx) {
   // Clear any pages from a prior report before generating a new one.
   // This prevents DOM accumulation when the user generates multiple reports
   // in the same session (prior reports were stacking, producing inflated page counts).
@@ -76,6 +130,7 @@ function generateReportPreview(opts) {
 
   _reportConfig = config;
   _reportData = data;
+  window._rptPreviewNoteList = _rptPreviewNotes(data, wx);
   // exportReportToPDF() (app/report-engine.js) reads window._currentReportData for every report
   // type — set it here too so the shared print-to-PDF path (fix/quarterly-text-pdf, 2026-09-25)
   // has the same data the legacy generate*Preview() functions already expose.
@@ -117,6 +172,9 @@ function _showPreview(config, pagesHTML) {
   var typeLabel = config.reportType.charAt(0).toUpperCase() + config.reportType.slice(1);
   titleEl.textContent =
     config.clientName + ' — ' + typeLabel + ' Report' + (_titleLabel ? ' (' + _titleLabel + ')' : '');
+
+  var notesEl = document.getElementById('rptPreviewNotes');
+  if (notesEl) notesEl.textContent = (window._rptPreviewNoteList || []).join(' ');
 
   // Parse the HTML into individual pages
   // The report engine wraps each page in a div with class "rpt-page"

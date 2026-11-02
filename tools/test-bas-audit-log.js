@@ -307,7 +307,7 @@ ok(kept.baselineWeekday[0].text === 'typed hours' && kept.setPoints[0].text === 
       const d = { project: { client: 'Test Client', name: 'Test Project' }, contract: {}, period: { quarter: 3, year: 2026, yearMonths: ['2026-07', '2026-08', '2026-09'] }, buildings: [{ name: 'Beta Hall' }], basScheduleHistory: DB.get('en_bas_schedhistory_9', null) };
       return _rptQSchedulePage(8, d);
     });
-    ok(html.indexOf('&mdash;') >= 0 && !/not found|not determinable|audit log/i.test(html), 'report page prints a dash for a cell with no source and no internal wording');
+    ok(html.indexOf('&mdash;') >= 0 && !/not found|not determinable/i.test(html), 'report page prints a dash for a cell with no source and no internal wording');
     ok(errs.length === 0, 'no page errors' + (errs.length ? ': ' + errs[0] : ''));
   } finally {
     await ctx.close();

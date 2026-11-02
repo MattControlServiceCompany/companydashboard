@@ -1920,6 +1920,8 @@
         --rpt-green-dark: #1e8449; /* on-track value, big-number amount */
         --rpt-green-light: #e8f8ef; /* finding icon bg (up) */
         --rpt-orange: #e67e22; /* near-target */
+        --rpt-orange-text: #8a4b00; /* below-target text on white (contrast 6:1) */
+        --rpt-green-text: #166a3a; /* saved text on white (contrast 6:1) */
         --rpt-orange-light: #fef5e7; /* finding icon bg (warn) */
         --rpt-orange-chart: #f39c12; /* chart bar baseline color */
         --rpt-red: #c0392b; /* below-target, target marker */
@@ -2596,7 +2598,7 @@
         padding-right: 8px;
       }
       .rpt-g {
-        color: var(--rpt-green-dark);
+        color: var(--rpt-green-text);
         font-weight: 600;
       }
       .rpt-r {
@@ -2604,7 +2606,7 @@
         font-weight: 600;
       }
       .rpt-o {
-        color: var(--rpt-orange);
+        color: var(--rpt-orange-text);
         font-weight: 600;
       }
 
@@ -16462,6 +16464,7 @@
         <div style="display: flex; align-items: center; gap: 12px">
           <button class="btn btn-ghost btn-sm" onclick="closeReportPreview()">← Back to Energy Graphics</button>
           <span id="rptPreviewTitle" style="font-size: 14px; font-weight: 600; color: var(--text)"></span>
+          <span id="rptPreviewNotes" style="font-size: 12px; font-weight: 600; color: var(--warn)"></span>
         </div>
         <div style="display: flex; align-items: center; gap: 8px">
           <div
