@@ -2507,6 +2507,15 @@ async function siteResetAllMeterTableSettings() {
    site-ui.js delegates to this array and should NOT maintain its own copy.
 */
 var RELEASE_NOTES = [
+  { v: 'v2026.11.02.194', date: '2026-11-02', title: 'Savings / Reports: waiting-for-weather display, clearer labels',
+    items: [
+      { type: 'change', text: 'Reports: savings wording now says annual and cumulative where the figure covers a year or the contract to date.' },
+      { type: 'change', text: 'Savings: the year-to-date list now shows the newest month first.' },
+      { type: 'fix', text: 'Utility Data, Energy Graphics, the scorecard, Project Performance and Observations: a month with no weather now shows "Waiting for weather data" instead of a number.' },
+      { type: 'change', text: 'Scorecard: the savings label now reads "Savings, months to date (this building)".' },
+      { type: 'feature', text: 'Savings (internal view): a new panel compares the savings methods side by side, with a 3-year projection.' }
+    ]
+  },
   { v: 'v2026.11.01.193', date: '2026-11-01', title: 'Savings / Reports: Q3 report rewrite, baseline at actual weather',
     items: [
       { type: 'feature', text: 'Reports: the third quarter report is now 8 pages. Weather is one sentence on page 3, and the Contract Position page no longer repeats the monthly savings table.' },
