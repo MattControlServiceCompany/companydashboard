@@ -118,7 +118,7 @@ const rn = BAL.resolveNames(['Alpha Elementary', 'Gamma Wing'], names);
 eq(rn.map, { 'Alpha Elementary': 'Alpha Elementary School', 'Gamma Wing': null }, 'a log name that starts the project name is matched; no match gives null');
 eq(rn.unmatched, ['Gamma Wing'], 'unmatched names are listed');
 eq(BAL.resolveNames(['Alpha Elementary'], []).map, { 'Alpha Elementary': 'Alpha Elementary' }, 'no project list: names are kept');
-eq(BAL.resolveNames(['Rockville Elementary'], ['Rockville Elementary School', 'Other School']).map, { 'Rockville Elementary': 'Rockville Elementary School' }, 'Rockville Elementary matches Rockville Elementary School');
+eq(BAL.resolveNames(['Pine Elementary'], ['Pine Elementary School', 'Other School']).map, { 'Pine Elementary': 'Pine Elementary School' }, 'Pine Elementary matches Pine Elementary School');
 eq(BAL.resolveNames(['Pine', 'Pine Annex'], ['Pine']).map, { 'Pine': 'Pine', 'Pine Annex': null }, 'Pine Annex is NOT merged onto Pine when Pine is in the same import');
 eq(BAL.resolveNames(['Pine Annex', 'Pine'], ['Pine']).map, { 'Pine Annex': null, 'Pine': 'Pine' }, 'same, other order');
 eq(BAL.resolveNames(['Pine', 'Pine Annex'], ['Pine', 'Pine Annex']).map, { 'Pine': 'Pine', 'Pine Annex': 'Pine Annex' }, 'both exact: both kept');
@@ -192,6 +192,48 @@ ok(storeAll.events.length < rows.length && !JSON.stringify(storeAll).includes('A
 const alarmDay = csv6([['9/20/2026 8:00:00 AM', 'Acknowledged all (3) alarms', '', B]]);
 const withAlarm = BAL.analyze(BAL.storeEvents(storeAll), null, BAL.mergeStore(storeAll, BAL.parseRows(split(alarmDay)).events, '2026-09-20').lastDay);
 eq(withAlarm.filter((r) => r.building === 'Alpha Elementary')[0].window, ['2026-06-01', '2026-09-20'], 'a later day file with only an alarm row still carries the final state to that day');
+
+// applying the result after EACH day file (as the button does) gives the same record as one long export
+const incremental = (files) => {
+  let store = null;
+  let rec = null;
+  files.forEach((f) => {
+    const p = BAL.parseRows(split(f));
+    store = BAL.mergeStore(store, p.events, p.lastDay);
+    rec = BAL.apply(rec, BAL.analyze(BAL.storeEvents(store), null, store.lastDay), names).rec;
+  });
+  rec.buildings.sort((x, y) => (x.building < y.building ? -1 : 1)); // the order of buildings in the record has no meaning
+  return rec;
+};
+oneLong.buildings.sort((x, y) => (x.building < y.building ? -1 : 1));
+eq(incremental(dayFiles), oneLong, 'applied after each daily file (oldest first): same record as one long export');
+eq(incremental(dayFiles.slice().reverse()), oneLong, 'applied after each daily file (newest first): same record');
+let incOk = true;
+for (let k = 0; k < 8; k++) {
+  const f = dayFiles.slice();
+  for (let i = f.length - 1; i > 0; i--) { const j = Math.floor(rnd() * (i + 1)); [f[i], f[j]] = [f[j], f[i]]; }
+  if (JSON.stringify(incremental(f)) !== JSON.stringify(oneLong)) incOk = false;
+}
+ok(incOk, 'applied after each daily file, 8 shuffled orders: same record');
+// the case where a later day file changes the most common baseline value (Z1 69/73 on day 1; Z2 and Z3 70/74 on day 2)
+const tie = [
+  ['6/1/2026 9:00:00 AM', 'Global Modify Action', sp(0, '69', '71', '73', '75').d, A + '/Wing/Z1'],
+  ['6/2/2026 9:00:00 AM', 'Global Modify Action', sp(0, '70', '71', '74', '75').d, A + '/Wing/Z2'],
+  ['6/2/2026 9:00:05 AM', 'Global Modify Action', sp(0, '70', '71', '74', '75').d, A + '/Wing/Z3'],
+];
+const tieFiles = [csv6([tie[0]]), csv6([tie[1], tie[2]])];
+const tieLong = incremental([csv6(tie)]);
+const baseText = (rec) => rec.buildings[0].setPoints.filter((e) => !e.from && !e.to).map((e) => e.text);
+eq(baseText(tieLong), ['heating 70, cooling 74'], 'one export: the most common first value is 70/74');
+eq(incremental(tieFiles), tieLong, 'day 1 then day 2 gives the record of the one export (baseline follows the full store)');
+eq(incremental(tieFiles.slice().reverse()), tieLong, 'day 2 then day 1 gives the same record');
+// store size: compact tuples; the warning appears only above the limit and nothing is removed
+const sz = BAL.storeSize(storeAll);
+ok(sz > 0 && sz < JSON.stringify(six.events).length, 'the store is smaller than the parsed events (' + sz + ' bytes)');
+eq(BAL.storeWarning(storeAll), '', 'no warning for a small store');
+const bigStore = { version: 2, lastDay: '2026-01-01', locs: ['/D/A'], events: [] };
+for (let i = 0; i < 20000; i++) bigStore.events.push(['2026-01-01T00:00:00', 'S', 0, 'H 68 70\nC 72 74\n' + 'x'.repeat(40), 'abc']);
+ok(/KB/.test(BAL.storeWarning(bigStore)) && bigStore.events.length === 20000, 'a store over 1 MB gets a warning in the message; events are kept');
 
 // a baseline typed by a person is kept
 const typed = JSON.parse(JSON.stringify(m1.rec));

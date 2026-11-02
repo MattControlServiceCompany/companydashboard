@@ -276,34 +276,86 @@
   // --- event store -------------------------------------------------------------------------------
   // A scheduled report file covers one day. The site keeps every schedule and set point event it has read (the store,
   // en_bas_auditevents_<pid>) and rebuilds the history from ALL of them, so the files can come in any order and may overlap.
-  var SP_LINE = /\S*\/(occupied_heating|occupied_cooling) changed from "[\d.]+" to "[\d.]+"/;
+  // The store keeps only what the rebuild reads: store = { version:2, lastDay:'YYYY-MM-DD', locs:[location,...],
+  // events:[[iso, kind, locIndex, text, operatorHash], ...] } oldest first. kind: A/U/D = Add/Update/Delete schedule
+  // (text = the schedule lines the reader uses), S = set point change (text = "H from to" / "C from to" lines).
+  // STORE_WARN_BYTES: 6 audit logs of one district (12 months, 2325 events) measured 178 KB in this format (630 KB before compaction),
+  // so about 180 KB a year. The browser store holds about 5 MB for the whole site; 1 MB is about 5 years of this one key.
+  // Above 1 MB the card says so. Nothing is ever pruned.
+  var STORE_WARN_BYTES = 1048576;
+  var SP_LINE = /\S*\/(occupied_heating|occupied_cooling) changed from "([\d.]+)" to "([\d.]+)"/;
+  var KEEP_LINE = /schedule "|^Type "|days:|^At "|^New values:/;
+  var KIND_DESC = { A: 'Add schedule', U: 'Update schedule', D: 'Delete schedule' };
+  function opHash(op) {
+    var h = 5381;
+    String(op).split('').forEach(function (c) { h = ((h * 33) ^ c.charCodeAt(0)) >>> 0; });
+    return h.toString(36);
+  }
   // The part of an event the history uses, or null (alarm acknowledgements and all other rows are not stored).
   function compact(e) {
-    if (/^(Add|Update|Delete) schedule\b/.test(e.desc) && isRoot(e.loc)) {
-      return { iso: e.iso, desc: e.desc, details: e.details, loc: e.loc, op: e.op };
+    var m = e.desc.match(/^(Add|Update|Delete) schedule\b/);
+    if (m && isRoot(e.loc)) {
+      var keep = e.details.split('\n').filter(function (ln) { return KEEP_LINE.test(ln); });
+      return { iso: e.iso, kind: m[1].charAt(0), loc: e.loc, text: keep.join('\n'), oh: opHash(e.op) };
     }
-    var lines = e.details.split('\n').filter(function (ln) { return SP_LINE.test(ln); });
-    return lines.length ? { iso: e.iso, desc: e.desc, details: lines.join('\n'), loc: e.loc, op: e.op } : null;
+    var lines = [];
+    e.details.split('\n').forEach(function (ln) {
+      var p = ln.match(SP_LINE);
+      if (p) lines.push((p[1] === 'occupied_heating' ? 'H ' : 'C ') + p[2] + ' ' + p[3]);
+    });
+    return lines.length ? { iso: e.iso, kind: 'S', loc: e.loc, text: lines.join('\n'), oh: opHash(e.op) } : null;
   }
-  // store = { version:1, lastDay:'YYYY-MM-DD', events:[{iso,desc,details,loc,op}] } (oldest first). The same event is kept once.
   function mergeStore(store, events, lastDay) {
-    var old = (store && store.events) || [];
+    var locs = (store && store.locs) || [];
+    var old = ((store && store.events) || []).map(function (t) {
+      return { iso: t[0], kind: t[1], loc: locs[t[2]], text: t[3], oh: t[4] };
+    });
     var seen = {};
     var all = [];
     old.concat(events.map(compact).filter(Boolean)).forEach(function (e) {
-      var k = [e.iso, e.loc, e.details, e.op].join('|');
+      var k = [e.iso, e.loc, e.text, e.oh].join('|');
       if (seen[k]) return;
       seen[k] = true;
-      all.push({ iso: e.iso, desc: e.desc, details: e.details, loc: e.loc, op: e.op });
+      all.push(e);
+    });
+    all = sortEvents(all);
+    var outLocs = [];
+    var idx = {};
+    var rows = all.map(function (e) {
+      if (idx[e.loc] === undefined) {
+        idx[e.loc] = outLocs.length;
+        outLocs.push(e.loc);
+      }
+      return [e.iso, e.kind, idx[e.loc], e.text, e.oh];
     });
     var ld = (store && store.lastDay) || '';
     if ((lastDay || '') > ld) ld = lastDay;
-    return { version: 1, lastDay: ld, events: sortEvents(all) };
+    return { version: 2, lastDay: ld, locs: outLocs, events: rows };
   }
+  // The stored events as the reader wants them (same shape parseRows gives).
   function storeEvents(store) {
-    return ((store && store.events) || []).map(function (e) {
-      return { iso: e.iso, ymd: e.iso.slice(0, 10), desc: e.desc, details: e.details, loc: e.loc, op: e.op, building: BD.buildingOf(e.loc) };
+    var locs = (store && store.locs) || [];
+    return ((store && store.events) || []).map(function (t) {
+      var loc = locs[t[2]];
+      var details = t[3];
+      if (t[1] === 'S') {
+        details = t[3].split('\n').map(function (ln) {
+          var p = ln.split(' ');
+          return 'x/' + (p[0] === 'H' ? 'occupied_heating' : 'occupied_cooling') + ' changed from "' + p[1] + '" to "' + p[2] + '"';
+        }).join('\n');
+      }
+      return { iso: t[0], ymd: t[0].slice(0, 10), desc: KIND_DESC[t[1]] || 'Set point change', details: details, loc: loc, building: BD.buildingOf(loc) };
     });
+  }
+  // Size of the stored blob in bytes, and the card warning text when it passes STORE_WARN_BYTES ('' otherwise).
+  function storeSize(store) {
+    return JSON.stringify(store).length;
+  }
+  function storeWarning(store) {
+    var n = storeSize(store);
+    return n > STORE_WARN_BYTES
+      ? ' The stored audit log events are ' + Math.round(n / 1024) + ' KB. This is large; tell the site owner before importing more.'
+      : '';
   }
   function analyze(allEvents, pointsList, endDay) {
     var evs = sortEvents(allEvents);
@@ -448,13 +500,14 @@
       var a = r.window[0];
       var z = r.window[1];
       var n = r.record;
-      // An auto baseline is replaced only by one whose log starts EARLIER (a tie keeps the stored one), so the order of
+      // An auto baseline is replaced by one whose log starts at the same day or EARLIER (the rebuild covers all stored events), so the order of
       // imports does not matter. One typed by a person (no mark) is never replaced and stays beside an auto one.
       var base = function (list, entry) {
         var oldBase = (list || []).filter(function (e) { return !e.from && !e.to; });
         var auto = oldBase.every(function (e) { return e.src === AUDIT_SRC || e.src === POINTS_SRC; });
         if (!entry || !auto) return oldBase;
-        var earlier = oldBase.some(function (e) { return !e.windowStart || entry.windowStart < e.windowStart; });
+        // Every import is a rebuild from the full store, so an equal window start also takes the newer result.
+        var earlier = oldBase.some(function (e) { return !e.windowStart || entry.windowStart <= e.windowStart; });
         return !oldBase.length || earlier ? [entry] : oldBase;
       };
       var merged = Object.assign({ building: '', baselineWeekday: [], weekday: [], weekend: [], setPoints: [] }, old, {
@@ -476,6 +529,8 @@
     apply: apply,
     resolveNames: resolveNames,
     mergeStore: mergeStore,
+    storeSize: storeSize,
+    storeWarning: storeWarning,
     storeEvents: storeEvents,
     AUDIT_SRC: AUDIT_SRC,
     POINTS_SRC: POINTS_SRC,

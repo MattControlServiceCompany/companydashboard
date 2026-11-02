@@ -512,6 +512,7 @@
       var results = BasAuditLog.analyze(BasAuditLog.storeEvents(store), window.basPointSource(((typeof emLoadMatrix === 'function' && emLoadMatrix(pid)) || {}).rows), store.lastDay);
       if (!results.length) return say(pid, 'No schedule or set point rows were found in these files.');
       await DB.set('en_bas_auditevents_' + pid, store);
+      var sizeWarn = BasAuditLog.storeWarning(store);
       var names = typeof getUDBldgs === 'function' ? (getUDBldgs(pid) || []).map(function (b) { return b.name; }) : [];
       var res = BasAuditLog.apply(DB.get('en_bas_schedhistory_' + pid, null), results, names);
       await DB.set('en_bas_schedhistory_' + pid, res.rec);
@@ -520,7 +521,7 @@
       say(
         pid,
         'Saved schedule and set point history for ' + plural(saved, 'building', 'buildings') + ' from ' + plural(files.length, 'file', 'files') + '.' +
-          (lost.length ? ' Not imported, no single matching building in this project: ' + lost.join(', ') + '.' : ''),
+          (lost.length ? ' Not imported, no single matching building in this project: ' + lost.join(', ') + '.' : '') + sizeWarn,
       );
     });
   };
