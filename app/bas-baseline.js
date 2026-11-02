@@ -11,7 +11,10 @@
 //     is added in brackets: "(Area G 6:00 to 20:00)" when every row of that group is in one area, else "(some ...)".
 //   - weekend: the most common "Existing Occupied Sat & Sun" value.
 //   - occupied set points: the most common (heating, cooling) pair.
-// A baseline entry carries src = SOURCE. An entry already in the record without that src (typed by a person) is kept.
+// A baseline entry carries src = SOURCE. An entry already in the record is replaced only when it carries SOURCE or one of
+// the fallback marks of the audit log import (BasAuditLog.AUDIT_SRC, POINTS_SRC); one typed by a person is kept.
+// fromPoints: the set points of a building from the stored WebCTRL points list (the Equipment Matrix rows), for a
+// building the audit log shows no set point change for (the audit log import uses it; this module never stores it).
 (function (root) {
   'use strict';
 
@@ -120,7 +123,7 @@
   function setBase(list, entry) {
     var old = (list || []).filter(function (e) { return !e.from && !e.to; });
     var dated = (list || []).filter(function (e) { return e.from || e.to; });
-    var mine = old.every(function (e) { return e.src === SOURCE; });
+    var mine = old.every(function (e) { return e.src === SOURCE || e.src === BAL.AUDIT_SRC || e.src === BAL.POINTS_SRC; });
     if (!mine || !entry) return list || [];
     return [entry].concat(dated);
   }
@@ -145,7 +148,35 @@
     return { rec: rec, matched: matched };
   }
 
-  var api = { SOURCE: SOURCE, COLS: COLS, parseRows: parseRows, apply: apply };
+  // rows = [{ building, type, heat, cool }] (heat and cool as in the points list, e.g. "45.0 F"; type = the matrix equipment
+  // type label). Returns [{ building, text }]: the most common (heat, cool) pair over rows that have both, labelled with
+  // the type when every one of those rows has the same type ("Unit heaters: heating 45, cooling 90").
+  function fromPoints(rows) {
+    var byB = {};
+    var order = [];
+    (rows || []).forEach(function (r) {
+      var h = numText(r.heat);
+      var c = numText(r.cool);
+      var b = String(r.building || '').trim();
+      if (!b || h === null || c === null) return;
+      if (!byB[b]) {
+        byB[b] = [];
+        order.push(b);
+      }
+      byB[b].push({ key: h + '|' + c, type: String(r.type || '').trim() });
+    });
+    return order.map(function (b) {
+      var top = tally(byB[b])[0].key.split('|');
+      var types = {};
+      byB[b].forEach(function (x) { types[x.type] = 1; });
+      var ts = Object.keys(types);
+      var label = ts.length === 1 && ts[0] ? ts[0].charAt(0).toUpperCase() + ts[0].slice(1).toLowerCase() + (/s$/i.test(ts[0]) ? '' : 's') + ': ' : '';
+      return { building: b, text: label + 'heating ' + top[0] + ', cooling ' + top[1] };
+    });
+  }
+
+  var api = {
+    fromPoints: fromPoints, SOURCE: SOURCE, COLS: COLS, parseRows: parseRows, apply: apply };
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
   else root.BasBaseline = api;
 })(typeof window !== 'undefined' ? window : this);

@@ -93,6 +93,15 @@ const get = (r) => r.buildings.filter((b) => b.building === 'Alpha Elementary Sc
 eq(get(one), get(two), 'audit log import and baseline import give the same record in either order');
 ok(get(one).baselineWeekday[0].text.indexOf('6:00 to 16:00') === 0 && get(one).weekday.length === 1, 'both are in the record: baseline and dated weekday');
 
+// set points from the stored points list (Equipment Matrix rows)
+const pr = (b, t, h, c) => ({ building: b, type: t, heat: h, cool: c });
+eq(BBL.fromPoints([pr('Zed', 'Unit Heater', '45.0 F', '90.0 F'), pr('Zed', 'Unit Heater', '45.0 F', '90.0 F'), pr('Zed', 'Unit Heater', '50.0 F', '90.0 F'), pr('Zed', 'Unit Heater', '', '')]), [{ building: 'Zed', text: 'Unit heaters: heating 45, cooling 90' }], 'points list: most common pair, labelled by type when every row has the same type; rows without both are left out');
+eq(BBL.fromPoints([pr('Zed', 'Unit Heater', '45 F', '90 F'), pr('Zed', 'Monitoring', '45 F', '90 F')]), [{ building: 'Zed', text: 'heating 45, cooling 90' }], 'points list: mixed types give no type label');
+// a baseline written by the audit log fallback is replaced by the sheet; a typed one is not
+const auto = { version: 1, buildings: [{ building: 'Beta Hall', baselineWeekday: [{ text: 'from log', src: BAL.AUDIT_SRC }], weekday: [], weekend: [], setPoints: [{ kind: 'baseline', text: 'from list', src: BAL.POINTS_SRC }] }] };
+const over = BBL.apply(auto, p.buildings, names).rec.buildings[0];
+ok(over.baselineWeekday[0].src === BBL.SOURCE && over.setPoints[0].src === BBL.SOURCE, 'the sheet replaces a baseline written by the audit log fallback');
+
 (async () => {
   const { launchBrowser } = require(path.join(ROOT, 'tools', 'launch-browser.js'));
   const ctx = await launchBrowser('bas-baseline');

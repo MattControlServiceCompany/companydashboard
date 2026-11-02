@@ -15,8 +15,10 @@
 //   - Set points: lines "<path>/occupied_heating|occupied_cooling changed from "X" to "Y"" in Details, any Description.
 //     A zone is the Location of the row. Its value before its first logged change is the "from" of that change.
 //     The value of a day is the most common (heating, cooling) pair over the zones that have both points.
-//   - Baseline columns are NOT read from the log (it starts after the original settings). This module never writes
-//     baseline entries and never touches ones already in the record. A value with no source is left out; the report
+//   - Baseline columns: the Set Points sheet import (app/bas-baseline.js) is the source. This module writes a baseline
+//     entry only as a fallback, marked with its source: the earliest values in the log (old value of the first change;
+//     for a building with no set point change in the log, the stored points list value). It replaces only entries that
+//     carry one of its own marks; the sheet import replaces them too. A value with no source is left out; the report
 //     prints a plain dash for an empty cell. Nothing is invented.
 // Output record: { version:1, buildings:[{ building, baselineWeekday:[{text}], weekday:[{text,from,to}],
 //   weekend:[{kind,text,from,to}], setPoints:[{kind,text,from,to}] }] }  (from, to are YYYY-MM-DD).
@@ -25,6 +27,8 @@
 
   var BD = root.BasDiff || (typeof require === 'function' ? require('./bas-diff.js') : null);
   var DAYS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
+  var AUDIT_SRC = 'WebCTRL audit log (earliest values)';
+  var POINTS_SRC = 'WebCTRL points list (no set point change in the audit log)';
   var HEAD = ['date', 'description', 'details', 'location', 'operator'];
 
   // --- dates -------------------------------------------------------------------------------------
@@ -182,7 +186,11 @@
       for (var i = 0; i < 7; i++) week.push(dayHours(state, i));
       days.push({ ymd: d, wd: daysText(week, 0, 4), we: daysText(week, 5, 6) });
     }
-    return { days: days };
+    var w0 = [];
+    for (var q = 0; q < 7; q++) w0.push(dayHours(initial, q));
+    var uniform = w0[0] && w0.slice(0, 5).every(function (x) { return x === w0[0]; });
+    // The baseline weekday cell is plain hours when all five weekdays agree.
+    return { days: days, hasInitial: Object.keys(initial).length > 0, wd0: uniform ? w0[0] : daysText(w0, 0, 4), we0: daysText(w0, 5, 6) };
   }
 
   // --- set points --------------------------------------------------------------------------------
@@ -259,7 +267,9 @@
 
   // --- the whole analysis ------------------------------------------------------------------------
   // events from parseRows (one or many files joined). Returns [{ building, window:[from,to], record }] by building name.
-  function analyze(allEvents) {
+  // pointsList = [{ building, text }] set points of the equipment in the stored WebCTRL points list (the Equipment Matrix),
+  // used only for a building whose log has no occupied set point row: the value never changed since the log starts.
+  function analyze(allEvents, pointsList) {
     var evs = sortEvents(allEvents);
     var byB = {};
     var order = [];
@@ -286,13 +296,29 @@
           return { kind: 'period', text: r.text, from: r.from, to: r.to };
         });
       };
+      var fb = null;
+      if (!sp && pointsList && pointsList.length) {
+        var pn = matchName(b, pointsList.map(function (x) { return x.building; }));
+        fb = pointsList.filter(function (x) { return x.building === pn; })[0] || null;
+      }
+      var baseline = {
+        // Earliest values in the log: the old values of the first change of each schedule, the old value of the first
+        // change of each zone set point, or (no set point change in the log) the stored points list value.
+        weekday: sch.hasInitial ? { text: sch.wd0, src: AUDIT_SRC } : null,
+        weekend: sch.hasInitial ? { kind: 'baseline', text: sch.we0, src: AUDIT_SRC } : null,
+        setPoints: sp ? { kind: 'baseline', text: spText(sp.base), src: AUDIT_SRC } : fb ? { kind: 'baseline', text: fb.text, src: POINTS_SRC } : null,
+      };
       var rec = {
         building: b,
         weekday: sevs.length ? runs(sch.days.map(function (d) { return { ymd: d.ymd, text: d.wd }; })) : [],
         weekend: sevs.length ? period(sch.days.map(function (d) { return { ymd: d.ymd, text: d.we }; })) : [],
-        setPoints: sp ? period(sp.days.map(function (d) { return { ymd: d.ymd, text: spText(d.pair) }; })) : [],
+        setPoints: sp
+          ? period(sp.days.map(function (d) { return { ymd: d.ymd, text: spText(d.pair) }; }))
+          : fb
+            ? [{ kind: 'period', text: fb.text, from: wFrom, to: wTo, src: POINTS_SRC }]
+            : [],
       };
-      out.push({ building: b, window: [wFrom, wTo], record: rec });
+      out.push({ building: b, window: [wFrom, wTo], record: rec, baseline: baseline });
     });
     return out;
   }
@@ -352,15 +378,17 @@
       var a = r.window[0];
       var z = r.window[1];
       var n = r.record;
-      var undated = function (list) {
-        return (list || []).filter(function (e) { return !e.from && !e.to; });
+      var base = function (list, entry) {
+        var oldBase = (list || []).filter(function (e) { return !e.from && !e.to; });
+        var auto = oldBase.every(function (e) { return e.src === AUDIT_SRC || e.src === POINTS_SRC; });
+        return entry && auto ? [entry] : oldBase;
       };
       var merged = {
         building: name,
-        baselineWeekday: old.baselineWeekday || [],
+        baselineWeekday: base(old.baselineWeekday, r.baseline && r.baseline.weekday),
         weekday: joinRuns(cutWindow(old.weekday, a, z).concat(n.weekday)),
-        weekend: undated(old.weekend).concat(joinRuns(cutWindow(old.weekend, a, z).concat(n.weekend))),
-        setPoints: undated(old.setPoints).concat(joinRuns(cutWindow(old.setPoints, a, z).concat(n.setPoints))),
+        weekend: base(old.weekend, r.baseline && r.baseline.weekend).concat(joinRuns(cutWindow(old.weekend, a, z).concat(n.weekend))),
+        setPoints: base(old.setPoints, r.baseline && r.baseline.setPoints).concat(joinRuns(cutWindow(old.setPoints, a, z).concat(n.setPoints))),
       };
       if (idx >= 0) rec.buildings[idx] = merged;
       else rec.buildings.push(merged);
@@ -373,6 +401,8 @@
     analyze: analyze,
     apply: apply,
     matchName: matchName,
+    AUDIT_SRC: AUDIT_SRC,
+    POINTS_SRC: POINTS_SRC,
   };
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
   else root.BasAuditLog = api;

@@ -465,6 +465,16 @@
   };
   // Audit log import: the WebCTRL audit log files (all buildings in one pick) -> the schedule history record the
   // quarterly report prints (en_bas_schedhistory_<pid>). BasAuditLog does the reading and the merge; this is the one writer.
+  // Set points of the equipment in the stored WebCTRL points list (the Equipment Matrix, imported by emHandleImport):
+  // the matrix's own point reader (emGetNormalizedPoints) and type label (emFormatEquipTypeLabel), no second parser.
+  window.basPointSource = function (matrixRows) {
+    return BasBaseline.fromPoints(
+      (matrixRows || []).map(function (r) {
+        var pts = emGetNormalizedPoints(r) || {};
+        return { building: r.building, type: emFormatEquipTypeLabel(r), heat: pts.zoneHtgSetpoint, cool: pts.zoneCoolSetpoint };
+      }),
+    );
+  };
   window.basPickAudit = function (pid, input) {
     readFiles(input).then(async function (files) {
       if (!files.length) return;
@@ -476,7 +486,7 @@
         else events = events.concat(r.events);
       });
       if (bad) return say(pid, bad);
-      var results = BasAuditLog.analyze(events);
+      var results = BasAuditLog.analyze(events, window.basPointSource(((typeof emLoadMatrix === 'function' && emLoadMatrix(pid)) || {}).rows));
       if (!results.length) return say(pid, 'No schedule or set point rows were found in these files.');
       var names = typeof getUDBldgs === 'function' ? (getUDBldgs(pid) || []).map(function (b) { return b.name; }) : [];
       var res = BasAuditLog.apply(DB.get('en_bas_schedhistory_' + pid, null), results, names);
