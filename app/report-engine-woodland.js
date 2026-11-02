@@ -68,7 +68,7 @@ var WD_TEXT = {
       start +
       ' through ' +
       end +
-      '. Electric cost is shown separately for energy (kilowatt-hours) and demand (peak kilowatts), with the effective rate for each: Energy $/kWh is the energy charge only; Demand $/kW is the demand charge only. Natural gas is shown in therms with its effective rate.'
+      '. Electric cost is shown separately for energy (kWh) and demand (peak kW), with the effective rate for each: Energy $/kWh is the energy charge only; Demand $/kW is the demand charge only. Natural gas is shown in therms with its effective rate.'
     );
   },
   demandFloorNote: function (demandFloorKw) {

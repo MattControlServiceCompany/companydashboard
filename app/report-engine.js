@@ -24,6 +24,12 @@ function _rptMeterEligible(projId, m) {
 // real case while the rest of the header (e.g. "Baseline", "Actual") stays in the report's
 // existing all-caps header style -- no site-wide style change, no new visual language.
 // -----------------------------------------------------------------------
+// _rptCommodityUnit(commodity) -- the one place the quarterly report picks the unit label for a
+// commodity. Standard symbols (Matt 2026-11-02): kWh for electricity; therms and gallons stay words.
+function _rptCommodityUnit(commodity) {
+  return commodity === 'Electric' ? 'kWh' : commodity === 'Gas' ? 'therms' : 'gallons';
+}
+
 function _rptUnit(s) {
   return '<span style="text-transform:none">' + s + '</span>';
 }
@@ -2832,7 +2838,7 @@ function _rptQEnergyPage(n, d, f) {
     '</tr>';
   var t1 = _rptQTable(
     [28, 13, 13, 10, 12, 12, 12],
-    ['Building', 'Baseline energy use', 'Actual energy use', 'Change', 'Baseline kilowatts', 'Actual kilowatts', 'Savings'],
+    ['Building', 'Baseline energy use', 'Actual energy use', 'Change', 'Baseline kW', 'Actual kW', 'Savings'],
     eRows + eTot,
   );
 
@@ -2895,7 +2901,7 @@ function _rptQEnergyPage(n, d, f) {
     _rptQPara(
       'Electricity decided the quarter. Use was ' +
         _rptQN(Math.abs(f.kwhDiff)) +
-        ' kilowatt-hours (' +
+        ' kWh (' +
         _rptQPct(Math.abs(f.kwhPct)).replace('+', '') +
         ') ' +
         (f.kwhDiff > 0 ? 'above' : 'below') +
@@ -2904,14 +2910,14 @@ function _rptQEnergyPage(n, d, f) {
     ) +
     '<h2>Electricity</h2>' +
     t1 +
-    _rptQNote('Energy use is in kilowatt-hours. Kilowatts are each month' + "'" + 's highest billed demand, added over three months. Savings include the demand change.') +
+    _rptQNote('Energy use is in kWh. kW is each month' + "'" + 's highest billed demand, added over three months. Savings include the demand change.') +
     (t2 ? '<h2>Natural Gas and Propane</h2>' + t2 : '') +
     '<h2>Weather</h2>' +
     _rptQPara(wxSentence);
   return rptPage(n, 'Energy Use and Weather', body, { data: d, letterhead: false, label: 'Page ' + n + ' - Energy Use and Weather' });
 }
 
-// ---- Page 4: findings and next steps -----------------------------------------
+// ---- Page 4: findings -----------------------------------------
 function _rptQFinding(d, f, x) {
   var b = x.b,
     r = x.r;
@@ -2935,7 +2941,6 @@ function _rptQFinding(d, f, x) {
     return _fmtUSD(Math.abs(v), '$0');
   };
   var line = '';
-  var steps = [];
   var head =
     '<strong>' + _escHtml(b.name) + '</strong> <span class="' + r.cls + '">' + r.word.toLowerCase() + '</span> (' + _fmtUSD(b.savings, '$0') + ', ' + _rptQPct(b.savingsPct) + ')';
   if (r.key === 'over') {
@@ -2947,7 +2952,7 @@ function _rptQFinding(d, f, x) {
         money(e.costSaved) +
         ' more than baseline: ' +
         _rptQN(Math.abs(e.kwhCur - e.kwhBl)) +
-        ' kilowatt-hours ' +
+        ' kWh ' +
         (e.kwhCur > e.kwhBl ? 'above' : 'below') +
         ' (' +
         _rptQPct(kwhPct) +
@@ -2958,19 +2963,6 @@ function _rptQFinding(d, f, x) {
       line += 'Natural gas cost ' + money(g.costSaved) + ' more: ' + _rptQN(g.thermsCur) + ' therms against a baseline of ' + _rptQN(g.thermsBl) + '. ';
     if (p && p.costSaved > 0 && p.galBl > 0 && p.galCur === 0)
       line += 'No propane was delivered in the quarter, which gives a credit of ' + money(p.costSaved) + ' that reflects delivery timing. ';
-    if (e.costSaved < 0 && eMonths.length)
-      steps.push(
-        eMonths.length === yms.length
-          ? 'Review the ' + _rptQList(eMonths) + ' electric trend logs and schedules to find what raised use in every month.'
-          : 'Compare the ' + _rptQList(eMonths) + ' electric trend logs and schedules with the months that stayed on baseline.',
-      );
-    if (e.kwCostSaved < -200)
-      steps.push(
-        'Review what set the billed demand: ' + _rptQN(e.kwCur) + ' kilowatts against a baseline of ' + _rptQN(e.kwBl) + ' (monthly peaks added).',
-      );
-    if (g && g.costSaved < -50)
-      steps.push('Review summer natural gas use and the boiler schedule: all three months were above baseline.');
-    if (!steps.length) steps.push('Review the monthly bills and trend logs for the months that were above baseline.');
   } else if (r.key === 'short') {
     var miss = _fmtUSD(_rptBuildingTarget(d, b) - b.savings, '$0');
     line += 'Saved ' + money(b.savings) + ', ' + miss + ' below its share of the quarter target. ';
@@ -2990,7 +2982,7 @@ function _rptQFinding(d, f, x) {
   } else if (r.key === 'met') {
     line += 'Saved ' + money(b.savings) + ', at or above its share of the quarter target.';
   }
-  return { head: head, line: line, steps: steps };
+  return { head: head, line: line };
 }
 
 function _rptQFindingsPage(n, d, f) {
@@ -3022,7 +3014,7 @@ function _rptQFindingsPage(n, d, f) {
       .join('; ');
     sumLines.push(mText + '.');
     sumLines.push(
-      'The result was electricity: use was ' + _rptQN(Math.abs(f.kwhDiff)) + ' kilowatt-hours (' + Math.abs(f.kwhPct).toFixed(1) + '%) ' + (f.kwhDiff > 0 ? 'above' : 'below') + ' baseline.',
+      'The result was electricity: use was ' + _rptQN(Math.abs(f.kwhDiff)) + ' kWh (' + Math.abs(f.kwhPct).toFixed(1) + '%) ' + (f.kwhDiff > 0 ? 'above' : 'below') + ' baseline.',
     );
   }
   var blocks = f.waiting
@@ -3040,15 +3032,6 @@ function _rptQFindingsPage(n, d, f) {
         '<div style="font-size:14px;line-height:1.35;margin-top:1px">' +
         fd.line +
         '</div>' +
-        (fd.steps.length
-          ? '<div style="font-size:14px;font-weight:700;margin-top:2px">Next steps</div><ol style="margin:1px 0 0 22px;padding:0;font-size:14px;line-height:1.35">' +
-            fd.steps
-              .map(function (s) {
-                return '<li>' + s + '</li>';
-              })
-              .join('') +
-            '</ol>'
-          : '') +
         '</div>'
       );
     })
@@ -3062,9 +3045,9 @@ function _rptQFindingsPage(n, d, f) {
       })
       .join('') +
     '</ul>' +
-    '<h2>Building Findings and Next Steps</h2>' +
+    '<h2>Building Findings</h2>' +
     blocks;
-  return rptPage(n, 'Findings and Next Steps', body, { data: d, letterhead: false, label: 'Page ' + n + ' - Findings and Next Steps' });
+  return rptPage(n, 'Findings', body, { data: d, letterhead: false, label: 'Page ' + n + ' - Findings' });
 }
 
 // ---- Page 5: contract position -----------------------------------------------
@@ -3268,9 +3251,9 @@ function _rptQMeterPage(n, d, f) {
   var rows = '';
   d.buildings.forEach(function (b) {
     [
-      ['electric', 'Electricity', 'kilowatt-hours', 'kwhBl', 'kwhCur'],
-      ['gas', 'Natural gas', 'therms', 'thermsBl', 'thermsCur'],
-      ['propane', 'Propane', 'gallons', 'galBl', 'galCur'],
+      ['electric', 'Electricity', _rptCommodityUnit('Electric'), 'kwhBl', 'kwhCur'],
+      ['gas', 'Natural gas', _rptCommodityUnit('Gas'), 'thermsBl', 'thermsCur'],
+      ['propane', 'Propane', _rptCommodityUnit('Propane'), 'galBl', 'galCur'],
     ].forEach(function (c) {
       var x = b[c[0]];
       if (!x || !x.monthly || !x.monthly.length) return;
@@ -3329,7 +3312,7 @@ function _rptQMeterPage(n, d, f) {
       '</td><td class="rpt-n">' +
       _rptQN(g.use) +
       ' ' +
-      (g.commodity === 'Electric' ? 'kilowatt-hours' : g.commodity === 'Gas' ? 'therms' : 'gallons') +
+      _rptCommodityUnit(g.commodity) +
       '</td><td class="rpt-n">' +
       _fmtUSD(g.amount, '$0') +
       '</td></tr>';
@@ -3350,7 +3333,7 @@ function _rptQMethodPage(n, d, f) {
   d.buildings.forEach(function (b) {
     (b.meterDetails || []).forEach(function (m) {
       var c = m.regrCoeffs || {};
-      var unit = m.commodity === 'Electric' ? 'kilowatt-hours' : m.commodity === 'Gas' ? 'therms' : 'gallons';
+      var unit = _rptCommodityUnit(m.commodity);
       fitRows +=
         '<tr><td>' +
         _escHtml(b.name) +
@@ -3383,7 +3366,7 @@ function _rptQMethodPage(n, d, f) {
     '<h2>How Savings Are Measured</h2>' +
     '<ul style="margin:2px 0 4px 20px;padding:0;font-size:14px;line-height:1.4">' +
     li('<strong>Baseline.</strong> Each meter' + "'" + 's baseline is its own use from ' + _escHtml(d.project.blStart) + ' to ' + _escHtml(d.project.blEnd) + '. A weather model is fitted to those twelve months.') +
-    li('<strong>Weather.</strong> The model estimates what a meter would have used in a month at that month' + "'" + 's heating and cooling degree days (base 60 degrees Fahrenheit). From July 2026 the baseline is calculated at the weather of the month being reported.') +
+    li('<strong>Weather.</strong> The model estimates what a meter would have used in a month at that month' + "'" + 's heating and cooling degree days (base 60 °F). From July 2026 the baseline is calculated at the weather of the month being reported.') +
     li('<strong>Savings.</strong> Savings are the baseline use minus the actual use, multiplied by that month' + "'" + 's rate, plus the change in billed demand. A negative result means the building used more than its baseline.') +
     li('<strong>Billing.</strong> Savings are measured for each quarter. A quarter that measures below baseline is billed at $0, the contract minimum. Savings to date add the quarters billed.') +
     li('<strong>Weather data.</strong> A quarter is reported only when weather for all three months is available.') +
@@ -8707,7 +8690,7 @@ function rptPageElectric(n, d) {
 
   var periodLabel = (d.period && d.period.label) || '';
   var bodyHTML =
-    '<p contenteditable="true" style="font-size:14px;color:var(--rpt-page-text);line-height:1.6;margin:0 0 8px">This page details electricity consumption across all buildings for the reporting period. The charts compare weather-normalized baseline usage against actual consumption by month. The table below breaks down kilowatt-hour (kWh) usage, peak demand (kW), and costs by building to identify where the greatest savings and opportunities exist.</p>' +
+    '<p contenteditable="true" style="font-size:14px;color:var(--rpt-page-text);line-height:1.6;margin:0 0 8px">This page details electricity consumption across all buildings for the reporting period. The charts compare weather-normalized baseline usage against actual consumption by month. The table below breaks down kWh usage, peak demand (kW), and costs by building to identify where the greatest savings and opportunities exist.</p>' +
     '<div style="margin-bottom:6px;font-size:11px;color:var(--rpt-page-text)">Period: ' +
     periodLabel +
     '</div>' +
