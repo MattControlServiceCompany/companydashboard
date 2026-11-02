@@ -1402,7 +1402,7 @@ function generateWoodlandReportHTML(data) {
   html += calc.html;
   n += calc.count;
   html += rptPageWoodlandOptions(n++, data);
-  html += rptPageWoodlandCharts(n++, data);
+  html += rptPageSavingsOptionsCharts(n++, data);
   return html;
 }
 window.generateWoodlandReportHTML = generateWoodlandReportHTML;
@@ -2429,7 +2429,7 @@ function _woodlandGroupedBarSVG(options, series, title, unitFmt) {
   );
 }
 
-function rptPageWoodlandCharts(n, d) {
+function rptPageSavingsOptionsCharts(n, d) {
   var opts = d.options;
   var dollarChart = _woodlandGroupedBarSVG(
     opts,

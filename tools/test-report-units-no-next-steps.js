@@ -53,7 +53,7 @@ const ok = (c, m) => {
       const html = _rptQuarterReportHTML(d, { appendixD: false, environmentalImpact: false, approvedChanges: false });
       const text = html.replace(/<[^>]+>/g, ' ');
       window.__html = html;
-      const wd = rptPageWoodlandCharts(7, {
+      const wd = rptPageSavingsOptionsCharts(7, {
         cfg: { clientSharePct: 60 },
         project: { name: 'Test Project' },
         options: [{ letter: 'A', annualGas$: 100, annualElec$: 50, annualDem$: 20, clientShare$: 100, cscShare$: 70 }],
