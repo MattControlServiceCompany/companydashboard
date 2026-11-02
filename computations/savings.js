@@ -1020,6 +1020,18 @@ function floorQuarterSavings(dollars) {
   return Math.max(0, dollars || 0);
 }
 
+// savingsSignColor(v, pos, neg, neutral) - the ONE colour rule for a savings figure: `pos` only when v > 0, `neg` only
+// when v < 0, `neutral` when v is 0 (or not a number). Pass the value as it is shown (rounded) so a "$0" is neutral.
+function savingsSignColor(v, pos, neg, neutral) {
+  return v > 0 ? pos : v < 0 ? neg : neutral;
+}
+
+// sumPositiveSavings(values) - the total of only the positive savings values in a list (negatives and nulls left out).
+// Display-only companion to a column total; it adds no savings math, the values are the ones already computed.
+function sumPositiveSavings(values) {
+  return values.reduce((s, v) => (v > 0 ? s + v : s), 0);
+}
+
 // The 'YYYY-Qn' calendar quarter of a 'YYYY-MM'.
 function quarterKeyOfYM(ym) {
   return ym.slice(0, 4) + "-Q" + (Math.floor((parseInt(ym.slice(5, 7), 10) - 1) / 3) + 1);

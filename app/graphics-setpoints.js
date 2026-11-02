@@ -191,7 +191,7 @@ function _pvRenderBldgPerf(b, projId) {
     return '$' + Math.abs(v).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
   };
   var savColor = function (v) {
-    return v >= 0 ? 'var(--em)' : 'var(--danger)';
+    return savingsSignColor(v, 'var(--em)', 'var(--danger)', 'var(--text)');
   };
   var thS =
     'padding:6px 10px;text-align:right;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.4px;color:var(--text2);background:var(--s1);border:1px solid var(--border2);white-space:nowrap';
@@ -348,7 +348,7 @@ function _pvRenderProjPerf(bldgs, projId) {
     return '$' + Math.abs(v).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
   };
   var savColor = function (v) {
-    return v >= 0 ? 'var(--em)' : 'var(--danger)';
+    return savingsSignColor(v, 'var(--em)', 'var(--danger)', 'var(--text)');
   };
   var thS =
     'padding:6px 10px;text-align:right;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.4px;color:var(--text2);background:var(--s1);border:1px solid var(--border2);white-space:nowrap';
@@ -2223,7 +2223,7 @@ function egfxRefresh(projId) {
           );
           const costSav = _qr.total;
           const costPct = qBlCost > 0 ? (costSav / qBlCost) * 100 : 0;
-          const savColor = costSav >= 0 ? 'var(--green)' : 'var(--red)';
+          const savColor = savingsSignColor(Math.round(costSav), 'var(--green)', 'var(--red)', 'var(--text)');
           const $f = (n) => '$' + Math.abs(Math.round(n)).toLocaleString();
           qHtml += '<tr><td>' + y + '</td><td>' + qNames[qi] + '</td>';
           if (hasElec)
@@ -2265,7 +2265,7 @@ function egfxRefresh(projId) {
               '<td style="text-align:right;font-family:var(--mono);color:' +
               savColor +
               '">' +
-              (costSav >= 0 ? '+' : '') +
+              (costSav > 0 ? '+' : '') +
               costPct.toFixed(1) +
               '%</td></tr>';
           }

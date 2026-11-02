@@ -2445,7 +2445,7 @@ function renderUDProjAggPanel(content) {
     const tdV = (v, color) => {
       if (v == null)
         return `<td style="padding:6px 10px;text-align:right;font-family:var(--mono);font-size:12px;color:var(--text3);border:1px solid var(--border)">—</td>`;
-      const c = color || (v >= 0 ? 'var(--em)' : 'var(--danger)');
+      const c = color || savingsSignColor(v, 'var(--em)', 'var(--danger)', 'var(--text)');
       return `<td style="padding:6px 10px;text-align:right;font-family:var(--mono);font-size:12px;color:${c};border:1px solid var(--border);white-space:nowrap">${v < 0 ? '−' : ''}${$f(v, 2)}</td>`;
     };
     const rows = MN.map((mn, mo) => {
@@ -2455,9 +2455,14 @@ function renderUDProjAggPanel(content) {
       const pct = !waiting && act != null && base > 0 ? (act / base) * 100 : null;
       return `<tr><td style="padding:6px 10px;font-size:12px;font-weight:600;border:1px solid var(--border);background:var(--s2)">${mn}</td>
               ${waiting ? `<td style="padding:6px 10px;text-align:right;font-size:12px;color:var(--text2);border:1px solid var(--border);white-space:nowrap">Waiting for weather data</td>` : tdV(act)}
-              <td style="padding:6px 10px;text-align:right;font-family:var(--mono);font-size:12px;color:${pct == null ? 'var(--text3)' : pct >= 0 ? 'var(--em)' : 'var(--danger)'};border:1px solid var(--border)">${pct != null ? (pct < 0 ? '−' : '') + Math.abs(pct).toFixed(1) + '%' : '—'}</td>
+              <td style="padding:6px 10px;text-align:right;font-family:var(--mono);font-size:12px;color:${pct == null ? 'var(--text3)' : savingsSignColor(pct, 'var(--em)', 'var(--danger)', 'var(--text)')};border:1px solid var(--border)">${pct != null ? (pct < 0 ? '−' : '') + Math.abs(pct).toFixed(1) + '%' : '—'}</td>
             </tr>`;
     }).join('');
+    // Calendar quarters with all 3 months of savings and no month waiting for weather, newest first.
+    const _ppQtrs = Array.from(new Set(_ppAllYms.map(quarterKeyOfYM)))
+      .filter((q) => !_ppWaitQ[q] && _ppAllYms.filter((y) => quarterKeyOfYM(y) === q).length === 3)
+      .sort()
+      .reverse();
     content.innerHTML = `
             <div style="padding:14px 18px;background:var(--s2);border-bottom:1px solid var(--border)">
               <div style="font-size:14px;font-weight:800;font-family:var(--head);color:var(--em);margin-bottom:10px">💡 ${projName} — Performance</div>
@@ -2479,8 +2484,31 @@ function renderUDProjAggPanel(content) {
                 <td style="padding:6px 10px;text-align:right;font-family:var(--mono);font-size:12px;color:${actPct != null && actPct >= 0 ? 'var(--em)' : 'var(--danger)'};font-weight:700;border:1px solid var(--border)">${actPct != null ? (actPct < 0 ? '−' : '') + Math.abs(actPct).toFixed(1) + '%' : '—'}</td>
               </tr></tfoot>
             </table></div>
+            <div style="padding:16px 18px 10px;font-size:12px;font-weight:700;color:var(--text2);text-transform:uppercase;letter-spacing:.5px;display:${_ppQtrs.length ? 'flex' : 'none'};gap:10px;align-items:center">Quarter Savings by Building
+              <select id="pp-qtr-sel" style="font-family:var(--mono);font-size:12px;color:var(--text);background:var(--s3);border:1px solid var(--border);border-radius:6px;padding:4px 8px">${_ppQtrs.map((q) => `<option value="${q}">${_escHtml(q.slice(5) + ' ' + q.slice(0, 4))}</option>`).join('')}</select></div>
+            <div id="pp-qtr-body" style="overflow-x:auto;padding:0 18px 10px"></div>
             <div style="padding:16px 18px 10px;font-size:12px;font-weight:700;color:var(--text2);text-transform:uppercase;letter-spacing:.5px">Monthly Savings: Projected vs Current</div>
             <div style="padding:0 18px 20px;height:280px;position:relative"><canvas id="projPerfChart"></canvas></div>`;
+    // Quarter section: one row per building (its savings for the quarter, the sum of the monthly values above), the
+    // quarter total (billableSavingsWithPresented), and the total of only the positive building rows (sumPositiveSavings).
+    const _ppRenderQtr = () => {
+      const sel = document.getElementById('pp-qtr-sel');
+      const body = document.getElementById('pp-qtr-body');
+      if (!sel || !body) return;
+      const yms = _ppAllYms.filter((y) => quarterKeyOfYM(y) === sel.value);
+      const cell = (v, bold) =>
+        `<td style="padding:6px 10px;text-align:right;font-family:var(--mono);font-size:12px;border:1px solid var(--border);white-space:nowrap;color:${savingsSignColor(Math.round(v), 'var(--em)', 'var(--danger)', 'var(--text)')}${bold ? ';font-weight:700' : ''}">${v < 0 ? '−' : ''}${$f(v, 2)}</td>`;
+      const lbl = 'padding:6px 10px;font-size:12px;font-weight:700;border:1px solid var(--border)';
+      const bRows = bldgs
+        .filter((b) => _ppSavByBldgYM[b.id])
+        .map((b) => ({ name: b.name || b.id, v: yms.reduce((t, y) => t + (_ppSavByBldgYM[b.id][y] || 0), 0) }));
+      const tot = billableSavingsWithPresented(udSelProjId, yms, _ppSavByBldgYM).total;
+      body.innerHTML = `<table id="pp-qtr-table" style="border-collapse:collapse;width:100%;font-size:12px"><thead><tr style="background:var(--s1)"><th style="${thS};text-align:left">Building</th><th style="${thS}">Savings $</th></tr></thead><tbody>${bRows
+        .map((r) => `<tr><td style="${lbl};font-weight:600;background:var(--s2)">${_escHtml(r.name)}</td>${cell(r.v)}</tr>`)
+        .join('')}</tbody><tfoot><tr style="background:var(--s1)"><td style="${lbl}">Total</td>${cell(tot, true)}</tr><tr id="pp-qtr-pos-row" style="background:var(--s1)"><td style="${lbl}">Total of positive savings only</td>${cell(sumPositiveSavings(bRows.map((r) => r.v)), true)}</tr></tfoot></table>`;
+    };
+    document.getElementById('pp-qtr-sel')?.addEventListener('change', _ppRenderQtr);
+    _ppRenderQtr();
     requestAnimationFrame(() => {
       const projVals = MN.map((_, mo) => _perfProjSavByMo[mo]);
       const actVals = MN.map((_, mo) => (actSavByMo[mo] != null && !_ppWaitMo.has(mo) ? actSavByMo[mo] : null));
