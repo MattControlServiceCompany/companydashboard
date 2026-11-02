@@ -205,12 +205,12 @@ function collectReportData(projId, buildingIds, reportDateStr, reportType, selec
   const periodMonths = reportYMs.length;
   const reportStart = reportYMs[0] || '';
   const reportEnd = reportYMs[reportYMs.length - 1] || '';
-  // The last month the report covers: the quarter end for a quarterly report, else the last report month.
+  // The last month a quarterly report covers (its quarter end); '' for any other report type.
   // EUI months after it are not in the report (their weather and bills are partial) and never enter the EUI.
   const reportEndYM =
     reportType === 'quarterly' && reportYMs._qStartMo
       ? reportYMs._qYear + '-' + String(reportYMs._qStartMo + 2).padStart(2, '0')
-      : reportEnd;
+      : '';
 
   // Build period label
   let periodLabel = '';
@@ -265,6 +265,7 @@ function collectReportData(projId, buildingIds, reportDateStr, reportType, selec
   let totPeakKwBl = 0,
     totPeakKwCur = 0;
   let totBlCost = 0,
+    totPctBase = 0,
     totCurCost = 0,
     totSavings = 0,
     totCumSavings = 0;
@@ -626,14 +627,13 @@ function collectReportData(projId, buildingIds, reportDateStr, reportType, selec
     // Building savings percentage and status
     const bldgSavings = periodSavings;
     const bldgCurCost = totalBldgCurCost;
-    // ONE definition of baseline cost (Matt, 2026-11-02): what the period would have cost at baseline =
-    // the amount billed in the period (the bills listed in rawBills, the same amounts the report's bills table
-    // prints) + savings. The savings percent and the percent denominator the report prints both read it.
-    // targetWeight keeps the building's share basis for the savings target (baseline-year cost, unchanged).
+    const bldgBlCost = totalBldgBlCost;
+    // ONE percent denominator (Matt, 2026-11-02): pctBase = the amount billed in the period (the bills in
+    // rawBills, the same amounts the report's bills table prints) + savings. savingsPct, the quarterly report's
+    // total percent and its page note all read it. blCost stays the baseline-year cost (target shares, tables).
     const bldgBilled = rawBills.reduce((t, r) => (r.bid === b.id ? t + r.amount : t), 0);
-    const bldgBlCost = bldgBilled + bldgSavings;
-    const bldgTargetWeight = totalBldgBlCost;
-    const bldgSavingsPct = bldgBlCost > 0 ? (bldgSavings / bldgBlCost) * 100 : 0;
+    const bldgPctBase = bldgBilled + bldgSavings;
+    const bldgSavingsPct = bldgPctBase > 0 ? (bldgSavings / bldgPctBase) * 100 : 0;
     const targetPct = bldgSavPct * 100;
     let bldgStatus = 'on_track';
     if (bldgSavingsPct < targetPct * 0.8) bldgStatus = 'below_target';
@@ -667,6 +667,7 @@ function collectReportData(projId, buildingIds, reportDateStr, reportType, selec
     totPeakKwBl += elec.kwBl;
     totPeakKwCur += elec.kwCur;
     totBlCost += bldgBlCost;
+    totPctBase += bldgPctBase;
     totCurCost += bldgCurCost;
 
     return {
@@ -687,7 +688,7 @@ function collectReportData(projId, buildingIds, reportDateStr, reportType, selec
       propane,
       savings: bldgSavings,
       blCost: bldgBlCost,
-      targetWeight: bldgTargetWeight,
+      pctBase: bldgPctBase,
       curCost: bldgCurCost,
       savingsPct: bldgSavingsPct,
       targetPct: targetPct,
@@ -712,15 +713,19 @@ function collectReportData(projId, buildingIds, reportDateStr, reportType, selec
   // it is left out of the period total and of the cumulative, and named here for the page to say so.
   const _periodBill = billableSavingsWithPresented(projId, _reportYMsSorted, perBldgSavByYM);
   totSavings = _periodBill.total;
+  // A quarterly report's cumulative stops at its own quarter end: a month after it (for example an October gas
+  // bill read in a Q3 report) belongs to a quarter not billed yet and must not enter the billed-to-date figure.
   const _cumBill = billableSavingsWithPresented(
     projId,
-    Array.from(new Set(Object.values(perBldgSavByYM).flatMap((m2) => Object.keys(m2)))).sort(),
+    Array.from(new Set(Object.values(perBldgSavByYM).flatMap((m2) => Object.keys(m2))))
+      .filter((ym) => reportType !== 'quarterly' || !reportEndYM || ym <= reportEndYM)
+      .sort(),
     perBldgSavByYM,
   );
   totCumSavings = _cumBill.total;
   const _wxWaitYMs = [].concat.apply([], Object.values(_periodBill.weatherWaiting)).sort();
   const _wxWaitCumYMs = [].concat.apply([], Object.values(_cumBill.weatherWaiting)).sort();
-  const totSavingsPct = totBlCost > 0 ? (totSavings / totBlCost) * 100 : 0;
+  const totSavingsPct = totPctBase > 0 ? (totSavings / totPctBase) * 100 : 0;
   // What the contract does not bill (a quarter below baseline is floored at $0): the gap between the real
   // building rows and the billable total. Reports print it as one line, so the columns add up.
   const _notBilled = savingsNotBilledWithPresented(projId, _reportYMsSorted, perBldgSavByYM);
@@ -1080,6 +1085,7 @@ function collectReportData(projId, buildingIds, reportDateStr, reportType, selec
       weatherWaiting: _wxWaitYMs, // months of the period with no weather yet: no savings figure, see weatherWaitingLabel
       cumulativeWeatherWaiting: _wxWaitCumYMs, // same, over all months to date (those quarters are left out of the cumulative)
       blCost: totBlCost,
+      pctBase: totPctBase,
       curCost: totCurCost,
       savingsPct: totSavingsPct,
       kwhSaved: totKwhSaved,
@@ -2185,7 +2191,7 @@ function _rptBuildingTarget(d, b) {
       ? (d.contract.quarterlyTargets && d.contract.quarterlyTargets[q - 1]) || 0
       : d.contract.annualTarget || 0;
   var wt = function (x) {
-    return x.targetWeight != null ? x.targetWeight : x.blCost || 0;
+    return x.blCost || 0;
   };
   var tot =
     d.buildings.reduce(function (s, x) {
@@ -2410,6 +2416,24 @@ function _rptQFacts(d) {
       shown[b.id][ym] = whole[i];
     });
   });
+  // The fuel parts as printed: each building's electric, gas and propane savings are whole dollars that add to
+  // its quarter figure (same rule as the months above), so a building's rows on the fuel tables add to its total.
+  var parts = {};
+  d.buildings.forEach(function (b) {
+    var vals = ['electric', 'gas', 'propane'].map(function (k) {
+      return (b[k] && b[k].costSaved) || 0;
+    });
+    var sumVals = vals.reduce(function (s, v) {
+      return s + v;
+    }, 0);
+    var whole =
+      Math.abs(sumVals - (b.savings || 0)) < 1
+        ? _rptApportion(vals, b.savings || 0)
+        : vals.map(function (v) {
+            return Math.round(v);
+          });
+    parts[b.id] = { electric: whole[0], gas: whole[1], propane: whole[2] };
+  });
   var months = yms.map(function (ym) {
     var sav = 0;
     d.buildings.forEach(function (b) {
@@ -2463,6 +2487,7 @@ function _rptQFacts(d) {
     notBilled: notBilled,
     months: months,
     shown: shown,
+    parts: parts,
     wxMonths: wxMonths,
     cddBl: d.weather && d.weather.totals ? d.weather.totals.cddBl : null,
     cddCur: d.weather && d.weather.totals ? d.weather.totals.cddCur : null,
@@ -2739,7 +2764,7 @@ function _rptQResultsPage(n, d, f) {
       );
     })
     .join('');
-  var totalPct = d.totals.blCost > 0 ? (f.rowsMeasured / d.totals.blCost) * 100 : 0;
+  var totalPct = d.totals.pctBase > 0 ? (f.rowsMeasured / d.totals.pctBase) * 100 : 0;
   var totRes = f.waiting
     ? { key: 'waiting', word: 'Waiting for weather data', cls: '' }
     : _rptResultKind(f.rowsMeasured, totalPct, tgtTotal);
@@ -2872,7 +2897,7 @@ function _rptQResultsPage(n, d, f) {
     t1 +
     _rptQNote(
       'Percent is savings divided by baseline cost, which is billed cost plus savings: ' +
-        _fmtUSD(d.totals.blCost, '$0') +
+        _fmtUSD(d.totals.pctBase, '$0') +
         ' for the quarter. Savings price the change in usage at each month' + "'" + 's rate and include demand charges.',
     ) +
     '<h2>Savings Measured by Month</h2>' +
@@ -2904,13 +2929,13 @@ function _rptQEnergyPage(n, d, f) {
         '</td><td class="rpt-n">' +
         _rptQN(e.kwCur) +
         '</td>' +
-        _rptQSavTd(e.costSaved) +
+        _rptQSavTd(f.parts[b.id].electric) +
         '</tr>'
       );
     })
     .join('');
   var eSav = d.buildings.reduce(function (s, b) {
-    return s + ((b.electric && b.electric.costSaved) || 0);
+    return s + f.parts[b.id].electric;
   }, 0);
   var eTot =
     '<tr class="rpt-tot"><td>Total</td><td class="rpt-n">' +
@@ -2943,7 +2968,7 @@ function _rptQEnergyPage(n, d, f) {
       if (!x || !x.monthly || !x.monthly.length) return;
       var bl = x[c[2]] || 0,
         cur = x[c[3]] || 0;
-      fSav += x.costSaved || 0;
+      fSav += f.parts[b.id][c[0]];
       fuelRows +=
         '<tr><td>' +
         _escHtml(b.name) +
@@ -2956,7 +2981,7 @@ function _rptQEnergyPage(n, d, f) {
         '</td><td class="rpt-n">' +
         (bl >= 10 ? _rptQPct(((cur - bl) / bl) * 100) : '-') +
         '</td>' +
-        _rptQSavTd(x.costSaved) +
+        _rptQSavTd(f.parts[b.id][c[0]]) +
         '</tr>';
     });
   });
@@ -3036,10 +3061,10 @@ function _rptQFinding(d, f, x) {
   if (r.key === 'over') {
     var eMonths = overMonths('electric');
     var kwhPct = e.kwhBl > 0 ? ((e.kwhCur - e.kwhBl) / e.kwhBl) * 100 : 0;
-    if (e.costSaved < 0)
+    if (f.parts[b.id].electric < 0)
       line +=
         'Electricity cost ' +
-        money(e.costSaved) +
+        money(f.parts[b.id].electric) +
         ' more than baseline: ' +
         _rptQN(Math.abs(Math.round(e.kwhCur) - Math.round(e.kwhBl))) +
         ' kWh ' +
@@ -3049,10 +3074,10 @@ function _rptQFinding(d, f, x) {
         '), over baseline in ' +
         _rptQList(eMonths.length ? eMonths : ['no single month']) +
         '. ';
-    if (g && g.costSaved < -50)
-      line += 'Natural gas cost ' + money(g.costSaved) + ' more: ' + _rptQN(g.thermsCur) + ' therms against a baseline of ' + _rptQN(g.thermsBl) + '. ';
-    if (p && p.costSaved > 0 && p.galBl > 0 && p.galCur === 0)
-      line += 'No propane was delivered in the quarter, which gives a credit of ' + money(p.costSaved) + ' that reflects delivery timing. ';
+    if (g && f.parts[b.id].gas < -50)
+      line += 'Natural gas cost ' + money(f.parts[b.id].gas) + ' more: ' + _rptQN(g.thermsCur) + ' therms against a baseline of ' + _rptQN(g.thermsBl) + '. ';
+    if (p && f.parts[b.id].propane > 0 && p.galBl > 0 && p.galCur === 0)
+      line += 'No propane was delivered in the quarter, which gives a credit of ' + money(f.parts[b.id].propane) + ' that reflects delivery timing. ';
   } else if (r.key === 'short') {
     var miss = _fmtUSD(_rptBuildingTarget(d, b) - b.savings, '$0');
     line += 'Saved ' + money(b.savings) + ', ' + miss + ' below its share of the quarter target. ';
@@ -3444,7 +3469,7 @@ function _rptQSchedulePage(n, d) {
     ['Building', 'Baseline weekday occupied hours', 'Quarter weekday occupied hours', 'Weekend occupied hours', 'Occupied heating and cooling set points, °F'],
     trs,
   );
-  var body = '<h2>Operating Hours and Set Points</h2>' + t;
+  var body = t; // the page header already carries the title
   return rptPage(n, 'Operating Hours and Set Points', body, { data: d, letterhead: false, label: 'Page ' + n + ' - Operating Hours and Set Points' });
 }
 
@@ -3474,7 +3499,7 @@ function _rptQMeterPage(n, d, f) {
         '</td><td class="rpt-n">' +
         (bl >= 10 ? _rptQPct(((cur - bl) / bl) * 100) : '-') +
         '</td>' +
-        _rptQSavTd(x.costSaved) +
+        _rptQSavTd(f.parts[b.id][c[0]]) +
         '</tr>';
     });
   });
@@ -4455,9 +4480,7 @@ function rptPageFinancial(n, d) {
 
   // -- Building Performance table --
   const qTarget = d.contract.quarterlyTargets[q - 1] || 0;
-  // The target share basis is targetWeight (baseline-year cost); blCost is billed cost + savings.
-  const _tw = (x) => (x.targetWeight != null ? x.targetWeight : x.blCost || 0);
-  const totBlCostForPct = d.buildings.reduce((t, x) => t + _tw(x), 0) || 1;
+  const totBlCostForPct = d.totals.blCost || 1;
   const bRows = d.buildings
     .map(function (b) {
       // Problem 3 (2026-09-24, fix/report-headers-and-empty-period): 'no_data' renders its own
@@ -4470,7 +4493,7 @@ function rptPageFinancial(n, d) {
       // Wording and colour come from _rptResultOf, the same as the quarterly report.
       const _res = _rptResultOf(b, d);
       const statusClass = _res.cls;
-      const bldgProjSav = qTarget > 0 ? qTarget * (_tw(b) / totBlCostForPct) : 0;
+      const bldgProjSav = qTarget > 0 ? qTarget * (b.blCost / totBlCostForPct) : 0;
       const bldgProjCost = _rptPVn(d, 'building table', b.id, '', '', 'projected_cost', b.blCost - bldgProjSav);
       return (
         '<tr>' +

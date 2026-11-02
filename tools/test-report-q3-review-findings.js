@@ -235,12 +235,12 @@ assert(!/Jun 2025/.test(q1.totals.euiPeriodLabel), 'Q1 EUI label names no month 
 const q2 = collectQ(2);
 assert(/to Jun 2025/.test(q2.totals.euiPeriodLabel), 'Q2 EUI label ends Jun 2025: ' + q2.totals.euiPeriodLabel);
 
-console.log('\n--- 4. baseline cost = amount billed + savings ---');
+console.log('\n--- 4. percent base = amount billed + savings ---');
 q2.buildings.forEach((b) => {
   const billed = q2.rawBills.filter((r) => r.bid === b.id).reduce((s, r) => s + r.amount, 0);
-  assert(Math.abs(b.blCost - (billed + b.savings)) < 1e-6, b.name + ': blCost = billed ' + billed.toFixed(2) + ' + savings ' + b.savings.toFixed(2));
+  assert(Math.abs(b.pctBase - (billed + b.savings)) < 1e-6, b.name + ': pctBase = billed ' + billed.toFixed(2) + ' + savings ' + b.savings.toFixed(2));
 });
-assert(Math.abs(q2.totals.blCost - q2.buildings.reduce((s, b) => s + b.blCost, 0)) < 1e-6, 'total blCost = sum of building blCost');
+assert(Math.abs(q2.totals.pctBase - q2.buildings.reduce((s, b) => s + b.pctBase, 0)) < 1e-6, 'total pctBase = sum of building pctBase');
 
 // ─── 1 + 2 + 4 on the page HTML (hand-built d) ───
 console.log('\n--- 1, 2, 4. cover and results pages ---');
@@ -249,7 +249,7 @@ function pageData() {
   const com = (savs) => ({ monthly: savs.map((v, i) => mon('2026-0' + (7 + i), v)), kwhBl: 300, kwhCur: 300, kwBl: 30, kwCur: 30, thermsBl: 0, thermsCur: 0, costSaved: 0 });
   // three buildings: months 0.4 + 0.4 + 0.4 each (quarter figure 1.2), baseline-year weights equal
   const bld = (id) => ({
-    id, name: 'Building ' + id, sqft: 10000, status: 'ok', savings: 1.2, savingsPct: 0.1, blCost: 1200, targetWeight: 1000,
+    id, name: 'Building ' + id, sqft: 10000, status: 'ok', savings: 1.2, savingsPct: 0.1, blCost: 1000, pctBase: 1200,
     electric: com([0.4, 0.4, 0.4]), gas: null, propane: null, eui: { baseline: 50, current: 48, cbecs: 60 }, meterDetails: [],
   });
   return {
@@ -257,7 +257,7 @@ function pageData() {
     project: { client: 'Test Client', name: 'Test Project', sqft: 30000 },
     contract: { quarterlyTargets: [100, 100, 100, 100], quarterlyActuals: [9056, 17892, 0], currentYear: 1, years: 3, hasCsc: true, cscPct: 60, clientPct: 40, escalation: 3.5, annualTarget: 400, actualsThroughQuarter: 3 },
     // cumulativeSavings is the OLD wrong value: the pages must not print it
-    totals: { savings: 0, shortfallNotBilled: 0, blCost: 3600, curCost: 3600, kwhBl: 900, kwhCur: 900, thermsBl: 0, thermsCur: 0, peakKwBl: 90, peakKwCur: 90, euiBaseline: 50, euiCurrent: 48, euiPeriodLabel: 'Jan 2026 to Sep 2026 annualized, all fuels', cumulativeSavings: 26968, weatherWaiting: [] },
+    totals: { savings: 0, shortfallNotBilled: 0, blCost: 3000, pctBase: 3600, curCost: 3600, kwhBl: 900, kwhCur: 900, thermsBl: 0, thermsCur: 0, peakKwBl: 90, peakKwCur: 90, euiBaseline: 50, euiCurrent: 48, euiPeriodLabel: 'Jan 2026 to Sep 2026 annualized, all fuels', cumulativeSavings: 26968, weatherWaiting: [] },
     buildings: [bld('A'), bld('B'), bld('C')],
     weather: { monthly: [], totals: { cddBl: 0, cddCur: 0 } },
     rawBills: [],
@@ -282,6 +282,14 @@ const appt = run(ctx, '_rptApportion')([1.4, 1.4, 1.2], 4);
 assert(appt.join(',') === '2,1,1' && appt.reduce((s, v) => s + v, 0) === 4, '_rptApportion adds to the rounded total: ' + appt.join(','));
 assert(f.shown.A['2026-07'] + f.shown.A['2026-08'] + f.shown.A['2026-09'] === 1, 'month cells of a building add to its quarter figure (0.4+0.4+0.4 -> 1)');
 assert(f.months.reduce((s, m) => s + m.sav, 0) === f.rowsMeasured, 'month totals add to the quarter total (' + f.rowsMeasured + ')');
+// fuel parts add to the building total (the Middle School case: electric 3294.4 + gas 359.4, total 3653.8)
+const dp = pageData();
+const bp = dp.buildings[0];
+bp.savings = 3653.8; bp.electric.costSaved = 3294.4; bp.gas = { monthly: bp.electric.monthly, thermsBl: 1, thermsCur: 1, costSaved: 359.4 };
+const fp = run(ctx, '(function(d){ return _rptQFacts(d); })')(dp);
+assert(fp.parts.A.electric + fp.parts.A.gas + fp.parts.A.propane === 3654, 'fuel parts add to the building total: ' + [fp.parts.A.electric, fp.parts.A.gas, fp.parts.A.propane].join('+'));
+const energy = run(ctx, '(function(d,f){ return _rptQEnergyPage(3,d,f); })')(dp, fp).replace(/<[^>]+>/g, ' ');
+assert(/\$3,295/.test(energy) && /\$359/.test(energy) && !/\$3,294/.test(energy), 'page 3 prints the apportioned parts (3,295 and 359)');
 assert(/billed cost plus savings/.test(results), 'percent note states the denominator');
 
 console.log('\n' + passed + ' passed, ' + failed + ' failed');
