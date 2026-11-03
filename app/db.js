@@ -428,6 +428,7 @@ const DB = (() => {
   // The ONE place a key is stamped as "in sync at this server version". For a
   // collection key the server value at that version is kept as the merge base.
   function _setSynced(key, stamp, serverValue) {
+    delete _userEdited[key];
     _replicaVersions[key] = stamp;
     if (_collectionCfg(key)) {
       if (stamp.deleted || serverValue === undefined || serverValue === null) delete _syncBase[key];
@@ -519,6 +520,19 @@ const DB = (() => {
   // block this user's hydration or upload.
   function _hasQueuedWrite(key) {
     return !!_queuedEntryFor(key);
+  }
+  // THE "is a user edit of this key still unsaved" rule for hydration: a write waits in the queue, or one
+  // is being sent right now (_writeBusy). Only such an edit can collide with newer server data. A local
+  // copy that differs from the last synced copy with NO pending write was not made by a save (a page
+  // filled in missing fields, or recomputed a cache): it is not an edit, and the server copy simply wins.
+  // _userEdited[key]: a person's write of this key was accepted and is not yet confirmed by the server
+  // (set by _replicateWrite, cleared by _setSynced and when the write turns out to change nothing). A local
+  // copy with such a mark is a real edit even when its write is no longer queued (for example the user
+  // switched while it was in flight): it is archived when the server copy replaces it.
+  const _userEdited = {};
+  function _hasPendingWrite(key) {
+    // _writeBusy[key] holds the identity epoch + 1 of the send: a send started by an earlier sign-in is not this user's pending write.
+    return _hasQueuedWrite(key) || _writeBusy[key] === _identityEpoch + 1;
   }
   // Identity rule (2026-10-21): only the signed-in user's OWN waiting write counts, for shared keys too.
   // Another user's write never blocks this user's pull and never opens a conflict for this user (it
@@ -653,6 +667,7 @@ const DB = (() => {
       value: payload.deleted ? undefined : payload.value,
       deleted: !!payload.deleted,
       held: isHeld, // a held local draft: kept, never sent by the drain (_holdLocalDraft)
+      cause: payload.cause || null, // why the edit was made (page: action); sent with the write
       baseVersion:
         _replicaVersions[key] && typeof _replicaVersions[key].version === 'number'
           ? _replicaVersions[key].version
@@ -705,6 +720,30 @@ const DB = (() => {
     } catch (e) {
       console.warn('[DB] Failed to append to conflict archive:', e);
     }
+  }
+  // Entries that older builds wrote for a local copy that was NOT an unsaved edit (reason
+  // 'hydration-server-wins' without the neverSynced mark) are not conflicts: a page had filled in or
+  // recomputed fields, and the server copy replaced them. They leave the list by themselves, once per
+  // page load, after the first full pull. An entry stays when its key still has an unsaved edit, when it
+  // is marked neverSynced, when it belongs to another user's per-user key, and for every other reason.
+  let _purgedFalseConflicts = false;
+  function _purgeFalseConflicts() {
+    if (_purgedFalseConflicts) return;
+    const v = _cache['en_conflict_archive'];
+    if (!Array.isArray(v)) return;
+    _purgedFalseConflicts = true;
+    const me = _myUserId();
+    const keep = v.filter(
+      (e) =>
+        !(
+          e &&
+          e.reason === 'hydration-server-wins' &&
+          !e.neverSynced &&
+          _archiveEntryVisible(e, me) &&
+          !_hasPendingWrite(e.key)
+        ),
+    );
+    if (keep.length !== v.length) Promise.resolve(set('en_conflict_archive', keep)).catch(() => {});
   }
   function isConflictArchiveFull() {
     const v = _cache['en_conflict_archive'];
@@ -823,9 +862,13 @@ const DB = (() => {
     const isTombstone = payload.deleted === true;
     const entry = _replicaVersions[key];
     const baseVersion = entry && typeof entry.version === 'number' ? entry.version : null;
+    // Why this write happens: kv-sync.js (once the save-cause build is live) stores it next to the account in updated_by.
+    // A write that reaches here with no cause is a code path that was not given one: it is labelled so
+    // the history shows it and it can be fixed.
+    const cause = payload.cause || 'auto: no cause given';
     const bodyObj = isTombstone
-      ? { key: wireKey, deleted: true, baseVersion }
-      : { key: wireKey, value: stripDerivedCaches(key, payload.value), baseVersion };
+      ? { key: wireKey, deleted: true, baseVersion, cause }
+      : { key: wireKey, value: stripDerivedCaches(key, payload.value), baseVersion, cause };
     // Phase 2b conflict-modal "Overwrite with mine" / "Restore my version"
     // actions set this so kv-sync.js snapshots the row being replaced into
     // kv_history BEFORE the overwrite lands (kv-sync.js handlePut, explicit
@@ -1536,7 +1579,7 @@ const DB = (() => {
   async function _resendMerged(key, value, epoch, depth) {
     let r;
     try {
-      r = await _sendKvPut(key, { value });
+      r = await _sendKvPut(key, { value, cause: 'Sync conflict: merged both versions' });
     } catch (e) {
       r = { status: 'network-error' };
     }
@@ -1546,7 +1589,7 @@ const DB = (() => {
       await _handleConflict(key, { value }, r.body, 'on', depth + 1);
       return;
     }
-    _enqueueWrite(key, { value });
+    _enqueueWrite(key, { value, cause: 'Sync conflict: merged both versions' });
   }
 
   // Write-conflict path for a collection key. Resolves true when it handled
@@ -1718,6 +1761,7 @@ const DB = (() => {
       _setSynced(key, { version: current.version, hash: current.hash || null }, current.value);
       const retryPayload = Object.assign({}, payload, {
         explicitOverwrite: true,
+        cause: 'Sync conflict: ' + (action === 'restore-mine' ? 'Restore my version' : 'Keep mine'),
       });
       let result;
       try {
@@ -1827,14 +1871,107 @@ const DB = (() => {
   // key never overlap, so the second can never 409 against the first.
   const _writeBusy = {};
   const _writeNext = {};
+  // --- Why a write happens (Matt 2026-11-03): no save without a user action, and every save says why. ---
+  // A "cause" is a short text sent with each save: "<page>: <action>" for a
+  // person's change (for example "District Calendar: Sync now", "Projects: Edit") or "auto: <what>" for a
+  // write the code makes itself. A write needs a cause BEFORE it reaches the replication tail:
+  //   * the person did something in the page in the last USER_ACTION_MS (document listeners below), or
+  //   * the caller names an "auto: ..." cause (hydration merge, first upload).
+  // A write with no cause (page load, refresh, recompute, timer, poll) is kept in this browser only:
+  // it is not queued and not sent. The next hydration may replace it with the server copy (it is derived).
+  // Clicks on tabs and menu items are navigation, not changes: they do not count as a user action.
+  const USER_ACTION_MS = 120000;
+  const FILE_ACTION_MS = 15 * 60000; // a file chosen or dropped: big imports run for minutes
+  const NAV_SELECTOR =
+    '.nav-item, .sb-item, .pdt, .ptab, .sidebar a, [onclick^="sv("], [onclick^="sPTab("], [onclick^="openDetail("], [onclick^="showList("], [data-nav]';
+  let _userAction = null; // { at, ms, cause }
+  let _gateUserAction = false; // true when a real page (DOM) is present, see _installActionTracker
+  let _autoLocalCount = 0; // writes kept in this browser only because no user action caused them
+  function _pageLabel() {
+    try {
+      const v = document.querySelector('.view.active');
+      const id = v && v.id ? v.id.replace(/^view-/, '') : '';
+      if (id === 'projects') {
+        const tab = document.querySelector('.pdt.active');
+        if (tab && tab.textContent.trim()) return tab.textContent.trim().slice(0, 40);
+      }
+      const nav = id ? document.querySelector('[onclick^="sv(\'' + id + '\'"]') : null;
+      if (nav && nav.textContent.trim()) return nav.textContent.trim().replace(/\s+/g, ' ').slice(0, 40);
+      return id ? id.charAt(0).toUpperCase() + id.slice(1) : 'Page';
+    } catch (e) {
+      return 'Page';
+    }
+  }
+  function _actionLabel(ev) {
+    try {
+      const t = ev.target && ev.target.closest ? ev.target : null;
+      if (!t) return 'Edit';
+      const b = t.closest('button, a, summary, [role="button"]');
+      if (b && !t.closest('input, textarea, select')) {
+        const txt = (b.getAttribute('aria-label') || b.textContent || b.title || '').replace(/\s+/g, ' ').trim();
+        if (txt) return txt.slice(0, 40);
+      }
+      return 'Edit';
+    } catch (e) {
+      return 'Edit';
+    }
+  }
+  function _onUserEvent(ev) {
+    if (!ev || ev.isTrusted === false) return; // a script-made event is not a person
+    try {
+      if (ev.type === 'keydown' && /^(Tab|Shift|Control|Alt|Meta|Escape|CapsLock)$/.test(ev.key || '')) return;
+      if (
+        (ev.type === 'click' || ev.type === 'pointerdown') &&
+        ev.target &&
+        ev.target.closest &&
+        ev.target.closest(NAV_SELECTOR)
+      ) {
+        return;
+      }
+      const file = ev.type === 'drop' || (ev.target && ev.target.type === 'file');
+      _userAction = {
+        at: Date.now(),
+        ms: file ? FILE_ACTION_MS : USER_ACTION_MS,
+        cause: _pageLabel() + ': ' + _actionLabel(ev),
+      };
+    } catch (e) {
+      /* a label problem must never block a save */
+    }
+  }
+  // For code that knows better than the event labels (and for tests): name the action now.
+  function noteUserAction(cause, ms) {
+    _userAction = { at: Date.now(), ms: ms || USER_ACTION_MS, cause: String(cause).slice(0, 120) };
+  }
+  function _currentCause() {
+    if (_userAction && Date.now() - _userAction.at <= _userAction.ms) return _userAction.cause;
+    return null;
+  }
+  function _installActionTracker() {
+    if (typeof document === 'undefined' || !document.documentElement || typeof document.addEventListener !== 'function') return;
+    _gateUserAction = true;
+    ['pointerdown', 'click', 'keydown', 'input', 'change', 'paste', 'drop', 'submit'].forEach((t) =>
+      document.addEventListener(t, _onUserEvent, true),
+    );
+  }
+  _installActionTracker();
+  function getAutoLocalCount() {
+    return _autoLocalCount;
+  }
+
   async function _replicateWrite(key, payload) {
     if (!_shouldReplicate(key)) return;
+    if (!payload.cause) payload = Object.assign({}, payload, { cause: _currentCause() || undefined });
+    if (!payload.cause && _gateUserAction) {
+      _autoLocalCount++; // no person caused this write: it stays in this browser (see the block above)
+      return;
+    }
+    _userEdited[key] = true;
     payload = Object.assign({}, payload, { owner: _queueOwner() }); // who made this edit, fixed now
     if (_writeBusy[key]) {
       _writeNext[key] = payload;
       return;
     }
-    _writeBusy[key] = true;
+    _writeBusy[key] = _identityEpoch + 1;
     try {
       let p = payload;
       while (p) {
@@ -1883,7 +2020,10 @@ const DB = (() => {
     }
     // A value the server already holds is not sent (opening a pane, a render
     // that re-saves, a migration that changes nothing).
-    if (!payload.deleted && !(await _valueChanged(key, payload.value))) return;
+    if (!payload.deleted && !(await _valueChanged(key, payload.value))) {
+      delete _userEdited[key];
+      return;
+    }
     let result;
     try {
       result = await _putWithAuth(key, payload);
@@ -1937,8 +2077,8 @@ const DB = (() => {
       // Entry may have already been resolved/superseded by a concurrent op.
       if (!_syncQueue.some((e) => e.id === entry.id)) continue;
       const payload = entry.deleted
-        ? { deleted: true, owner: entry.owner }
-        : { value: entry.value, owner: entry.owner };
+        ? { deleted: true, owner: entry.owner, cause: entry.cause }
+        : { value: entry.value, owner: entry.owner, cause: entry.cause };
       // _sendKvPut always reads baseVersion from the live _replicaVersions
       // map (not entry.baseVersion) — a real conflict still 409s honestly.
       let result;
@@ -2159,6 +2299,7 @@ const DB = (() => {
       } finally {
         _hydrateInFlight = null;
         if (_hasFullPull() && _syncQueue.length) _scheduleDrain(); // held entries may go now
+        if (_hasFullPull()) _purgeFalseConflicts();
         if (_archivedLocalThisRun > 0) {
           _showLater(
             _archivedLocalThisRun +
@@ -2197,7 +2338,7 @@ const DB = (() => {
     if (epoch !== _identityEpoch) return;
     // A local edit made during the hash await is never replaced: its own write goes to the server
     // and the server decides if it is a conflict. Keep the local value and stamp as they are.
-    if (_cache[localKey] !== origLocal || _hasQueuedWrite(localKey)) return;
+    if (_cache[localKey] !== origLocal || _hasPendingWrite(localKey)) return;
     mHash = stamp.hash;
     let merged = null; // value to keep locally AND push to the server
     let serverValue = row.value;
@@ -2205,13 +2346,17 @@ const DB = (() => {
     // Collection keys: the ONE per-record merge (_mergeCollection). A record
     // changed on both sides takes the server version here (no modal at load);
     // the local record is archived first and counted for the toast.
-    if (_collectionCfg(localKey) && !row.deleted) {
+    // A copy that was synced before and has no pending edit (checked above) is not merged and sends nothing:
+    // the server copy replaces it (below). Only a copy that never synced is merged and sent (first sync).
+    const syncedBefore = !!(base && base.hash && !base.deleted && !_userEdited[localKey]);
+    if (_collectionCfg(localKey) && !row.deleted && !syncedBefore) {
       collectionMerge = _mergeCollection(localKey, _syncBase[localKey], origLocal, row.value);
       if (collectionMerge !== null) {
         collectionMerge.conflicts.forEach((c) => {
           _appendConflictArchive({
             key: localKey,
             reason: 'hydration-server-wins',
+            neverSynced: true, // a real set-aside copy: this browser had never synced the key
             recordId: c.id,
             losingSide: 'local',
             losingValue: c.local,
@@ -2237,16 +2382,17 @@ const DB = (() => {
         localHash = null;
       }
       if (epoch !== _identityEpoch) return;
-      if (_cache[localKey] !== origLocal || _hasQueuedWrite(localKey)) return; // edited during the hash await: keep it
+      if (_cache[localKey] !== origLocal || _hasPendingWrite(localKey)) return; // edited during the hash await: keep it
       if (!row.deleted && localHash !== null && localHash === mHash) {
         _setSynced(localKey, stamp, row.value); // same content: adopt the version only
         return;
       }
       const unedited = localHash !== null && base && base.hash && base.hash === localHash;
-      if (!unedited) {
+      if (!unedited && !syncedBefore) {
         _appendConflictArchive({
           key: localKey,
           reason: 'hydration-server-wins',
+          neverSynced: true,
           losingSide: 'local',
           losingValue: origLocal,
           losingVersion: base && typeof base.version === 'number' ? base.version : null,
@@ -2262,7 +2408,7 @@ const DB = (() => {
       _setSynced(localKey, stamp, row.value); // base = what the server holds at this version
       let putResult;
       try {
-        putResult = await _sendKvPut(localKey, { value: merged });
+        putResult = await _sendKvPut(localKey, { value: merged, cause: 'auto: merge of first sync' });
       } catch (e) {
         putResult = { status: 'network-error' };
       }
@@ -2274,7 +2420,7 @@ const DB = (() => {
         putResult.status === 'error' ||
         putResult.status === 'held-no-pull' // pull not finished: the merged value waits in the queue
       ) {
-        _enqueueWrite(localKey, { value: merged });
+        _enqueueWrite(localKey, { value: merged, cause: 'auto: merge of first sync' });
       }
       return;
     }
@@ -2685,14 +2831,14 @@ const DB = (() => {
         if (!skip) {
           let r;
           try {
-            r = await _sendKvPut(localKey, { value });
+            r = await _sendKvPut(localKey, { value, cause: 'auto: first upload of local data' });
           } catch (e) {
             r = { status: 'network-error' };
           }
           if (epoch !== _identityEpoch) return;
           if (r.status === 'ok') _uploadProgress.uploaded++;
           else if (r.status === 'network-error' || r.status === 'error') {
-            _enqueueWrite(localKey, { value });
+            _enqueueWrite(localKey, { value, cause: 'auto: first upload of local data' });
             _uploadProgress.failed++;
             _uploadProgress.failures.push({ key: localKey, status: r.status, httpStatus: r.httpStatus || null });
           } else if (r.status === 'conflict') {
@@ -3283,7 +3429,8 @@ const DB = (() => {
     return v;
   }
 
-  function set(key, value) {
+  // `cause` (optional) names a write the code makes itself ("auto: ..."); a person's change needs none.
+  function set(key, value, cause) {
     // F1: removed list items are recorded BEFORE the list write (item copy kept locally).
     if (UNION_KEY_CONFIG[key]) {
       _recordDeletions(key, _lastItems[key] || _itemIds(key, _cache[key]), value, false);
@@ -3300,7 +3447,7 @@ const DB = (() => {
     // of this function's returned Promise (which callers already await for
     // IDB-durability, not backend-durability). When the mode is 'off' this is
     // a single localStorage.getItem call — effectively free.
-    _replicateWrite(key, { value }).catch((e) => console.warn('[DB] replication tail error:', key, e));
+    _replicateWrite(key, cause ? { value, cause } : { value }).catch((e) => console.warn('[DB] replication tail error:', key, e));
     // --- end replication tail ---
 
     if (_usingFallback) {
@@ -3458,8 +3605,8 @@ const DB = (() => {
       r = await _sendKvPut(
         key,
         serverRow
-          ? { value, explicitOverwrite: true, allowBeforeFullPull: true }
-          : { value, allowBeforeFullPull: true },
+          ? { value, explicitOverwrite: true, allowBeforeFullPull: true, cause: 'Restore from backup' }
+          : { value, allowBeforeFullPull: true, cause: 'Restore from backup' },
       );
     } catch (e) {
       r = { status: 'network-error' };
@@ -3596,6 +3743,8 @@ const DB = (() => {
     getForeignQueueInfo,
     queueOwner: _queueOwner,
     entryBelongsTo: _entryBelongsTo,
+    noteUserAction,
+    getAutoLocalCount,
     getConflictArchive,
     getConflictArchiveOthers,
     isConflictArchiveFull,

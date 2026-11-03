@@ -1046,8 +1046,9 @@
     var el = ensureSidebarLink('ch-archive-link');
     if (!el) return;
     if (archive.length > 0) {
-      el.textContent = 'Conflict history (' + archive.length + ')';
-      el.setAttribute('data-sync-short', 'Conflicts ' + archive.length);
+      el.textContent = 'Past conflicts (' + archive.length + ')';
+      el.title = 'These are saved copies of conflicts that are already resolved.';
+      el.setAttribute('data-sync-short', 'Past ' + archive.length);
       el.style.display = '';
       el.onclick = openArchivePanel;
     } else {
@@ -1068,7 +1069,7 @@
     var hdr = document.createElement('div');
     hdr.className = 'ch-archive-hdr';
     var title = document.createElement('span');
-    title.textContent = 'Conflict history (' + sorted.length + ')';
+    title.textContent = 'Past conflicts (' + sorted.length + ')';
     var closeBtn = document.createElement('span');
     closeBtn.className = 'ch-archive-close';
     closeBtn.textContent = '✕';
@@ -1085,8 +1086,8 @@
       intro.className = 'ch-conflict-meta';
       intro.style.marginBottom = '10px';
       intro.textContent =
-        'These are changes that were set aside when two people saved the same item. Nothing is lost. ' +
-        'Each entry says which version was kept and lets you download the other one.';
+        'These conflicts are already resolved. Each entry is a saved copy of a change that was set aside when ' +
+        'two people saved the same item. You can download a copy.';
       body.appendChild(intro);
     }
     if (!sorted.length) {
@@ -1474,7 +1475,7 @@
       var del = document.createElement('button');
       del.className = 'ch-conflict-btn';
       del.textContent = 'Discard';
-      del.title = 'Remove this draft. A copy goes to Conflict history first, so it can still be downloaded.';
+      del.title = 'Remove this draft. A copy goes to Past conflicts first, so it can still be downloaded.';
       del.addEventListener('click', function () {
         window.DB.discardHeldDraft(d.key);
         refresh();

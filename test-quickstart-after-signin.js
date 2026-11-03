@@ -90,7 +90,7 @@ const USER = { name: 'Test User', email: 'test@example.com', initials: 'TU', isR
     eq(s.app, true, 'second visit: signed in');
     eq(s.open, false, 'second visit: no Quick Start modal');
     // 4. first visit already signed in: opens once by the timer
-    await page.evaluate(async () => { DB.set('ch_qs_seen', false); await new Promise((r) => setTimeout(r, 300)); });
+    await page.evaluate(async () => { DB.set('ch_qs_seen', false, 'auto: test setup'); await new Promise((r) => setTimeout(r, 300)); });
     await page.reload();
     await page.waitForTimeout(2500);
     s = await page.evaluate(state);
@@ -129,8 +129,8 @@ const USER = { name: 'Test User', email: 'test@example.com', initials: 'TU', isR
       return open;
     };
     eq(await sign('fake-user-a'), true, 'user A first sign-in: tips open');
-    await page.evaluate(() => { chDismissTip('tip_perf_tab'); return new Promise((r) => setTimeout(r, 1500)); });
-    await page.evaluate(() => { chSetSetting('showTooltips', false); return window.__ev(null); });
+    await page.evaluate(() => { DB.noteUserAction('Test: dismiss tip'); chDismissTip('tip_perf_tab'); return new Promise((r) => setTimeout(r, 1500)); });
+    await page.evaluate(() => { DB.noteUserAction('Test: settings'); chSetSetting('showTooltips', false); return window.__ev(null); });
     eq(await sign('fake-user-a'), false, 'user A signs out and in again: tips do not open');
     eq(await page.evaluate(() => chGetSetting('showTooltips', true)), false, 'user A settings toggle survives sign-in');
     eq(await page.evaluate(() => chIsDismissed('tip_perf_tab')), true, 'user A dismissed tip survives sign-in');

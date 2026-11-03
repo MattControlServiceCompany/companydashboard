@@ -2507,6 +2507,15 @@ async function siteResetAllMeterTableSettings() {
    site-ui.js delegates to this array and should NOT maintain its own copy.
 */
 var RELEASE_NOTES = [
+  { v: 'v2026.11.03.209', date: '2026-11-03', title: 'Saves only after your change; Past conflicts',
+    items: [
+      { type: 'change', text: 'All pages: a page now saves to the server only when you make a change. Opening or reading a page no longer saves anything.' },
+      { type: 'fix', text: 'All pages: when the server has a newer copy and you have no unsaved change, the newer copy loads without a conflict message.' },
+      { type: 'fix', text: 'All pages: old entries that were not real conflicts now clear by themselves.' },
+      { type: 'change', text: 'Footer sync status: the conflict link is now named Past conflicts.' },
+      { type: 'change', text: 'Project > District Calendar tab: opening the tab only reads the calendar feed. Press Sync now to save it.' }
+    ]
+  },
   { v: 'v2026.11.03.208', date: '2026-11-03', title: 'Reports: Download PDF',
     items: [
       { type: 'feature', text: 'Report page: a new Download PDF button sits next to Print in the report toolbar. One click saves the report as a PDF file with the pages exactly as they look on screen, and no print dialog opens.' },

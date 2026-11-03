@@ -2397,13 +2397,13 @@ const ok = (body) => ({ ok: true, status: 200, json: async () => body });
       const raw = () => JSON.parse(L.store.en_conflict_archive || '[]');
       L.DB.__t._appendConflictArchive({
         key: 'ch_pref_x',
-        reason: 'hydration-server-wins',
+        reason: 'write-conflict-server-wins',
         losingSide: 'local',
         losingValue: 'A-private',
       });
       L.DB.__t._appendConflictArchive({
         key: 'en_budget_x',
-        reason: 'hydration-server-wins',
+        reason: 'write-conflict-server-wins',
         losingSide: 'local',
         losingValue: 'shared-loser',
       });
@@ -2430,7 +2430,7 @@ const ok = (body) => ({ ok: true, status: 200, json: async () => body });
       assert.strictEqual(raw().length, 2, "A's entry still stored");
       L.DB.__t._appendConflictArchive({
         key: 'ch_pref_x',
-        reason: 'hydration-server-wins',
+        reason: 'write-conflict-server-wins',
         losingSide: 'local',
         losingValue: 'B-private',
       });

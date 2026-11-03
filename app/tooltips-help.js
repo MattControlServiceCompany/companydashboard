@@ -283,7 +283,7 @@
         if (!DB.hasFullPull()) return false;
         if (DB.get('ch_qs_seen', false)) return false;
         window._chFirstVisit = true;
-        DB.set('ch_qs_seen', true);
+        DB.set('ch_qs_seen', true, 'auto: first sign-in guide shown');
         return true;
       }
       window.chFirstVisit = chFirstVisit;

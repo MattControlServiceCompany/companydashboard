@@ -452,6 +452,9 @@
         '<div style="font-size:13px">Enter the calendar feed address for this project, then choose Save and sync.</div>';
     } else if (!snap) {
       summary = '<div style="font-size:13px">No copy of the feed is saved yet. Choose Sync now.</div>';
+    } else if (s.feedChanged) {
+      summary =
+        '<div class="pcal-msg">The calendar feed has changes that are not saved yet. Choose Sync now to save them.</div>';
     } else {
       summary = '';
     }
@@ -577,6 +580,30 @@
       await sync(pid);
     }
   }
+  // Reads the feed and returns the new copy ({fetchedAt, count, window, leftOut, events}); writes NOTHING.
+  // Sets s.msg and returns null when the feed cannot be read. The ONE feed read: sync (saves) and
+  // pcalAutoSync (only looks) both use it.
+  async function readFeed(pid, cfg, token) {
+    var s = state(pid);
+    var res = await fetch(FN_URL, {
+      method: 'POST',
+      headers: { Authorization: 'Bearer ' + token, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ icsUrl: cfg.icsUrl, timezone: cfg.timezone }),
+    });
+    var body = null;
+    try {
+      body = await res.json();
+    } catch (e) {
+      body = null;
+    }
+    if (!res.ok || !body || !body.ok) {
+      s.msg = (body && body.error) || 'The calendar feed could not be read. The last saved copy is kept.';
+      return null;
+    }
+    var fresh = body.snapshot;
+    return { fetchedAt: fresh.fetchedAt, count: fresh.count, window: fresh.window, leftOut: fresh.leftOut || [], events: fresh.events };
+  }
+  // A person chose Sync now (or Save and sync): read the feed and SAVE the new copy and the history record.
   async function sync(pid) {
     var s = state(pid);
     var cfg = cfgOf(pid);
@@ -588,25 +615,11 @@
     }
     s.busy = true;
     s.msg = '';
+    s.feedChanged = false;
     render(pid);
     try {
-      var res = await fetch(FN_URL, {
-        method: 'POST',
-        headers: { Authorization: 'Bearer ' + token, 'Content-Type': 'application/json' },
-        body: JSON.stringify({ icsUrl: cfg.icsUrl, timezone: cfg.timezone }),
-      });
-      var body = null;
-      try {
-        body = await res.json();
-      } catch (e) {
-        body = null;
-      }
-      if (!res.ok || !body || !body.ok) {
-        s.msg = (body && body.error) || 'The calendar feed could not be read. The last saved copy is kept.';
-        return;
-      }
-      var fresh = body.snapshot;
-      var snap = { fetchedAt: fresh.fetchedAt, count: fresh.count, window: fresh.window, leftOut: fresh.leftOut || [], events: fresh.events };
+      var snap = await readFeed(pid, cfg, token);
+      if (!snap) return;
       var old = snapOf(pid);
       var hist = histOf(pid);
       var id = 'calh_' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
@@ -643,15 +656,28 @@
   window.pcalHasFeed = function (pid) {
     return !!cfgOf(pid);
   };
-  // Called when the District Calendar tab opens, and for every project once per page load (pcalAutoSyncAll). Syncs once if the saved copy is older than 1 hour. No timers.
-  // A second render within 60 seconds does not call again (a failed sync leaves the copy old).
-  window.pcalAutoSync = function (pid) {
+  // Called when the District Calendar tab opens, and for every project once per page load (pcalAutoSyncAll).
+  // If the saved copy is older than 1 hour it READS the feed and compares it with the saved copy. It saves
+  // NOTHING (no copy, no history, no actions: a page saves only when a person makes a change). When the feed
+  // differs, the panel says so and the person chooses Sync now. No timers.
+  // A second render within 60 seconds does not call again (a failed read leaves the copy old).
+  window.pcalAutoSync = async function (pid) {
     var s = state(pid);
     if (s.busy || (s.autoAt && Date.now() - s.autoAt < 60000)) return;
     var token = window.CH_AUTH && window.CH_AUTH.getToken && window.CH_AUTH.getToken();
-    if (!CalendarDiff.needsAutoSync({ cfg: cfgOf(pid), token: token, snap: snapOf(pid), nowMs: Date.now() })) return;
+    var cfg = cfgOf(pid);
+    var saved = snapOf(pid);
+    if (!CalendarDiff.needsAutoSync({ cfg: cfg, token: token, snap: saved, nowMs: Date.now() })) return;
     s.autoAt = Date.now();
-    return sync(pid);
+    try {
+      var snap = await readFeed(pid, cfg, token);
+      if (!snap) return;
+      var d = saved ? CalendarDiff.diffSnapshots(saved, snap) : null;
+      s.feedChanged = !saved || d.added.length + d.removed.length + d.changed.length > 0;
+    } catch (e) {
+      s.feedChanged = false;
+    }
+    render(pid);
   };
   // Runs once per page load, after the first full data pull (event dbFullPull, signed in). Checks every project
   // with a feed through pcalAutoSync (same 1 hour rule). No timers, no polling.

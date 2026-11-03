@@ -54,6 +54,7 @@ const proj = (name) => ({
           {
             key: 'en_eqmatrix_' + PID,
             reason: 'hydration-server-wins',
+            neverSynced: true, // a real set-aside copy; entries without it are not conflicts and clear on load
             losingSide: 'local',
             winningSide: 'server',
             archivedAt: '2026-11-02T16:41:04',
