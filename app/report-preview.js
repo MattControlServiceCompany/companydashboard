@@ -146,7 +146,7 @@ function _rptGeneratePreviewNow(opts, wx) {
   _reportConfig = config;
   _reportData = data;
   window._rptPreviewNoteList = _rptPreviewNotes(data, wx);
-  // exportReportToPDF() (app/report-engine.js) reads window._currentReportData for every report
+  // downloadReportPdf() (app/report-engine.js) reads window._currentReportData for every report
   // type — set it here too so the shared print-to-PDF path (fix/quarterly-text-pdf, 2026-09-25)
   // has the same data the legacy generate*Preview() functions already expose.
   window._currentReportData = data;
@@ -615,7 +615,7 @@ function saveReportTemplate() {
 // fix/quarterly-text-pdf (2026-09-25): downloadReportPDF() (html2canvas + jsPDF raster export,
 // plus its _saveReportToHistory() helper) removed — it produced an image-only PDF with no
 // selectable/searchable text (PyMuPDF get_text() returned '' on every page, 2026-09-25 E2E).
-// The "Download PDF" button now calls exportReportToPDF() (app/report-engine.js) directly, the
+// The "Download PDF" button now calls downloadReportPdf() (app/report-engine.js) directly, the
 // same native window.print()-based text PDF path used by the ASHRAE 36 / Proposal / Client B /
 // Agreement reports (fix/report-not-copyable, 2026-07-22) — that function already branches on
 // which preview container is open (#reportPreviewContainer/#rptPreviewPages for this v2 preview

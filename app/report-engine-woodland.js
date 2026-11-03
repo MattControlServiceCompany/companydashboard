@@ -4,7 +4,7 @@
 // Baseline + BAS Savings Report (7 logical pages) for ONE building with BAS setpoint
 // savings options (A/B/C) stored as savings measures. Self-contained report type
 // (data._woodland = true), built entirely on the existing rptPage()/.rpt-page markup so the
-// generic exportReportToPDF() / exportReportToDocx() (app/report-engine.js) work with ZERO
+// generic downloadReportPdf() / exportReportToDocx() (app/report-engine.js) work with ZERO
 // changes. A fourth export surface, the client-B xlsx exporter(), is added here (ExcelJS,
 // one sheet per page).
 //

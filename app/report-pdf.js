@@ -2,7 +2,7 @@
  * report-pdf.js - one-click "Download PDF" for every report that shows page boxes
  * (savings reports, ASHRAE 36 Audit Report, Service Proposal, audit proposals, Agreement,
  * Sequence of Operations, board and utility audit summaries). ONE shared function:
- * downloadReportPdf(). Print (exportReportToPDF in report-engine.js) stays as it was.
+ * downloadReportPdf(). There is no print path.
  *
  * Method (all in the browser, no server): for each report page, html2canvas draws the page
  * to an image (same pixels as the screen preview), jsPDF puts that image on an 8.5 x 11 in

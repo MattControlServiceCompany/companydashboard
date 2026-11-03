@@ -2507,6 +2507,12 @@ async function siteResetAllMeterTableSettings() {
    site-ui.js delegates to this array and should NOT maintain its own copy.
 */
 var RELEASE_NOTES = [
+  { v: 'v2026.11.03.211', date: '2026-11-03', title: 'Download Word and Download PDF on every report',
+    items: [
+      { type: 'feature', text: 'Reports: every report now has Download Word and Download PDF buttons. One click saves the file to your Downloads folder.' },
+      { type: 'change', text: 'Reports: the Print button and the print dialog are removed. Use Download PDF to print or share.' }
+    ]
+  },
   { v: 'v2026.11.03.210', date: '2026-11-03', title: 'Change history shows what caused each save',
     items: [
       { type: 'change', text: 'Change history: each saved change now records which page and action made it, next to who made it.' }

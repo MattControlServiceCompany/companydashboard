@@ -3067,7 +3067,8 @@ function renderUtilityAuditPanel(content, bldgs, projName, projId) {
         </table></div>
         ${footnotes}
         <div style="padding:16px 18px 20px">
-          <button class="btn btn-primary btn-sm" onclick="printUtilityAudit(${projId})">🖨 Print / Export Report</button>
+          <button class="btn btn-primary btn-sm" onclick="downloadUtilityAudit(${projId}, 'word')">Download Word</button>
+          <button class="btn btn-primary btn-sm" onclick="downloadUtilityAudit(${projId}, 'pdf')">Download PDF</button>
         </div>`;
 }
 

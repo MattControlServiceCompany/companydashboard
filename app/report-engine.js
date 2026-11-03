@@ -3840,7 +3840,7 @@ function showReportOverlay(html, title) {
   // window._currentReportData.project has no .id (app/soo-generator.js:1097-1100,
   // 1152-1155), so it has no report-history identity — hide Save so a user previewing a
   // Sequence document can't write a malformed entry into the SYNCED en_report_history
-  // store. Mirrors the data._soo branches already used in exportReportToPDF/Docx. Export to
+  // store. Mirrors the data._soo branches already used in downloadReportPdf/Docx. Export to
   // Word/PDF remain the correct path for SOO and are untouched.
   var saveBtn = document.getElementById('rptSaveBtn');
   if (saveBtn) {
@@ -3977,6 +3977,8 @@ function printUtilityAudit(projId) {
       return;
     }
     const html = _injectPageNumbers([rptPageAuditSpend(1, data), rptPageAuditEUI(2, data)].join('\n'));
+    // The exporters (Word, PDF, file name) read the open report from here.
+    window._currentReportData = { project: p, _utilityAudit: true };
     showReportOverlay(html, (p.client || p.name || 'Project') + ' — Utility Audit / Energy Use Intensity Report');
   } catch (e) {
     showToast('Error generating utility audit report: ' + e.message, 'error');
@@ -3984,6 +3986,23 @@ function printUtilityAudit(projId) {
   }
 }
 window.printUtilityAudit = printUtilityAudit;
+
+/**
+ * downloadUtilityAudit - one click from the Utility Data page to a Utility Audit file.
+ * Builds the report in the overlay (printUtilityAudit), then downloads it as Word or PDF with
+ * the shared exporters. No print dialog.
+ * @param {number} projId
+ * @param {'word'|'pdf'} kind
+ */
+async function downloadUtilityAudit(projId, kind) {
+  const overlay = document.getElementById('reportOverlay');
+  printUtilityAudit(projId);
+  if (!overlay || overlay.style.display === 'none') return; // no report was built (a toast says why)
+  await new Promise((r) => setTimeout(r, 300));
+  if (kind === 'word') await exportReportToDocx();
+  else await downloadReportPdf();
+}
+window.downloadUtilityAudit = downloadUtilityAudit;
 
 /**
  * _rptContractProgressPct — single source of truth for "how far through the contract are we",
@@ -11255,7 +11274,7 @@ function saveReportToHistory() {
   // reaching the write below produced projectId: "undefined", a blank period, and a
   // mislabeled "Annual" type in the SYNCED en_report_history store — polluting the OTHER
   // user's shared history. Mirrors the data._soo early-return already used in
-  // exportReportToDocx/exportReportToPDF in this same file. Sequence documents have no
+  // exportReportToDocx/downloadReportPdf in this same file. Sequence documents have no
   // report-history identity; the user exports to Word/PDF instead. The Save button is also
   // hidden for SOO previews in showReportOverlay() — this is the defense-in-depth backstop.
   if (data._soo) {
@@ -11305,7 +11324,8 @@ function openReportHistory(projId) {
               </div>
               <div style="display:flex;gap:6px">
                 <button onclick="reopenReport('${entry.id}')" style="padding:4px 10px;font-size:11px;border-radius:4px;border:1px solid var(--s3);background:var(--s1);color:var(--text);cursor:pointer">Open</button>
-                <button onclick="reexportReport('${entry.id}')" style="padding:4px 10px;font-size:11px;border-radius:4px;border:1px solid var(--s3);background:var(--s1);color:var(--text);cursor:pointer">Export PDF</button>
+                <button onclick="reexportReport('${entry.id}', 'word')" style="padding:4px 10px;font-size:11px;border-radius:4px;border:1px solid var(--s3);background:var(--s1);color:var(--text);cursor:pointer">Download Word</button>
+                <button onclick="reexportReport('${entry.id}', 'pdf')" style="padding:4px 10px;font-size:11px;border-radius:4px;border:1px solid var(--s3);background:var(--s1);color:var(--text);cursor:pointer">Download PDF</button>
                 <button onclick="deleteReport('${entry.id}')" style="padding:4px 10px;font-size:11px;border-radius:4px;border:1px solid var(--s3);background:var(--s1);color:var(--text3);cursor:pointer">✕</button>
               </div>
             </div>`;
@@ -11328,7 +11348,7 @@ function reopenReport(entryId) {
   showReportOverlay(entry.html, `${entry.projectName} — ${entry.period} (saved)`);
 }
 
-async function reexportReport(entryId) {
+async function reexportReport(entryId, kind) {
   const history = DB.get('en_report_history', []);
   const entry = history.find((h) => h.id === entryId);
   if (!entry) {
@@ -11337,10 +11357,18 @@ async function reexportReport(entryId) {
   }
 
   document.getElementById('reportHistoryModal').style.display = 'none';
+  // A saved entry keeps only its page HTML. The export needs a report-data object for the file
+  // name, so describe this entry (do not reuse the data of the report opened last).
+  window._currentReportData = {
+    project: { id: entry.projectId, client: entry.projectName },
+    period: { type: entry.type, label: entry.period },
+  };
   showReportOverlay(entry.html, 'Exporting...');
 
   await new Promise((r) => setTimeout(r, 500));
-  await exportReportToPDF();
+  // The overlay shows the saved report; export it as a file (no print dialog).
+  if (kind === 'word') await exportReportToDocx();
+  else await downloadReportPdf();
 }
 
 function deleteReport(entryId) {
@@ -11353,8 +11381,8 @@ function deleteReport(entryId) {
 }
 
 /**
- * _rptReportExportPages - the pages of the report that is open now. Shared by the print path
- * (exportReportToPDF) and the one-click file path (downloadReportPdf, app/report-pdf.js), so both
+ * _rptReportExportPages - the pages of the report that is open now. Shared by the PDF path
+ * (downloadReportPdf, app/report-pdf.js) and the Word path (exportReportToDocx), so both
  * export the same pages.
  * The Quarterly/Annual preview (report-preview.js) renders into #reportPreviewContainer /
  * #rptPreviewPages; every other report renders into #reportOverlay / #reportPages. The two
@@ -11389,76 +11417,6 @@ function _rptForceOpenTierPanels(pagesRoot) {
       panel.style.display = prior[i];
     });
   };
-}
-
-/**
- * exportReportToPDF — 2026-07-22 rewrite (fix/report-not-copyable). Matt: "The PDF is still
- * not copyable like I would like."
- *
- * OLD BEHAVIOR: rasterized each `#reportPages .rpt-page` into a JPEG via html2canvas, then
- * placed those images into a jsPDF document. The resulting PDF contained zero real text —
- * every character was baked into a bitmap, so nothing was selectable, copyable, or
- * searchable, regardless of how good it looked.
- *
- * NEW BEHAVIOR: uses the browser's own native print-to-PDF path (window.print(), same
- * mechanism as the "🖨 Print" button on the BAS scorecard — see app/scorecard.js). The
- * `@media print` rules added alongside `#report-styles` in energy-department.html scope
- * printing to just the open report overlay, strip the dark preview chrome, and turn each
- * `.rpt-page` into its own physical page via `break-after: page`. Choosing "Save as PDF" as
- * the destination in the print dialog produces a genuinely text-based PDF straight from the
- * live DOM — every heading/paragraph/table cell is real selectable/searchable text, and the
- * inline-SVG bar charts render as real vector paths instead of a raster image. This covers
- * every report type `#reportPages` renders (Audit Report, Service Proposal, quarterly/annual
- * Savings Report) since they all share the same `.rpt-page` markup.
- *
- * TRADEOFF (accepted per task spec): the user now sees the browser's print dialog and must
- * choose "Save as PDF" instead of getting an instant silent download. This is a completely
- * standard, universally-understood flow, so the button keeps its existing "Export to PDF"
- * label — the outcome (a PDF of this report) is unchanged, only the interaction is.
- *
- * `document.title` is temporarily set to the same filename the old jsPDF path used (minus
- * extension) so Chrome's "Save as PDF" dialog suggests the same filename by default.
- */
-async function exportReportToPDF() {
-  const data = window._currentReportData;
-  if (!data) {
-    showToast('No report data available');
-    return;
-  }
-
-  const found = _rptReportExportPages(data);
-  if (!found.pages.length) {
-    showToast('No report pages to export');
-    return;
-  }
-  const restoreTierPanels = _rptForceOpenTierPanels(found.pagesRoot);
-  // The one file-name rule (lib/report-file-name.js), without extension: seeds the browser's
-  // "Save as PDF" file name suggestion via document.title.
-  const filename = rptReportFileName(data, '');
-  const originalTitle = document.title;
-  document.title = filename;
-
-  let restored = false;
-  const restore = () => {
-    if (restored) return;
-    restored = true;
-    restoreTierPanels();
-    document.title = originalTitle;
-    window.removeEventListener('afterprint', restore);
-  };
-
-  // afterprint covers browsers/OSes where window.print() returns before the dialog closes;
-  // the direct call below covers the common desktop case where it blocks until dismissed.
-  // `restored` guards against double-restore when both fire.
-  window.addEventListener('afterprint', restore);
-
-  showToast('Opening print dialog — choose "Save as PDF" to export this report');
-
-  try {
-    window.print();
-  } finally {
-    restore();
-  }
 }
 
 /**
@@ -11515,8 +11473,7 @@ function _buildReportCssVarResolver(cssText) {
 }
 
 /**
- * exportReportToWord — additional export option alongside exportReportToPDF() (does not
- * replace it). Produces a genuinely editable Microsoft Word document from the exact same
+ * exportReportToWord — Word export option. Produces a genuinely editable Microsoft Word document from the exact same
  * `#reportPages .rpt-page` markup the PDF export captures, instead of a flattened
  * html2canvas raster image.
  *
@@ -11565,7 +11522,7 @@ async function exportReportToWord() {
 
   showToast('Generating Word document...');
 
-  // Same tier-detail force-expand as exportReportToPDF() (see comment above that function):
+  // Same tier-detail force-expand as downloadReportPdf() (see _rptForceOpenTierPanels):
   // whichever tier(s) the user had collapsed in the live preview must still render fully
   // expanded in the exported document. Restored in `finally`.
   const tierDetailPanels = document.querySelectorAll('#reportPages [id^="rpt-tier-detail-"]');
@@ -12920,24 +12877,18 @@ async function exportReportToDocx() {
     return;
   }
 
-  const pagesContainer = document.getElementById('reportPages');
-  const pages = pagesContainer ? pagesContainer.querySelectorAll('.rpt-page') : [];
+  // Same pages as print and Download PDF: _rptReportExportPages() picks the open container
+  // (v2 preview #rptPreviewPages, or the overlay #reportPages). Pages the section list hides
+  // are left out.
+  const found = _rptReportExportPages(data);
+  const pages = found.pages.filter((p) => p.getClientRects().length > 0);
   if (!pages.length) {
     showToast('No report pages to export');
     return;
   }
 
-  // Same tier-detail force-expand as exportReportToPDF()/exportReportToWord() (see comment on
-  // exportReportToPDF above): whichever tier(s) the user had collapsed in the live preview must
-  // still render fully expanded in the exported document. Restored in `finally`. No-op for the
-  // Agreement (has no tier-detail panels) — kept for the Proposal/Audit documents Steps 7-8 wire
-  // through this same function next.
-  const tierDetailPanels = document.querySelectorAll('#reportPages [id^="rpt-tier-detail-"]');
-  const tierDetailPriorDisplay = [];
-  tierDetailPanels.forEach((panel) => {
-    tierDetailPriorDisplay.push(panel.style.display);
-    panel.style.display = 'block';
-  });
+  // Same tier-detail force-expand as print and Download PDF (_rptForceOpenTierPanels).
+  const restoreTierPanels = _rptForceOpenTierPanels(found.pagesRoot);
 
   showToast('Generating Word document...');
 
@@ -12999,9 +12950,7 @@ async function exportReportToDocx() {
     console.error('Word (.docx) export failed:', err);
     showToast('Word export failed: ' + (err && err.message ? err.message : err), 'error');
   } finally {
-    tierDetailPanels.forEach((panel, i) => {
-      panel.style.display = tierDetailPriorDisplay[i];
-    });
+    restoreTierPanels();
   }
 }
 window.exportReportToDocx = exportReportToDocx;
@@ -21663,7 +21612,7 @@ function _rptA36PhaseTableInnerHTML(d, opts) {
  * no page-height handling. Measured against real Client D data (project 1779664753271) under the
  * app's DEFAULT proposal section selection: the unpaginated page's content stood 1366-1378px tall
  * against the fixed 1056px page box (roughly 30% overflow), and the real print path
- * (page.emulateMedia('print') + page.pdf(), the same mechanism exportReportToPDF()'s
+ * (page.emulateMedia('print') + page.pdf(), the same mechanism downloadReportPdf()'s
  * window.print() uses) let the single overflowing `.rpt-page` grow past its footer, so the
  * footer/page-number graphic landed mid-page-3 overlapping cut-off "Sequence categories addressed
  * in future work:" text, while every footer still read "Page X of 3" (the page-numbering system
@@ -22420,7 +22369,7 @@ function rptPageASHRAE36ProposalScope(n, d) {
  * affordance in the live #reportOverlay preview (rptPageASHRAE36ProposalPricing). Toggles the
  * matching detail panel's visibility and flips the button's chevron/aria-expanded state.
  * This interactivity lives ONLY in the live overlay DOM — the exported PDF is a flat
- * html2canvas raster (no click survives export), so exportReportToPDF() force-expands every
+ * html2canvas raster (no click survives export), so downloadReportPdf() force-expands every
  * tier's panel before capture instead of relying on this function. See
  * _rptA36TierDetailPanelHTML / _rptA36TierDetailToggleHTML below.
  */
@@ -22682,7 +22631,7 @@ function _rptA36HardwareCategoryAgg(rows, toggles) {
  * CATEGORY via _rptA36HardwareCategoryAgg instead of one bullet per distinct item name — a
  * portfolio with 40+ distinct hardware line items previously produced 40+ bullets; it now produces
  * one line per category (a handful) plus one summary line for every existing-controller I/O point
- * needing only programming exposure. Starts hidden (display:none) — exportReportToPDF() forces
+ * needing only programming exposure. Starts hidden (display:none) — downloadReportPdf() forces
  * every tier's panel open before html2canvas so nothing is hidden in the flat PDF.
  */
 function _rptA36TierDetailPanelHTML(key, tt, summaryData, estimateState, wantItemized, fmtUSD) {
@@ -23263,10 +23212,10 @@ function rptPageASHRAE36ProposalPricing(n, d, opts) {
   // single-page 3-column table unconditionally, on the documented assumption ("3 tiers x 1
   // total cannot overflow one 8.5x11 sheet" — see this function's header comment) that predates
   // the 2026-07-19 click-to-expand panel and the 2026-07-22 itemized qty x unit price additions.
-  // exportReportToPDF()/exportReportToWord() force EVERY tier's panel open (display:block)
+  // downloadReportPdf()/exportReportToWord() force EVERY tier's panel open (display:block)
   // before capture — for a large portfolio (e.g. Client D's Full Scope tier: 80+ distinct
   // hardware/programming items) that blew the page's real height to several times 1056px.
-  // .rpt-page itself never clips (min-height + overflow:visible), but exportReportToPDF()'s
+  // .rpt-page itself never clips (min-height + overflow:visible), but downloadReportPdf()'s
   // html2canvas->jsPDF step draws one image per PDF page sized to the page's full scrollHeight
   // WITHOUT clamping that image's height to the physical page height — so once a page's real
   // content exceeds roughly one printable page's worth of height, the excess is hard-clipped at
@@ -23283,7 +23232,7 @@ function rptPageASHRAE36ProposalPricing(n, d, opts) {
   // see the "after3" verification screenshot for a fully-loaded example) comfortably fits in the
   // TOP HALF of the 1056px page even with every optional block shown, leaving ~450-500px of
   // headroom; at ~14px/bullet + ~80px panel chrome, 24 combined items uses ~416px — safely
-  // within that headroom, and far below the ~1197px scrollHeight where exportReportToPDF's
+  // within that headroom, and far below the ~1197px scrollHeight where downloadReportPdf's
   // per-page image would actually start clipping against the physical PDF page edge (see the
   // comment above the detailRow/detailNoteRow branch below for that derivation). Small/medium
   // real portfolios (a handful of buildings) stay on the original interactive inline path;
@@ -24719,7 +24668,7 @@ function generateASHRAE36Preview() {
       ? data.project.name + ' — ASHRAE 36 Service Proposal'
       : data.project.name + ' — ASHRAE 36 Audit Report';
 
-  // Expose report data so exportReportToPDF() and saveReportToHistory() can use it.
+  // Expose report data so downloadReportPdf() and saveReportToHistory() can use it.
   // Store the report type alongside so the filename builder can distinguish Audit vs Proposal.
   data._ashrae = { type: type, title: reportTitle };
   window._currentReportData = data;
@@ -24964,7 +24913,7 @@ function generateAuditProposalHTML(data) {
 // generateAuditProposalPreview — entry point wired to the "Generate ... Audit Proposal"
 // buttons in the Audit Estimate section (app/audit-estimate.js). Opens the same report
 // overlay every other report type uses (showReportOverlay/_updateOverlayPageNumbers), and
-// tags window._currentReportData._auditProposal so exportReportToPDF()'s filename branch
+// tags window._currentReportData._auditProposal so downloadReportPdf()'s filename branch
 // (see the data._auditProposal check added there) and the print pipeline recognize it — no
 // new export mechanism.
 function generateAuditProposalPreview(projId, auditType) {

@@ -49,5 +49,6 @@ eq(
   'A-B- -C- - Annual 2026 Savings Report 2026.11.03.pdf',
   'characters Windows rejects become a dash',
 );
+eq(rptReportFileName({ project: proj, _utilityAudit: true }, '.docx', NOW), 'Test District - Utility Audit 2026.11.03.docx', 'utility audit');
 console.log('=== report file name: ' + passed + ' passed, ' + failed + ' failed ===');
 process.exit(failed ? 1 : 0);
