@@ -55,11 +55,14 @@ sandbox.localStorage = {
 };
 const ctx = vm.createContext(sandbox);
 const load = (rel) => new vm.Script(fs.readFileSync(path.join(REPO, rel), 'utf8'), { filename: rel }).runInContext(ctx);
-// load order copied from energy-department.html (same as the other node harnesses)
-['lib/date-helpers.js','lib/formatting.js','lib/unit-conversion.js','computations/physics.js','computations/fan-savings.js',
- 'computations/cost-lines.js','computations/rates.js','computations/regression.js','computations/normalization.js',
- 'computations/eui.js','computations/hvac-enduse.js','computations/end-use.js','computations/pollution.js',
- 'computations/csc.js','computations/savings.js','computations/bill-flags.js','app/utility-data.js','app/core.js'].forEach(load);
+// Load the SAME external scripts, in the SAME order, as the real page (read from its <script src> tags).
+// Only page chrome with no data path (theme paint, sign-in, sidebar, feedback widget) and app/db.js (the harness supplies DB from the backup) is skipped.
+// A hand-kept list let report-data.js / report-engine.js / the pricing and equipment files drift out of the harness.
+const PAGE_SCRIPTS = Array.from(
+  fs.readFileSync(path.join(REPO, 'energy-department.html'), 'utf8').matchAll(/<script[^>]+src="([^"?]+)(?:\?[^"]*)?"/g),
+  (m) => m[1],
+).filter((rel) => !/^https?:/.test(rel) && fs.existsSync(path.join(REPO, rel)) && !/^(lib\/theme|app\/ch-auth|app\/db|sidebar-mode|feedback-widget)\.js$/.test(rel));
+PAGE_SCRIPTS.forEach(load);
 new vm.Script(
   "projects=sget('en_projects',[])||[]; sget('en_customers',[]).forEach(function(c){var d=sget('en_utility_'+c.id,null); if(d) utilityData[c.id]=d;});",
 ).runInContext(ctx);
@@ -67,7 +70,16 @@ const probe = JSON.parse(
   new vm.Script('JSON.stringify((' + gate.probeInPage.toString() + ')())', { filename: 'probe' }).runInContext(ctx),
 );
 
+
+// Guard: every function the savings / probe path calls must exist in the harness (an undefined one = harness gap).
 let fail = 0;
+Object.keys(probe).filter((k) => k.startsWith('__error.')).forEach((k) => {
+  const m = String(probe[k]).match(/(\w+) is not defined/g);
+  if (m) {
+    fail++;
+    console.log('FAIL harness: ' + k + ' -> ' + probe[k]);
+  }
+});
 const missing = gate.missingInputKeys(oracle, backup);
 if (missing.length) {
   fail++;

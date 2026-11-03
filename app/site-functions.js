@@ -2507,6 +2507,11 @@ async function siteResetAllMeterTableSettings() {
    site-ui.js delegates to this array and should NOT maintain its own copy.
 */
 var RELEASE_NOTES = [
+  { v: 'v2026.11.03.212', date: '2026-11-03', title: 'Internal test update, no change to the site',
+    items: [
+      { type: 'change', text: 'Behind the scenes: the automatic savings check now loads the same scripts as the Energy page. Nothing changes on screen.' }
+    ]
+  },
   { v: 'v2026.11.03.211', date: '2026-11-03', title: 'Download Word and Download PDF on every report',
     items: [
       { type: 'feature', text: 'Reports: every report now has Download Word and Download PDF buttons. One click saves the file to your Downloads folder.' },
