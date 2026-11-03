@@ -2379,7 +2379,7 @@ function renderUDProjAggPanel(content) {
     // 2026-09-15 (SA-gate fix): the % fallback below never checked the project's `sa`
     // (Service Agreement #). Same gate as getMeterSavings/getBldgMeasureSavingsByMo —
     // no contract means no projected savings.
-    const _hasSA = projHasContract(udSelProjId);
+    const _hasContract = projHasContract(udSelProjId);
     const _perfProjSavByMo = Array(12).fill(0);
     bldgs.forEach((b) => {
       const msrSav = getBldgMeasureSavingsByMo(udSelProjId, b.id);
@@ -2387,7 +2387,7 @@ function renderUDProjAggPanel(content) {
         msrSav.forEach((v, mo) => {
           _perfProjSavByMo[mo] += v;
         });
-      } else if (_hasSA) {
+      } else if (_hasContract) {
         const savPct = getBspCfg(b).savingsPct / 100; // one reader
         const bMoBase = aggBaseMoMapForBldgs([b]);
         for (let mo = 0; mo < 12; mo++) _perfProjSavByMo[mo] += (bMoBase[mo] || 0) * savPct;
@@ -9685,7 +9685,7 @@ function bpRecalc() {
   // 2026-09-15 (SA-gate fix): the manual "savings %" projection fallback (used when no
   // measures exist) never checked the project's `sa` (Service Agreement #). Same gate as
   // getMeterSavings/getBldgMeasureSavingsByMo — no contract means no projected savings.
-  const _hasSA = projHasContract(_projId);
+  const _hasContract = projHasContract(_projId);
 
   // Actual savings per calendar month (re-computed from stored data if available, or from b)
   // We re-use _bpActualSavingsByCalMo if set, else re-derive
@@ -9761,7 +9761,7 @@ function bpRecalc() {
       if (col.mos) return col.mos.reduce((s, mo) => s + (_msrSavByMo[mo] || 0), 0);
       return 0;
     }
-    return _hasSA ? getBase(col) * savPct : 0;
+    return _hasContract ? getBase(col) * savPct : 0;
   };
   // Months with no weather yet block their quarter: no savings figure (weatherWaitingMonths, computations/savings.js).
   const _bpWaitYms = hasActual ? weatherWaitingMonths(udSelProjId, Object.keys(_bpActualSavingsByYM || {}).sort()) : [];
@@ -9815,7 +9815,7 @@ function bpRecalc() {
 
   // Row definitions
   const annActSav = hasActual ? _bpActSavFor(Object.keys(_bpActualSavingsByYM || {}).sort()) : null;
-  const annProjSav = _useMeasures ? _msrSavByMo.reduce((s, v) => s + v, 0) : _hasSA ? annBase * savPct : 0;
+  const annProjSav = _useMeasures ? _msrSavByMo.reduce((s, v) => s + v, 0) : _hasContract ? annBase * savPct : 0;
   const projPct = annBase > 0 ? ((annProjSav / annBase) * 100).toFixed(0) + '%' : null;
   const actPct = hasActual && annBase > 0 ? ((annActSav / annBase) * 100).toFixed(1) + '%' : null;
 
@@ -10335,7 +10335,7 @@ function bspRecalc() {
   // 2026-09-15 (SA-gate fix): the manual "savings %" projection fallback (used when no
   // measures exist) never checked the project's `sa` (Service Agreement #). Same gate as
   // getMeterSavings/getBldgMeasureSavingsByMo — no contract means no projected savings.
-  const _hasSA = projHasContract(_projId);
+  const _hasContract = projHasContract(_projId);
   function bspGetProjSav(col) {
     if (_useM) {
       if (col.isTotal) return _msrSav.reduce((s, v) => s + v, 0);
@@ -10343,7 +10343,7 @@ function bspRecalc() {
       if (col.mos) return col.mos.reduce((s, mo) => s + (_msrSav[mo] || 0), 0);
       return 0;
     }
-    if (!_hasSA) return 0;
+    if (!_hasContract) return 0;
     const base = view === 'monthly' ? (col.isTotal ? annBase : moBase[col.mo]) : colBaseQ(col);
     return base * savPct;
   }
@@ -10361,9 +10361,9 @@ function bspRecalc() {
           return projSav;
         case 'client':
           // 2026-09-15 (SA-gate fix): compensation cannot exist without a contract.
-          return _hasSA ? base * cliPct : 0;
+          return _hasContract ? base * cliPct : 0;
         case 'csc':
-          return _hasSA ? base * cscPct : 0;
+          return _hasContract ? base * cscPct : 0;
       }
     });
     const labels = {
@@ -10458,7 +10458,7 @@ function bspRecalc() {
             </div>
             <div style="background:var(--s2);border:1px solid var(--border);border-radius:9px;padding:12px 14px">
               <div style="font-size:10px;color:var(--text2);text-transform:uppercase;letter-spacing:.6px;font-weight:700;margin-bottom:4px">Annual Projected Spend</div>
-              <div style="font-size:18px;font-weight:800;font-family:var(--head);color:var(--text)">${$f(annBase - (_useM ? _msrSav.reduce((s, v) => s + v, 0) : _hasSA ? annBase * savPct : 0))}</div>
+              <div style="font-size:18px;font-weight:800;font-family:var(--head);color:var(--text)">${$f(annBase - (_useM ? _msrSav.reduce((s, v) => s + v, 0) : _hasContract ? annBase * savPct : 0))}</div>
             </div>
             <div style="background:var(--s2);border:1px solid var(--border);border-radius:9px;padding:12px 14px">
               <div style="font-size:10px;color:var(--text2);text-transform:uppercase;letter-spacing:.6px;font-weight:700;margin-bottom:4px">Total Projected Savings</div>
@@ -10468,7 +10468,7 @@ function bspRecalc() {
             ${_showCsc ? `
             <div style="background:var(--s2);border:1px solid var(--border);border-radius:9px;padding:12px 14px">
               <div style="font-size:10px;color:var(--text2);text-transform:uppercase;letter-spacing:.6px;font-weight:700;margin-bottom:4px">CSC Cumulative</div>
-              <div style="font-size:18px;font-weight:800;font-family:var(--head);color:var(--em2)">${$f(_hasSA ? annBase * cscPct * years : 0)}</div>
+              <div style="font-size:18px;font-weight:800;font-family:var(--head);color:var(--em2)">${$f(_hasContract ? annBase * cscPct * years : 0)}</div>
               <div style="font-size:11px;color:var(--text2);margin-top:2px">over ${years} yr${years > 1 ? 's' : ''}</div>
             </div>
             ` : ''}

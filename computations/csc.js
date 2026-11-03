@@ -4,9 +4,8 @@
 // getProjectContract — THE keeper for a project's contract type and CSC share (WP-29).
 // Types: 'sharedSavings' (profit sharing, CSC gets a % of savings), 'fixedProject' (one-time fixed
 // cost, no CSC share), 'none' (no contract). The one % is Project Settings cscCompensation.
-// A project saved before contract types existed (no type, but a % > 0) is read as sharedSavings;
-// nothing is written back. cscPct is a number only for sharedSavings with a valid % (>0, <=100).
-// needsPct = no valid % on sharedSavings (warn, block). hasContract = type not 'none' AND p.sa saved.
+// An unset type is no contract (no fallback from the %). cscPct is a number only for sharedSavings with a valid % (>0, <=100).
+// needsPct = no valid % on sharedSavings (warn, block). hasContract = type set and not 'none' (SA# plays no part).
 var CONTRACT_TYPE_LABELS = {
   sharedSavings: 'Shared savings (CSC share)',
   fixedProject: 'Fixed project (no shared savings)',
@@ -17,14 +16,13 @@ function getProjectContract(p) {
   var pct = parseFloat(p.cscCompensation);
   var validPct = isFinite(pct) && pct > 0 && pct <= 100;
   var type = p.contractType && CONTRACT_TYPE_LABELS[p.contractType] ? p.contractType : null;
-  if (!type && validPct) type = 'sharedSavings';
   var shared = type === 'sharedSavings';
   return {
     type: type,
     cscPct: shared && validPct ? pct : null,
     clientPct: shared && validPct ? 100 - pct : null,
     needsPct: shared && !validPct,
-    hasContract: type !== 'none' && !!p.sa,
+    hasContract: !!type && type !== 'none', // contract type decides; the SA# plays no part (Matt, 2026-11-03)
   };
 }
 

@@ -197,7 +197,7 @@ function probeInPage() {
       Object.keys(Q).forEach((q) => {
         const t = totalSavingsWithPresented(p.id, Q[q], perB);
         put(ps + '.savings.' + q + '.total', t.total);
-        if (p.sa) {
+        if (projHasContract(p.id)) {
           bl.forEach((b) => {
             const v = t.byBldg[b.id];
             if (v) put(ps + '.savings.' + q + '.bldg.' + slug(b.name), v);
@@ -209,7 +209,7 @@ function probeInPage() {
       Object.keys(Q).forEach((q) => {
         const t = totalSavingsWithPresented('__no-presented-records__', Q[q], perB);
         put(ps + '.savings-recalculated.' + q + '.total', t.total);
-        if (p.sa) {
+        if (projHasContract(p.id)) {
           bl.forEach((b) => {
             const v = t.byBldg[b.id];
             if (v) put(ps + '.savings-recalculated.' + q + '.bldg.' + slug(b.name), v);

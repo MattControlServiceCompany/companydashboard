@@ -644,15 +644,15 @@ function collectReportData(projId, buildingIds, reportDateStr, reportType, selec
     // fall through to 'on_track' (or any target-comparison status). This overrides the
     // target-comparison result unconditionally once there is no in-period data to compare.
     if (!bldgHasBillsInPeriod) bldgStatus = 'no_data';
-    // 2026-09-24 (fix/report-followup, problem 3): a project with no Service Agreement on file
-    // (p.sa === '') is a project computeCscSplit/getMeterSavings deliberately never books
+    // 2026-09-24 (fix/report-followup, problem 3): a project with no contract (type none or unset)
+    // is a project computeCscSplit/getMeterSavings deliberately never books
     // dollar savings for (computations/savings.js "SA-gate fix," 2026-09-15) -- bldgSavings
     // stays $0 by design, NOT a bug. But bldgSavingsPct then also stays stuck at 0, which
     // clears the on_track threshold whenever targetPct is likewise 0 (unconfigured), so this
     // building was reading as "On Track" -- a performance claim with no computed basis. Distinct
     // from 'no_data': this building DOES have bills, so 'no_data' ("No bills for this period")
     // would be false here. Never change the underlying $0 -- only the misleading status claim.
-    else if (!p.sa) bldgStatus = 'no_contract';
+    else if (!projHasContract(p.id)) bldgStatus = 'no_contract';
 
     // Accumulate project totals
     totKwhBl += elec.kwhBl;

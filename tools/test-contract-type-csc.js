@@ -50,7 +50,7 @@ if (typeof gc === 'function') {
   c = gc(P({ contractType: 'none', cscCompensation: 60 }));
   ok(c.type === 'none' && c.cscPct === null && !c.needsPct, 'no contract ignores a stored %');
   c = gc(P({ cscCompensation: 80 }));
-  ok(c.type === 'sharedSavings' && c.cscPct === 80, 'type not saved + % saved -> read as shared savings 80');
+  ok(c.type === null && c.cscPct === null && c.hasContract === false, 'type not saved + % saved -> no contract (no type fallback from the %)');
   c = gc(P({}));
   ok(c.type === null && c.cscPct === null && !c.needsPct, 'nothing saved -> no type, no %, no warning');
 }
@@ -70,7 +70,9 @@ ok(!!t.ctx.generateAgreementHTML(1, 'oneTimeCost', {}), 'one-time cost agreement
 if (typeof gc === 'function') {
   ok(gc(P({ contractType: 'none', sa: 'SA-1' })).hasContract === false, "'none' + SA number -> no contract");
   ok(gc(P({ contractType: 'fixedProject', sa: 'SA-1' })).hasContract === true, 'fixed project + SA number -> contract');
-  ok(gc(P({ contractType: 'sharedSavings', cscCompensation: 50 })).hasContract === false, 'no SA number -> no contract');
+  ok(gc(P({ contractType: 'sharedSavings', cscCompensation: 50 })).hasContract === true, 'shared savings, no SA number -> contract (SA# plays no part)');
+  ok(gc(P({ contractType: 'fixedProject' })).hasContract === true, 'fixed project, no SA number -> contract');
+  ok(gc(P({ contractType: 'none' })).hasContract === false, "'none', no SA number -> no contract");
   const t2 = makeCtx([P({ contractType: 'none', sa: 'SA-1' }), P({ id: 2, contractType: 'fixedProject', sa: 'SA-2' })]);
   vm.runInContext(rd('computations/savings.js'), t2.ctx);
   ok(t2.ctx.projHasContract(1) === false && t2.ctx.projHasContract(2) === true, 'projHasContract follows the keeper');

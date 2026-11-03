@@ -60,8 +60,8 @@ const mkMeter = (id) => ({
   baseline: { months: Array.from({ length: 12 }, (_, i) => '2029-' + p2(i + 1)) },
 });
 const projects = [
-  { id: 1, sa: 'SA-TEST' },
-  { id: 2, sa: '' },
+  { id: 1, sa: 'SA-TEST', contractType: 'fixedProject' },
+  { id: 2, sa: '', contractType: 'none' },
 ];
 const bldgs = { 1: { id: 'b1', meters: [mkMeter('mC')] }, 2: { id: 'b2', meters: [mkMeter('mN')] } };
 const sb = { console };

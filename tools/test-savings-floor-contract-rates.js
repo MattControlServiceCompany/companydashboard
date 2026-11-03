@@ -80,8 +80,8 @@ const sb = {
   window: {},
   document: { getElementById: () => null },
   projects: [
-    { id: 'pT1', sa: 'SA-TEST', savingsData: { measures: [mkMeasure('m_csv_t1'), mkMeasure('m_t2', { rateSource: 'owner' })] } },
-    { id: 'pT2', sa: '', savingsData: { measures: [mkMeasure('m_t3', { rateSource: 'owner' })] } },
+    { id: 'pT1', sa: 'SA-TEST', contractType: 'fixedProject', savingsData: { measures: [mkMeasure('m_csv_t1'), mkMeasure('m_t2', { rateSource: 'owner' })] } },
+    { id: 'pT2', sa: '', contractType: 'none', savingsData: { measures: [mkMeasure('m_t3', { rateSource: 'owner' })] } },
   ],
   sget: (k, d) => (k in store ? store[k] : d),
   sset: () => {},

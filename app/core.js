@@ -2037,8 +2037,8 @@ function initDashboardTab(projId) {
   const _eligBldgs = getIncludedBldgs(projId); // the one building list the Dashboard counts and sizes (no sqft test)
     // 2026-09-15 (SA-gate fix): the project-form "Est. Savings $/yr" target and the ECM
   // projected $ are savings dollars — hidden for a project with no Service Agreement.
-  const _hasSA = projHasContract(projId);
-  const estSavings = _hasSA ? parseFloat(p.savings) || 0 : 0;
+  const _hasContract = projHasContract(projId);
+  const estSavings = _hasContract ? parseFloat(p.savings) || 0 : 0;
   const useNormalized = p.baselineComparison === 'normalized';
 
   // Render header bar (like HVAC Load Est)
@@ -2464,7 +2464,7 @@ function initDashboardTab(projId) {
   // ECM projected savings
   const _ecmResult =
     typeof getProjectEcmTotal === 'function' ? getProjectEcmTotal(projId) : { total: 0, count: 0, ecms: [] };
-  const ecmTotal = _hasSA ? _ecmResult.total || 0 : 0;
+  const ecmTotal = _hasContract ? _ecmResult.total || 0 : 0;
   const ecmCount = _ecmResult.count || 0;
 
   perfWrap.innerHTML = `

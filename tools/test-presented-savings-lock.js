@@ -24,7 +24,7 @@ function near(a, b) {
 }
 
 const store = {};
-const sb = { console, projects: [{ id: 9001, sa: 'SA-TEST', inclMonths: {}, status: 'active' }], utilityData: {} };
+const sb = { console, projects: [{ id: 9001, contractType: 'fixedProject', inclMonths: {}, status: 'active' }], utilityData: {} };
 sb.window = sb;
 sb.sget = (k, d) => (store[k] !== undefined ? JSON.parse(JSON.stringify(store[k])) : d);
 sb.sset = (k, v) => {

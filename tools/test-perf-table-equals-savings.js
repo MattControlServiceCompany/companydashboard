@@ -67,6 +67,7 @@ function build(projects) {
     'computations/regression.js',
     'computations/rates.js',
     'computations/normalization.js',
+    'computations/csc.js',
     'computations/savings.js',
     'computations/bill-flags.js',
     'lib/perf-table.js',
@@ -79,7 +80,7 @@ const ld = (y, m) => new Date(y, m, 0).getDate();
 const p2 = (n) => String(n).padStart(2, '0');
 const mb = (y, m, f) => Object.assign({ start: y + '-' + p2(m) + '-01', end: y + '-' + p2(m) + '-' + p2(ld(y, m)) }, f);
 const blMonths = (y) => Array.from({ length: 12 }, (_, i) => y + '-' + p2(i + 1));
-const PROJ = [{ id: 1, sa: 'SA-1', name: 'T' }];
+const PROJ = [{ id: 1, sa: 'SA-1', contractType: 'fixedProject', name: 'T' }];
 // parse table cells of every <tr>
 const cells = (html) =>
   [...html.matchAll(/<tr[^>]*>(.*?)<\/tr>/gs)].map((r) =>
@@ -424,7 +425,7 @@ const sumOf = (o) => Object.values(o).reduce((a, b) => a + b, 0);
 
 // -- 10. cache key (L7) and dead multi-baseline path (D-10) ----------------------------------------
 (function () {
-  const sb = build([{ id: 1, sa: 'SA-1', name: 'T', normBasis: 'actual' }]);
+  const sb = build([{ id: 1, sa: 'SA-1', contractType: 'fixedProject', name: 'T', normBasis: 'actual' }]);
   const bills = [];
   for (let m = 1; m <= 12; m++)
     bills.push(mb(2024, m, { naturalGasTherms: '100', gasCharge: '100', totalGasRate: '1.00000', totalCost: '110' }));

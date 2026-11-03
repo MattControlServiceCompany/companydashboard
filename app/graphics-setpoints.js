@@ -186,7 +186,7 @@ function _pvRenderBldgPerf(b, projId) {
   var savPct = getBspCfg(b).savingsPct / 100; // the ONE reader (utility-data.js getBspCfg); a real 0 stays 0
   // 2026-09-15 (SA-gate fix): the % fallback below never checked the project's `sa`
   // (Service Agreement #). No contract means no projected savings.
-  var _hasSA = projHasContract(projId);
+  var _hasContract = projHasContract(projId);
   var $f = function (v) {
     return '$' + Math.abs(v).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
   };
@@ -212,7 +212,7 @@ function _pvRenderBldgPerf(b, projId) {
   var waitCell = '<td colspan="2" style="' + tdS('var(--text2)') + '">Waiting for weather data</td>';
   var rows = MN.map(function (mn, mo) {
     var base = moBase[mo];
-    var projSav = msrSav ? msrSav[mo] || 0 : _hasSA ? base * savPct : 0;
+    var projSav = msrSav ? msrSav[mo] || 0 : _hasContract ? base * savPct : 0;
     var act = actualSavByCalMo[mo] != null && !waitMo[mo] ? actualSavByCalMo[mo] : null;
     if (act != null) annAct += act;
     var pct = act != null && base > 0 ? (act / base) * 100 : null;
@@ -289,7 +289,7 @@ function _pvRenderBldgPerf(b, projId) {
         ? msrSav.reduce(function (s, v) {
             return s + v;
           }, 0)
-        : _hasSA
+        : _hasContract
           ? annBase * savPct
           : 0,
     ) +

@@ -2507,6 +2507,11 @@ async function siteResetAllMeterTableSettings() {
    site-ui.js delegates to this array and should NOT maintain its own copy.
 */
 var RELEASE_NOTES = [
+  { v: 'v2026.11.04.222', date: '2026-11-04', title: 'Contract status follows the contract type',
+    items: [
+      { type: 'fix', text: 'A building now counts as under contract based on its contract type. The service agreement number no longer decides it, so savings and contract figures no longer change when that number is blank or different.' }
+    ]
+  },
   { v: 'v2026.11.03.221', date: '2026-11-03', title: 'Back and Forward show the new version',
     items: [
       { type: 'fix', text: 'After an update, the browser Back and Forward buttons show the new version.' }

@@ -54,8 +54,9 @@ function expectedUsageForMonth(row, ctx) {
 
 /* ─────────────────────────────────────────────────────────────
    projHasContract(projId)
-   Single source of truth: does this project have a Service
-   Agreement (sa) number? No SA means no savings/compensation
+   Single source of truth: does this project have a contract?
+   Contract type set and not 'none' (getProjectContract); the
+   Service Agreement # plays no part. No contract means no savings/compensation
    dollars should ever be shown for the project, anywhere in the
    app. Every savings-% fallback gate (perf-table, bpRecalc,
    bspRecalc, graphics-setpoints, etc.) must route through this
@@ -283,8 +284,8 @@ function getMeterSavings(m, bills, incl, projId, bldgId, opts) {
   };
 
   // 2026-09-15 (SA-gate fix): savings only compute for a CONTRACTED project. The contract
-  // signal is the project record's `sa` field (Service Agreement #) - a project with no SA
-  // (Client C, Client D, Client E: sa="") must show ZERO savings everywhere, not a phantom
+  // signal is projHasContract (contract type; the SA# plays no part, 2026-11-03) - a project with no contract
+  // must show ZERO savings everywhere, not a phantom
   // number from a bill that happens to look complete. String(x.id) === String(projId) is
   // required because some callers pass projId as a String while projects[].id
   // are numbers - a strict === here would silently fail that caller.
@@ -292,7 +293,7 @@ function getMeterSavings(m, bills, incl, projId, bldgId, opts) {
     typeof projects !== "undefined"
       ? projects.find((x) => String(x.id) === String(projId))
       : null;
-  const hasContract = !!(_proj && _proj.sa);
+  const hasContract = projHasContract(projId);
 
   const bl = m.baseline;
   if (!bl || !bl.months || bl.months.length < 3) return empty;
@@ -316,7 +317,7 @@ function getMeterSavings(m, bills, incl, projId, bldgId, opts) {
   const cacheKey =
     "v3|p:" +
     projId +
-    "|sa:" +
+    "|hc:" +
     (hasContract ? 1 : 0) +
     "|nb:" +
     ((_proj && _proj.normBasis) || "calendar") +

@@ -77,9 +77,10 @@ function loadFn(file, fnName) {
 const sandbox = { console };
 vm.createContext(sandbox);
 
-// projHasContract needs a `projects` array with a truthy `sa` on the test project.
+// projHasContract (savings.js) reads getProjectContract (csc.js): the test project has a contract type set.
 const stubs = [
-  'var projects = [{ id: 1, sa: "SA-TEST-001" }];',
+  'var projects = [{ id: 1, contractType: "fixedProject" }];',
+  'function getProjectContract(p){ return { hasContract: !!p.contractType && p.contractType !== "none" }; }',
   'function getWeatherFingerprint(){return 0;} function getWeatherForBuilding(){ return { byYm: {}, cache: [] }; }',
   'function getUDProj(){ return { id: 1, sa: "SA-TEST-001", inclMonths: {} }; }',
   'function getUDBldg(){ return { meters: [] }; }',
