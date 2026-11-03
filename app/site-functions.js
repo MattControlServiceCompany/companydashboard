@@ -2507,6 +2507,11 @@ async function siteResetAllMeterTableSettings() {
    site-ui.js delegates to this array and should NOT maintain its own copy.
 */
 var RELEASE_NOTES = [
+  { v: 'v2026.11.03.210', date: '2026-11-03', title: 'Change history shows what caused each save',
+    items: [
+      { type: 'change', text: 'Change history: each saved change now records which page and action made it, next to who made it.' }
+    ]
+  },
   { v: 'v2026.11.03.209', date: '2026-11-03', title: 'Saves only after your change; Past conflicts',
     items: [
       { type: 'change', text: 'All pages: a page now saves to the server only when you make a change. Opening or reading a page no longer saves anything.' },

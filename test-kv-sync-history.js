@@ -53,6 +53,7 @@ global.fetch = async (url, opts = {}) => {
 };
 
 const put = (body) => handler({ httpMethod: 'PUT', headers: { authorization: 'Bearer fake' }, body: JSON.stringify(body) });
+const get = (k) => handler({ httpMethod: 'GET', headers: { authorization: 'Bearer fake' }, queryStringParameters: { key: k } });
 const hist = (k) => db.kv_history.filter((r) => r.key === k);
 (async () => {
   const K = 'en_fake_proj_1';
@@ -65,8 +66,26 @@ const hist = (k) => db.kv_history.filter((r) => r.key === k);
   assert.strictEqual(hist(K).length, 1, 'normal PUT keeps the previous value');
   assert.deepStrictEqual(hist(K)[0].value, { a: 1 });
   assert.strictEqual(hist(K)[0].version, 1);
-  assert.strictEqual(hist(K)[0].updated_by, 'tester@example.invalid');
+  assert.strictEqual(hist(K)[0].updated_by, 'tester@example.invalid · unknown (old page)', 'history copies the stored writer text');
   assert.ok(hist(K)[0].replaced_at);
+
+  // save cause: stored in updated_by as "<account> . <cause>", no new column; a missing cause never fails the save
+  r = await put({ key: K + '-c', value: { a: 1 }, baseVersion: null, cause: 'Projects: Save' });
+  assert.strictEqual(r.statusCode, 200);
+  assert.strictEqual(db.kv.find((x) => x.key === K + '-c').updated_by, 'tester@example.invalid · Projects: Save');
+  assert.ok(!('updated_cause' in db.kv.find((x) => x.key === K + '-c')), 'no new column is written');
+  r = await put({ key: K + '-c', value: { a: 2 }, baseVersion: 1, cause: 'auto: test' });
+  assert.strictEqual(r.statusCode, 200);
+  assert.strictEqual(hist(K + '-c')[0].updated_by, 'tester@example.invalid · Projects: Save', 'history keeps the cause of the replaced version');
+  r = await put({ key: K + '-c', value: { a: 3 }, baseVersion: 2, cause: 12345 });
+  assert.strictEqual(r.statusCode, 200, 'a non-text cause is not refused');
+  r = await get(K + '-c');
+  const g = JSON.parse(r.body);
+  assert.strictEqual(g.updatedBy, 'tester@example.invalid', 'GET returns the plain account in updatedBy');
+  assert.strictEqual(g.updatedCause, 'unknown (old page)');
+  r = await put({ key: K + '-c', value: { a: 4 }, baseVersion: 1, cause: 'x' });
+  assert.strictEqual(r.statusCode, 409);
+  assert.strictEqual(JSON.parse(r.body).current.updatedBy, 'tester@example.invalid', 'the 409 body returns the plain account');
 
   r = await put({ key: K, value: { a: 2 }, baseVersion: 2 });
   assert.strictEqual(r.statusCode, 200);

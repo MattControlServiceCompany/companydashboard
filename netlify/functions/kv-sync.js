@@ -153,7 +153,8 @@ exports.handler = async (event) => {
         version: row.version,
         hash: row.hash,
         deleted: !!row.deleted,
-        updatedBy: row.updated_by,
+        updatedBy: splitWriter(row.updated_by).account,
+        updatedCause: splitWriter(row.updated_by).cause,
         updatedAt: row.updated_at,
       });
     }
@@ -170,6 +171,20 @@ exports.handler = async (event) => {
     return respond(500, { error: 'Internal error' });
   }
 };
+
+// Why a row was written (2026-11-03): stored in the existing updated_by column as "<account> · <cause>", no new
+// column. kv_history.updated_by gets the same text from snapshotHistory. Readers that need the account alone
+// (GET and the 409 body) use splitWriter, so the page still sees a plain account in `updatedBy`.
+const WRITER_SEP = ' · ';
+function joinWriter(account, cause) {
+  const c = (typeof cause === 'string' ? cause.replace(/\s+/g, ' ').trim().slice(0, 160) : '') || 'unknown (old page)';
+  return account + WRITER_SEP + c;
+}
+function splitWriter(stored) {
+  const text = typeof stored === 'string' ? stored : '';
+  const i = text.indexOf(WRITER_SEP);
+  return i < 0 ? { account: text, cause: null } : { account: text.slice(0, i), cause: text.slice(i + WRITER_SEP.length) };
+}
 
 async function handlePut(event, updatedBy) {
   let body;
@@ -189,6 +204,7 @@ async function handlePut(event, updatedBy) {
   // body. `updatedBy` here is the email already verified by the handler's
   // single top-of-request verifyAuth() call, not re-derived from the body.
   const nowIso = new Date().toISOString();
+  const writer = joinWriter(updatedBy, body.cause);
 
   if (baseVersion === null || baseVersion === undefined) {
     if (isTombstone) {
@@ -200,7 +216,7 @@ async function handlePut(event, updatedBy) {
       method: 'POST',
       headers: pgHeaders({ Prefer: 'return=representation' }),
       body: JSON.stringify([
-        { key, value, version: 1, hash, deleted: false, updated_by: updatedBy, updated_at: nowIso },
+        { key, value, version: 1, hash, deleted: false, updated_by: writer, updated_at: nowIso },
       ]),
     });
     if (insertRes.status === 201) {
@@ -229,7 +245,7 @@ async function handlePut(event, updatedBy) {
     // write, version-checked and never a physical row DELETE. `value`/
     // `hash` are deliberately untouched so a later "Restore my version"
     // can un-delete by simply writing a fresh non-tombstone value.
-    patchBody = { deleted: true, version: baseVersion + 1, updated_by: updatedBy, updated_at: nowIso };
+    patchBody = { deleted: true, version: baseVersion + 1, updated_by: writer, updated_at: nowIso };
   } else {
     newHash = sha256Hex(canonicalJSON(value));
     // Any normal write un-deletes the key (deleted:false) — this is what
@@ -239,7 +255,7 @@ async function handlePut(event, updatedBy) {
       hash: newHash,
       deleted: false,
       version: baseVersion + 1,
-      updated_by: updatedBy,
+      updated_by: writer,
       updated_at: nowIso,
     };
   }
@@ -427,7 +443,8 @@ function rowToConflict(row) {
     version: row.version,
     hash: row.hash,
     deleted: !!row.deleted,
-    updatedBy: row.updated_by,
+    updatedBy: splitWriter(row.updated_by).account,
+    updatedCause: splitWriter(row.updated_by).cause,
     updatedAt: row.updated_at,
   };
 }
