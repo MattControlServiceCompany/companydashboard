@@ -1659,7 +1659,6 @@ function udSelectBldg(bid) {
       'ud-proj-perf-btn',
       'ud-proj-compare-btn',
       'ud-proj-audit-btn',
-      'ud-proj-methods-btn',
     ].forEach((id) => {
       const btn = document.getElementById(id);
       if (btn) {
@@ -1681,7 +1680,6 @@ function toggleUDProjPanel(key) {
     perf: 'ud-proj-perf-btn',
     compare: 'ud-proj-compare-btn',
     audit: 'ud-proj-audit-btn',
-    methods: 'ud-proj-methods-btn',
   };
   Object.entries(map).forEach(([k, id]) => {
     const btn = document.getElementById(id);
@@ -2029,12 +2027,6 @@ function renderUDProjAggPanel(content) {
   if (!bldgs.length) {
     content.innerHTML =
       '<div style="padding:20px;font-size:13px;color:var(--text2)">No buildings in this project yet.</div>';
-    return;
-  }
-
-  // Internal savings methods panel (app/savings-methods.js): its own numbers, none of the code below.
-  if (_udProjPanel === 'methods') {
-    renderSavingsMethodsPanel(content, udSelProjId);
     return;
   }
 
@@ -2502,7 +2494,8 @@ function renderUDProjAggPanel(content) {
               <select id="pp-qtr-sel" style="font-family:var(--mono);font-size:12px;color:var(--text);background:var(--s3);border:1px solid var(--border);border-radius:6px;padding:4px 8px">${_ppQtrs.map((q) => `<option value="${q}">${_escHtml(q.slice(5) + ' ' + q.slice(0, 4))}</option>`).join('')}</select></div>
             <div id="pp-qtr-body" style="overflow-x:auto;padding:0 18px 10px"></div>
             <div style="padding:16px 18px 10px;font-size:12px;font-weight:700;color:var(--text2);text-transform:uppercase;letter-spacing:.5px">Monthly Savings: Projected vs Current</div>
-            <div style="padding:0 18px 20px;height:280px;position:relative"><canvas id="projPerfChart"></canvas></div>`;
+            <div style="padding:0 18px 20px;height:280px;position:relative"><canvas id="projPerfChart"></canvas></div>
+            ${savingsMethodsHtml(udSelProjId)}`;
     // Quarter section: one row per building (its savings for the quarter, the sum of the monthly values above), the
     // quarter total (billableSavingsWithPresented), and the total of only the positive building rows (sumPositiveSavings).
     const _ppRenderQtr = () => {

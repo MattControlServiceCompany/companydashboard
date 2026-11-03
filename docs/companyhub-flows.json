@@ -89,10 +89,15 @@
           "fields": ["Facility Name (required)", "Facility Address", "Square Footage", "ZIP Code"]
         },
         {
-          "id": "savings-methods-internal",
-          "name": "Savings Methods (internal)",
-          "description": "Internal only, never in a report or export. Utility Data page, project panel bar, button Savings Methods (internal). For each quarter after the baseline and each building: energy and kW demand savings under four methods (M1 raw baseline vs raw actual, M2 fitted baseline at baseline weather vs raw actual, M3 raw baseline vs actual moved to baseline weather, M4 fitted baseline at actual weather vs raw actual = the contract method), then a bridge line (raw change + fit gap + weather credit = M4). Every month is (baseline - actual) x that month's rate, summed. A month with no weather shows Waiting for weather data. Figures are recomputed values, labelled recomputed, internal; presented quarters stay frozen elsewhere. Numbers come from getProjectSavingsMethods (computations/savings.js), which reads getMeterSavings rows run with allMonthsAtReportingWeather (expectedUsageForMonth is the one baseline rule); app/savings-methods.js only draws them.",
-          "functions": ["getProjectSavingsMethods()", "getMeterSavingsMethods()", "savingsMethodsForRow()", "renderSavingsMethodsPanel()"]
+          "id": "savings-methods-comparison",
+          "name": "Savings Methods Comparison",
+          "description": "Comparison only, never in a report, export or bill. Project > Performance, below the monthly chart. Per year and quarter it shows the Contract method (billed), the billed figure, and Bills normalized for weather and dates (comparison). The normalized figure uses the same baseline and rates; the post-baseline bills are prorated to calendar months, fitted (computeMeterRegression) and read at the baseline weather of the month (regressionBaseline). Numbers come from getProjectSavingsComparison (computations/savings.js); app/savings-methods.js only draws them.",
+          "functions": [
+                    "getProjectSavingsComparison()",
+                    "getMeterSavingsComparison()",
+                    "normalizedBillsAtBaselineWeather()",
+                    "savingsMethodsHtml()"
+          ]
         },
         {
           "id": "meter-import",

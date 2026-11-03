@@ -2507,6 +2507,12 @@ async function siteResetAllMeterTableSettings() {
    site-ui.js delegates to this array and should NOT maintain its own copy.
 */
 var RELEASE_NOTES = [
+  { v: 'v2026.11.04.224', date: '2026-11-04', title: 'Savings Methods comparison on Project > Performance',
+    items: [
+      { type: 'feature', text: 'Project > Performance now shows the contract savings (as billed) beside the same savings with post-baseline bills normalized for weather and dates, by quarter and year. This is for internal comparison only. Billed savings do not change.' },
+      { type: 'change', text: 'This replaces the earlier Savings Methods panel.' }
+    ]
+  },
   { v: 'v2026.11.04.223', date: '2026-11-04', title: 'Sidebar no longer repeats the department name',
     items: [
       { type: 'fix', text: 'The Energy Department sidebar no longer shows the department name twice. The name now appears once, at the top of the page.' }
