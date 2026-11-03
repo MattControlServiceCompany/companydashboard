@@ -8,18 +8,17 @@
 // clear or an unrelated data edit to bust it. CH_VERSION (site-ui.js) is not
 // reachable here (scoped inside an IIFE, not exposed on window), so this file
 // carries its own version marker.
-const SAVINGS_CALC_VERSION = '2026.10.31.rptwx2';
+const SAVINGS_CALC_VERSION = '2026.11.03.contract1';
 
 /* ─────────────────────────────────────────────────────────────
-   Expected (baseline) usage for a meter-month - THE one rule (Matt, 2026-10-31).
-   From REPORTING_WEATHER_FROM_YM on (Q3-2026), the baseline regression is evaluated at the weather of
-   the month being reported (IPMVP avoided energy), for kWh, therms, gallons and kW alike. A month whose
-   weather is not yet available has NO expected usage: it is flagged weatherMissing and left out of the
-   savings until weather exists - never read as 0 degree days. Months before that (the quarters already
-   presented) keep the earlier rule: baseline-year calendar-month value, else regression, else average.
+   Expected (baseline) usage for a meter-month - THE one rule: the CONTRACT method.
+   kWh, therms, gallons: the baseline-year model value for that calendar month, at the baseline year's weather
+   (else the regression, else the baseline average). kW: the kW-vs-CDD fit at the reporting month's CDD
+   (computations/regression.js). The reporting month's weather decides only kW. A month whose CDD is missing,
+   for a meter with a kW fit, has no kW baseline: it is flagged weatherMissing and left out of the savings until
+   weather exists - never read as 0 degree days.
    Callers: getMeterSavings (below) and, through its rows, every report and page.
 ───────────────────────────────────────────────────────────── */
-const REPORTING_WEATHER_FROM_YM = '2026-07';
 
 // baselineUsageByCalMo(m, moMaps) - baseline-year usage by calendar month (0-11) from the buildMoMap
 // result {elecByMo, gasByMo, propaneByMo, waterByMo}. The one reader of those maps for usage.
@@ -38,17 +37,10 @@ function baselineUsageByCalMo(m, moMaps) {
 // expectedUsageForMonth(row, ctx) -> { usage, weatherMissing }
 //   row: a getNormRows row ({ym, regrBaseline, hdd, cdd}); regrBaseline is the baseline regression at the
 //        row's own weather, null when the month has no weather.
-//   ctx: { blByCalMo, blAvg, weatherDriven, hasRegr }  (blByCalMo from baselineUsageByCalMo; weatherDriven = an
-//        energy meter - Electric, Gas, Propane - the only meters whose dollars weather decides; hasRegr = the
-//        meter has a fitted baseline regression, so a month without weather cannot be evaluated;
-//        allMonthsAtReportingWeather = apply the contract rule to every month - only the internal
-//        savings-methods view sets it, see getMeterSavingsMethods)
+//   ctx: { blByCalMo, blAvg, kwWeatherNeeded }  (blByCalMo from baselineUsageByCalMo; kwWeatherNeeded = an
+//        Electric meter with a kW-vs-CDD fit, so the month's CDD must exist)
 function expectedUsageForMonth(row, ctx) {
-  if (ctx.weatherDriven && ctx.hasRegr && (ctx.allMonthsAtReportingWeather || row.ym >= REPORTING_WEATHER_FROM_YM)) {
-    // One missing of HDD / CDD is a missing month: never fall back to the baseline-year weather.
-    if (row.hdd == null || row.cdd == null) return { usage: null, weatherMissing: true };
-    if (row.regrBaseline != null) return { usage: row.regrBaseline, weatherMissing: false };
-  }
+  if (ctx.kwWeatherNeeded && (row.cdd == null || !isFinite(row.cdd))) return { usage: null, weatherMissing: true };
   const calMo = parseInt(row.ym.split('-')[1]) - 1;
   const hasBlCalMap = Object.keys(ctx.blByCalMo).length > 0;
   const usage =
@@ -455,9 +447,9 @@ function getMeterSavings(m, bills, incl, projId, bldgId, opts) {
   const expCtx = {
     blByCalMo,
     blAvg,
+    kwWeatherNeeded: isElec && Object.keys(_kwNormByYm).length > 0,
     weatherDriven: isElec || isGas || isPropane,
     hasRegr: hasRegrP,
-    allMonthsAtReportingWeather: !!opts.allMonthsAtReportingWeather,
   };
 
   // 2026-09-11 (FIX 3, propane zeroFill savings booking): carry-forward propane rate -
@@ -487,7 +479,7 @@ function getMeterSavings(m, bills, incl, projId, bldgId, opts) {
       moKwRate = 0,
       kwCostSav = 0;
 
-    const _exp = expectedUsageForMonth(r, expCtx);
+    const _exp = opts.allMonthsAtReportingWeather ? internalFittedUsageAtMonthWeather(r, expCtx) : expectedUsageForMonth(r, expCtx);
     if (_exp.weatherMissing) {
       // Weather for this month is not available yet: no expected usage, so no savings. The month is
       // listed (incompleteYM, row flag) and booked as $0 until weather exists.
@@ -1468,7 +1460,7 @@ function parsePresentedCsv(text, bldgs) {
      M1 raw baseline-year billed         vs raw actual
      M2 fitted baseline, baseline weather vs raw actual
      M3 raw baseline-year billed         vs actual moved to baseline weather
-     M4 fitted baseline, actual weather  vs raw actual   = the contract method (getMeterSavings rule)
+     M4 fitted baseline, actual weather  vs raw actual   (comparison only; the contract method is kWh/therms by M2 and kW by M4's kW rule)
    The fitted values are the row fields of getMeterSavings (expUsage, blExpKW, blFitUsage, blFitKW): no
    second regression, no second rate. Bridge: M4 = M1 + fit gap (M2 - M1) + weather credit (M4 - M2).
 ───────────────────────────────────────────────────────────── */
@@ -1499,8 +1491,19 @@ function savingsMethodsForRow(row, isElec) {
   return { E, K };
 }
 
+// internalFittedUsageAtMonthWeather(row, ctx) - INTERNAL PANEL ONLY (getMeterSavings with
+// opts.allMonthsAtReportingWeather, from getMeterSavingsMethods). The fitted baseline at the month's own weather,
+// for the comparison methods M2 to M4. NOT the contract method: billing, reports and pages never call it.
+function internalFittedUsageAtMonthWeather(row, ctx) {
+  if (ctx.weatherDriven && ctx.hasRegr) {
+    if (row.hdd == null || row.cdd == null) return { usage: null, weatherMissing: true };
+    if (row.regrBaseline != null) return { usage: row.regrBaseline, weatherMissing: false };
+  }
+  return expectedUsageForMonth(row, ctx);
+}
+
 // getMeterSavingsMethods(m, bills, incl, projId, bldgId) -> [{ ym, isElec, ...savingsMethodsForRow }]
-// One entry per post-baseline month with bills. The contract rule runs on every month (not only Q3-2026 on).
+// One entry per post-baseline month with bills. The fitted-at-month-weather rows run on every month.
 function getMeterSavingsMethods(m, bills, incl, projId, bldgId) {
   const isElec = m.commodity === 'Electric';
   const sav = getMeterSavings(m, bills, incl, projId, bldgId, { allMonthsAtReportingWeather: true });
@@ -1559,11 +1562,10 @@ function getProjectSavingsMethods(projId) {
 // It adds NO projection rule: each method's completed quarters (each floored at $0, floorQuarterSavings, the
 // same floor billing uses) become the quarterlyActuals of the ONE shared projection, which `project(acts, q)`
 // runs (_rptContractProjection -> computeContractProjection, the call every report page prints).
-// billedOf(q) -> the site's billed dollars for quarter q (M4 only; omit to use the recomputed M4).
 // A quarter is complete when it has 3 billed months and none waits for weather; others are left out and named.
 // Returns null (no complete quarter) or { year, quarter, excluded:[{label, why}], rows:[{ k, toDate, remaining,
 // total, target }] }  toDate = the complete quarters of that year; remaining = total - toDate; target = the contract target.
-function smProjectMethods(quarters, project, billedOf) {
+function smProjectMethods(quarters, project) {
   const done = quarters.filter((q) => q.months.length === 3 && !q.total.waiting.length);
   if (!done.length) return null;
   const excluded = quarters
@@ -1575,9 +1577,8 @@ function smProjectMethods(quarters, project, billedOf) {
   const byKey = {};
   done.forEach((q) => (byKey[q.key] = q));
   const rows = ['m1', 'm2', 'm3', 'm4'].map((k) => {
-    // M4 is the contract method: its quarter is the billed figure the site uses (billedOf; a presented quarter keeps
-    // its printed figure). M1 to M3 are the recomputed quarters, floored at $0.
-    const val = (q) => (k === 'm4' && billedOf ? billedOf(q) : floorQuarterSavings(q.total.E[k] + q.total.K[k]));
+    // Every method is the recomputed quarter, floored at $0. None of them is the billed figure.
+    const val = (q) => floorQuarterSavings(q.total.E[k] + q.total.K[k]);
     const acts = [null, null, null, null];
     for (let i = 0; i < qNum; i++) acts[i] = byKey[year + '-Q' + (i + 1)] ? val(byKey[year + '-Q' + (i + 1)]) : 0;
     const proj = project(acts, qNum);
@@ -1602,6 +1603,5 @@ function getProjectSavingsMethodsProjection(projId, data) {
       contract: Object.assign({}, d.contract, { quarterlyActuals: acts, actualsThroughQuarter: q }),
       period: { quarter: q },
     }),
-    (q) => floorQuarterSavings(rd(q).totals.savings), // the site's billed quarter (totals.savings is already billable)
   );
 }

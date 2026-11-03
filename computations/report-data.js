@@ -263,6 +263,78 @@ function getReportCoverage(projId, meterIds, reqStartYm, reqEndYm, buildingIds) 
   };
 }
 
+// reportWeatherGaps(projId, meterIds, buildingIds, yms) -> { reporting:[ym], baseline:[ym] } - the weather the CONTRACT
+// method needs, tested directly in the weather cache (getWeatherForBuilding), never read as 0:
+//   reporting = a month of yms with an Electric bill whose CDD is missing (the kW baseline is the kW-vs-CDD fit at that CDD)
+//   baseline  = a baseline month of an included meter whose HDD or CDD is missing (the fitted baseline needs both)
+// A month inside a presented quarter keeps its printed figure and is not tested as a reporting month.
+function reportWeatherGaps(projId, meterIds, buildingIds, yms) {
+  const idSet = meterIds && meterIds.length ? new Set(meterIds.map(String)) : null;
+  const bldgSet = buildingIds && buildingIds.length ? new Set(buildingIds.map(String)) : null;
+  const presented = new Set();
+  _presentedApplied(projId, yms).forEach((a) => a.months.forEach((y) => presented.add(y)));
+  const reporting = {};
+  const baseline = {};
+  getUDBldgs(projId).forEach((b) => {
+    if (bldgSet && !bldgSet.has(String(b.id))) return;
+    const wx = getWeatherForBuilding(projId, b.id).byYm || {};
+    (b.meters || []).forEach((m) => {
+      if (_rptMeterEligible(projId, m)) return;
+      if (idSet && !idSet.has(String(m.id))) return;
+      if (['Electric', 'Gas', 'Propane'].indexOf(m.commodity) < 0) return;
+      const bl = m.baseline;
+      if (!bl || !bl.months || bl.months.length < 3) return;
+      bl.months.forEach((ym) => {
+        const w = wx[ym];
+        if (!w || w.hdd == null || w.cdd == null) baseline[ym] = true;
+      });
+      if (m.commodity !== 'Electric') return;
+      const have = {};
+      (m.bills || []).forEach((x) => {
+        const ym = billMonth(x, m.bills);
+        if (ym) have[ym] = true;
+      });
+      yms.forEach((ym) => {
+        if (!have[ym] || presented.has(ym)) return;
+        const w = wx[ym];
+        if (!w || w.cdd == null) reporting[ym] = true;
+      });
+    });
+  });
+  return { reporting: Object.keys(reporting).sort(), baseline: Object.keys(baseline).sort() };
+}
+
+// reportMissingInputs(projId, meterIds, buildingIds, reqStartYm, reqEndYm) - the ONE gate before a quarterly or
+// annual report is built (Matt 2026-11-03). A report is generated only when every input is there:
+//   bills   = getReportCoverage().missing (a monthly meter with no bill for a month of the range)
+//   weather = reportWeatherGaps() (the reporting months' CDD and the baseline months' HDD and CDD, tested directly)
+// Returns { ok, bills:[line], weather:[ym], baselineWeather:[ym], lines:[text] }. `lines` is the internal message the site shows
+// inline in the Generate Report dialog. Nothing from this result is ever printed in a report page.
+function reportMissingInputs(projId, meterIds, buildingIds, reqStartYm, reqEndYm) {
+  const cov = getReportCoverage(projId, meterIds, reqStartYm, reqEndYm, buildingIds);
+  const span = [];
+  if (reqStartYm && reqEndYm) {
+    let y = Number(reqStartYm.slice(0, 4)),
+      mo = Number(reqStartYm.slice(5, 7));
+    while (y + '-' + String(mo).padStart(2, '0') <= reqEndYm) {
+      span.push(y + '-' + String(mo).padStart(2, '0'));
+      if (++mo > 12) {
+        mo = 1;
+        y++;
+      }
+    }
+  }
+  const yms = span.length ? span : cov.yms;
+  const bills = cov.hasData && !cov.complete ? cov.missing.map((x) => x.commodity + ' ' + x.building + ' ' + x.ym) : [];
+  const wg = cov.hasData ? reportWeatherGaps(projId, meterIds, buildingIds, yms) : { reporting: [], baseline: [] };
+  const weather = wg.reporting;
+  const lines = [];
+  if (bills.length) lines.push('Bills missing: ' + bills.join(', ') + '.');
+  if (weather.length) lines.push('Weather data missing: ' + weatherWaitingLabel(weather) + '.');
+  if (wg.baseline.length) lines.push('Baseline weather data missing: ' + weatherWaitingLabel(wg.baseline) + '.');
+  return { ok: !lines.length, bills: bills, weather: weather, baselineWeather: wg.baseline, lines: lines };
+}
+
 // The first and last month a report request asks for: a quarter picked -> its 3 months; a custom
 // range -> the two months typed; anything else -> null (the months with bills decide). Used with
 // getReportCoverage by collectReportData and by the Generate Report dialog.

@@ -18,7 +18,7 @@ const ctx = { console, Math, Number, String, Object, Array, Date, isFinite, pars
   rptPage: (n, t, body) => body };
 vm.createContext(ctx);
 ['computations/savings.js', 'computations/csc.js', 'computations/weather-refresh.js', 'lib/formatting.js', 'app/report-printed.js'].forEach((f) => vm.runInContext(fs.readFileSync(path.join(root, f), 'utf8'), ctx));
-['_rptUnit', '_rptQuarterLabel', '_rptPeriodWords', '_rptContractProjection', '_rptApportion', '_rptPctBasisText', '_rptQNote', '_rptBilledToDate', '_rptBuildingTarget', '_rptResultKind', '_rptWaitingYMs', '_rptResultOf', '_rptResultVar', 'rptPageFinancial'].forEach((n) => vm.runInContext(grab(n), ctx));
+['_rptUnit', '_rptQuarterLabel', '_rptPeriodWords', '_rptContractProjection', '_rptApportion', '_rptPctBasisText', '_rptQNote', '_rptBilledToDate', '_rptBuildingTarget', '_rptResultKind', '_rptResultOf', '_rptResultVar', 'rptPageFinancial'].forEach((n) => vm.runInContext(grab(n), ctx));
 
 function data(type) {
   const b = { name: 'Bldg A', sqft: 1000, blCost: 1000, curCost: 800, savings: 200, savingsPct: 20, status: 'on_track' };

@@ -2507,6 +2507,12 @@ async function siteResetAllMeterTableSettings() {
    site-ui.js delegates to this array and should NOT maintain its own copy.
 */
 var RELEASE_NOTES = [
+  { v: 'v2026.11.03.201', date: '2026-11-03', title: 'Savings: contract baseline method; Generate Report checks weather',
+    items: [
+      { type: 'change', text: 'Savings: savings use the contract baseline method again, on the Dashboard, Project Performance and in reports.' },
+      { type: 'fix', text: 'Energy Department > Generate Report: if bills or weather months are missing for the period, the dialog now lists the missing months and does not build the report.' }
+    ]
+  },
   { v: 'v2026.11.03.200', date: '2026-11-03', title: 'Automatic sync, no reload needed',
     items: [
       { type: 'feature', text: 'Sidebar footer: a new "Sync status" link shows when your changes were last saved and whether changes from other users have arrived.' },
@@ -2563,10 +2569,10 @@ var RELEASE_NOTES = [
       { type: 'feature', text: 'Savings (internal view): a new panel compares the savings methods side by side, with a 3-year projection.' }
     ]
   },
-  { v: 'v2026.11.01.193', date: '2026-11-01', title: 'Savings / Reports: Q3 report rewrite, baseline at actual weather',
+  { v: 'v2026.11.01.193', date: '2026-11-01', title: 'Savings / Reports: Q3 report rewrite',
     items: [
       { type: 'feature', text: 'Reports: the third quarter report is now 8 pages. Weather is one sentence on page 3, and the Contract Position page no longer repeats the monthly savings table.' },
-      { type: 'change', text: 'Savings: from third quarter 2026 the baseline uses the actual weather of the reporting months. A quarter with missing weather shows "Waiting for weather data" and is not counted as zero.' },
+      { type: 'change', text: 'Savings: a quarter with missing weather data shows "Waiting for weather data" and is not counted as zero.' },
       { type: 'feature', text: 'Savings / Reports: a quarter with no savings now shows the line "Shortfall not billed (contract minimum $0)". The quarter is billed $0, never a negative amount.' },
       { type: 'change', text: 'Savings / Reports: the 3-year total now uses the same numbers on the Savings page and in the report.' },
       { type: 'fix', text: 'Reports: names and notes typed by users now show as plain text in the report.' }

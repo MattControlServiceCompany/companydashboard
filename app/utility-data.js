@@ -10702,8 +10702,8 @@ function renderPerfPane(pane, m, bills, incl) {
   // on yet (the dollar Cost Delta pill is unaffected — it already sums the
   // per-row Savings ($) column, which lib/perf-table.js zeroes for these rows).
   // Expected usage per month is expectedUsageForMonth (computations/savings.js), the one rule the savings
-  // and the reports use. A month without weather yet has none: it is left out of these stats.
-  const _expCtx = { blByCalMo, blAvg: blAvgMo, weatherDriven: isElec || m.commodity === 'Gas' || isPropane_p, hasRegr: hasRegr_p };
+  // and the reports use (the contract method). An Electric month without the CDD its kW fit needs is left out of these stats.
+  const _expCtx = { blByCalMo, blAvg: blAvgMo, kwWeatherNeeded: isElec && Object.keys(_kwNormByYm).length > 0 };
   const _expByYm = {};
   filteredPostRows.forEach((r) => {
     _expByYm[r.ym] = expectedUsageForMonth(r, _expCtx);

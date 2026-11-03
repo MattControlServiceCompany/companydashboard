@@ -52,11 +52,6 @@ async function generateReportPreview(opts) {
 function _rptPreviewNotes(data, wx) {
   var notes = [];
   if (!data) return notes;
-  var waiting = (data.totals && data.totals.weatherWaiting) || [];
-  if (waiting.length) {
-    var why = wx && wx.errors && wx.errors.length ? wx.errors.map(function (e) { return e.message; }).join('; ') : 'the weather source has not published it';
-    notes.push('Weather for ' + weatherWaitingLabel(waiting) + ' could not be loaded: ' + why + '.');
-  }
   if (data.period && data.period.type === 'quarterly' && !data.basScheduleHistory)
     notes.push('Operating hours and set points page left out: no BAS audit log imported.');
   return notes;
@@ -73,6 +68,26 @@ function _rptGeneratePreviewNow(opts, wx) {
   if (!config.buildingIds.length) {
     showToast('Select at least one building', 'warning');
     return;
+  }
+
+  // A quarterly or annual report is not built while a bill or a month of weather is missing. The reason is
+  // shown inline in the Generate Report dialog (an internal message, never part of the report).
+  if (config.reportType === 'quarterly' || config.reportType === 'annual') {
+    var _rq = reportRequestRange(_rptSelectedPeriod(config)) || {};
+    var _miss = reportMissingInputs(config.projId, config.meterIds, config.buildingIds, _rq.startYm, _rq.endYm);
+    var _blk = document.getElementById('rptV2BlockedMsg');
+    if (!_miss.ok) {
+      var _why = wx && wx.errors && wx.errors.length ? ' Weather load error: ' + wx.errors.map(function (e) { return e.message; }).join('; ') + '.' : '';
+      if (_blk) {
+        _blk.style.display = '';
+        _blk.textContent = 'Report not generated. ' + _miss.lines.join(' ') + _why;
+      }
+      return;
+    }
+    if (_blk) {
+      _blk.style.display = 'none';
+      _blk.textContent = '';
+    }
   }
   if (!config.sections.length) {
     showToast('Select at least one section', 'warning');

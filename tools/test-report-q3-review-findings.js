@@ -312,5 +312,12 @@ assert(/Use change \(\+ = used more\)/.test(energy), 'energy page: use-change he
 assert(/A minus sign on savings means use above baseline\./.test(cover), 'cover: minus sign line');
 // decision 7: propane unit symbol
 assert(run(ctx, '_rptCommodityUnit')('Propane') === 'gal', 'propane unit is gal');
+// 5. complete data: no internal status text on any report page (Matt 2026-11-03)
+console.log('\n--- 5. no internal status text in the report pages ---');
+const BANNED = /Waiting|waiting for|not reported yet|not yet reported|weather data|Not ready|could not be loaded|IPMVP|avoided energy|reporting.period weather/i;
+[['cover', cover], ['results', results], ['contract', contract], ['energy', energy], ['meter', meterPg]].forEach(([k, html]) => {
+  const m = String(html).match(BANNED);
+  assert(html && !m, k + ' page has no status wording' + (m ? ' (found: ' + m[0] + ')' : ''));
+});
 console.log('\n' + passed + ' passed, ' + failed + ' failed');
 process.exit(failed ? 1 : 0);

@@ -723,8 +723,6 @@ function collectReportData(projId, buildingIds, reportDateStr, reportType, selec
     perBldgSavByYM,
   );
   totCumSavings = _cumBill.total;
-  const _wxWaitYMs = [].concat.apply([], Object.values(_periodBill.weatherWaiting)).sort();
-  const _wxWaitCumYMs = [].concat.apply([], Object.values(_cumBill.weatherWaiting)).sort();
   const totSavingsPct = totPctBase > 0 ? (totSavings / totPctBase) * 100 : 0;
   // What the contract does not bill (a quarter below baseline is floored at $0): the gap between the real
   // building rows and the billable total. Reports print it as one line, so the columns add up.
@@ -1082,8 +1080,6 @@ function collectReportData(projId, buildingIds, reportDateStr, reportType, selec
       shortfallNotBilled: _notBilled.shortfall,
       presentedAdjustment: _notBilled.presented,
       cumulativeSavings: totCumSavings,
-      weatherWaiting: _wxWaitYMs, // months of the period with no weather yet: no savings figure, see weatherWaitingLabel
-      cumulativeWeatherWaiting: _wxWaitCumYMs, // same, over all months to date (those quarters are left out of the cumulative)
       blCost: totBlCost,
       pctBase: totPctBase,
       curCost: totCurCost,
@@ -1903,13 +1899,6 @@ function _scopeMonthlyToPeriod(monthlyArr, yearMonths) {
  * if the period isn't known, so every export filename names the period it actually reports on.
  * @param {object} data - collectReportData() output (reads data.period)
  */
-// Draft status lives in the file name, not in the document: " - waiting for bills" when a monthly
-// meter has no bill for a month of the period (getReportCoverage().complete is false).
-function _rptFilenameWaitingTag(data) {
-  var c = data && data.period && data.period.coverage;
-  return c && c.hasData && !c.complete ? ' - waiting for bills' : '';
-}
-
 function _rptFilenamePeriodTag(data) {
   var per = data && data.period;
   if (!per) return '';
@@ -2213,15 +2202,6 @@ function _rptBuildingTarget(d, b) {
   return idx >= 0 ? whole[idx] : qT * (wt(b) / tot);
 }
 
-// _rptWaitingYMs(d) - the months with no weather yet that block the savings figure this report prints. A
-// cumulative report prints the savings of all months to date, so it uses totals.cumulativeWeatherWaiting;
-// every other report uses the months of its own period (totals.weatherWaiting). The ONE place that decides.
-function _rptWaitingYMs(d) {
-  var t = (d && d.totals) || {};
-  var isCum = d && d.period && d.period.type === 'cumulative';
-  return (isCum ? t.cumulativeWeatherWaiting : t.weatherWaiting) || [];
-}
-
 // _rptResultOf(b, d) - the ONE wording and colour for how a building did. The colour follows the sign of
 // the saving: a positive saving is never red. A result inside 1% of baseline is "On baseline".
 // A presented report (d.printed) keeps the earlier wording.
@@ -2234,9 +2214,6 @@ function _rptResultKind(sav, pct, target) {
 function _rptResultOf(b, d) {
   if (b.status === 'no_data') return { key: 'no_data', word: 'No bills for this period', cls: '' };
   if (b.status === 'no_contract') return { key: 'no_contract', word: 'No Service Agreement on file', cls: '' };
-  // A period with a month that has no weather yet has no savings figure, so no result (savingsOrWaiting words).
-  if (!d.printed && d.totals && _rptWaitingYMs(d) && _rptWaitingYMs(d).length)
-    return { key: 'waiting', word: 'Waiting for weather data', cls: '' };
   if (d.printed) {
     var legacy = {
       on_track: { key: 'met', word: 'On Track', cls: 'rpt-g' },
@@ -2459,7 +2436,7 @@ function _rptQFlatText(b) {
 // _rptQBaselineDefinition(d) - the one sentence that defines the baseline at its first use (page 1).
 function _rptQBaselineDefinition(d) {
   return (
-    'The baseline is the energy use expected in each month at that month' + "'" + 's weather, from a weather model fitted to use from ' +
+    'The baseline is the weather-adjusted energy use of each calendar month, from a weather model fitted to use from ' +
     _escHtml(d.project.blStart) + ' to ' + _escHtml(d.project.blEnd) + '.'
   );
 }
@@ -2580,7 +2557,6 @@ function _rptQFacts(d) {
     savedSum: sum(saved),
     overSum: sum(over),
     cumulative: _rptBilledToDate(d.contract, q),
-    waiting: !!(_rptWaitingYMs(d) && _rptWaitingYMs(d).length),
   };
 }
 
@@ -2687,9 +2663,7 @@ function _rptQCoverPage(n, d, f) {
   });
   var qLabel = f.qLabel;
   var headline;
-  if (f.waiting) {
-    headline = 'Savings for this quarter are not reported yet. ' + savingsOrWaiting(_rptWaitingYMs(d), 0) + '.';
-  } else if (f.rowsMeasured < 0 || f.notBilled > 0) {
+  if (f.rowsMeasured < 0 || f.notBilled > 0) {
     headline =
       _rptQBaselineDefinition(d) +
       ' Energy use for the quarter was above the baseline, so no savings are billed. The quarter measured ' +
@@ -2707,7 +2681,7 @@ function _rptQCoverPage(n, d, f) {
       ' target.';
   }
   var detail = '';
-  if (!f.waiting) {
+  {
     var parts = [];
     if (f.saved.length)
       parts.push(
@@ -2748,7 +2722,7 @@ function _rptQCoverPage(n, d, f) {
       ? '<tr><td>Amount below baseline (not billed; contract minimum $0)</td><td class="rpt-n">' + _fmtUSD(f.notBilled, '$0') + '</td></tr>'
       : '') +
     '<tr class="rpt-tot"><td>Savings billed this quarter</td><td class="rpt-n">' +
-    savingsOrWaiting(_rptWaitingYMs(d), d.totals.savings) +
+    _fmtUSD(d.totals.savings, '$0') +
     '</td></tr>' +
     '<tr><td>Savings billed to date, contract year ' +
     d.contract.currentYear +
@@ -2817,7 +2791,7 @@ function _rptQResultsPage(n, d, f) {
   var rowHtml = d.buildings
     .map(function (b) {
       var r = _rptResultOf(b, d);
-      var plainSav = r.key === 'no_data' || r.key === 'no_contract' || r.key === 'waiting';
+      var plainSav = r.key === 'no_data' || r.key === 'no_contract';
       return (
         '<tr><td>' +
         _escHtml(b.name) +
@@ -2826,7 +2800,7 @@ function _rptQResultsPage(n, d, f) {
         '</td><td class="rpt-n">' +
         _fmtUSD(_rptBuildingTarget(d, b), '$0') +
         '</td>' +
-        (f.waiting ? '<td class="rpt-n">Waiting</td>' : _rptQSavTd(b.savings)) +
+        _rptQSavTd(b.savings) +
         '<td class="rpt-n ' +
         (plainSav ? '' : _rptQSavCls(b.savings)) +
         '">' +
@@ -2840,9 +2814,7 @@ function _rptQResultsPage(n, d, f) {
     })
     .join('');
   var totalPct = d.totals.pctBase > 0 ? (f.rowsMeasured / d.totals.pctBase) * 100 : 0;
-  var totRes = f.waiting
-    ? { key: 'waiting', word: 'Waiting for weather data', cls: '' }
-    : _rptResultKind(f.rowsMeasured, totalPct, tgtTotal);
+  var totRes = _rptResultKind(f.rowsMeasured, totalPct, tgtTotal);
   var foot;
   if (f.notBilled > 0) {
     foot =
@@ -2855,7 +2827,7 @@ function _rptQResultsPage(n, d, f) {
       '<td class="rpt-n ' +
       _rptQSavCls(f.rowsMeasured) +
       '">' +
-      (f.waiting ? '-' : _rptQPct(totalPct)) +
+      _rptQPct(totalPct) +
       '</td><td class="' +
       totRes.cls +
       '">' +
@@ -2865,7 +2837,7 @@ function _rptQResultsPage(n, d, f) {
       _fmtUSD(f.notBilled, '$0') +
       '</td><td></td><td></td></tr>' +
       '<tr class="rpt-tot"><td>Total savings billed</td><td></td><td></td><td class="rpt-n">' +
-      savingsOrWaiting(_rptWaitingYMs(d), d.totals.savings) +
+      _fmtUSD(d.totals.savings, '$0') +
       '</td><td></td><td></td></tr>';
   } else {
     foot =
@@ -2876,11 +2848,11 @@ function _rptQResultsPage(n, d, f) {
       '</td><td class="rpt-n ' +
       _rptQSavCls(d.totals.savings) +
       '">' +
-      savingsOrWaiting(_rptWaitingYMs(d), d.totals.savings) +
+      _fmtUSD(d.totals.savings, '$0') +
       '</td><td class="rpt-n ' +
       _rptQSavCls(d.totals.savings) +
       '">' +
-      (f.waiting ? '-' : _rptQPct(totalPct)) +
+      _rptQPct(totalPct) +
       '</td><td class="' +
       totRes.cls +
       '">' +
@@ -2946,7 +2918,7 @@ function _rptQResultsPage(n, d, f) {
         [46, 27, 27],
         ['', f.qLabel, 'Contract to date'],
         '<tr><td>Savings billed</td><td class="rpt-n">' +
-          savingsOrWaiting(_rptWaitingYMs(d), f.billed) +
+          _fmtUSD(f.billed, '$0') +
           '</td><td class="rpt-n">' +
           _fmtUSD(f.cumulative, '$0') +
           '</td></tr>' +
@@ -3203,11 +3175,7 @@ function _rptQFindingsBody(d, f) {
       }),
       f.flat,
     );
-  var blocks = f.waiting
-    ? '<div style="font-size:14px;line-height:1.35">' +
-      _escHtml(savingsOrWaiting(_rptWaitingYMs(d), 0)) +
-      '. Building findings are given when the weather data is loaded.</div>'
-    : order
+  var blocks = order
     .map(function (x) {
       var fd = _rptQFinding(d, f, x);
       return (
@@ -3733,23 +3701,14 @@ function _rptQMethodPage(n, d, f) {
     return '<li style="margin-bottom:3px">' + t + '</li>';
   };
   var apos = "'";
-  // The quarters before the one where the reporting-month weather rule starts (REPORTING_WEATHER_FROM_YM, computations/savings.js).
-  var rwY = REPORTING_WEATHER_FROM_YM.slice(0, 4);
-  var rwQ = Math.ceil(parseInt(REPORTING_WEATHER_FROM_YM.slice(5, 7), 10) / 3);
-  var before = [];
-  for (var qq = 1; qq < rwQ; qq++) before.push('Q' + qq);
-  var rwLabel = _rptQuarterLabel(rwQ, rwY);
   var body =
     '<h2>Method</h2>' +
     '<ul style="margin:2px 0 4px 20px;padding:0;font-size:14px;line-height:1.4">' +
     li('<strong>Baseline.</strong> Each meter' + apos + 's baseline is its own use from ' + _escHtml(d.project.blStart) + ' to ' + _escHtml(d.project.blEnd) + '. A weather model is fitted to that use. The baseline is adjusted for weather only. Operating hours and set points are not adjusted.') +
-    li('<strong>Weather.</strong> The model estimates what a meter would have used in a month at that month' + apos + 's heating and cooling degree days (base ' + WX_DD_BASE_F + '&deg;F). ' +
-      (before.length
-        ? _rptQList(before) + ' ' + rwY + ' are as presented. For those quarters, energy use was compared at the weather of the baseline period and demand at the month' + apos + 's own weather. From ' + rwLabel + ', energy use and demand are both compared at the month' + apos + 's own weather.'
-        : 'Energy use and demand are both compared at the month' + apos + 's own weather.')) +
-    li('<strong>Savings.</strong> Savings are the baseline use minus the actual use, multiplied by that month' + apos + 's rate, plus demand savings: baseline kW minus actual kW, multiplied by that month' + apos + 's demand rate. Baseline kW is the fit of billed kW against cooling degree days over the baseline months, at the month' + apos + 's cooling degree days; with no fit, the billed kW of the same calendar month in the baseline.') +
+    li('<strong>Weather.</strong> The model gives the use of a meter in each calendar month of the baseline, at the heating and cooling degree days of that month (base ' + WX_DD_BASE_F + '&deg;F). That value is the baseline for the same calendar month in the reporting year.') +
+    li('<strong>Savings.</strong> Savings are the baseline use minus the actual use, multiplied by that month' + apos + 's rate, plus demand savings: baseline kW minus actual kW, multiplied by that month' + apos + 's demand rate. Baseline kW is the fit of billed kW against cooling degree days over the baseline months, at the cooling degree days of the reporting month; with no fit, the billed kW of the same calendar month in the baseline.') +
     li('<strong>Savings target.</strong> A quarter' + apos + 's savings target is the projected savings of the project' + apos + 's selected energy conservation measures for the months of that quarter. A building' + apos + 's target is its share in proportion to its baseline cost.') +
-    li('<strong>Billing.</strong> Savings are measured for each quarter. A quarter that measures below baseline is billed at $0, the contract minimum. Savings to date add the quarters billed. A quarter is reported only when weather for all three months is available.') +
+    li('<strong>Billing.</strong> Savings are measured for each quarter. A quarter that measures below baseline is billed at $0, the contract minimum. Savings to date add the quarters billed.') +
     '</ul>' +
     '<h2>Baseline Fit by Meter</h2>' +
     t1 +
@@ -4173,9 +4132,7 @@ function rptPageCover(n, d) {
     'Across all ' +
     _nBldgs +
     ' buildings, ' +
-    (_rptWaitingYMs(d) && _rptWaitingYMs(d).length
-      ? 'savings for this period are not reported yet. <strong>' + savingsOrWaiting(_rptWaitingYMs(d), 0) + '</strong>. '
-      : 'the portfolio is ' +
+    ('the portfolio is ' +
         perfWord +
         ' the ' +
         _periodWord +
@@ -4183,7 +4140,7 @@ function rptPageCover(n, d) {
         _fmtUSD(target, '$0') +
         '</strong>, ' +
         'having achieved <strong>' +
-        savingsOrWaiting(_rptWaitingYMs(d), d.totals.savings) +
+        _fmtUSD(d.totals.savings, '$0') +
         '</strong> in verified cost avoidance ' +
         '(' +
         $p(d.totals.savingsPct) +
@@ -4470,13 +4427,13 @@ function rptPageCover(n, d) {
     '</div>' +
     '<div class="rpt-big-number">' +
     '<div class="rpt-bn-amount" contenteditable="true">' +
-    savingsOrWaiting(_rptWaitingYMs(d), d.totals.savings) +
+    _fmtUSD(d.totals.savings, '$0') +
     '</div>' +
     '<div class="rpt-bn-label" contenteditable="true">' +
     periodTitle +
     ' Actual Savings</div>' +
     '<div class="rpt-bn-badge" contenteditable="true">' +
-    (_rptWaitingYMs(d) && _rptWaitingYMs(d).length ? 'not yet reported' : pctOfTarget + '% of target') +
+    pctOfTarget + '% of target' +
     '</div>' +
     '</div>' +
     '<div class="rpt-hero-sub" contenteditable="true">' +
@@ -4501,7 +4458,7 @@ function rptPageCover(n, d) {
     '<div class="rpt-vs-val" style="color:' +
     (d.totals.savings >= target ? 'var(--rpt-green-dark)' : 'var(--rpt-orange)') +
     '" contenteditable="true">' +
-    savingsOrWaiting(_rptWaitingYMs(d), d.totals.savings) +
+    _fmtUSD(d.totals.savings, '$0') +
     '</div>' +
     '<div class="rpt-vs-lbl">Actual ' +
     _vsWord +
@@ -4686,7 +4643,7 @@ function rptPageFinancial(n, d) {
         '<td class="rpt-n ' +
         saveClass +
         '" contenteditable="true">' +
-        (_rptWaitingYMs(d) && _rptWaitingYMs(d).length ? savingsOrWaiting(_rptWaitingYMs(d), 0) : _fmtUSD(b.savings, '$0')) +
+        _fmtUSD(b.savings, '$0') +
         '</td>' +
         '<td class="rpt-n ' +
         saveClass +
@@ -4749,7 +4706,7 @@ function rptPageFinancial(n, d) {
     '<td class="rpt-n ' +
     totSaveClass +
     '" contenteditable="true">' +
-    savingsOrWaiting(_rptWaitingYMs(d), d.totals.savings) +
+    _fmtUSD(d.totals.savings, '$0') +
     '</td>' +
     '<td class="rpt-n ' +
     totSaveClass +
@@ -4800,7 +4757,7 @@ function rptPageFinancial(n, d) {
     qLabel +
     ' Actual Savings</td>' +
     '<td class="rpt-n rpt-g" contenteditable="true">' +
-    savingsOrWaiting(_rptWaitingYMs(d), d.totals.savings) +
+    _fmtUSD(d.totals.savings, '$0') +
     '</td>' +
     (pw.isAnnual ? '' : '<td class="rpt-n" contenteditable="true">' + _fmtUSD(annSavings, '$0') + '</td>') +
     '<td class="rpt-n" contenteditable="true">' +
@@ -4867,7 +4824,7 @@ function rptPageFinancial(n, d) {
     _fmtUSD(qCurCost, '$0') +
     '</td>' +
     '<td class="rpt-n rpt-g" contenteditable="true">' +
-    savingsOrWaiting(_rptWaitingYMs(d), d.totals.savings) +
+    _fmtUSD(d.totals.savings, '$0') +
     '</td>' +
     '</tr>';
   const qtrTable =
@@ -6019,17 +5976,9 @@ function rptPageObservations(n, d) {
   const totalBldgs = d.buildings ? d.buildings.length : 0;
   const periodLabel = d.period ? d.period.label : '';
   const clientName = d.project ? d.project.client : '';
-  const _obsWait = _rptWaitingYMs(d);
   // Same wording as the quarterly report: the result word, no judgement against a benchmark.
-  const summaryPara = _obsWait.length
-    ? '<p contenteditable="true">During ' +
-      _escHtml(periodLabel) +
-      ', savings for ' +
-      _escHtml(clientName) +
-      ' are not reported yet. ' +
-      _escHtml(savingsOrWaiting(_obsWait, 0)) +
-      '.</p>'
-    : '<p contenteditable="true">' +
+  const summaryPara =
+    '<p contenteditable="true">' +
       'During ' +
       periodLabel +
       ', ' +
@@ -6113,11 +6062,6 @@ function rptPageObservations(n, d) {
         (d.period ? _escHtml(d.period.label) : 'this period') +
         ', but this project has no Service Agreement on file, so contracted savings are not calculated for this building.';
       rec = 'Confirm the Service Agreement number on the project record if this building is under contract.';
-    } else if (_res.key === 'waiting') {
-      // No weather yet: no savings figure. Null is never 0.
-      subtitle = _escHtml(_res.word);
-      narrative = _escHtml(b.name) + ': ' + _escHtml(savingsOrWaiting(_rptWaitingYMs(d), 0)) + '. ' + strongWeak;
-      rec = '';
     } else {
       // met / short / over / on_baseline: the heading is the _rptResultOf word. No standard
       // recommendation text is added; a result is stated, not advised on.
@@ -6955,7 +6899,6 @@ function rptPageYearToDate(n, d) {
     // Total: a period already presented to the client uses the presented figures (WP-04a).
     var _tBill = billableSavingsWithPresented(d.project.id, _sorted, _savPerBldg);
     _tSav = _tBill.total;
-    var _wxWait = [].concat.apply([], Object.values(_tBill.weatherWaiting)).sort();
     // The month rows above are the real month math. The total is billable (each quarter floored at $0,
     // a presented quarter at its printed figure). Lines under the rows close the gap so the Savings
     // column adds up: savingsNotBilledWithPresented (computations/savings.js) sizes them; the whole-dollar
@@ -6982,7 +6925,7 @@ function rptPageYearToDate(n, d) {
       '</td><td class="rpt-n">' +
       _fmtUSD(_tCur, '$0') +
       '</td><td class="rpt-n">' +
-      savingsOrWaiting(_wxWait, _tSav) +
+      _fmtUSD(_tSav, '$0') +
       '</td></tr>';
     trendTable =
       '<table class="rpt-table" style="font-size:10px"><thead><tr><th>Month</th><th class="rpt-n">Baseline Cost</th><th class="rpt-n">Actual Cost</th><th class="rpt-n">Savings $</th></tr></thead><tbody>' +
@@ -11526,7 +11469,7 @@ async function exportReportToPDF() {
   } else {
     const typeLabel = data.period && data.period.type === 'quarterly' ? 'Quarterly' : 'Annual';
     filename =
-      client + ' - ' + typeLabel + _rptFilenamePeriodTag(data) + ' Savings Report ' + dateStr + _rptFilenameWaitingTag(data);
+      client + ' - ' + typeLabel + _rptFilenamePeriodTag(data) + ' Savings Report ' + dateStr;
   }
   const originalTitle = document.title;
   document.title = filename;
@@ -12336,7 +12279,7 @@ async function exportReportToWord() {
           : client + ' - ASHRAE 36 Audit Report ' + dateStr + '.doc';
     } else {
       const typeLabel = data.period && data.period.type === 'quarterly' ? 'Quarterly' : 'Annual';
-      filename = client + ' - ' + typeLabel + _rptFilenamePeriodTag(data) + ' Savings Report ' + dateStr + _rptFilenameWaitingTag(data) + '.doc';
+      filename = client + ' - ' + typeLabel + _rptFilenamePeriodTag(data) + ' Savings Report ' + dateStr + '.doc';
     }
 
     // Word-only page setup + chrome overrides (2026-07-22 fix, Matt: "the word files footer
@@ -13113,7 +13056,7 @@ async function exportReportToDocx() {
           : client + ' - ASHRAE 36 Audit Report ' + dateStr + '.docx';
     } else {
       const typeLabel = data.period && data.period.type === 'quarterly' ? 'Quarterly' : 'Annual';
-      filename = client + ' - ' + typeLabel + _rptFilenamePeriodTag(data) + ' Savings Report ' + dateStr + _rptFilenameWaitingTag(data) + '.docx';
+      filename = client + ' - ' + typeLabel + _rptFilenamePeriodTag(data) + ' Savings Report ' + dateStr + '.docx';
     }
 
     await _docxAssemble(translated.xml, {
@@ -13559,6 +13502,11 @@ function _rptV2LatestCompleteQuarter(projId, curYear, curQ) {
 function _rptV2RefreshCoverageWarning() {
   var warnEl = document.getElementById('rptV2CoverageWarning');
   if (!warnEl) return;
+  var _blkEl = document.getElementById('rptV2BlockedMsg');
+  if (_blkEl) {
+    _blkEl.style.display = 'none';
+    _blkEl.textContent = '';
+  }
   warnEl.style.display = 'none';
   warnEl.innerHTML = '';
   if (!_rptV2ProjId || !document.getElementById('rptV2Type')) return;
@@ -13685,7 +13633,9 @@ function openReportModalV2(projId) {
   // selected quarter — refreshed by _rptV2RefreshCoverageWarning() on open and on every Year/
   // Quarter change. Hidden (display:none) when there is nothing to warn about.
   html +=
-    '<div id="rptV2CoverageWarning" style="display:none;margin-bottom:8px"></div>';
+    '<div id="rptV2CoverageWarning" style="display:none;margin-bottom:8px"></div>'
+  html +=
+    '<div id="rptV2BlockedMsg" role="alert" style="display:none;margin-bottom:8px;padding:8px 10px;border:1px solid var(--warn);border-radius:6px;background:var(--s1);color:var(--text);font-size:12px;font-weight:600"></div>';
   // Custom date range
   html += '<div id="rptV2CustomWrap" style="display:none;margin-bottom:8px">';
   html += '<div style="display:flex;gap:12px">';

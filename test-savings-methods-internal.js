@@ -2,7 +2,7 @@
 // getProjectSavingsMethods, app/savings-methods.js):
 //   1. the four-method math and the bridge identity (synthetic rows, no client data);
 //   2. a month with no weather is "waiting", never 0;
-//   3. the contract rule flag does not change the earlier-months rule unless asked;
+//   3. the contract rule has no weather switch; the internal fit is a separate function;
 //   4. NO report, export, portal or print module can reach the section (static scan of the whole repo).
 // Run: node test-savings-methods-internal.js   Exit 0 = pass.
 'use strict';
@@ -26,10 +26,10 @@ const sandbox = {};
 vm.createContext(sandbox);
 vm.runInContext(
   src +
-    '\nthis.savingsMethodsForRow = savingsMethodsForRow; this.expectedUsageForMonth = expectedUsageForMonth; this.smProjectMethods = smProjectMethods; this.floorQuarterSavings = floorQuarterSavings;',
+    '\nthis.savingsMethodsForRow = savingsMethodsForRow; this.expectedUsageForMonth = expectedUsageForMonth; this.internalFittedUsageAtMonthWeather = internalFittedUsageAtMonthWeather; this.smProjectMethods = smProjectMethods; this.floorQuarterSavings = floorQuarterSavings;',
   sandbox,
 );
-const { savingsMethodsForRow, expectedUsageForMonth, smProjectMethods } = sandbox;
+const { savingsMethodsForRow, expectedUsageForMonth, internalFittedUsageAtMonthWeather, smProjectMethods } = sandbox;
 // the ONE shared projection (computations/csc.js), loaded the same way
 const cscSandbox = {};
 vm.createContext(cscSandbox);
@@ -65,13 +65,13 @@ ok(w.waiting === true && w.E === undefined && w.K === undefined, 'a month with n
 // ---- 3. rule flag ----
 const ctx = { blByCalMo: { 1: 500 }, blAvg: 400, weatherDriven: true, hasRegr: true };
 const early = { ym: '2026-02', regrBaseline: 700, hdd: 1, cdd: 0 };
-ok(expectedUsageForMonth(early, ctx).usage === 500, 'before 2026-07 the earlier rule is unchanged without the flag');
-ok(expectedUsageForMonth(early, Object.assign({ allMonthsAtReportingWeather: true }, ctx)).usage === 700, 'with the flag the contract rule applies to an earlier month');
-ok(expectedUsageForMonth({ ym: '2026-02', regrBaseline: null, hdd: null, cdd: 0 }, Object.assign({ allMonthsAtReportingWeather: true }, ctx)).weatherMissing === true, 'flag: missing weather is flagged, not read as 0');
-ok(expectedUsageForMonth({ ym: '2026-08', regrBaseline: 900, hdd: 0, cdd: 5 }, ctx).usage === 900, 'from 2026-07 the contract rule applies without the flag');
+ok(expectedUsageForMonth(early, ctx).usage === 500, 'the contract rule gives the baseline-year value for any month');
+ok(expectedUsageForMonth({ ym: '2026-08', regrBaseline: 900, hdd: 0, cdd: 5 }, { blByCalMo: { 7: 650 }, blAvg: 1 }).usage === 650, 'no reporting-weather rule: a later month also gets the baseline-year value');
+ok(internalFittedUsageAtMonthWeather(early, ctx).usage === 700, 'the internal comparison fits the month at its own weather');
+ok(internalFittedUsageAtMonthWeather({ ym: '2026-02', regrBaseline: null, hdd: null, cdd: 0 }, ctx).weatherMissing === true, 'internal comparison: missing weather is flagged, not read as 0');
 
 // ---- 4. the section is internal: nothing client-facing reaches it ----
-const NAMES = /getProjectSavingsMethods|smProjectMethods|smProjectionHtml|getMeterSavingsMethods|savingsMethodsForRow|savingsMethodsHtml|renderSavingsMethodsPanel|savingsMethodsPanel|allMonthsAtReportingWeather|app\/savings-methods\.js/;
+const NAMES = /getProjectSavingsMethods|smProjectMethods|smProjectionHtml|getMeterSavingsMethods|savingsMethodsForRow|savingsMethodsHtml|renderSavingsMethodsPanel|savingsMethodsPanel|allMonthsAtReportingWeather|internalFittedUsageAtMonthWeather|app\/savings-methods\.js/;
 const ALLOWED = new Set([
   'computations/savings.js', // the computation
   'app/savings-methods.js', // the panel
@@ -144,8 +144,6 @@ ok(byK.m2.toDate === 900 + 1800 + 100 && byK.m4.toDate === 1000 + 1700, 'M2 and 
 ok(byK.m4.total === 2700 + 1000 + yr2 + yr3 && byK.m4.target === 4000 + yr2 + yr3, 'M4 total and the contract target (4000 + escalated years 2 and 3)');
 const direct = project([1000, 1700, 0, null], 3).totalSavings;
 ok(byK.m4.total === direct, 'M4 equals the shared projection called directly');
-const billed = smProjectMethods(quarters, project, () => 1234);
-ok(billed.rows.find((x) => x.k === 'm4').toDate === 3 * 1234 && billed.rows.find((x) => x.k === 'm1').toDate === 2300, 'billedOf replaces M4 quarters only');
 ok(smProjectMethods([quarters[0]], project) === null, 'no complete quarter: no projection');
 ok(/_escHtml\(basis\)/.test(panel) && /_escHtml\(usd\(v\)\)/.test(panel) && /_escHtml\(h\)/.test(panel), 'projection block escapes its text');
 

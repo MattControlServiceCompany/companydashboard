@@ -1,9 +1,8 @@
 // Node-only unit test (no browser) for the one expected-usage rule (Matt, 2026-10-31):
 //   expectedUsageForMonth / baselineUsageByCalMo (computations/savings.js), regressionBaseline and
 //   computeKwCddRegression (computations/regression.js).
-// Checks: (1) the reporting month's own weather is used from Q3-2026 on, (2) a month without weather is
-// left out and never read as 0 degree days, (3) months before Q3-2026 (the presented quarters) keep the
-// baseline-year value whatever the weather.
+// Checks: (1) kWh/therms use the baseline-year value (contract method), (2) a month without weather is
+// never read as 0 degree days (regression null, kW fit needs the reporting CDD).
 // USAGE: node tools/test-expected-usage.js     EXIT: 0 = all pass.
 'use strict';
 const fs = require('fs');
@@ -20,7 +19,6 @@ const expectedUsageForMonth = get('expectedUsageForMonth');
 const baselineUsageByCalMo = get('baselineUsageByCalMo');
 const regressionBaseline = get('regressionBaseline');
 const computeKwCddRegression = get('computeKwCddRegression');
-const FROM = get('REPORTING_WEATHER_FROM_YM');
 
 let fail = 0;
 const eq = (name, got, want) => {
@@ -34,7 +32,7 @@ const regE = { cdd: { intercept: 100, slope: 10 }, hdd: null };
 const row = (ym, cdd, hdd) => ({ ym, days: 30, cdd, hdd });
 const rb = (r) => regressionBaseline(r, regE, 'Electric', 'calendar');
 
-eq('cutover is Q3-2026', FROM, '2026-07');
+eq('no reporting-weather cutover constant exists', new vm.Script('typeof REPORTING_WEATHER_FROM_YM').runInContext(ctx), 'undefined');
 eq('baseline regression uses the month CDD', rb(row('2026-08', 500, 0)), 100 * 31 + 10 * 500);
 eq('missing weather gives no baseline (not CDD 0)', rb(row('2026-09', null, null)), null);
 eq('CDD 0 is a real value', rb(row('2026-05', 0, 0)), 100 * 31);
@@ -53,22 +51,18 @@ eq(
   { 7: 9 },
 );
 
-// expectedUsageForMonth
-const exCtx = { blByCalMo: { 7: 3000, 8: 2500 }, blAvg: 1111, weatherDriven: true, hasRegr: true };
+// expectedUsageForMonth - the contract method: baseline-year calendar-month value (else regression, else average).
+// The reporting month's weather decides only whether a kW fit can be read (kwWeatherNeeded).
+const exCtx = { blByCalMo: { 7: 3000, 8: 2500 }, blAvg: 1111, kwWeatherNeeded: false };
 const augRow = { ym: '2026-08', regrBaseline: 3600, cdd: 500, hdd: 0 };
-eq('Q3 month uses the current weather, not the baseline-year value', expectedUsageForMonth(augRow, exCtx), { usage: 3600, weatherMissing: false });
+eq('Q3 month uses the baseline-year value, not the reporting weather', expectedUsageForMonth(augRow, exCtx), { usage: 3000, weatherMissing: false });
 const sepRow = { ym: '2026-09', regrBaseline: null, cdd: null, hdd: null };
-eq('Q3 month without weather is left out', expectedUsageForMonth(sepRow, exCtx), { usage: null, weatherMissing: true });
-const junRow = { ym: '2026-06', regrBaseline: 2222, cdd: 100, hdd: 0 };
-eq('presented quarter month keeps the baseline-year value', expectedUsageForMonth(junRow, { blByCalMo: { 5: 2000 }, blAvg: 1, weatherDriven: true, hasRegr: true }), { usage: 2000, weatherMissing: false });
-eq('presented quarter month: weather does not matter', expectedUsageForMonth({ ym: '2026-06', regrBaseline: null, cdd: null, hdd: null }, { blByCalMo: { 5: 2000 }, blAvg: 1, weatherDriven: true, hasRegr: true }), { usage: 2000, weatherMissing: false });
-eq('no regression and weather present: baseline-year value', expectedUsageForMonth({ ym: '2026-08', regrBaseline: null, cdd: 500, hdd: 0 }, exCtx), { usage: 3000, weatherMissing: false });
-
-eq('one null of HDD / CDD is a missing month (CDD null)', expectedUsageForMonth({ ym: '2026-09', regrBaseline: null, cdd: null, hdd: 0 }, exCtx), { usage: null, weatherMissing: true });
-eq('one null of HDD / CDD is a missing month (HDD null)', expectedUsageForMonth({ ym: '2026-09', regrBaseline: 3000, cdd: 530, hdd: null }, exCtx), { usage: null, weatherMissing: true });
-eq('one null never falls back to the baseline-year weather', expectedUsageForMonth({ ym: '2026-09', regrBaseline: null, cdd: 530, hdd: null }, exCtx).usage, null);
-eq('water meter (not weather driven) is never flagged', expectedUsageForMonth(sepRow, { blByCalMo: { 8: 77 }, blAvg: 1, weatherDriven: false, hasRegr: true }), { usage: 77, weatherMissing: false });
-eq('meter with no fitted regression is never flagged', expectedUsageForMonth(sepRow, { blByCalMo: { 8: 77 }, blAvg: 1, weatherDriven: true, hasRegr: false }), { usage: 77, weatherMissing: false });
+eq('month without reporting weather still has the baseline-year value (no kW fit)', expectedUsageForMonth(sepRow, exCtx), { usage: 2500, weatherMissing: false });
+eq('no calendar map: regression value', expectedUsageForMonth({ ym: '2026-08', regrBaseline: 3600, cdd: 500, hdd: 0 }, { blByCalMo: {}, blAvg: 1, kwWeatherNeeded: false }), { usage: 3600, weatherMissing: false });
+eq('no calendar map, no regression: average', expectedUsageForMonth({ ym: '2026-08', regrBaseline: null, cdd: 500, hdd: 0 }, { blByCalMo: {}, blAvg: 1111, kwWeatherNeeded: false }), { usage: 1111, weatherMissing: false });
+eq('kW fit and reporting CDD present: not flagged', expectedUsageForMonth(augRow, Object.assign({}, exCtx, { kwWeatherNeeded: true })), { usage: 3000, weatherMissing: false });
+eq('kW fit and reporting CDD missing: flagged, never CDD 0', expectedUsageForMonth(sepRow, Object.assign({}, exCtx, { kwWeatherNeeded: true })), { usage: null, weatherMissing: true });
+eq('kW fit, CDD present, HDD missing: not flagged', expectedUsageForMonth({ ym: '2026-09', regrBaseline: null, cdd: 530, hdd: null }, Object.assign({}, exCtx, { kwWeatherNeeded: true })).weatherMissing, false);
 
 // kW regression: missing weather is left out of the fit and the prediction
 const bills = (ym, kw) => [{ start: ym + '-01', end: ym + '-28', billedKW: kw, demandKW: kw, kwh: 1000 }];

@@ -12,7 +12,7 @@ const SM_METHODS = [
   { k: 'm1', name: 'M1', note: 'Raw baseline vs raw actual' },
   { k: 'm2', name: 'M2', note: 'Fitted at baseline weather vs raw actual' },
   { k: 'm3', name: 'M3', note: 'Raw baseline vs actual at baseline weather' },
-  { k: 'm4', name: 'M4', note: 'Contract method: fitted at actual weather vs raw actual' },
+  { k: 'm4', name: 'M4', note: 'Fitted at actual weather vs raw actual (comparison only)' },
 ];
 
 // Signed whole dollars: +$2,296 / -$3,596.
@@ -47,7 +47,7 @@ function smQuarterHtml(q) {
       const accent = mt.k === 'm4' ? ';border-left:2px solid var(--em);border-bottom:2px solid var(--em)' : '';
       return (
         '<th colspan="3" style="' + SM_HDR + ';text-align:center' + accent + '" title="' + _escHtml(mt.note) + '">' +
-        _escHtml(mt.name + (mt.k === 'm4' ? ' contract method' : '')) +
+        _escHtml(mt.name) +
         '</th>'
       );
     }).join('');
@@ -103,7 +103,7 @@ function smProjectionHtml(pr) {
       const accent = r.k === 'm4' ? ';font-weight:700;border-left:2px solid var(--em)' : '';
       return (
         '<tr data-sm-proj="' + _escHtml(r.k) + '"><td style="' + SM_CELL + ';text-align:left' + accent + '" title="' + _escHtml(mt.note) + '">' +
-        _escHtml(mt.name + (r.k === 'm4' ? ' contract method' : '')) + '</td>' +
+        _escHtml(mt.name) + '</td>' +
         [r.toDate, r.remaining, r.total, r.target].map((v) => '<td style="' + SM_CELL + (r.k === 'm4' ? ';font-weight:700' : '') + '">' + _escHtml(usd(v)) + '</td>').join('') +
         '</tr>'
       );
@@ -111,15 +111,13 @@ function smProjectionHtml(pr) {
     .join('');
   const ex = pr.excluded.length ? ' Left out of savings to date: ' + pr.excluded.map((e) => e.label + ' (' + e.why + ')').join(', ') + '.' : '';
   const basis =
-    'Projection basis: ' + pr.year + ' Q1 to Q' + pr.quarter + ' savings of each method (each quarter floored at $0; M4 uses the billed figure, the printed one for a presented quarter) plus the contract targets for the rest of that contract year; other contract years at their escalated target. The site uses the same projection.' + ex;
+    'Projection basis: ' + pr.year + ' Q1 to Q' + pr.quarter + ' savings of each method (each quarter floored at $0; these are comparison figures, not the billed figure) plus the contract targets for the rest of that contract year; other contract years at their escalated target.' + ex;
   return (
     '<div style="margin-bottom:22px" data-sm-projection="1">' +
     '<div style="font-size:13px;font-weight:700;color:var(--text);margin-bottom:6px">3-year projection</div>' +
     '<div class="ch-tbl-outer" style="border:1px solid var(--border);border-radius:6px;overflow:auto;background:var(--s2)">' +
     '<table class="ch-tbl" style="border-collapse:separate;border-spacing:0;width:100%"><thead><tr>' + head + '</tr></thead><tbody>' + body + '</tbody></table></div>' +
     '<div style="font-size:12px;color:var(--text);margin-top:6px" data-sm-basis="1">' + _escHtml(basis) + '</div>' +
-    '<div style="font-size:12px;color:var(--text);margin-top:4px" data-sm-m4note="1">' +
-    _escHtml('M4 uses the billed quarter figures (a presented quarter keeps the figure printed to the client). The quarter tables below show recomputed values, so they can differ.') + '</div>' +
     '</div>'
   );
 }
@@ -134,7 +132,7 @@ function savingsMethodsHtml(projId) {
     '<div style="font-size:12px;color:var(--text);margin:4px 0 14px">Internal only. Never shown to a client. Each month is (baseline - actual) x that month\'s rate, then summed. ' +
     'Presented quarters keep their frozen figures everywhere else; these are new calculations.<br>' +
     'M1 raw baseline vs raw actual. M2 fitted baseline at baseline-year weather vs raw actual. ' +
-    'M3 raw baseline vs actual moved to baseline-year weather. M4 fitted baseline at actual weather vs raw actual: the contract method.</div>' +
+    'M3 raw baseline vs actual moved to baseline-year weather. M4 fitted baseline at actual weather vs raw actual. These are comparison figures; none is the billed figure.</div>' +
     smProjectionHtml(getProjectSavingsMethodsProjection(projId, data)) +
     data.quarters.map(smQuarterHtml).join('') +
     '</div>'
