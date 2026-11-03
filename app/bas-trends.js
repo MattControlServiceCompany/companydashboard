@@ -3634,15 +3634,15 @@ function btBuildFaultLogHTML(bldg, projId) {
     // Filter bar
     '<div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:12px;padding:10px 12px;background:var(--s2);border:1px solid var(--border);border-radius:var(--r,8px);">',
     '<span style="font-size:12px;color:var(--text3);font-weight:500;">Filter:</span>',
-    '<select id="bt-fl-type" onchange="btApplyFaultFilters()" style="' + inputStyle + '">' + typeOptHtml + '</select>',
-    '<select id="bt-fl-equip" onchange="btApplyFaultFilters()" style="' + inputStyle + '">' + equipOpts + '</select>',
-    '<select id="bt-fl-status" onchange="btApplyFaultFilters()" style="' + inputStyle + '">' + statusOpts + '</select>',
-    '<input id="bt-fl-from" type="date" value="' +
+    '<select data-ch-filter id="bt-fl-type" onchange="btApplyFaultFilters()" style="' + inputStyle + '">' + typeOptHtml + '</select>',
+    '<select data-ch-filter id="bt-fl-equip" onchange="btApplyFaultFilters()" style="' + inputStyle + '">' + equipOpts + '</select>',
+    '<select data-ch-filter id="bt-fl-status" onchange="btApplyFaultFilters()" style="' + inputStyle + '">' + statusOpts + '</select>',
+    '<input data-ch-filter id="bt-fl-from" type="date" value="' +
       (_btFaultFilter.dateFrom || '') +
       '" onchange="btApplyFaultFilters()" style="' +
       inputStyle +
       '" title="Filter faults on or after this date" />',
-    '<input id="bt-fl-to" type="date" value="' +
+    '<input data-ch-filter id="bt-fl-to" type="date" value="' +
       (_btFaultFilter.dateTo || '') +
       '" onchange="btApplyFaultFilters()" style="' +
       inputStyle +

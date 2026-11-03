@@ -2507,6 +2507,14 @@ async function siteResetAllMeterTableSettings() {
    site-ui.js delegates to this array and should NOT maintain its own copy.
 */
 var RELEASE_NOTES = [
+  { v: 'v2026.11.03.200', date: '2026-11-03', title: 'Automatic sync, no reload needed',
+    items: [
+      { type: 'feature', text: 'Sidebar footer: a new "Sync status" link shows when your changes were last saved and whether changes from other users have arrived.' },
+      { type: 'feature', text: 'Sidebar footer: a new "Conflict history" link lists changes that were merged or replaced during sync.' },
+      { type: 'change', text: 'Changes from other users now appear on their own, with no page reload. The refresh banner, the version bar and the Conflict History pill are removed.' },
+      { type: 'change', text: 'Sidebar footer: when a new version is released, a "New version: reload" link appears.' }
+    ]
+  },
   { v: 'v2026.11.02.199', date: '2026-11-02', title: 'Savings of $0 and quarter totals',
     items: [
       { type: 'fix', text: 'Energy Graphics: savings of $0 show in normal text; a quarter floored at $0 shows the measured value then $0 in red.' },

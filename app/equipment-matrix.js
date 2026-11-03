@@ -4959,13 +4959,13 @@ function emRenderToolbar(data, pid, projBadge) {
   return (
     '<div style="display:flex;flex-direction:column">' +
     '<div style="display:flex;align-items:center;gap:8px;padding:8px 16px;flex-wrap:wrap">' +
-    '<select id="em-filter-bldg" onchange="emApplyFilters()" style="font-size:11px;padding:4px 8px;background:var(--s2);border:1px solid var(--border);color:var(--text);border-radius:4px;height:28px">' +
+    '<select data-ch-filter id="em-filter-bldg" onchange="emApplyFilters()" style="font-size:11px;padding:4px 8px;background:var(--s2);border:1px solid var(--border);color:var(--text);border-radius:4px;height:28px">' +
     bldgOpts +
     '</select>' +
-    '<select id="em-filter-type" onchange="emApplyFilters()" style="font-size:11px;padding:4px 8px;background:var(--s2);border:1px solid var(--border);color:var(--text);border-radius:4px;height:28px">' +
+    '<select data-ch-filter id="em-filter-type" onchange="emApplyFilters()" style="font-size:11px;padding:4px 8px;background:var(--s2);border:1px solid var(--border);color:var(--text);border-radius:4px;height:28px">' +
     typeOpts +
     '</select>' +
-    '<input id="em-filter-search" type="text" placeholder="Search..." oninput="emDebouncedSearch()" style="font-size:11px;padding:4px 8px;background:var(--s2);border:1px solid var(--border);color:var(--text);border-radius:4px;height:28px;width:140px">' +
+    '<input data-ch-filter id="em-filter-search" type="text" placeholder="Search..." oninput="emDebouncedSearch()" style="font-size:11px;padding:4px 8px;background:var(--s2);border:1px solid var(--border);color:var(--text);border-radius:4px;height:28px;width:140px">' +
     '<span id="em-row-count" style="font-size:11px;color:var(--text3);margin-left:4px"></span>' +
     '<div style="flex:1"></div>' +
     (projBadge || '') +
@@ -24158,3 +24158,31 @@ function emSaveManageMappings(pid) {
       ' preserved',
   );
 }
+
+/* ── Remote change: drop every in-memory copy derived from the store ─────────────────────────
+   chRefreshFromStore (app/core.js) draws the open view again after the shared database sent newer
+   records. The matrix rows come from sget() on each load, but the results derived from them
+   (self-heal flag, compliance, row lookup, normalized points, aliases, dynamic column counts)
+   are kept in module variables. Clear them so the redraw builds from the new records. This
+   listens to chDropStoreCaches, which core.js sends from chRefreshFromStore BEFORE it redraws
+   (a second listener on chRefreshFromStore would run after the redraw). It only clears memory
+   and never writes to the store. */
+if (typeof window.addEventListener === 'function') window.addEventListener('chDropStoreCaches', function (e) {
+  var keys = (e && e.detail && e.detail.keys) || [];
+  if (
+    keys.length &&
+    !keys.some(function (k) {
+      return /^en_(eqmatrix|projects)/.test(String(k));
+    })
+  )
+    return;
+  _emSelfHealDone = {};
+  _emRowByIdCache = {};
+  _emDynPointFreqCache = null;
+  _emDynPointFreqCacheKey = null;
+  _emCalcCache = new WeakMap();
+  _emSampleCache = new WeakMap();
+  _emFooterMemo = null;
+  _emCatKeyLabelCache = null;
+  emBustAllCaches();
+});

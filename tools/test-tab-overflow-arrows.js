@@ -19,7 +19,7 @@ const nav = { scrollLeft: 0, clientWidth: 1000, scrollWidth: 1000, scrolled: nul
 const L = { hidden: true, addEventListener: (e, f) => (listeners.l[e] = f) };
 const R = { hidden: true, addEventListener: (e, f) => (listeners.r[e] = f) };
 const sandbox = { window: { addEventListener: (e, f) => (listeners.win[e] = f) },
-  document: { getElementById: (id) => ({ hdrTabs: nav, hdrTabsL: L, hdrTabsR: R })[id] || null } };
+  document: { getElementById: (id) => ({ pdTabScroll: nav, hdrTabsL: L, hdrTabsR: R })[id] || null } };
 vm.createContext(sandbox);
 vm.runInContext(fn('_tabArrowState') + fn('_tabArrowsUpdate') + fn('_tabArrowsInit'), sandbox);
 const run = (c) => vm.runInContext(c, sandbox);

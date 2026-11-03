@@ -36,7 +36,7 @@ ok('skip rule: newest stored = last complete month -> no fetch', async () => {})
   await ctx.wddRefreshAllProjectsWeather();
   assert.strictEqual(fetched.length, 2); n++; console.log('PASS all-project ZIPs once per day (2 ZIPs, repeat = 0 more)');
   // Trigger: the refresh runs from loadUtilityData on every load, with no dbFullPull dependency.
-  const lu = src.slice(src.indexOf('function loadUtilityData()'), src.indexOf('function saveUtilityData'));
+  const lu = src.slice(src.indexOf('function loadUtilityData('), src.indexOf('function saveUtilityData'));
   assert.ok(/wddRefreshAllProjectsWeather\(\);\s*}\s*$/.test(lu), 'loadUtilityData must end with the refresh call');
   assert.ok(!src.slice(a, b).includes('dbFullPull'), 'weather refresh must not wait for dbFullPull');
   n++; console.log('PASS refresh runs from loadUtilityData, no dbFullPull');

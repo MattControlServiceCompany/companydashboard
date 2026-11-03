@@ -46,7 +46,7 @@ sb.__x = cust([meter('a'), meter('b')]);
 sb.__x.buildings[0].meters[0].bills.push(bill(next));
 vm.runInContext('_meterBillCounts = null', sb);
 check('(a) unseeded (save during load) -> no lines', api.collect(sb.__x).length === 0);
-const loadFn = src.match(/function loadUtilityData\(\) \{[\s\S]*?\n}\n/)[0];
+const loadFn = src.match(/function loadUtilityData\([a-zA-Z]*\) \{[\s\S]*?\n}\n/)[0];
 check(
   '(a) loadUtilityData only seeds, never collects',
   /_seedMeterBillCounts\(/.test(loadFn) && !/_collectDuplicateCandidates/.test(loadFn),

@@ -3435,7 +3435,7 @@ function _pricingPriceListInnerHTML(projId) {
     _pricingFmt(cfg.hourlyRate).replace(/\.00$/, '') +
     '/hr.</div>' +
     '<div style="padding:0 14px 8px;display:flex;flex-wrap:wrap;gap:8px;align-items:center">' +
-    '<input type="search" id="pricing-pl-q-' +
+    '<input type="search" data-ch-filter id="pricing-pl-q-' +
     projId +
     '" placeholder="Search SKU or description" value="' +
     _escHtml(st.q) +
@@ -10876,3 +10876,10 @@ function _pricingComputeSummaryData(projId, estimate) {
   ].join('\n');
   if (document.head) document.head.appendChild(style);
 })();
+
+// Remote change: the pricing rows and the optimizer counts are built from the store. Drop them so the next
+// draw builds them from the new records. (app/core.js sends chDropStoreCaches; this only clears memory.)
+if (typeof window.addEventListener === 'function') window.addEventListener('chDropStoreCaches', function () {
+  _pricingRowCache = {};
+  _pricingOptimizerStats = {};
+});

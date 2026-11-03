@@ -8,7 +8,7 @@
       content="default-src 'self'; script-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com https://cdn.jsdelivr.net; font-src 'self' https://fonts.gstatic.com https://cdn.jsdelivr.net; img-src 'self' data: blob:; connect-src 'self' https://cdn.jsdelivr.net https://rrdugvwxtddjywqykphf.supabase.co; worker-src 'self' blob:; object-src 'none'; base-uri 'self'; form-action 'self';"
     />
     <title>CompanyHub — EMS Leads</title>
-    <link rel="stylesheet" href="lib/theme.css?v=199" />
+    <link rel="stylesheet" href="lib/theme.css?v=200" />
     <link
       rel="icon"
       href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><rect width='100' height='100' rx='15' fill='%23238636'/><text x='50' y='72' font-size='60' font-weight='bold' text-anchor='middle' fill='white'>C</text></svg>"
@@ -17,9 +17,9 @@
       href="https://fonts.googleapis.com/css2?family=Syne:wght@400;500;600;700;800&family=DM+Sans:ital,wght@0,300;0,400;0,500;0,600;1,400&family=DM+Mono:wght@400;500&display=swap"
       rel="stylesheet"
     />
-    <script src="lib/theme.js?v=199"></script>
+    <script src="lib/theme.js?v=200"></script>
     <script src="app/ch-auth.js"></script>
-    <script src="sidebar-mode.js?v=199"></script>
+    <script src="sidebar-mode.js?v=200"></script>
     <style>
       /* â•â•â• TOKENS â•â•â• */
       :root {
@@ -1403,8 +1403,8 @@
         }
       }
     </style>
-    <link rel="stylesheet" href="feedback-widget.css?v=199" />
-    <link rel="stylesheet" href="sidebar-rail.css?v=199" />
+    <link rel="stylesheet" href="feedback-widget.css?v=200" />
+    <link rel="stylesheet" href="sidebar-rail.css?v=200" />
   </head>
   <body>
     <!-- TOPBAR -->
@@ -1553,7 +1553,7 @@
                   <span style="color: var(--text2); font-size: 13px">🔍</span
                   ><input
                     type="text"
-                    id="pipeSearch"
+                    id="pipeSearch" data-ch-filter
                     data-fb="ems.pipeline-search"
                     placeholder="Search leads..."
                     oninput="renderPipeline()"
@@ -1561,7 +1561,7 @@
                 </div>
                 <select
                   class="filter-sel"
-                  id="pipeFilterCSC"
+                  id="pipeFilterCSC" data-ch-filter
                   data-fb="ems.pipeline-filter.csc"
                   onchange="renderPipeline()"
                 >
@@ -1597,13 +1597,13 @@
               <span style="color: var(--text2); font-size: 13px">🔍</span
               ><input
                 type="text"
-                id="tableSearch"
+                id="tableSearch" data-ch-filter
                 data-fb="ems.table-search"
                 placeholder="Search by company, contact, city..."
                 oninput="renderTable()"
               />
             </div>
-            <select class="filter-sel" id="tableStage" data-fb="ems.table-filter.stage" onchange="renderTable()">
+            <select class="filter-sel" id="tableStage" data-ch-filter data-fb="ems.table-filter.stage" onchange="renderTable()">
               <option value="">All Stages</option>
               <option>Prospect</option>
               <option>Contacted</option>
@@ -1614,13 +1614,13 @@
               <option>Lost</option>
               <option>On Hold</option>
             </select>
-            <select class="filter-sel" id="tablePri" data-fb="ems.table-filter.priority" onchange="renderTable()">
+            <select class="filter-sel" id="tablePri" data-ch-filter data-fb="ems.table-filter.priority" onchange="renderTable()">
               <option value="">All Priority</option>
               <option>High</option>
               <option>Medium</option>
               <option>Low</option>
             </select>
-            <select class="filter-sel" id="tableCSC" data-fb="ems.table-filter.csc" onchange="renderTable()">
+            <select class="filter-sel" id="tableCSC" data-ch-filter data-fb="ems.table-filter.csc" onchange="renderTable()">
               <option value="">All CSC</option>
             </select>
           </div>
@@ -2170,6 +2170,15 @@
           load();
           renderAll();
         });
+      });
+
+      // The shared database holds a newer leads list: read it and draw the view again.
+      window.addEventListener('chRefreshFromStore', (e) => {
+        if (e.detail && e.detail.draw === false) return; // lists-only pass; the draw pass follows
+        const keys = (e.detail && e.detail.keys) || [];
+        if (!emsStore || !keys.some((k) => /^ems_/.test(String(k)))) return;
+        load();
+        renderAll();
       });
 
       function renderAll() {
@@ -3061,11 +3070,11 @@
         return d && new Date(d + 'T00:00:00') < new Date(new Date().toDateString());
       }
     </script>
-    <script src="lib/formatting.js?v=199"></script>
-    <script src="app/sync-classification.js?v=199"></script>
-    <script src="app/db.js?v=199"></script>
-    <script src="app/sync-ui.js?v=199"></script>
-    <script src="app/ems-leads-store.js?v=199"></script>
-    <script src="feedback-widget.js?v=199"></script>
+    <script src="lib/formatting.js?v=200"></script>
+    <script src="app/sync-classification.js?v=200"></script>
+    <script src="app/db.js?v=200"></script>
+    <script src="app/sync-ui.js?v=200"></script>
+    <script src="app/ems-leads-store.js?v=200"></script>
+    <script src="feedback-widget.js?v=200"></script>
   </body>
 </html>

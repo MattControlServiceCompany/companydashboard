@@ -14147,9 +14147,6 @@ function initUtilityTool() {
   _restorePageStateAfterVersionUpdate();
 }
 
-// Tracks a version the user has explicitly dismissed in THIS tab so re-checks
-// (visibilitychange/interval) don't keep re-nagging about the same release.
-let _chVersionDismissed = null;
 let _chVerLastCheck = 0;
 const _CH_VER_MIN_GAP_MS = 60 * 1000;
 
@@ -14167,7 +14164,7 @@ function _checkForVersionUpdate() {
       const fetchedVer = m[1];
       const loadedVer = _loadedVersion();
       _paintLoadedVersion();
-      if (loadedVer && loadedVer !== fetchedVer && fetchedVer !== _chVersionDismissed) {
+      if (loadedVer && loadedVer !== fetchedVer) {
         // Do NOT auto-reload: a silent reload would destroy in-progress work.
         _showVersionUpdateBanner(fetchedVer);
       }
@@ -14194,7 +14191,7 @@ function _paintLoadedVersion() {
   if (v) el.textContent = v + (_isCDP ? ' [CDP]' : '');
 }
 
-/* Persistent, actionable "Reload to update" control shown when this tab's already-
+/* Persistent, actionable "New version: reload" sidebar link shown when this tab's already-
    loaded code (loadedVer) no longer matches the live server (fetchedVer). Replaces
    the old passive toast (issue e9f1157c) which told the user the site had updated
    but gave them no way to actually get the new code short of guessing to hit F5.
@@ -14203,41 +14200,17 @@ function _paintLoadedVersion() {
    _restorePageStateAfterVersionUpdate() plumbing (issue 066423b5) rather than
    reinventing state preservation. */
 function _showVersionUpdateBanner(fetchedVer) {
-  if (document.getElementById('ch-ver-update-banner')) return; // already showing
-  const bar = document.createElement('div');
-  bar.id = 'ch-ver-update-banner';
-  bar.style.cssText =
-    // z-index 100000: intentionally above .report-overlay (99999, the full-screen
-    // report preview) so the banner is never hidden behind it -- higher than the
-    // documented --z-toast (9999) tier for that reason. See ui-standards.md z-index
-    // ladder; .report-overlay's 99999 already sits outside that ladder too.
-    'position:fixed;top:22px;left:50%;transform:translateX(-50%);z-index:100000;' +
-    'background:var(--s3);border:1px solid var(--accent);border-radius:10px;' +
-    'padding:11px 15px;font-size:12px;color:var(--text);display:flex;' +
-    'align-items:center;gap:10px;max-width:440px;box-shadow:0 4px 18px rgba(0,0,0,.35)';
-  const msg = document.createElement('span');
-  msg.textContent =
-    'A new version (' + fetchedVer + ') is available. Reload to update — your in-progress work will be preserved.';
-  const reloadBtn = document.createElement('button');
-  reloadBtn.className = 'btn btn-em btn-sm';
-  reloadBtn.textContent = 'Reload now';
-  reloadBtn.style.flexShrink = '0';
-  reloadBtn.onclick = function () {
+  // A plain text link in the sidebar footer (window.chSidebarLink, app/sync-ui.js). No bar, no layout space.
+  const link = typeof window.chSidebarLink === 'function' ? window.chSidebarLink('ch-ver-update-link') : null;
+  if (!link) return; // no sidebar (login page): nothing to show
+  link.textContent = 'New version: reload';
+  link.setAttribute('data-sync-short', 'Reload');
+  link.title = 'Version ' + fetchedVer + ' is available. Reload to update. Your in-progress work is kept.';
+  link.style.display = '';
+  link.onclick = function () {
     _savePageStateForVersionUpdate();
     location.reload();
   };
-  const dismissBtn = document.createElement('button');
-  dismissBtn.className = 'toast-x';
-  dismissBtn.textContent = '✕';
-  dismissBtn.setAttribute('aria-label', 'Dismiss');
-  dismissBtn.onclick = function () {
-    _chVersionDismissed = fetchedVer; // don't re-nag about this same version in this tab
-    bar.remove();
-  };
-  bar.appendChild(msg);
-  bar.appendChild(reloadBtn);
-  bar.appendChild(dismissBtn);
-  document.body.appendChild(bar);
 }
 
 /* Save current page state to sessionStorage before a version-triggered reload.

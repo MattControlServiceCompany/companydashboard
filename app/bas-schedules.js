@@ -261,7 +261,7 @@
       '<div class="pcal-nav">' +
       '<select class="fi bas-date" aria-label="Date" onchange="basPickDate(' + pid + ',this.value)">' + dateOpts + '</select>' +
       '<select class="fi bas-date" aria-label="Building" onchange="basPickBldg(' + pid + ',this.value)">' + bOpts + '</select>' +
-      '<input class="fi" id="bas-q-' + pid + '" placeholder="Search schedules" value="' + esc(s.q) + '" oninput="basSearch(' + pid + ',this.value)" style="flex:1 1 220px;min-width:0"></div>' +
+      '<input class="fi" data-ch-filter id="bas-q-' + pid + '" placeholder="Search schedules" value="' + esc(s.q) + '" oninput="basSearch(' + pid + ',this.value)" style="flex:1 1 220px;min-width:0"></div>' +
       '<details' + (s.open || s.q || s.bldg ? ' open' : '') + ' ontoggle="basToggle(' + pid + ',this.open)"><summary>' + esc(plural(keys.length, 'program', 'programs')) + '</summary>' +
       '<div id="bas-view-' + pid + '">' + tbl +
       (keys.length > shown.length

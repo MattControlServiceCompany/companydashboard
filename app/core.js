@@ -583,16 +583,72 @@ const MONTHS = [
 const DAYS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
 
 /* ── INIT ── */
-function init() {
-  projects = sget('en_projects', []);
-  tasks = sget('en_tasks', []);
-  equipment = sget('en_equipment', []);
+// Put the fresh value into the current in-memory value and keep the current objects. Arrays match by id
+// (or by position when an item has no id); objects update key by key. Code that still holds an old record
+// (a save that ran across an await) then writes into the current object, so its edit is not lost in a
+// detached copy. The ONE function for this; loadCoreLists and loadUtilityData use it.
+function chReconcile(cur, fresh) {
+  if (Array.isArray(fresh)) {
+    if (!Array.isArray(cur)) return fresh;
+    const byId = new Map();
+    cur.forEach((c) => {
+      if (c && typeof c === 'object' && c.id != null) byId.set(String(c.id), c);
+    });
+    const next = fresh.map((f, i) => {
+      if (f && typeof f === 'object' && f.id != null) {
+        const c = byId.get(String(f.id));
+        return c ? chReconcile(c, f) : f;
+      }
+      return f && typeof f === 'object' && cur[i] && typeof cur[i] === 'object' && cur[i].id == null
+        ? chReconcile(cur[i], f)
+        : f;
+    });
+    cur.length = 0;
+    next.forEach((n) => cur.push(n));
+    return cur;
+  }
+  if (fresh && typeof fresh === 'object') {
+    if (!cur || typeof cur !== 'object' || Array.isArray(cur)) return fresh;
+    // Sync data is untrusted: never write these keys, and read only own properties (prototype pollution).
+    const own = (o, k) => Object.prototype.hasOwnProperty.call(o, k);
+    const unsafe = (k) => k === '__proto__' || k === 'constructor' || k === 'prototype';
+    Object.keys(cur).forEach((k) => {
+      if (!own(fresh, k)) delete cur[k];
+    });
+    Object.keys(fresh).forEach((k) => {
+      if (unsafe(k) || !own(fresh, k)) return;
+      cur[k] = chReconcile(own(cur, k) ? cur[k] : undefined, fresh[k]);
+    });
+    return cur;
+  }
+  return fresh;
+}
+
+// The ONE place the core lists are read from the store into memory. init() calls it at start;
+// chRefreshFromStore() calls it (readOnly = true) when the shared database holds newer records.
+// readOnly: read the store, keep the current objects, and write nothing (no migrations, no heals).
+function loadCoreLists(readOnly) {
+  const _projectsFresh = sget('en_projects', []);
+  const _tasksFresh = sget('en_tasks', []);
+  const _equipFresh = sget('en_equipment', []);
+  if (readOnly) {
+    projects = chReconcile(projects, _projectsFresh);
+    tasks = chReconcile(tasks, _tasksFresh);
+    equipment = chReconcile(equipment, _equipFresh);
+  } else {
+    projects = _projectsFresh;
+    tasks = _tasksFresh;
+    equipment = _equipFresh;
+  }
   const _dcSaved = sget('en_dc_events', null);
   if (_dcSaved && Array.isArray(_dcSaved.events) && _dcSaved.events.length) {
     dcEvents = _dcSaved.events;
     dcViewYear = _dcSaved.viewYear || new Date().getFullYear();
     dcViewMonth = _dcSaved.viewMonth || new Date().getMonth();
+  } else if (readOnly) {
+    dcEvents = []; // the remote list is empty: do not keep the old events
   }
+  if (readOnly) return;
   // Projects load from localStorage only — no hardcoded seed data
   if (false) {
     /* seed data removed — real PII was here */
@@ -611,6 +667,10 @@ function init() {
       sset('en_projects', projects);
     }
   });
+}
+
+function init() {
+  loadCoreLists();
   // Migrate: remove deprecated tabs from saved tab order
   try {
     const _savedTabOrder = JSON.parse(localStorage.getItem('ch_projTabOrder'));
@@ -747,6 +807,40 @@ function init() {
   }
 }
 
+// The shared database holds newer records and app/db.js has already merged them into the store.
+// Read them into the page lists and draw the open view again. No reload, no user action.
+// sync-ui.js sends 'chRefreshFromStore' with draw: false at once (lists only) and again with no
+// draw flag when the open view is not dirty and no dialog is open; it keeps the view state around it.
+function chRefreshFromStore(keys, draw) {
+  keys = keys || [];
+  const has = (re) => !keys.length || keys.some((k) => re.test(String(k)));
+  // Modules that keep results derived from the store in memory drop them first (own listener in own file).
+  window.dispatchEvent(new CustomEvent('chDropStoreCaches', { detail: { keys: keys } }));
+  if (has(/^en_(projects|tasks|equipment|dc_events)$/)) loadCoreLists(true);
+  if (has(/^en_(utility_|customers)/) && typeof loadUtilityData === 'function') loadUtilityData(true);
+  if (draw === false) return;
+  refreshProjDropdowns();
+  renderProjTable();
+  renderSidebarFolders();
+  renderUpcomingTasks();
+  updateHomeStats();
+  const active = document.querySelector('.view.active');
+  const viewId = active ? active.id.replace(/^view-/, '') : '';
+  const detail = document.getElementById('projDetailView');
+  if (viewId === 'projects' && detail && detail.style.display !== 'none' && window._activeProjId != null) {
+    const p = projects.find((x) => x.id == window._activeProjId);
+    if (p) renderDetail(p);
+    else showList();
+  } else if (viewId && viewId !== 'projects' && viewId !== 'pdf') {
+    sv(viewId);
+  }
+}
+window.addEventListener('chRefreshFromStore', (e) => chRefreshFromStore(e.detail && e.detail.keys, e.detail && e.detail.draw));
+// The user left the view or changed a tab. app/sync-ui.js clears its dirty mark and runs a pending redraw.
+function chViewChanged() {
+  window.dispatchEvent(new CustomEvent('chViewChanged'));
+}
+
 function updateHomeStats() {
   document.getElementById('h-proj').textContent = projects.filter((p) => p.status === 'active').length;
   document.getElementById('h-equip').textContent = equipment.length;
@@ -843,6 +937,7 @@ function sv(id, btn) {
   const target = btn?.classList.contains('s-item') ? btn : btn?.querySelector('.s-item') || btn;
   (target || document.querySelector(`.sidebar .s-item[onclick*="'${id}'"]`))?.classList.add('active');
   sessionStorage.setItem('ch_activeView', id);
+  chViewChanged();
   localStorage.setItem('ch_activeView', id);
   _syncHeaderTabs();
   if (id === 'pdf') {
@@ -1196,6 +1291,7 @@ function showList() {
   if (_dl !== 'last') window._activeProjTab = _dl;
   saveProjSession();
   _syncHeaderTabs();
+  chViewChanged();
 }
 function backToList() {
   showList();
@@ -1293,6 +1389,7 @@ function openDetail(id) {
   document.querySelectorAll(`.spfi[data-pid="${id}"]`).forEach((c) => c.classList.add('active'));
   document.querySelector('.ptab.active')?.scrollTo({ top: 0, behavior: 'smooth' });
   saveProjSession();
+  chViewChanged();
 }
 
 function renderDetail(p) {
@@ -3003,7 +3100,7 @@ function _tabArrowState(scrollLeft, clientWidth, scrollWidth) {
   return { left: max > 1 && scrollLeft > 1, right: max > 1 && scrollLeft < max - 1 };
 }
 function _tabArrowsUpdate() {
-  const nav = document.getElementById('hdrTabs');
+  const nav = document.getElementById('pdTabScroll');
   const l = document.getElementById('hdrTabsL');
   const r = document.getElementById('hdrTabsR');
   if (!nav || !l || !r) return;
@@ -3012,7 +3109,7 @@ function _tabArrowsUpdate() {
   r.hidden = !st.right;
 }
 function _tabArrowsInit() {
-  const nav = document.getElementById('hdrTabs');
+  const nav = document.getElementById('pdTabScroll');
   if (!nav || nav._arrowsWired) return;
   nav._arrowsWired = true;
   nav.addEventListener('scroll', _tabArrowsUpdate, { passive: true });
@@ -3212,6 +3309,7 @@ function sPTab(tab, el) {
     localStorage.setItem('ch_lastProjTab_' + window._activeProjId, tab);
   }
   saveProjSession();
+  chViewChanged();
 }
 
 function toggleProjCommodityShown(projId, commodity, checked) {

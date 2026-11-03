@@ -183,7 +183,7 @@
     var r = s.rows[s.edit];
     return (
       '<h4>Choose the BAS program(s) for ' + esc(r.space) + '</h4>' +
-      '<div class="pcal-row" style="margin-top:8px"><input class="fi" id="spm-q-' + pid + '" placeholder="Search programs, for example gym or room 114" value="' + esc(s.q) + '" oninput="spmSearch(' + pid + ',this.value)" autocomplete="off"></div>' +
+      '<div class="pcal-row" style="margin-top:8px"><input class="fi" data-ch-filter id="spm-q-' + pid + '" placeholder="Search programs, for example gym or room 114" value="' + esc(s.q) + '" oninput="spmSearch(' + pid + ',this.value)" autocomplete="off"></div>' +
       '<div id="spm-list-' + pid + '"></div>' +
       '<div class="pcal-nav"><button class="btn btn-em btn-sm" onclick="spmSave(' + pid + ')">Save and confirm</button>' +
       '<button class="btn btn-ghost btn-sm" onclick="spmAct(' + pid + ",'cancel',0)\">Cancel</button></div>"

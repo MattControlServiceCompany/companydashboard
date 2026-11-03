@@ -76,8 +76,8 @@ function check(name, ok, extra) {
       const m = await page.evaluate(() => ({
         pageOver: document.documentElement.scrollWidth - document.documentElement.clientWidth,
         bodyOver: document.body.scrollWidth - document.documentElement.clientWidth,
-        stripScrolls: document.getElementById('hdrTabs').scrollWidth > document.getElementById('hdrTabs').clientWidth + 1,
-        stripOverflowX: getComputedStyle(document.getElementById('hdrTabs')).overflowX,
+        stripScrolls: document.getElementById('pdTabScroll').scrollWidth > document.getElementById('pdTabScroll').clientWidth + 1,
+        stripOverflowX: getComputedStyle(document.getElementById('pdTabScroll')).overflowX,
       }));
       check('page has no sideways scroll at ' + w + ' px', m.pageOver <= 0 && m.bodyOver <= 0, JSON.stringify(m));
       if (w === 640) check('tab strip scrolls inside itself at 640 px', m.stripScrolls && m.stripOverflowX === 'auto', JSON.stringify(m));

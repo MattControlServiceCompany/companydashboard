@@ -672,3 +672,9 @@ window.addEventListener('storage', function (e) {
     }, 500);
   }
 });
+
+// Remote change: the report data is built from the store. Drop it so the next preview reads the new records.
+// (app/core.js sends chDropStoreCaches before it draws the open view again. This only clears memory.)
+if (typeof window.addEventListener === 'function') window.addEventListener('chDropStoreCaches', function () {
+  _reportData = null;
+});

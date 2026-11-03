@@ -36,7 +36,7 @@ const srv = http.createServer((q, r) => {
 
 // headless Chromium hides scrollbars by default; ignoreDefaultArgs brings back the real ones so the check is meaningful.
 function measure() {
-  const nav = document.getElementById('hdrTabs');
+  const nav = document.getElementById('pdTabScroll');
   const tabs = [...document.querySelectorAll('#pdTabBar button[data-tab]')].filter((b) => b.offsetWidth > 0);
   const cs = getComputedStyle(nav);
   const nr = nav.getBoundingClientRect();

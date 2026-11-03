@@ -821,7 +821,7 @@ const ok = (body) => ({ ok: true, status: 200, json: async () => body });
     },
   );
   await t(
-    'M1 poll with a pending local edit for the key keeps the edit and asks for a refresh (remoteChange)',
+    'M1 poll with a pending local edit for the key keeps the edit and shows no banner',
     async () => {
       const srv = makeServer({ en_note: 'v1' });
       const L = await syncedBrowser(srv);
@@ -834,10 +834,7 @@ const ok = (body) => ({ ok: true, status: 200, json: async () => body });
       L.events.length = 0;
       await L.DB.__t._checkForRemoteChanges();
       assert.strictEqual(L.DB.get('en_note'), 'mine', 'pending local edit not overwritten');
-      assert.ok(
-        L.events.some((e) => e.type === 'remoteChange'),
-        'refresh bar event',
-      );
+      assert.ok(!L.events.some((e) => e.type === 'remoteChange'), 'no refresh bar event');
       assert.ok(!L.events.some((e) => e.type === 'dbRemoteApplied'), 'not announced as applied');
     },
   );
@@ -857,21 +854,6 @@ const ok = (body) => ({ ok: true, status: 200, json: async () => body });
     const applied = L.events.find((e) => e.type === 'dbRemoteApplied');
     assert.deepStrictEqual(Array.from(applied.detail.keys).sort(), ['en_other', KEY]);
   });
-  await t('M1 sync-ui reloads only when safe, otherwise shows the bar (source check)', () => {
-    const ui = fs.readFileSync(path.join(__dirname, 'app', 'sync-ui.js'), 'utf8');
-    assert.ok(/addEventListener\('dbRemoteApplied'/.test(ui));
-    assert.ok(/function _safeToReload\(\)/.test(ui));
-    assert.ok(/_safeToReload\(\)\) window\.location\.reload\(\);\s*else \{\s*renderRemoteChangeBanner/.test(ui));
-  });
-
-  await t('M1 reload guard blocks on the app dialogs (.modal-bg.open) and an unsent PDF queue (source check)', () => {
-    const ui = fs.readFileSync(path.join(__dirname, 'app', 'sync-ui.js'), 'utf8');
-    const m = /OPEN_DIALOG_SELECTOR =\s*'([^']+)'/.exec(ui);
-    assert.ok(m, 'one dialog selector');
-    assert.ok(/\.modal-bg\.open/.test(m[1]) && /\.ems-modal-bg\.open/.test(m[1]));
-    assert.ok(/pdfQueueDepth\(\) > 0/.test(ui));
-  });
-
   await t(
     'PDF queue entries carry the owner tag and the drain sends only the verified user own entries (source check)',
     () => {
@@ -2232,43 +2214,6 @@ const ok = (body) => ({ ok: true, status: 200, json: async () => body });
     assert.deepStrictEqual(r.sent, ['delete pdf-1', 'upload pdf-2']);
     assert.deepStrictEqual(r.queue, []);
   });
-  // The real sync-ui.js _safeToReload with its OPEN_DIALOG_SELECTOR, run against a fake document/window.
-  const safeToReload = (st) => {
-    const src = fs
-      .readFileSync(path.join(__dirname, 'app', 'sync-ui.js'), 'utf8')
-      .split('\r')
-      .join('');
-    const sel = src.match(/var OPEN_DIALOG_SELECTOR =[\s\S]*?;\n/)[0];
-    const doc = {
-      activeElement: st.active || null,
-      querySelector: (q) => (st.dialog ? { matched: q } : null),
-      querySelectorAll: () => st.fields || [],
-    };
-    const win = {
-      DB: { getQueueDepth: () => st.queue || 0 },
-      pdfQueueDepth: () => st.pdfQueue || 0,
-    };
-    return new Function('document', 'window', sel + cutFn('sync-ui.js', '_hasUnsavedField') + cutFn('sync-ui.js', '_safeToReload') + '; return _safeToReload();')(
-      doc,
-      win,
-    );
-  };
-  await t(
-    'fix 9: _safeToReload blocks while typing, with an open dialog, or with unsent data; allows otherwise',
-    () => {
-      assert.strictEqual(safeToReload({}), true);
-      assert.strictEqual(safeToReload({ active: { tagName: 'INPUT' } }), false, 'typing in an input');
-      assert.strictEqual(
-        safeToReload({ active: { tagName: 'DIV', isContentEditable: true } }),
-        false,
-        'typing in a contenteditable',
-      );
-      assert.strictEqual(safeToReload({ dialog: true }), false, 'an open dialog');
-      assert.strictEqual(safeToReload({ queue: 1 }), false, 'unsent data writes');
-      assert.strictEqual(safeToReload({ pdfQueue: 1 }), false, 'unsent PDFs');
-      assert.strictEqual(safeToReload({ active: { tagName: 'BUTTON' } }), true, 'focus on a button is not typing');
-    },
-  );
   await t(
     "fix 9: real db.js drain, user id changes across the refresh: A's entry stays queued under A, nothing goes to B::key",
     async () => {
@@ -2800,30 +2745,41 @@ const ok = (body) => ({ ok: true, status: 200, json: async () => body });
       return el;
     };
     const els = {};
+    const docHandlers = {};
     const doc = {
-      get activeElement() {
-        return st.active || null;
-      },
-      querySelector: (q) => (st.dialog ? { matched: q } : null),
-      querySelectorAll: () => st.fields || [],
+      querySelector: () => null,
+      querySelectorAll: (q) => (/modal|dialog|conflict/.test(q) ? (st.dialog ? [{ getClientRects: () => [1] }] : []) : []),
       getElementById: (id) => els[id] || null,
       createElement: () => mkEl(),
       body: mkEl(),
       head: mkEl(),
-      addEventListener() {},
+      addEventListener: (n, f) => {
+        (docHandlers[n] = docHandlers[n] || []).push(f);
+      },
     };
+    doc.body.querySelectorAll = () => [];
+    doc.body.contains = () => true; // every field is in the open view
     doc.body.appendChild = (c) => {
       if (c && c.id) els[c.id] = c;
       return c;
     };
     st.reloads = 0;
+    st.refreshes = []; // chRefreshFromStore draw passes (the open view is drawn again)
+    st.listLoads = []; // chRefreshFromStore lists-only passes (draw: false)
     const win = {
       addEventListener: (n, f) => {
         (handlers[n] = handlers[n] || []).push(f);
       },
       removeEventListener() {},
+      dispatchEvent: (ev) => {
+        if (ev.type === 'chRefreshFromStore') (ev.detail.draw === false ? st.listLoads : st.refreshes).push(Array.from(ev.detail.keys));
+      },
       DB: { getQueueDepth: () => st.queue || 0 },
       pdfQueueDepth: () => 0,
+      scrollX: 0,
+      scrollY: 0,
+      scrollTo() {},
+      getComputedStyle: () => ({ visibility: 'visible', display: 'block' }),
       location: {
         reload: () => {
           st.reloads++;
@@ -2834,11 +2790,18 @@ const ok = (body) => ({ ok: true, status: 200, json: async () => body });
       window: win,
       document: doc,
       console,
-      setTimeout: (f) => {
-        timers.push({ f, kind: 't' });
-        return timers.length;
+      CustomEvent: function (type, init) {
+        this.type = type;
+        this.detail = init && init.detail;
       },
-      clearTimeout() {},
+      setTimeout: (f) => {
+        const h = { f, kind: 't', live: true };
+        timers.push(h);
+        return h;
+      },
+      clearTimeout: (h) => {
+        if (h) h.live = false;
+      },
       setInterval: (f) => {
         const h = { f, kind: 'i', live: true };
         timers.push(h);
@@ -2852,60 +2815,73 @@ const ok = (body) => ({ ok: true, status: 200, json: async () => body });
     vm.runInContext(src, sb);
     return {
       fire: (n, detail) => (handlers[n] || []).forEach((f) => f({ detail })),
-      tick: () => timers.filter((x) => x.kind === 'i' && x.live).forEach((x) => x.f()),
-      intervals: () => timers.filter((x) => x.kind === 'i' && x.live).length,
+      // One input event in the open view: trusted = the user typed; not trusted = script set the value.
+      type: (trusted) => (docHandlers.input || []).forEach((h) => h({ isTrusted: trusted !== false, target: { closest: () => null } })),
+      tick: () =>
+        timers
+          .filter((x) => x.live)
+          .forEach((x) => {
+            x.live = false;
+            x.f();
+          }),
+      intervals: () => timers.filter((x) => x.live).length,
     };
   }
-  await t('POLL2 a change seen while unsafe is kept and the page reloads once it becomes safe', () => {
-    const st = { active: { tagName: 'INPUT' } };
-    const ui = loadSyncUi(st);
-    ui.fire('dbRemoteApplied', { keys: ['en_tasks'] });
-    assert.strictEqual(st.reloads, 0, 'no reload while typing');
-    ui.tick();
-    assert.strictEqual(st.reloads, 0, 'still typing: still no reload');
-    st.dialog = true;
-    st.active = null;
-    ui.tick();
-    assert.strictEqual(st.reloads, 0, 'dialog open: no reload');
-    st.dialog = false;
-    st.queue = 2;
-    ui.tick();
-    assert.strictEqual(st.reloads, 0, 'unsent data: no reload');
-    st.queue = 0;
-    ui.tick();
-    assert.strictEqual(st.reloads, 1, 'safe now: reload');
-    assert.strictEqual(ui.intervals(), 0, 'retry stops after the reload');
-    // Several unsafe events share one retry loop.
-    const st2 = { active: { tagName: 'TEXTAREA' } };
-    const ui2 = loadSyncUi(st2);
-    ui2.fire('dbRemoteApplied', { keys: ['a'] });
-    ui2.fire('dbRemoteApplied', { keys: ['b'] });
-    assert.strictEqual(ui2.intervals(), 1, 'one retry loop');
-  });
-  await t('POLL3 text typed in a blurred field blocks the reload and is kept; reloads once saved', () => {
-    const typed = { tagName: 'INPUT', type: 'text', value: 'half-written note', defaultValue: '' };
-    const st = { active: null, fields: [typed] };
-    const ui = loadSyncUi(st);
-    ui.fire('dbRemoteApplied', { keys: ['en_tasks'] });
-    assert.strictEqual(st.reloads, 0, 'unsaved text in a blurred field: no reload');
-    ui.tick();
-    assert.strictEqual(st.reloads, 0, 'still unsaved: still no reload');
-    assert.strictEqual(typed.value, 'half-written note', 'text kept');
-    typed.defaultValue = typed.value; // saved
-    ui.tick();
-    assert.strictEqual(st.reloads, 1, 'saved: reload');
-    const sel = { tagName: 'SELECT', options: [{ selected: true, defaultSelected: false }] };
-    const chk = { tagName: 'INPUT', type: 'checkbox', checked: true, defaultChecked: false };
-    assert.strictEqual(safeToReload({ fields: [sel] }), false, 'changed select');
-    assert.strictEqual(safeToReload({ fields: [chk] }), false, 'changed checkbox');
-    assert.strictEqual(safeToReload({ fields: [{ tagName: 'INPUT', type: 'text', value: 'a', defaultValue: 'a' }] }), true);
-  });
-  await t('POLL2 a change seen while safe reloads at once and starts no retry loop', () => {
+  await t('POLL2 a user edit in the open view holds the redraw; the lists read the store at once; the save or a view change runs the redraw (no timer, no reload)', () => {
     const st = {};
     const ui = loadSyncUi(st);
+    ui.type();
     ui.fire('dbRemoteApplied', { keys: ['en_tasks'] });
-    assert.strictEqual(st.reloads, 1);
-    assert.strictEqual(ui.intervals(), 0);
+    assert.deepStrictEqual(st.listLoads, [['en_tasks']], 'lists read the store at once');
+    assert.strictEqual(st.refreshes.length, 0, 'dirty view: no redraw');
+    assert.strictEqual(ui.intervals(), 0, 'no timer while the view is dirty');
+    ui.fire('dataUpdated', { key: 'en_tasks' }); // the page saved the edit
+    ui.tick(); // the after-save timer (0 ms)
+    assert.deepStrictEqual(st.refreshes, [['en_tasks']], 'saved: one redraw');
+    ui.tick(); // the one scroll-position timer that the redraw starts
+    assert.strictEqual(ui.intervals(), 0, 'nothing left running');
+    assert.strictEqual(st.reloads, 0, 'the page never reloads');
+    // Several events while dirty share one redraw with all keys; leaving the view runs it.
+    const st2 = {};
+    const ui2 = loadSyncUi(st2);
+    ui2.type();
+    ui2.fire('dbRemoteApplied', { keys: ['a'] });
+    ui2.fire('dbRemoteApplied', { keys: ['b'] });
+    assert.strictEqual(ui2.intervals(), 0, 'no timer');
+    assert.strictEqual(st2.refreshes.length, 0, 'still dirty');
+    ui2.fire('chViewChanged');
+    ui2.tick();
+    assert.deepStrictEqual(st2.refreshes, [['a', 'b']], 'view left: one redraw with all keys');
+    // A value set by script (input event not trusted) does not hold the redraw.
+    const st3 = {};
+    const ui3 = loadSyncUi(st3);
+    ui3.type(false);
+    ui3.fire('dbRemoteApplied', { keys: ['en_tasks'] });
+    assert.deepStrictEqual(st3.refreshes, [['en_tasks']], 'script value: redraw at once');
+    // Typing again after the save holds the next redraw.
+    ui3.type();
+    ui3.fire('dbRemoteApplied', { keys: ['en_tasks'] });
+    assert.strictEqual(st3.refreshes.length, 1, 'typed again: held');
+    assert.ok(!/MutationObserver|_fieldSelector|_undoMutations|unkeyed/.test(fs.readFileSync(path.join(__dirname, 'app', 'sync-ui.js'), 'utf8')), 'no field save/restore or undo code left');
+  });
+  await t('POLL2 an open dialog queues the refresh until it closes; unsent data does not stop it; no banner', () => {
+    const st = { dialog: true, queue: 3 };
+    const ui = loadSyncUi(st);
+    ui.fire('dbRemoteApplied', { keys: ['en_tasks'] });
+    assert.strictEqual(st.refreshes.length, 0, 'dialog open: no refresh');
+    assert.strictEqual(ui.intervals(), 1, 'queued with one local timer');
+    ui.tick();
+    assert.strictEqual(st.refreshes.length, 0, 'dialog still open');
+    st.dialog = false;
+    ui.tick();
+    assert.deepStrictEqual(st.refreshes, [['en_tasks']], 'dialog closed: queued refresh ran');
+    assert.strictEqual(st.reloads, 0);
+    const st3 = { queue: 3 };
+    const ui3 = loadSyncUi(st3);
+    ui3.fire('dbRemoteApplied', { keys: ['en_tasks'] });
+    assert.deepStrictEqual(st3.refreshes, [['en_tasks']], 'unsent data: refresh at once');
+    assert.ok(!/refresh to get the latest|renderRemoteChangeBanner|remoteChange/.test(
+      fs.readFileSync(path.join(__dirname, 'app', 'sync-ui.js'), 'utf8')), 'no refresh banner code left');
   });
 
   // ---- Review fixes (2026-10-06)
@@ -2943,21 +2919,33 @@ const ok = (body) => ({ ok: true, status: 200, json: async () => body });
     assert.strictEqual(written.ch_theme, 'dark', 'the theme itself is still exported');
   });
   await t('REV2 a pending reload timer is cleared on a user switch or sign-out', () => {
-    const st = { active: { tagName: 'INPUT' } };
+    const st = { dialog: true };
     const ui = loadSyncUi(st);
     ui.fire('dbRemoteApplied', { keys: ['en_tasks'] });
     assert.strictEqual(ui.intervals(), 1, 'retry loop running');
     ui.fire('chAuthStateChanged', { signedOut: false });
     assert.strictEqual(ui.intervals(), 0, 'retry loop cleared by the user switch');
-    st.active = null;
+    st.dialog = false;
     ui.tick();
     assert.strictEqual(st.reloads, 0, 'no reload for the previous user');
+    assert.strictEqual(st.refreshes.length, 0, 'no refresh for the previous user');
+    // The conflict-resolved delay timer is cleared too.
+    ui.fire('dbRemoteApplied', { keys: ['en_tasks'], reason: 'conflict-resolved' });
+    assert.strictEqual(ui.intervals(), 1, 'delay timer running');
+    ui.fire('chAuthStateChanged', { signedOut: false });
+    assert.strictEqual(ui.intervals(), 0, 'delay timer cleared by the user switch');
     // A later unsafe event starts a fresh loop (the flag was reset too).
-    st.active = { tagName: 'INPUT' };
+    st.dialog = true;
     ui.fire('dbRemoteApplied', { keys: ['en_tasks'] });
     assert.strictEqual(ui.intervals(), 1, 'a new loop can start');
     ui.fire('chAuthStateChanged', { signedOut: true });
     assert.strictEqual(ui.intervals(), 0, 'cleared on sign-out too');
+    // The dirty mark is dropped with the user: the next change for the new user draws at once.
+    st.dialog = false;
+    ui.type();
+    ui.fire('chAuthStateChanged', { signedOut: false });
+    ui.fire('dbRemoteApplied', { keys: ['en_tasks'] });
+    assert.deepStrictEqual(st.refreshes, [['en_tasks']], 'dirty mark dropped on the user switch');
   });
   await t('REV3 a local edit made while the server value is being hashed is never overwritten', async () => {
     const srv = makeServer({ en_note: 'v1' });
@@ -3773,7 +3761,7 @@ await t(
   "CREDIT7 version check: no timer, one small Range GET of site-ui.js, compares CH_VERSION, 60 s limit, never hidden",
   async () => {
     const src = fs.readFileSync(path.join(__dirname, "app", "report-engine.js"), "utf8");
-    const a = src.indexOf("let _chVersionDismissed");
+    const a = src.indexOf("let _chVerLastCheck");
     const b = src.indexOf("function _showVersionUpdateBanner");
     const block = src.slice(a, b);
     const init = src.slice(src.indexOf("_checkForVersionUpdate();"), src.indexOf("_restorePageStateAfterVersionUpdate();"));

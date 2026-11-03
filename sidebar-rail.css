@@ -208,3 +208,20 @@ html[data-sb-mode='slim'] .sidebar .sb-version #ch-sync-status-btn::before {
   content: attr(data-sync-short);
   font-size: 10px;
 }
+
+/* Conflict history and Held drafts links: slim rail shows the short text from data-sync-short */
+html[data-sb-mode='slim'] .sidebar .sb-version .ch-sb-link-row {
+  font-size: 0;
+  text-align: center;
+  margin-top: 2px;
+}
+html[data-sb-mode='slim'] .sidebar .sb-version .ch-sb-link-row button {
+  font-size: 0;
+  display: block;
+  margin: 0 auto;
+  text-decoration: none;
+}
+html[data-sb-mode='slim'] .sidebar .sb-version .ch-sb-link-row button::before {
+  content: attr(data-sync-short);
+  font-size: 10px;
+}

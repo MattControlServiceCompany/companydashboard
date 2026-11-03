@@ -289,22 +289,30 @@ if (typeof window !== 'undefined' && window.addEventListener) {
     loadUtilityData();
   });
 }
-function loadUtilityData() {
-  utilityData = {};
+function loadUtilityData(readOnly) {
   _meterBillCounts = null;
-  if (!_loadWritesAllowed()) {
-    // Backend mode, no full pull yet (offline start from a cache): read the blobs as they are and write
-    // nothing. The dbFullPull listener above repeats the load with all its write steps.
-    _loadWritesDeferred = true;
+  if (readOnly || !_loadWritesAllowed()) {
+    // readOnly (a remote refresh): read the blobs as they are, keep the current objects, write nothing.
+    // Backend mode, no full pull yet (offline start from a cache): the same read; the dbFullPull listener
+    // above repeats the load with all its write steps.
+    if (!readOnly) _loadWritesDeferred = true;
+    const fresh = {};
     sget('en_customers', []).forEach(function (c) {
       const d = sget('en_utility_' + c.id, null);
-      if (d) {
-        utilityData[c.id] = d;
-        _lastSavedSnapshot[c.id] = JSON.stringify(d);
-      }
+      if (d) fresh[c.id] = d;
+    });
+    if (readOnly) {
+      utilityData = chReconcile(utilityData, fresh);
+    } else {
+      utilityData = {};
+      Object.assign(utilityData, fresh);
+    }
+    Object.keys(fresh).forEach(function (id) {
+      _lastSavedSnapshot[id] = JSON.stringify(fresh[id]);
     });
     return;
   }
+  utilityData = {};
   // One-time migration: if old combined key exists, split into per-project keys then remove it
   const combined = sget('en_utilityData', null);
   if (combined && typeof combined === 'object' && Object.keys(combined).length) {

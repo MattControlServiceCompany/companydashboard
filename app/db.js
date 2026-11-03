@@ -1445,7 +1445,7 @@ const DB = (() => {
   }
   // 2026-11-02: after a conflict is resolved the page still holds the old list in memory (the table showed
   // the value the user just discarded until a reload). Announce it like a change from the other user:
-  // app/sync-ui.js reloads the page when that is safe (else shows the refresh bar).
+  // app/sync-ui.js draws the open view again.
   function _announceResolvedView(key, epoch) {
     if (epoch !== _identityEpoch || typeof window === 'undefined') return;
     window.dispatchEvent(new CustomEvent('dbRemoteApplied', { detail: { keys: [key], reason: 'conflict-resolved' } }));
@@ -2740,8 +2740,7 @@ const DB = (() => {
   // applied by the ONE hydration function (_hydrate: merge, never overwrite an
   // edit, archive what loses) and announced with `dbRemoteApplied`, so
   // app/sync-ui.js re-renders. A key that could not be applied (a pending local
-  // edit waits in the queue, or the fetch failed) is announced with
-  // `remoteChange`, which shows the passive "refresh" bar.
+  // edit waits in the queue, or the fetch failed) is not announced: the next check tries again.
   // _remoteCheckIfDue is the gate every trigger uses (poll tick, tab visible again, window focus): never while the
   // tab is hidden, at most once per REMOTE_CHECK_MIN_MS since the last manifest GET of any kind.
   // The poll (2026-11-02): the 60 s poll was removed 2026-10-07 and nothing replaced it, so a visible tab that never
@@ -2796,17 +2795,15 @@ const DB = (() => {
     try {
       await _hydrate();
     } catch (e) {
-      console.warn('[DB] Remote check: applying server changes failed, showing the refresh bar:', e);
+      console.warn('[DB] Remote check: applying server changes failed, the next check tries again:', e);
     }
     if (epoch !== _identityEpoch || typeof window === 'undefined') return;
     const applied = [];
-    const notApplied = [];
     changed.forEach((c) => {
       const v = _replicaVersions[c.localKey];
-      (v && typeof v.version === 'number' && v.version >= c.version ? applied : notApplied).push(c.localKey);
+      if (v && typeof v.version === 'number' && v.version >= c.version) applied.push(c.localKey);
     });
     if (applied.length) window.dispatchEvent(new CustomEvent('dbRemoteApplied', { detail: { keys: applied } }));
-    if (notApplied.length) window.dispatchEvent(new CustomEvent('remoteChange', { detail: { keys: notApplied } }));
   }
 
   // --- Per-user-settings-sync (2026-07-20 fix) — shared-browser identity
@@ -3360,6 +3357,9 @@ const DB = (() => {
 
   function remove(key) {
     delete _cache[key];
+    if (typeof window !== 'undefined') {
+      window.dispatchEvent(new CustomEvent('dataUpdated', { detail: { key } }));
+    }
 
     // --- 2a.4 (client half): tombstone delete, not a silent local drop. ---
     // Goes through the SAME replication tail as set() (deleted:true payload)

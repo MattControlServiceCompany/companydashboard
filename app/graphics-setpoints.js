@@ -3314,7 +3314,7 @@ function spRenderBASSnapshot(projId) {
     projId +
     '">' +
     '<div style="margin-bottom:8px;display:flex;gap:8px;align-items:center">' +
-    '<select class="fi" style="font-size:12px;padding:4px 8px;max-width:240px" onchange="spBASFilter(\'' +
+    '<select data-ch-filter class="fi" style="font-size:12px;padding:4px 8px;max-width:240px" onchange="spBASFilter(\'' +
     projId +
     '\',this.value)">' +
     bldgOpts +

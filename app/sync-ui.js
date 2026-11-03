@@ -6,9 +6,8 @@
 // beyond the small public accessors DB already exposes (getQueueDepth, getConflictArchive).
 // Renders:
 //   1. "N unsynced changes" pill (syncQueueChanged) — bottom-right badge.
-//   2. (M1) Server changes with no pending local edit are applied by db.js and the page
-//      reloads when it is safe (dbRemoteApplied). The passive "X changed - refresh" banner
-//      (remoteChange) shows only when they could not be applied or a reload is unsafe.
+//   2. (M1) Server changes with no pending local edit are applied by db.js and the open view
+//      draws again by itself (dbRemoteApplied -> chRefreshFromStore). No banner, no reload.
 //   3. Persistent "offline — showing local copy" banner (dbOfflineBanner), cleared by the
 //      next successful hydration/manifest round-trip (dbHydrated).
 //   4. (Phase 2b) A BLOCKING conflict-resolution modal, opened by app/db.js calling
@@ -30,15 +29,10 @@
     var style = document.createElement('style');
     style.id = 'ch-sync-ui-styles';
     style.textContent =
-      // Both top banners live inside ONE fixed flex-column stack so that a
-      // remote-change banner and an offline banner can be visible at the
-      // same time without occluding each other (both are position:fixed
-      // top:0 individually would otherwise overlap — found + fixed during
-      // 2a implementer verification).
-      '#ch-sync-banner-stack{position:fixed;top:0;left:0;right:0;z-index:9997;' +
-      'display:flex;flex-direction:column;}' +
+      // Notices live in ONE stack in the normal page flow, above the header row (first child of the
+      // page column). A notice takes its own row. It never covers the header, the tabs or the page.
+      '#ch-sync-banner-stack{position:static;flex:0 0 auto;display:flex;flex-direction:column;}' +
       '#ch-sync-banner-stack>div{text-align:center;font-size:13px;padding:6px 12px;display:none;}' +
-      '#ch-sync-banner{background:var(--accent,#2563eb);color:#fff;}' +
       '#ch-sync-offline-banner{background:var(--warn,#b45309);color:#fff;}' +
       '#ch-sync-signedout-banner,#ch-sync-foreign-banner,#ch-sync-hydrate-failed-banner,#ch-sync-auth-rejected-banner{background:var(--warn,#b45309);color:#fff;}' +
       '#ch-sync-signedout-banner button,#ch-sync-foreign-banner button,#ch-sync-hydrate-failed-banner button{margin-left:8px;border-radius:4px;padding:2px 10px;font-size:12px;' +
@@ -47,11 +41,10 @@
       '#ch-sync-archive-full-banner button{margin-left:8px;border-radius:4px;padding:2px 10px;font-size:12px;' +
       'font-family:inherit;cursor:pointer;border:1px solid #fff;background:transparent;color:#fff;}' +
       // --- Phase 2b: conflict modal + archive viewer -------------------------
-      '#ch-archive-link{position:fixed;bottom:52px;right:16px;z-index:9998;' +
-      'background:var(--s3,#333);color:var(--text,#fff);border:1px solid var(--border,#555);' +
-      'border-radius:999px;padding:6px 14px;font-size:12px;font-family:inherit;cursor:pointer;' +
-      'box-shadow:0 2px 8px rgba(0,0,0,.25);display:none;}' +
-      '#ch-archive-link:hover{background:var(--s4,#3a4258);}' +
+      // Conflict history link: plain text in the sidebar footer, next to the Sync status link.
+      '#ch-archive-link{background:none;border:0;padding:0;font-size:inherit;font-family:inherit;letter-spacing:inherit;' +
+      'color:var(--text2,#9aa3b8);text-decoration:underline;cursor:pointer;}' +
+      '#ch-archive-link:hover{color:var(--text,#fff);}' +
       '#ch-conflict-overlay{position:fixed;inset:0;z-index:var(--z-modal,800);' +
       'background:rgba(0,0,0,.55);display:flex;align-items:center;justify-content:center;' +
       'font-family:inherit;}' +
@@ -98,17 +91,7 @@
       'border-radius:6px;padding:8px 10px;margin-bottom:8px;font-size:12px;color:var(--text,#fff);}' +
       '.ch-archive-meta{color:var(--text2,#9aa3b8);font-size:11px;margin-bottom:6px;}' +
       // --- Phase 2a.7: sync-status panel (mode switch, per-key status, queue depth) ---
-      // Stacked in the SAME bottom-right corner as the pill (bottom:16) and the
-      // archive link (bottom:52), one more slot up (bottom:88) — a bottom-left
-      // resting position was tried first and rejected: it sat on top of the
-      // existing sidebar's Settings/Data controls (found
-      // during this implementer's own visual verification screenshot).
-      '#ch-sync-status-btn{position:fixed;bottom:6px;left:16px;z-index:9998;' +
-      'background:var(--s3,#333);color:var(--text,#fff);border:1px solid var(--border,#555);' +
-      'border-radius:999px;padding:4px 10px;font-size:11px;font-family:inherit;cursor:pointer;' +
-      'box-shadow:0 2px 8px rgba(0,0,0,.25);}' +
-      '#ch-sync-status-btn:hover{background:var(--s4,#3a4258);}' +
-      '#ch-sync-status-btn.ch-sync-status-inline{position:static;background:none;border:0;border-radius:0;' +
+      '#ch-sync-status-btn.ch-sync-status-inline{background:none;border:0;border-radius:0;' +
       'box-shadow:none;padding:0;font-size:inherit;font-family:inherit;letter-spacing:inherit;color:var(--text2,#9aa3b8);' +
       'text-decoration:underline;}' +
       '#ch-sync-status-btn.ch-sync-status-inline:hover{background:none;color:var(--text,#fff);}' +
@@ -132,20 +115,17 @@
       '.ch-sync-status-key-in-sync .ch-sync-status-key-name{color:var(--accent,#2563eb);}' +
       '.ch-sync-status-key-diverged .ch-sync-status-key-name{color:var(--warn,#b45309);}' +
       '.ch-sync-status-key-pending .ch-sync-status-key-name{color:var(--text2,#9aa3b8);}' +
-      // All widths: the corner controls sit in ONE row on the bottom edge (archive, held drafts) and .content reserves that row, so nothing
-      // covers page content. At 900px and wider the row starts right of the 220px sidebar.
-      '#ch-archive-link{bottom:6px;font-size:11px;padding:4px 10px;}' +
-      '#ch-archive-link{left:236px;right:auto;}' +
-      '#ch-held-link{position:fixed;bottom:6px;left:400px;z-index:9998;background:var(--s3,#333);' +
-      'color:var(--text,#fff);border:1px solid var(--border,#555);border-radius:999px;padding:4px 10px;' +
-      'font-size:11px;font-family:inherit;cursor:pointer;box-shadow:0 2px 8px rgba(0,0,0,.25);display:none;}' +
-      '#ch-held-link:hover{background:var(--s4,#3a4258);}' +
+      '#ch-ver-update-link,#ch-held-link{background:none;border:0;padding:0;font-size:inherit;font-family:inherit;letter-spacing:inherit;' +
+      'color:var(--text2,#9aa3b8);text-decoration:underline;cursor:pointer;}' +
+      '#ch-ver-update-link:hover,#ch-held-link:hover{color:var(--text,#fff);}' +
       '.ch-held-details{border:1px solid var(--border,#333);border-radius:6px;background:var(--s3,#1e2438);padding:6px 10px;}' +
       '.ch-held-details summary{cursor:pointer;font-size:13px;font-weight:600;color:var(--text,#fff);}' +
       '.ch-held-row{margin-top:8px;padding-top:8px;border-top:1px solid var(--border,#333);font-size:12px;color:var(--text,#fff);}' +
       '.ch-held-btns{display:flex;gap:8px;margin-top:6px;}' +
-      'body.ch-corner-row .content{margin-bottom:38px;}' +
-      '@media (max-width:899px){#ch-archive-link{left:16px;}#ch-held-link{left:16px;bottom:40px;}}';
+      '.sb-version .ch-sb-link-row{display:block;margin-top:4px;}' +
+      '.sb-version .ch-sb-link-row button{display:block;margin:0 auto;}' +
+      '.sb-version .ch-sb-sep{display:none;}' +
+      '.sb-version #en-sb-version-text:not(:empty) ~ .ch-sb-sep{display:inline;}';
     document.head.appendChild(style);
   }
 
@@ -154,9 +134,38 @@
     if (!stack) {
       stack = document.createElement('div');
       stack.id = 'ch-sync-banner-stack';
-      document.body.appendChild(stack);
+      var col = document.querySelector('.app-col');
+      if (col) col.insertBefore(stack, col.firstChild);
+      else document.body.insertBefore(stack, document.body.firstChild);
     }
     return stack;
+  }
+  window.chNoticeStack = ensureStack;
+  window.chSidebarLink = function (id) {
+    ensureStyles();
+    return ensureSidebarLink(id);
+  };
+
+  // The Conflict history and Held drafts links sit in the sidebar footer under the version line, as plain
+  // text links. No sidebar (login page): they stay hidden, the Sync status panel lists held drafts.
+  function ensureSidebarLink(id) {
+    var el = document.getElementById(id);
+    if (el) return el;
+    var host = document.querySelector('.sb-version');
+    if (!host) return null;
+    var row = document.getElementById('ch-sb-link-row');
+    if (!row) {
+      row = document.createElement('div');
+      row.id = 'ch-sb-link-row';
+      row.className = 'ch-sb-link-row';
+      host.appendChild(row);
+    }
+    el = document.createElement('button');
+    el.id = id;
+    el.type = 'button';
+    el.style.display = 'none';
+    row.appendChild(el);
+    return el;
   }
 
   function ensureEl(id) {
@@ -195,16 +204,6 @@
       _syncState[k] = patch[k];
     });
     renderSyncStatusButton();
-  }
-
-  function renderRemoteChangeBanner(keys) {
-    ensureStyles();
-    var el = ensureEl('ch-sync-banner');
-    var n = keys && keys.length ? keys.length : 0;
-    if (!n) return;
-    el.textContent =
-      n + (n === 1 ? ' item was' : ' items were') + ' changed on the server — refresh to get the latest.';
-    el.style.display = 'block';
   }
 
   // The ONE text of the offline banner. `waiting` = the first read of the saved data keeps failing
@@ -338,83 +337,197 @@
     setSyncState({ depth: depth });
   });
 
-  window.addEventListener('remoteChange', function (e) {
-    renderRemoteChangeBanner(e.detail && e.detail.keys);
-  });
-
-  // M1: db.js already applied these server changes to the local copy. The page
-  // holds its own in-memory lists, so the ONE way to show them is a page reload.
-  // Reload only when nothing here can be lost by it (no field being edited, no
-  // dialog open, nothing unsent); otherwise show the refresh bar instead.
-  // The ONE list of "a dialog is open" selectors. The app's dialogs use .modal-bg.open
-  // (and .ems-modal-bg.open on the EMS view).
+  // The shared database holds newer records. db.js has already merged them into the store
+  // (it keeps a record that has a pending local edit and retries it on the next check).
+  // The page holds its own in-memory lists, so 'chRefreshFromStore' (handled by app/core.js and the
+  // EMS Leads pages) reads the store into them at once (draw: false) and draws the open view when it
+  // is safe. The user does nothing. Two rules keep the user's work safe:
+  //  1. Dirty view: a trusted input or change event inside the open view (not inside a dialog) marks
+  //     the view dirty. A dirty view is not drawn again; the redraw stays pending. The mark clears and
+  //     the pending redraw runs when the page saves data ('dataUpdated' from app/db.js), or when the
+  //     user leaves the view or changes a tab ('chViewChanged' from app/core.js). Values that script
+  //     code fills in never mark the view dirty. No timer.
+  //  2. Open dialog or modal: the redraw waits until it closes (local 1 s check, no server call).
+  //  View state (page and panel scroll positions, expanded rows, selected rows by key) is kept.
+  // Data safety is not decided here: a save from a dirty view goes through the version-checked write
+  // and the conflict rule in app/db.js.
+  var PENDING_REFRESH_RETRY_MS = 1000;
   var OPEN_DIALOG_SELECTOR =
     '.modal-bg.open, .ems-modal-bg.open, .modal-overlay.open, .modal.open, #ch-conflict-overlay, dialog[open]';
-  // Any field on the page whose value differs from what the page loaded with holds
-  // an unsaved edit, even when it no longer has focus. A reload would destroy it.
-  function _hasUnsavedField() {
-    var els = document.querySelectorAll('input, textarea, select');
-    for (var i = 0; i < els.length; i++) {
-      var f = els[i];
-      var tag = f.tagName;
-      if (tag === 'SELECT') {
-        for (var j = 0; j < f.options.length; j++) {
-          if (f.options[j].selected !== f.options[j].defaultSelected) return true;
-        }
-      } else if (tag === 'TEXTAREA') {
-        if (f.value !== f.defaultValue) return true;
-      } else if (f.type === 'checkbox' || f.type === 'radio') {
-        if (f.checked !== f.defaultChecked) return true;
-      } else if (f.type !== 'hidden' && f.type !== 'button' && f.type !== 'submit' && f.type !== 'reset' && f.type !== 'file') {
-        if (f.value !== f.defaultValue) return true;
-      }
-    }
+  var STATE_CLASSES = ['open', 'expanded', 'selected', 'sel'];
+  var SCROLL_KEYS = { PageUp: 1, PageDown: 1, Home: 1, End: 1, ArrowUp: 1, ArrowDown: 1, ' ': 1 };
+  var _dirty = false;
+  var _userScrollTick = 0;
+  var _pendingRefreshKeys = [];
+  var _pendingRefreshTimer = null;
+  var _conflictTimer = null;
+
+  function _esc(v) {
+    return window.CSS && CSS.escape ? CSS.escape(String(v)) : String(v).replace(/["\\]/g, '\\$&');
+  }
+  function _viewRoot() {
+    return document.querySelector('.view.active') || document.body;
+  }
+  function _visible(el) {
+    if (!el.getClientRects().length) return false;
+    var cs = window.getComputedStyle(el);
+    return cs.visibility !== 'hidden' && cs.display !== 'none';
+  }
+  function _anyVisible(sel) {
+    var l = document.querySelectorAll(sel);
+    for (var i = 0; i < l.length; i++) if (_visible(l[i])) return true;
     return false;
   }
-  function _safeToReload() {
-    var a = document.activeElement;
-    var typing =
-      a && (a.tagName === 'INPUT' || a.tagName === 'TEXTAREA' || a.tagName === 'SELECT' || a.isContentEditable);
-    var dialog = document.querySelector(OPEN_DIALOG_SELECTOR);
-    var unsent =
-      (window.DB && typeof window.DB.getQueueDepth === 'function' && window.DB.getQueueDepth() > 0) ||
-      (typeof window.pdfQueueDepth === 'function' && window.pdfQueueDepth() > 0);
-    return !typing && !dialog && !unsent && !_hasUnsavedField();
+  // Real user edits only (trusted events): script-filled values never mark the view dirty.
+  function _markDirty(e) {
+    var t = e.target;
+    if (!e.isTrusted || !t || !t.closest) return;
+    if (t.closest(OPEN_DIALOG_SELECTOR)) return; // a dialog has its own rule: the redraw waits until it closes
+    if (!_viewRoot().contains(t)) return;
+    if (t.closest('[data-ch-filter]')) return; // a filter or search box holds no record data
+    _dirty = true;
   }
-  // A change that arrives while a reload is unsafe is KEPT (the stamp already
-  // advanced, so no later poll would announce it again). It is retried every
-  // few seconds and the page reloads as soon as it is safe. A reload also loads
-  // the applied data, so nothing is lost; no local edit is overwritten.
-  var _pendingReloadTimer = null;
-  var PENDING_RELOAD_RETRY_MS = 3000;
-  function _reloadWhenSafe() {
-    if (_pendingReloadTimer) return;
-    _pendingReloadTimer = setInterval(function () {
-      if (!_safeToReload()) return;
-      clearInterval(_pendingReloadTimer);
-      _pendingReloadTimer = null;
-      window.location.reload();
-    }, PENDING_RELOAD_RETRY_MS);
+  document.addEventListener('input', _markDirty, true);
+  document.addEventListener('change', _markDirty, true);
+  // The edit was saved, or the user left the view: the pending redraw runs after the caller has finished.
+  function _clearDirty() {
+    _dirty = false;
+    if (_pendingRefreshKeys.length) setTimeout(_refreshWhenSafe, 0);
   }
-  // A user switch or sign-out ends the pending reload: the change was for the previous user.
-  window.addEventListener('chAuthStateChanged', function () {
-    if (_pendingReloadTimer) {
-      clearInterval(_pendingReloadTimer);
-      _pendingReloadTimer = null;
+  window.addEventListener('dataUpdated', _clearDirty);
+  window.addEventListener('chViewChanged', _clearDirty);
+  ['wheel', 'touchstart', 'touchmove'].forEach(function (n) {
+    window.addEventListener(n, function (e) { if (e.isTrusted) _userScrollTick++; }, { capture: true, passive: true });
+  });
+  window.addEventListener(
+    'keydown',
+    function (e) { if (e.isTrusted && SCROLL_KEYS[e.key]) _userScrollTick++; },
+    true,
+  );
+  function _pathOf(el) {
+    var idx = [];
+    while (el && el !== document.body && !el.id) {
+      var par = el.parentNode;
+      if (!par) return null;
+      idx.unshift(Array.prototype.indexOf.call(par.children, el));
+      el = par;
     }
+    if (!el) return null;
+    return { anchor: el === document.body ? '' : el.id, idx: idx };
+  }
+  function _byPath(p) {
+    var el = p.anchor ? document.getElementById(p.anchor) : document.body;
+    for (var i = 0; el && i < p.idx.length; i++) el = el.children[p.idx[i]];
+    return el || null;
+  }
+  function _captureViewState() {
+    var st = { scrolls: [], page: [window.scrollX, window.scrollY], classes: [], opens: [], tick: _userScrollTick };
+    var all = document.body.querySelectorAll('*');
+    for (var i = 0; i < all.length; i++) {
+      var e = all[i];
+      if (e.scrollTop > 0 || e.scrollLeft > 0) {
+        var p = _pathOf(e);
+        if (p) st.scrolls.push({ path: p, top: e.scrollTop, left: e.scrollLeft });
+      }
+    }
+    var root = _viewRoot();
+    Array.prototype.forEach.call(root.querySelectorAll('details[open]'), function (d) {
+      var p = _pathOf(d);
+      if (p) st.opens.push(p);
+    });
+    STATE_CLASSES.forEach(function (c) {
+      Array.prototype.forEach.call(root.querySelectorAll('.' + c), function (e) {
+        // A row is found again by its record key, never by its position. No key: its mark is not restored.
+        var key = e.getAttribute('data-id') || e.id;
+        if (key) st.classes.push({ key: key, byData: !!e.getAttribute('data-id'), cls: c, tag: e.tagName });
+      });
+    });
+    return st;
+  }
+  function _restoreScrolls(st) {
+    if (st.tick !== _userScrollTick) return; // the user scrolled since the redraw: leave the view where they put it
+    st.scrolls.forEach(function (s) {
+      var e = _byPath(s.path);
+      if (e) {
+        e.scrollTop = s.top;
+        e.scrollLeft = s.left;
+      }
+    });
+    window.scrollTo(st.page[0], st.page[1]);
+  }
+  function _restoreViewState(st) {
+    st.opens.forEach(function (p) {
+      var d = _byPath(p);
+      if (d && d.tagName === 'DETAILS') d.open = true;
+    });
+    var root = _viewRoot();
+    st.classes.forEach(function (c) {
+      var e = c.byData ? root.querySelector('[data-id="' + _esc(c.key) + '"]') : document.getElementById(c.key);
+      if (!e || e.tagName !== c.tag || !e.parentNode || e.classList.contains(c.cls)) return;
+      var sibs = Array.prototype.filter.call(e.parentNode.children, function (x) {
+        return x.classList.contains(c.cls);
+      });
+      if (!sibs.length) e.classList.add(c.cls);
+    });
+    _restoreScrolls(st);
+    // Charts and tables that fill in a moment later can move the panel; put the positions back once more,
+    // but only if the user has not scrolled since the redraw.
+    setTimeout(function () {
+      _restoreScrolls(st);
+    }, 300);
+  }
+  function _scheduleRefreshRetry(ms) {
+    if (_pendingRefreshTimer) clearTimeout(_pendingRefreshTimer);
+    _pendingRefreshTimer = setTimeout(function () {
+      _pendingRefreshTimer = null;
+      _refreshWhenSafe();
+    }, ms);
+  }
+  function _refreshWhenSafe() {
+    if (_pendingRefreshTimer) {
+      clearTimeout(_pendingRefreshTimer);
+      _pendingRefreshTimer = null;
+    }
+    if (!_pendingRefreshKeys.length) return;
+    if (_anyVisible(OPEN_DIALOG_SELECTOR)) {
+      _scheduleRefreshRetry(PENDING_REFRESH_RETRY_MS);
+      return;
+    }
+    if (_dirty) return; // the keys stay pending; a save or a view change runs the redraw (no timer)
+    var keys = _pendingRefreshKeys;
+    _pendingRefreshKeys = [];
+    var st = _captureViewState();
+    window.dispatchEvent(new CustomEvent('chRefreshFromStore', { detail: { keys: keys } }));
+    _restoreViewState(st);
+  }
+  // A user switch or sign-out ends the pending refresh: the change was for the previous user.
+  window.addEventListener('chAuthStateChanged', function () {
+    if (_pendingRefreshTimer) {
+      clearTimeout(_pendingRefreshTimer);
+      _pendingRefreshTimer = null;
+    }
+    if (_conflictTimer) {
+      clearTimeout(_conflictTimer);
+      _conflictTimer = null;
+    }
+    _pendingRefreshKeys = [];
+    _dirty = false;
   });
   window.addEventListener('dbRemoteApplied', function (e) {
     var keys = (e.detail && e.detail.keys) || [];
-    var go = function () {
-      if (_safeToReload()) window.location.reload();
-      else {
-        renderRemoteChangeBanner(keys);
-        _reloadWhenSafe();
-      }
-    };
+    keys.forEach(function (k) {
+      if (_pendingRefreshKeys.indexOf(k) < 0) _pendingRefreshKeys.push(k);
+    });
+    // The page lists read the store now, even when the view must wait.
+    window.dispatchEvent(new CustomEvent('chRefreshFromStore', { detail: { keys: keys, draw: false } }));
     // After a conflict choice (reason 'conflict-resolved') the "Your choices were saved" message shows first.
-    if (e.detail && e.detail.reason === 'conflict-resolved') setTimeout(go, CONFLICT_RELOAD_DELAY_MS);
-    else go();
+    if (e.detail && e.detail.reason === 'conflict-resolved') {
+      if (_conflictTimer) clearTimeout(_conflictTimer);
+      _conflictTimer = setTimeout(function () {
+        _conflictTimer = null;
+        _refreshWhenSafe();
+      }, CONFLICT_RELOAD_DELAY_MS);
+    } else _refreshWhenSafe();
   });
   var CONFLICT_RELOAD_DELAY_MS = 2500;
 
@@ -481,7 +594,7 @@
   };
   var FRIENDLY_KEY_PREFIXES = [
     ['en_utility_', 'this utility data'],
-    ['en_eqmatrix_', 'this equipment list'],
+    ['en_eqmatrix_', 'this equipment matrix'],
     ['en_pricing_', 'this pricing data'],
     ['en_report_history', 'the report history'],
     ['en_report_templates_', 'the report templates'],
@@ -836,30 +949,107 @@
 
   window.SyncConflictUI = window.SyncConflictUI || {};
   window.SyncConflictUI.showConflictModal = showConflictModal;
+  window.SyncConflictUI.describeConflictEntry = describeConflictEntry;
 
   // --- Conflict-archive viewer ----------------------------------------------
+  // --- Conflict history wording ---------------------------------------------
+  // The ONE place an archive entry becomes a sentence. Internal reason codes never show.
+  // lookup = { projectName(key) -> string|'' }, built from the real project and customer lists.
+  var KEY_PROJECT_PREFIXES = [
+    'en_utility_', 'en_eqmatrix_', 'en_pricing_', 'en_bas_snap_', 'en_bas_hist_', 'en_bas_acthist_',
+    'en_bas_groups_', 'en_bas_schedhistory_', 'en_bas_auditevents_', 'en_bas_', 'en_alarms_', 'en_audit_',
+    'en_hours_', 'en_cal_', 'en_space_map_', 'en_sched_actions_', 'en_budget_', 'en_agreement_', 'en_wdd_',
+  ];
+  function conflictLabelLookup() {
+    function list(k) {
+      var v = window.DB && typeof window.DB.get === 'function' ? window.DB.get(k) : null;
+      return Array.isArray(v) ? v : [];
+    }
+    return {
+      projectName: function (key) {
+        for (var i = 0; i < KEY_PROJECT_PREFIXES.length; i++) {
+          var pre = KEY_PROJECT_PREFIXES[i];
+          if (key.indexOf(pre) !== 0) continue;
+          var id = key.slice(pre.length);
+          var all = list('en_projects').concat(list('en_customers'));
+          for (var j = 0; j < all.length; j++) {
+            if (all[j] && String(all[j].id) === id) return all[j].name || all[j].title || '';
+          }
+          return '';
+        }
+        return '';
+      },
+    };
+  }
+  function _noun(key) {
+    var f = friendlyKeyName(key).replace(/^(this|the|these|a|an)\s+/i, '');
+    return f.charAt(0).toUpperCase() + f.slice(1);
+  }
+  function _plainDateTime(iso) {
+    var d = iso ? new Date(iso) : null;
+    if (!d || isNaN(d.getTime())) return 'an unknown time';
+    return (
+      d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) +
+      ' at ' +
+      d.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' })
+    );
+  }
+  function describeConflictEntry(entry, lookup) {
+    var key = String(entry.key || '');
+    var proj = lookup && lookup.projectName ? lookup.projectName(key) : '';
+    var lv = entry.losingValue;
+    var rec =
+      entry.recordId !== undefined && lv && typeof lv === 'object' && !Array.isArray(lv)
+        ? [lv.name, lv.title, lv.label, lv.text, lv.equipName, lv.equipType].find(function (x) {
+            return typeof x === 'string' && x;
+          }) || 'a record'
+        : '';
+    // Example: "Equipment matrix, AHU-1 (Project name)": the list, the record, then the project.
+    var who = _noun(key) + (rec ? ', ' + rec : '') + (proj ? ' (' + proj + ')' : '');
+    var when = _plainDateTime(entry.winningUpdatedAt || entry.archivedAt);
+    var mine = 'Download your version to compare.';
+    var theirs = 'Download their version to compare.';
+    var r = entry.reason;
+    var text;
+    var button = 'Download your version';
+    if (r === 'write-conflict-tombstone') {
+      text = who + ': another user deleted this on ' + when + '. Their deletion was kept. ' + mine;
+    } else if (r === 'deleted-elsewhere') {
+      text = who + ': another user deleted some items that you had changed. The deletion was kept. Download the deleted items to compare.';
+      button = 'Download the deleted items';
+    } else if (r === 'held-draft-discarded') {
+      text = who + ': you discarded a draft that was not saved yet. Download the draft to see it.';
+      button = 'Download the draft';
+    } else if (r === 'held-draft-replaced-queued-edit') {
+      text = who + ': you saved a draft over an earlier edit that was not sent yet. The draft was kept. Download the earlier edit to compare.';
+      button = 'Download the earlier edit';
+    } else if (r === 'queue-entry-no-owner') {
+      text = who + ': an edit that was not sent yet could not be matched to a user, so it was not applied. Download it to see it.';
+      button = 'Download the edit';
+    } else if (entry.winningSide === 'local') {
+      text = who + ': another user saved a different version on ' + when + '. You chose to keep your version. ' + theirs;
+      button = 'Download their version';
+    } else if (r === 'hydration-server-wins' || r === 'write-conflict-server-wins' || r === 'record-conflict') {
+      text = who + ': another user saved a newer version on ' + when + '. Their version was kept. ' + mine;
+    } else {
+      text = who + ': a change was set aside on ' + when + '. ' + mine;
+    }
+    return { text: text, button: button };
+  }
+
   function renderArchiveLink() {
     ensureStyles();
-    var el = ensureEl('ch-archive-link');
     var archive = window.DB && typeof window.DB.getConflictArchive === 'function' ? window.DB.getConflictArchive() : [];
+    var el = ensureSidebarLink('ch-archive-link');
+    if (!el) return;
     if (archive.length > 0) {
       el.textContent = 'Conflict history (' + archive.length + ')';
-      el.style.display = 'block';
+      el.setAttribute('data-sync-short', 'Conflicts ' + archive.length);
+      el.style.display = '';
       el.onclick = openArchivePanel;
     } else {
       el.style.display = 'none';
     }
-    updateCornerRow();
-  }
-
-  // The bottom row of corner pills (conflict history, held drafts) only takes space from the page
-  // while at least one of them is showing. Otherwise the page fills to the bottom of the window.
-  function updateCornerRow() {
-    var shown = ['ch-archive-link', 'ch-held-link'].some(function (id) {
-      var e = document.getElementById(id);
-      return !!e && e.style.display !== 'none' && e.style.display !== '';
-    });
-    document.body.classList.toggle('ch-corner-row', shown);
   }
 
   function openArchivePanel() {
@@ -887,6 +1077,15 @@
 
     var body = document.createElement('div');
     body.className = 'ch-archive-body';
+    if (sorted.length) {
+      var intro = document.createElement('div');
+      intro.className = 'ch-conflict-meta';
+      intro.style.marginBottom = '10px';
+      intro.textContent =
+        'These are changes that were set aside when two people saved the same item. Nothing is lost. ' +
+        'Each entry says which version was kept and lets you download the other one.';
+      body.appendChild(intro);
+    }
     if (!sorted.length) {
       var empty = document.createElement('div');
       empty.className = 'ch-conflict-meta';
@@ -898,11 +1097,11 @@
       row.className = 'ch-archive-entry';
       var meta = document.createElement('div');
       meta.className = 'ch-archive-meta';
-      meta.textContent =
-        friendlyKeyName(entry.key) + ' — ' + (entry.reason || 'conflict') + ' — ' + fmtDate(entry.archivedAt);
+      var desc = describeConflictEntry(entry, conflictLabelLookup());
+      meta.textContent = desc.text;
       var dl = document.createElement('button');
       dl.className = 'ch-conflict-btn';
-      dl.textContent = 'Download the version that was not kept';
+      dl.textContent = desc.button;
       dl.addEventListener('click', function () {
         downloadJSON(entry.key, entry.losingValue !== undefined ? entry.losingValue : null);
       });
@@ -966,7 +1165,7 @@
   }
 
   // The Sync status button sits in the sidebar, on the version line ("v... · Sync status").
-  // A page with no sidebar version line (the login page) keeps it as a floating button.
+  // A page with no sidebar version line (the login page) shows no sync status.
   function renderSyncStatusButton() {
     ensureStyles();
     var el = document.getElementById('ch-sync-status-btn');
@@ -977,12 +1176,14 @@
       var host = document.querySelector('.sb-version');
       if (host) {
         el.className = 'ch-sync-status-inline';
+        // Separator shows only when the version text before it is not empty (CSS rule in ensureStyles).
         var sep = document.createElement('span');
+        sep.className = 'ch-sb-sep';
         sep.textContent = ' · ';
         host.appendChild(sep);
         host.appendChild(el);
       } else {
-        document.body.appendChild(el);
+        return; // no sidebar (login page): no sync status shown
       }
     }
     var v = syncStatusView();
@@ -1290,15 +1491,15 @@
     var el = document.getElementById('ch-held-link');
     if (!list.length) {
       if (el) el.style.display = 'none';
-      updateCornerRow();
       return;
     }
-    el = ensureEl('ch-held-link');
+    el = ensureSidebarLink('ch-held-link');
+    if (!el) return;
     el.textContent = 'Held drafts (' + list.length + ')';
+    el.setAttribute('data-sync-short', 'Held ' + list.length);
     el.title = 'Versions kept on this computer with Decide later. Click to see them and choose what to do.';
-    el.style.display = 'block';
+    el.style.display = '';
     el.onclick = openSyncStatusPanel;
-    updateCornerRow();
   }
   ['syncQueueChanged', 'dbReady', 'chAuthStateChanged'].forEach(function (n) {
     window.addEventListener(n, renderHeldLink);
