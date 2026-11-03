@@ -3766,7 +3766,8 @@ await t(
     const block = src.slice(a, b);
     const init = src.slice(src.indexOf("_checkForVersionUpdate();"), src.indexOf("_restorePageStateAfterVersionUpdate();"));
     assert.ok(a > 0 && b > a, "version check block found");
-    assert.ok(!/setInterval|setTimeout/.test(block + init), "no timer loop for the version check");
+    assert.ok(!/setInterval/.test(block + init), "no timer loop for the version check");
+    assert.ok(!/setTimeout\([^)]*,\s*[1-9]\d{3,}/.test(init), "the page-load init sets no long timer");
     assert.ok(/Range:\s*'bytes=0-4095'/.test(block) && /cache:\s*'no-store'/.test(block), "small no-store Range GET");
     assert.ok(!/ETag|HEAD/.test(block.replace(/\/\*[\s\S]*?\*\//g, "")), "no ETag compare");
     const gets = block.match(/fetch\('site-ui\.js/g) || [];
@@ -3775,6 +3776,79 @@ await t(
     assert.ok(/_CH_VER_MIN_GAP_MS\s*=\s*60 \* 1000/.test(block), "60 second limit");
     assert.ok(/if \(document\.hidden\) return;/.test(init), "never while hidden");
     assert.ok(/addEventListener\('visibilitychange'/.test(init) && /addEventListener\('focus'/.test(init));
+  },
+);
+
+await t(
+  "CREDIT8 automatic reload to a new version: reloads only when safe; no timer, no extra server call",
+  async () => {
+    const src = fs.readFileSync(path.join(__dirname, "app", "report-engine.js"), "utf8");
+    const a = src.indexOf("function chSafeToReload");
+    const b = src.indexOf("/* The version baked into the code");
+    assert.ok(a > 0 && b > a, "reload block found");
+    const block = src.slice(a, b);
+    assert.ok(!/fetch\(|setInterval/.test(block), "the reload block makes no request and no loop");
+    function run(w, doc) {
+      const log = { reloads: 0, toasts: [], saves: 0, timers: [] };
+      const sandbox = {
+        window: w,
+        document: doc || { hidden: false },
+        sessionStorage: { _v: {}, getItem(k) { return this._v[k] || null; }, setItem(k, v) { this._v[k] = v; } },
+        showToast: (m) => log.toasts.push(m),
+        _savePageStateForVersionUpdate: () => log.saves++,
+        location: { reload: () => log.reloads++ },
+        setTimeout: (f, ms) => { log.timers.push({ f, ms }); return log.timers.length; },
+      };
+      vm.createContext(sandbox);
+      vm.runInContext(block + "; this.go = (v) => { _chPendingVer = v; _reloadForNewVersionWhenSafe(); }; this.safe = chSafeToReload;", sandbox);
+      return { sandbox, log };
+    }
+    const base = () => ({ DB: { getQueueDepth: () => 0, hasPendingWrites: () => false } });
+    // safe: toast, then one reload after 2 s
+    let r = run(base());
+    r.sandbox.go("v999");
+    assert.deepStrictEqual(r.log.toasts, ["Updating to the new version"]);
+    assert.strictEqual(r.log.timers.length, 1);
+    assert.strictEqual(r.log.reloads, 0);
+    r.log.timers[0].f();
+    assert.strictEqual(r.log.reloads, 1);
+    assert.strictEqual(r.log.saves, 1, "page state saved before the reload");
+    // second time for the same version in this session: no loop
+    r.sandbox.go("v999");
+    assert.strictEqual(r.log.timers.length, 1, "no second reload for the same version");
+    // each blocker stops the reload
+    const blockers = {
+      "queued write": (w) => (w.DB.getQueueDepth = () => 1),
+      "write in flight": (w) => (w.DB.hasPendingWrites = () => true),
+      "dirty view": (w) => (w.chViewIsDirty = () => true),
+      "open dialog": (w) => (w.chDialogIsOpen = () => true),
+      "running extraction": (w) => (w._pdfQueue = { status: "running" }),
+      "unsaved extracted bills": (w) => ((w._pdfMultiBills = [{}]), (w._pdfBillsSaved = false)),
+    };
+    for (const name of Object.keys(blockers)) {
+      const w = base();
+      blockers[name](w);
+      r = run(w);
+      r.sandbox.go("v999");
+      assert.strictEqual(r.log.toasts.length + r.log.timers.length + r.log.reloads, 0, name + ": no toast, no reload");
+      assert.strictEqual(r.sandbox.safe(), false, name + ": not safe");
+    }
+    // work starts during the 2 s toast: the reload is cancelled
+    const w = base();
+    r = run(w);
+    r.sandbox.go("v999");
+    w.chViewIsDirty = () => true;
+    r.log.timers[0].f();
+    assert.strictEqual(r.log.reloads, 0, "edit during the toast cancels the reload");
+    // blocker cleared: the next retry reloads
+    w.chViewIsDirty = () => false;
+    r.sandbox.go("v999");
+    r.log.timers[r.log.timers.length - 1].f();
+    assert.strictEqual(r.log.reloads, 1, "reload after the blocker clears");
+    // hidden tab: no reload
+    r = run(base(), { hidden: true });
+    r.sandbox.go("v999");
+    assert.strictEqual(r.log.reloads + r.log.timers.length, 0, "hidden tab: nothing");
   },
 );
 

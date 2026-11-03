@@ -2507,6 +2507,12 @@ async function siteResetAllMeterTableSettings() {
    site-ui.js delegates to this array and should NOT maintain its own copy.
 */
 var RELEASE_NOTES = [
+  { v: 'v2026.11.03.205', date: '2026-11-03', title: 'New versions load on their own',
+    items: [
+      { type: 'feature', text: 'Whole site: when a new version is released, the page shows "Updating to the new version" and reloads by itself, back to the same view.' },
+      { type: 'change', text: 'The page waits while you have unsaved edits, an open dialog, a running bill extraction, unsaved extracted bills or pending saves. The sidebar link "New version: reload" stays until it is safe, then the page reloads once.' }
+    ]
+  },
   { v: 'v2026.11.03.204', date: '2026-11-03', title: 'Project header: Service Agreement number',
     items: [
       { type: 'fix', text: 'Project header and Project Info no longer show an empty "SA —" or "Service Agreement #: —" when a project has no Service Agreement.' },

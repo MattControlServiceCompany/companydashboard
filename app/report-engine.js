@@ -14085,14 +14085,22 @@ function initUtilityTool() {
   // background. Re-run the same check whenever the tab regains focus (the moment
   // the user would actually notice/care), plus a slow interval backstop for tabs
   // that are never explicitly re-focused (e.g. a second monitor that's always visible).
-  // Netlify credit cost (2026-10-07): no timer. Check on load, and on visible or focus at most once an hour.
+  // Netlify credit cost (2026-10-07): no timer. Check on load, and on visible or focus at most once per 60 s.
+  // A new version that waits for a safe moment is tried again here (no server call), and on dataUpdated / chViewChanged.
   const _verRecheck = () => {
     if (document.hidden) return;
+    if (_chPendingVer) _reloadForNewVersionWhenSafe();
     if (Date.now() - _chVerLastCheck < _CH_VER_MIN_GAP_MS) return;
     _checkForVersionUpdate();
   };
   document.addEventListener('visibilitychange', _verRecheck);
   window.addEventListener('focus', _verRecheck);
+  // Wait one tick: app/sync-ui.js clears its dirty mark in its own listener for these events.
+  const _verRetry = () => {
+    if (_chPendingVer) setTimeout(_reloadForNewVersionWhenSafe, 0);
+  };
+  window.addEventListener('dataUpdated', _verRetry);
+  window.addEventListener('chViewChanged', _verRetry);
   // Restore any state saved before a version-triggered page reload (issue 066423b5)
   _restorePageStateAfterVersionUpdate();
 }
@@ -14115,12 +14123,47 @@ function _checkForVersionUpdate() {
       const loadedVer = _loadedVersion();
       _paintLoadedVersion();
       if (loadedVer && loadedVer !== fetchedVer) {
-        // Do NOT auto-reload: a silent reload would destroy in-progress work.
         _showVersionUpdateBanner(fetchedVer);
+        _chPendingVer = fetchedVer;
+        _reloadForNewVersionWhenSafe();
       }
       localStorage.setItem('ch_last_seen_version', fetchedVer);
     })
     .catch(() => {});
+}
+
+/* ONE rule for "reloading now loses nothing": no queued or in-flight write, no unsaved extracted bills,
+   no running extraction, no open dialog, no edited view (rules live in app/db.js, app/tooltips-help.js, app/sync-ui.js). */
+function chSafeToReload() {
+  const DBx = window.DB;
+  if (DBx && ((DBx.getQueueDepth && DBx.getQueueDepth() > 0) || (DBx.hasPendingWrites && DBx.hasPendingWrites()))) return false;
+  if (window._pdfMultiBills && window._pdfMultiBills.length && !window._pdfBillsSaved) return false;
+  if (window._pdfQueue && window._pdfQueue.status === 'running') return false;
+  if (typeof window.chDialogIsOpen === 'function' && window.chDialogIsOpen()) return false;
+  if (typeof window.chViewIsDirty === 'function' && window.chViewIsDirty()) return false;
+  return true;
+}
+
+/* A newer version is live (_chPendingVer). When it is safe: short toast, save the page state, reload.
+   When it is not safe: the sidebar link stays and this runs again on focus, dataUpdated and chViewChanged.
+   Once per version per tab session (sessionStorage), so a server that never matches cannot cause a reload loop. */
+let _chPendingVer = null;
+let _chReloadTimer = null;
+function _reloadForNewVersionWhenSafe() {
+  if (!_chPendingVer || _chReloadTimer || document.hidden || !chSafeToReload()) return;
+  try {
+    if (sessionStorage.getItem('ch_auto_reload_ver') === _chPendingVer) return;
+  } catch (e) {}
+  showToast('Updating to the new version', null, 2000);
+  _chReloadTimer = setTimeout(function () {
+    _chReloadTimer = null;
+    if (!chSafeToReload()) return; // work started during the toast: keep the link
+    try {
+      sessionStorage.setItem('ch_auto_reload_ver', _chPendingVer);
+    } catch (e) {}
+    _savePageStateForVersionUpdate();
+    location.reload();
+  }, 2000);
 }
 
 /* The version baked into the code this tab already has (RELEASE_NOTES ships with app/site-functions.js),
@@ -14145,8 +14188,8 @@ function _paintLoadedVersion() {
    loaded code (loadedVer) no longer matches the live server (fetchedVer). Replaces
    the old passive toast (issue e9f1157c) which told the user the site had updated
    but gave them no way to actually get the new code short of guessing to hit F5.
-   Never auto-reloads — the user clicks to opt in, so in-progress work is never lost
-   without warning. Reuses the existing _savePageStateForVersionUpdate() /
+   The page reloads by itself only when chSafeToReload() is true (_reloadForNewVersionWhenSafe);
+   otherwise the user clicks the link. Reuses the existing _savePageStateForVersionUpdate() /
    _restorePageStateAfterVersionUpdate() plumbing (issue 066423b5) rather than
    reinventing state preservation. */
 function _showVersionUpdateBanner(fetchedVer) {

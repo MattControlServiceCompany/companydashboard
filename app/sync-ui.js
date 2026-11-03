@@ -394,6 +394,9 @@
     _dirty = false;
     if (_pendingRefreshKeys.length) setTimeout(_refreshWhenSafe, 0);
   }
+  // Read-only answers for app/report-engine.js chSafeToReload (automatic reload to a new version).
+  window.chViewIsDirty = function () { return _dirty; };
+  window.chDialogIsOpen = function () { return _anyVisible(OPEN_DIALOG_SELECTOR); };
   window.addEventListener('dataUpdated', _clearDirty);
   window.addEventListener('chViewChanged', _clearDirty);
   ['wheel', 'touchstart', 'touchmove'].forEach(function (n) {

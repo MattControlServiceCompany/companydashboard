@@ -369,7 +369,6 @@
          Saves extraction state automatically when
          navigating away so it survives page changes.
       ══════════════════════════════════════ */
-      window._hasUnsavedWork = false;
       window._pdfBillsSaved = false;
       window.addEventListener('beforeunload', function (e) {
         // Warn if extracted bills haven't been saved yet
