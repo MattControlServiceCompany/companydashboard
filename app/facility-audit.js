@@ -482,13 +482,13 @@ function _faCoverageView(pid) {
   var groups = c.groups
     .map(function (g) {
       return (
-        '<tr><td>' + _escHtml(g.type) + '</td><td class="fa-num">' + g.units + '</td><td>' + _escHtml(g.buildings.join(', ')) + '</td><td>' + (g.covered ? 'Covered' : 'Need data') + '</td></tr>'
+        '<tr><td>' + _escHtml(g.type) + '</td><td class="fa-num">' + g.units + '</td><td>' + _escHtml(g.buildings.join(', ')) + '</td><td>' + (g.covered ? 'Covered' + (g.notInBasText ? ' (not in BAS: ' + _escHtml(g.notInBasText) + ')' : '') : 'Need data') + '</td></tr>'
       );
     })
     .join('');
   return (
     '<div class="fa-bar"><span class="fa-big">' + c.pct + '% covered</span><span class="fa-sub">' + c.covered + ' of ' + c.total + ' units, in ' + c.groups.length + ' groups of identical BAS points. ' +
-    'Equipment with the same BAS points as a covered unit counts as covered. Serving units are checked for their supply air temperature set point only.</span></div>' +
+    'Equipment with the same BAS points as a covered unit counts as covered. Serving units are checked for their supply air temperature set point only. A point the BAS does not have is shown as not in BAS and counts as covered.</span></div>' +
     '<div class="fa-cols"><div><div class="fa-sub">By building</div>' + _faCovTally(c.buildings, c, 'Building') + '</div>' +
     '<div><div class="fa-sub">By system type</div>' + _faCovTally(c.types, c, 'System type') + '</div></div>' +
     '<div class="fa-sub">Still need (' + c.stillNeed.length + ')</div>' +

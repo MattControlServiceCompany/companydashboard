@@ -2507,6 +2507,11 @@ async function siteResetAllMeterTableSettings() {
    site-ui.js delegates to this array and should NOT maintain its own copy.
 */
 var RELEASE_NOTES = [
+  { v: 'v2026.11.03.202', date: '2026-11-03', title: 'Facility Audit: missing set points',
+    items: [
+      { type: 'fix', text: 'Equipment Matrix > Facility Audit: coverage no longer counts a set point the BAS does not have as missing. For example, a unit with only a supply air temperature reading is now covered.' }
+    ]
+  },
   { v: 'v2026.11.03.201', date: '2026-11-03', title: 'Savings: contract baseline method; Generate Report checks weather',
     items: [
       { type: 'change', text: 'Savings: savings use the contract baseline method again, on the Dashboard, Project Performance and in reports.' },

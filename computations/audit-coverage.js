@@ -18,6 +18,9 @@
 //   - Lighting is audited from the screenshots we have. An unshot lighting zone is never a gap.
 //   - Screenshot evidence: a Still-need line (key = auditCovLineKey) with evidence {files,note,who,when} counts as covered.
 //     Equipment we have SEEN in a screenshot is gathered, even if the unit lacks the feature. The caller passes the evidence in.
+//   - A point the BAS does not have is not missing data (Matt, 2026-11-03: "not all units have a SAT set point").
+//     A unit whose BAS points we hold (any point at all) has been looked at: each need it lacks is "not in BAS",
+//     the unit is covered, and the item is listed in notInBas. Only a unit with no BAS points is a gap.
 //   - This is about gathering coverage only. It makes no statement about energy use or savings.
 
 // What each need looks like in the BAS point names (matched against the normalized point keys).
@@ -141,7 +144,7 @@ function _auditCovHasItem(row, names, item) {
 
 // Coverage for a matrix. Returns:
 //   { total, covered, pct, buildings:[{name,total,covered,pct}], types:[{name,total,covered,pct}],
-//     groups:[{type,buildings,units,needs,covered,missing,example}],
+//     groups:[{type,buildings,units,needs,covered,missing,notInBas,example}],
 //     stillNeed:[{type,buildings,units,groups,example,missing,reason}] }
 // Key of one Still-need line (system type + missing items). Evidence is stored under this key.
 function auditCovLineKey(type, missing) {
@@ -161,7 +164,7 @@ function auditComputeCoverage(rows, evidence) {
     var type = emFormatEquipTypeLabel(row) || row.category || '';
     var gk = type + '|' + needs.join(',') + '|' + keys.join(',');
     var g = groups[gk];
-    if (!g) g = groups[gk] = { type: type, needs: needs, members: [], haveAll: false, missing: null, example: row.location || row.equipName || row.id };
+    if (!g) g = groups[gk] = { type: type, needs: needs, members: [], haveAll: false, seen: keys.length > 0, missing: null, example: row.location || row.equipName || row.id };
     var miss = needs.filter(function (n) {
       return !_auditCovHasItem(row, keys, n);
     });
@@ -173,7 +176,9 @@ function auditComputeCoverage(rows, evidence) {
   var list = Object.keys(groups).map(function (k) {
     var g = groups[k];
     var bset = {};
-    var shot = !g.haveAll && evidence[auditCovLineKey(g.type, g.missing || [])] ? evidence[auditCovLineKey(g.type, g.missing || [])] : null;
+    // The BAS points were captured (seen): what the unit lacks is not in the BAS, not a gap.
+    var notInBas = !g.haveAll && g.seen ? g.missing || [] : [];
+    var shot = !g.haveAll && !g.seen && evidence[auditCovLineKey(g.type, g.missing || [])] ? evidence[auditCovLineKey(g.type, g.missing || [])] : null;
     g.members.forEach(function (r) {
       bset[r.building || ''] = true;
     });
@@ -182,9 +187,10 @@ function auditComputeCoverage(rows, evidence) {
       buildings: Object.keys(bset).sort(),
       units: g.members.length,
       needs: g.needs,
-      covered: g.haveAll || !!shot,
+      covered: g.haveAll || g.seen || !!shot,
       shot: shot,
-      missing: g.haveAll ? [] : g.missing || [],
+      notInBas: notInBas,
+      missing: g.haveAll || g.seen ? [] : g.missing || [],
       example: g.example,
       members: g.members,
     };
@@ -232,7 +238,7 @@ function auditComputeCoverage(rows, evidence) {
         buildings: {},
         example: g.example,
         missing: g.missing,
-        reason: 'Missing ' + labels.join(', ') + '. No unit with the same BAS points has it.',
+        reason: 'Missing ' + labels.join(', ') + '. No BAS points captured for this unit.',
       };
     }
     n.units += g.units;
@@ -262,7 +268,7 @@ function auditComputeCoverage(rows, evidence) {
     }),
     groups: list
       .map(function (g) {
-        return { type: g.type, buildings: g.buildings, units: g.units, needs: g.needs, covered: g.covered, missing: g.missing, example: g.example };
+        return { type: g.type, buildings: g.buildings, units: g.units, needs: g.needs, covered: g.covered, missing: g.missing, notInBas: g.notInBas, notInBasText: g.notInBas.map(function (m) { return AUDIT_COV_ITEMS[m].label; }).join(', '), example: g.example };
       })
       .sort(function (a, b) {
         return a.type < b.type ? -1 : a.type > b.type ? 1 : b.units - a.units;

@@ -10,6 +10,8 @@ function row(o) {
   if (!r.id) r.id = r.building + '||' + r.equipName;
   return r;
 }
+// Not in BAS = the BAS points were captured and the point is not there: covered, listed in notInBas.
+const nib = (c) => [].concat(...c.groups.map((g) => g.notInBas));
 const sp = { 'Occupied Heating Setpoint': '70', 'Occupied Cooling Setpoint': '74' };
 
 // 1. Identical point sets form one group; covered when a member has the data.
@@ -23,17 +25,25 @@ t.eq(c.groups[0].units, 3, 'group counts its units');
 t.eq(c.pct, 100, 'all covered');
 t.eq(c.stillNeed.length, 0, 'no gaps');
 
-// 2. A box without set points is a gap; it is one line for the group, not one per unit.
+// 2. A box whose BAS has no set points: covered, "not in BAS" (Matt 2026-11-03). Not a gap, not one line per unit.
 c = sb.auditComputeCoverage([
   row({ equipName: 'Zone | VAV-4', pointsRaw: { 'Air Flow': '800', 'Zone Temp': '70' } }),
   row({ equipName: 'Zone | VAV-5', pointsRaw: { 'Air Flow': '800', 'Zone Temp': '70' } }),
   row({ equipName: 'Zone | VAV-6', pointsRaw: sp }),
 ]);
-t.eq(c.stillNeed.length, 1, 'identical gap units give one still-need line');
-t.eq(c.stillNeed[0].units, 2, 'still-need line counts the units');
-t.eq(c.covered, 1, 'only the box with set points is covered');
-t.ok(/set points/.test(c.stillNeed[0].reason), 'reason names the missing item in plain words');
-t.ok(!/energy|saving|waste|optimiz/i.test(JSON.stringify(c.stillNeed)), 'no energy finding wording');
+t.eq(c.stillNeed.length, 0, 'a point the BAS does not have is not a Still-need line');
+t.eq(c.covered, 3, 'all three boxes are covered');
+t.eq(c.groups.filter((g) => g.notInBas.length).map((g) => g.units + ':' + g.notInBasText), ['2:set points'], 'identical not-in-BAS units are one group, named in plain words');
+t.ok(!/energy|saving|waste|optimiz/i.test(JSON.stringify(c.groups)), 'no energy finding wording');
+// 2b. A unit with no BAS points at all was not looked at: that is the only gap.
+c = sb.auditComputeCoverage([row({ category: 'ef', equipName: 'EF-1', pointsRaw: {} })]);
+t.eq([c.stillNeed.length, c.covered], [1, 0], 'a unit with no BAS points captured is a gap');
+t.ok(/BAS points/.test(c.stillNeed[0].reason), 'gap reason names the missing BAS points');
+
+// 2c. AHU-11 case: serving AHU, SAT reading present, no SAT set point -> covered, SAT set point is not in BAS.
+c = sb.auditComputeCoverage([row({ category: 'ahu', equipName: 'AHU-11 Wood Shop', pointsRaw: { 'Supply Air Temperature': '55', 'Return Air Temperature': '70', 'Heat Request 1': '0', 'Supply Fan Status': 'On' } })]);
+t.eq([c.stillNeed.length, c.pct], [0, 100], 'AHU with SAT reading and no SAT set point is covered');
+t.eq(nib(c), ['sat'], 'the SAT set point is listed as not in BAS');
 
 // 3. A serving unit never needs a schedule, and needs only its SAT set point (plus the big items).
 const ahuPts = { 'Supply Air Temp Setpoint': '55', 'Return Air CO2': '600', 'Economizer Damper': '40', 'Heat Request': '0', 'Cool Request': '0', 'System Mode': '2' };
@@ -44,7 +54,7 @@ t.ok(!c.groups[0].needs.includes('schedule'), 'serving AHU does not need a sched
 // 4. A single-zone RTU (no boxes in its building) needs its own schedule.
 c = sb.auditComputeCoverage([row({ building: 'Fake Hall B', category: 'rtu', equipName: 'RTU-1', pointsRaw: Object.assign({ 'Economizer Position': '0', 'Return Air CO2': '500', Mode: '1', 'Heat Request': '0' }, sp) })]);
 t.ok(c.groups[0].needs.includes('schedule'), 'single-zone RTU needs a schedule');
-t.eq(c.stillNeed.length, 1, 'single-zone RTU without schedule is a gap');
+t.eq(nib(c), ['schedule'], 'single-zone RTU without schedule is not in BAS (covered)');
 const withSched = row({ building: 'Fake Hall B', category: 'rtu', equipName: 'RTU-2', pointsRaw: Object.assign({ 'Economizer Position': '0', 'Return Air CO2': '500', Mode: '1', 'Heat Request': '0' }, sp), existingSchedule: { rawText: 'Occupied from 6:00 AM to 5:00 PM' } });
 c = sb.auditComputeCoverage([withSched]);
 t.eq(c.stillNeed.length, 0, 'a schedule picture covers the schedule need');
@@ -61,23 +71,23 @@ t.eq(c.stillNeed.length, 0, 'unshot lighting is not a gap');
 // 6. Per building and per type numbers.
 c = sb.auditComputeCoverage([
   row({ building: 'Fake Hall A', equipName: 'Zone | VAV-7', pointsRaw: sp }),
-  row({ building: 'Fake Hall B', equipName: 'Zone | VAV-8', pointsRaw: { 'Air Flow': '1', 'Zone Temp': '70' } }),
+  row({ building: 'Fake Hall B', category: 'ef', equipName: 'EF-8', pointsRaw: {} }),
 ]);
 t.eq(c.buildings.map((b) => b.name + ':' + b.pct), ['Fake Hall A:100', 'Fake Hall B:0'], 'building percentages');
-t.eq(c.types.length, 1, 'one system type');
+t.eq(c.types.length, 2, 'two system types');
 t.eq(c.pct, 50, 'overall percentage');
 
 // 8. SAT set point: found under every real name form, never taken from a sensor or a zone/alarm point.
-const satOnly = (pointsRaw, extra) => sb.auditComputeCoverage([row(Object.assign({ category: 'ahu', equipName: 'AHU-9', pointsRaw }, extra || {}))]).stillNeed.length;
+const satOnly = (pointsRaw, extra) => nib(sb.auditComputeCoverage([row(Object.assign({ category: 'ahu', equipName: 'AHU-9', pointsRaw }, extra || {}))])).length;
 const satSensor = { 'Supply Air Temperature': '55', 'Supply Fan Status': 'On', 'Return Air Temperature': '70', 'Heat Request 1': '0' };
-t.eq(satOnly(satSensor), 1, 'a supply air temperature SENSOR alone is a true gap');
+t.eq(satOnly(satSensor), 1, 'a supply air temperature SENSOR alone is not the SAT set point (not in BAS)');
 t.eq(satOnly(Object.assign({ 'Discharge Air Temperature Setpoint': '55' }, satSensor)), 0, 'Discharge Air Temperature Setpoint (words between) is the SAT set point');
 t.eq(satOnly(Object.assign({ 'Remote Cooling Setpoint': '55' }, satSensor)), 0, 'Remote Cooling Setpoint on a serving unit is the SAT set point');
 t.eq(satOnly(Object.assign({ 'Cooling PID / Setpoint': '55' }, satSensor)), 0, 'Cooling PID / Setpoint is the SAT set point');
 t.eq(satOnly(Object.assign({ 'Heating Valve PID / Setpoint': '70' }, satSensor)), 0, 'Heating Valve PID / Setpoint is a SAT set point');
 t.eq(satOnly(Object.assign({ 'Cooling Set Point BACnet PID / Setpoint': '55' }, satSensor)), 0, 'Cooling Set Point BACnet PID / Setpoint is a SAT set point');
-t.eq(satOnly(Object.assign({ 'Pre-Heating Valve PID / Setpoint': '48' }, satSensor)), 1, 'a pre-heat (freeze) loop is not the SAT set point');
-t.eq(satOnly(Object.assign({ 'Low Supply Air Temperature Alarm': 'Normal', 'High Cooling Air Temperature Alarm': 'Normal', 'Supply Static PID / Setpoint': '1' }, satSensor)), 1, 'alarms and static pressure set points are not the SAT set point');
+t.eq(satOnly(Object.assign({ 'Pre-Heating Valve PID / Setpoint': '48' }, satSensor)), 1, 'a pre-heat (freeze) loop is not the SAT set point (not in BAS)');
+t.eq(satOnly(Object.assign({ 'Low Supply Air Temperature Alarm': 'Normal', 'High Cooling Air Temperature Alarm': 'Normal', 'Supply Static PID / Setpoint': '1' }, satSensor)), 1, 'alarms and static pressure set points are not the SAT set point (not in BAS)');
 
 // 9. A serving unit needs ONLY the SAT set point: no CO2, economizer, mode or request gap.
 c = sb.auditComputeCoverage([row({ category: 'ahu', equipName: 'AHU-8', pointsRaw: { 'Supply Air Temp Setpoint': '55' } })]);
@@ -98,10 +108,10 @@ const ownZoneServing = row({ category: 'ahu', equipName: 'AHU-22', pointsRaw: { 
 t.eq(sb.auditIsServingUnit(ownZoneServing, [ownZoneServing]), true, 'unit with numbered request inputs is serving');
 
 // 11. Economizer settings: an outside air damper counts; an energy wheel replaces the economizer; a garage unit reads CO, not CO2.
-const szNeeds = (pointsRaw) => sb.auditComputeCoverage([row({ category: 'rtu', subtype: 'sz', equipName: 'RTU-30', pointsRaw: Object.assign({ Mode: '1', Schedule: 'On', 'Zone CO2': '500', 'Supply Air Temperature': '55' }, sp, pointsRaw) })]).stillNeed.map((n) => n.missing.join());
-t.eq(szNeeds({ 'Outside Air Damper': '20' }), [], 'Outside Air Damper is the economizer data');
-t.eq(szNeeds({}), ['econ'], 'a single-zone RTU with no economizer point is a true gap');
-t.eq(szNeeds({ 'Energy Wheel Status': 'On' }), [], 'an energy wheel unit has no economizer to find');
+const szNeeds = (pointsRaw) => sb.auditComputeCoverage([row({ category: 'rtu', subtype: 'sz', equipName: 'RTU-30', pointsRaw: Object.assign({ Mode: '1', Schedule: 'On', 'Zone CO2': '500', 'Supply Air Temperature': '55' }, sp, pointsRaw) })]).groups.map((g) => g.notInBas.join());
+t.eq(szNeeds({ 'Outside Air Damper': '20' }), [''], 'Outside Air Damper is the economizer data');
+t.eq(szNeeds({}), ['econ'], 'a single-zone RTU with no economizer point: economizer is not in BAS');
+t.eq(szNeeds({ 'Energy Wheel Status': 'On' }), [''], 'an energy wheel unit has no economizer to find');
 t.eq(sb.auditComputeCoverage([row({ category: 'ahu', subtype: 'sz', equipName: 'AHU-31', pointsRaw: Object.assign({ Mode: '1', Schedule: 'On', 'Outside Air Damper': '10', 'High Carbon Monoxide Level': 'Normal', 'Supply Air Temperature': '55' }, sp) })]).stillNeed.length, 0, 'a garage unit with carbon monoxide points needs no CO2 value');
 
 // 12. Rows filed as air units that are not air units.
@@ -112,16 +122,20 @@ c = sb.auditComputeCoverage([
 ]);
 t.eq(c.total, 0, 'fan, relay and panel rows filed as air units are out of scope');
 c = sb.auditComputeCoverage([row({ category: 'ahu', equipName: 'Room 1 - VAV-1-15', pointsRaw: { 'Air Flow Set Point': '220', 'Flow Control': 'On', 'Zone Temp': '70' } })]);
-t.eq(c.stillNeed[0] && c.stillNeed[0].missing, ['setpoints'], 'a box filed as an air unit needs zone set points (an air flow set point is not one)');
+t.eq(nib(c), ['setpoints'], 'a box filed as an air unit needs zone set points (an air flow set point is not one)');
 c = sb.auditComputeCoverage([row({ category: 'ahu', equipName: 'Lab - FCU-4', pointsRaw: { 'Supply Air Temperature': '55', 'Supply Fan Status': 'On' } })]);
 t.eq(c.groups[0].needs, [], 'a fan coil filed as an air unit follows its name (no zone temperature, so no zone set point)');
 
 // 13. Plants: only a unit that makes or holds water temperature needs a water temperature set point.
-const plantOnly = (equipName, pointsRaw, category) => sb.auditComputeCoverage([row({ category: category || 'hwp', equipName, pointsRaw })]);
-t.eq(plantOnly('Floor 2 - Boiler Plant', { 'System Supply': '140', 'Heat Source Supply': '140', 'System Mode': '2' }).stillNeed.length, 1, 'a boiler plant with no water set point is a true gap');
+const plantOnly = (equipName, pointsRaw, category) => {
+  const c = sb.auditComputeCoverage([row({ category: category || 'hwp', equipName, pointsRaw })]);
+  c.stillNeed = nib(c);
+  return c;
+};
+t.eq(plantOnly('Floor 2 - Boiler Plant', { 'System Supply': '140', 'Heat Source Supply': '140', 'System Mode': '2' }).stillNeed.length, 1, 'a boiler plant with no water set point: not in BAS');
 t.eq(plantOnly('Floor 2 - Boiler Plant', { 'System Supply': '140', 'Boiler 1 Outlet Setpoint': '150' }).stillNeed.length, 0, 'a boiler outlet set point covers the plant');
 t.eq(plantOnly('Plant Integration', { 'System Supply': '44', '_BAS Chw Set Point': '44' }, 'chwp').stillNeed.length, 0, 'a point name with a leading underscore still counts');
-t.eq(plantOnly('Loop 1', { 'System Supply': '140', 'Chilled Water Loop DP Set Point': '10', 'Outlet High Limit Setpoint': '200' }).stillNeed.length, 1, 'pressure and high-limit set points are not the water temperature set point');
+t.eq(plantOnly('Loop 1', { 'System Supply': '140', 'Chilled Water Loop DP Set Point': '10', 'Outlet High Limit Setpoint': '200' }).stillNeed.length, 1, 'pressure and high-limit set points are not the water temperature set point (not in BAS)');
 t.eq(plantOnly('Domestic Hot Water Pump', { Schedule: 'On', 'Supply Temperature': '120' }).total, 0, 'domestic hot water is out of scope');
 t.eq(plantOnly('Sump Pump 1', { 'High Level Alarm': 'Off' }).total, 0, 'a sump pump alarm is not a plant');
 t.eq(plantOnly('Gas Meter - Boiler', { Demand: '1', Meter: '2' }).total, 0, 'a meter is not a plant');
@@ -130,11 +144,11 @@ t.eq(plantOnly('Boiler Room UH', { 'Heat Source Supply': '140', 'Supply Fan Enab
 
 // 14. Zone units: an air flow set point is not a temperature set point.
 c = sb.auditComputeCoverage([row({ category: 'fpb', equipName: 'Hall | FPB-1', pointsRaw: { 'Air Flow Set Point': '300', 'Zone Temperature': '70' } })]);
-t.eq(c.stillNeed.length, 1, 'a box with only an air flow set point is a true gap');
+t.eq(nib(c), ['setpoints'], 'a box with only an air flow set point: set points not in BAS');
 c = sb.auditComputeCoverage([row({ category: 'vrf', equipName: 'VRF-02 CO2 Monitoring', pointsRaw: { 'Zone CO2': '459 ppm', 'Zone Temp AV': '70 F', 'High Carbon Dioxide Level': 'Normal' } })]);
 t.eq(c.stillNeed.length, 0, 'a CO2 monitoring program (sensors only) has no set point to find');
 c = sb.auditComputeCoverage([row({ category: 'vrf', equipName: 'VRF-03', pointsRaw: { 'Zone CO2': '459 ppm', 'Zone Temp AV': '70 F', 'Fan Mode': 'Auto' } })]);
-t.eq(c.stillNeed.length, 1, 'a VRF unit with fan control and a zone temperature but no set point is a true gap');
+t.eq(nib(c), ['setpoints'], 'a VRF unit with fan control and a zone temperature but no set point: set points not in BAS');
 
 // 7. Empty matrix.
 t.eq(sb.auditComputeCoverage([]).total, 0, 'empty matrix has no units');
@@ -145,12 +159,12 @@ const fbox = row({ building: 'Fake Hall D', equipName: 'Zone | VAV-40', pointsRa
 t.eq(sb.auditIsServingUnit(feeder, [feeder, fbox]), true, 'sz-tagged RTU with numbered requests is serving');
 t.eq(sb.auditComputeCoverage([feeder, fbox]).stillNeed.length, 0, 'serving RTU needs only SAT set point, not CO2');
 
-// 9. Screenshot evidence moves a Still-need line to covered.
-const hp = row({ building: 'Fake Hall E', category: 'rtu', equipName: 'HP-1', pointsRaw: Object.assign({ Mode: '1', Schedule: 'On', 'Supply Air Temperature': '55' }, sp) });
+// 9. Screenshot evidence moves a Still-need line (a unit with no BAS points captured) to covered.
+const hp = row({ building: 'Fake Hall E', category: 'heater', equipName: 'UH-1', pointsRaw: {} });
 c = sb.auditComputeCoverage([hp]);
-t.eq(c.stillNeed.length, 1, 'unit with no economizer or CO2 point is a Still-need line');
+t.eq(c.stillNeed.length, 1, 'unit with no BAS points is a Still-need line');
 const ev = {};
-ev[c.stillNeed[0].key] = { files: ['shot-1.png'], note: 'unit has no economizer', who: 'Tester', when: '2026-01-01T00:00:00Z' };
+ev[c.stillNeed[0].key] = { files: ['shot-1.png'], note: 'unit has no points', who: 'Tester', when: '2026-01-01T00:00:00Z' };
 const c2 = sb.auditComputeCoverage([hp], ev);
 t.eq(c2.stillNeed.length, 0, 'evidence removes the line from Still need');
 t.eq(c2.screenshotCovered.length, 1, 'evidence puts it in the screenshot-covered list');
