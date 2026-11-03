@@ -1464,7 +1464,7 @@ function renderDetail(p) {
               <div class="pd-cell"><div class="pd-cell-lbl">Field Tech</div><div class="pd-cell-val">${p.tech || '—'}</div></div>
               <div class="pd-cell"><div class="pd-cell-lbl">Building Type</div><div class="pd-cell-val">${p.type || '—'}</div></div>
               <div class="pd-cell"><div class="pd-cell-lbl">Square Feet</div><div class="pd-cell-val" id="pd-sqft-cell-${p.id}">${p.sqft ? Number(p.sqft).toLocaleString() + ' sf' : '—'}</div></div>
-              <div class="pd-cell"><div class="pd-cell-lbl">Service Agreement #</div><div class="pd-cell-val mono">${p.sa || '—'}</div></div>
+              ${String(p.sa == null ? '' : p.sa).trim() ? `<div class="pd-cell"><div class="pd-cell-lbl">Service Agreement #</div><div class="pd-cell-val mono">${_escHtml(p.sa)}</div></div>` : ''}
               <div class="pd-cell"><div class="pd-cell-lbl">Contract Value</div><div class="pd-cell-val mono">${p.contract ? '$' + Number(p.contract).toLocaleString() : '—'}</div></div>
               <div class="pd-cell"><div class="pd-cell-lbl">Est. Savings/yr</div><div class="pd-cell-val mono">${p.savings && projHasContract(p.id) ? '$' + Number(p.savings).toLocaleString() : '—'}</div></div>
               <div class="pd-cell"><div class="pd-cell-lbl">Start Date</div><div class="pd-cell-val">${p.start ? _parseISO(p.start).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) : '—'}</div></div>
@@ -1882,7 +1882,7 @@ function renderDetail(p) {
             <button class="pd-back" onclick="backToList()" style="margin-bottom:0;margin-right:6px;flex-shrink:0">← Back</button>
             <span class="phc-info" id="phc-info-${p.id}">
             <span class="phc-name phc-first">${_escHtml(p.name)}</span>
-            <span class="phc-item" title="Service Agreement Number"><span class="phc-val">${_saLabel(p.sa)}</span></span>
+            ${_saLabel(p.sa) ? `<span class="phc-item" title="Service Agreement Number"><span class="phc-val">${_saLabel(p.sa)}</span></span>` : ''}
             ${p.savings && projHasContract(p.id) ? `<span class="phc-item">Savings <span class="phc-val">$${Number(p.savings).toLocaleString()}/yr</span></span>` : ''}
             <span class="phc-item"><span class="phc-val">${p.start ? _parseISO(p.start).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) : '—'}</span> → <span class="phc-val">${p.end ? _parseISO(p.end).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) : '—'}</span></span>
             <span class="phc-item" id="phc-baseline-${p.id}">Baseline <span class="phc-val">—</span></span>
@@ -1921,10 +1921,10 @@ function renderDetail(p) {
   }
 }
 
-// Service agreement number as shown in the header: always "SA<number>", never "SASA".
+// Service agreement number as shown in the header: always "SA# <number>", never "SA# SA<number>". Empty string when the project has none.
 function _saLabel(sa) {
   const n = String(sa == null ? '' : sa).trim().replace(/^SA[\s#-]*/i, '');
-  return n ? 'SA' + _escHtml(n) : 'SA —';
+  return n ? 'SA# ' + _escHtml(n) : '';
 }
 
 function _updateCompactHdrBaseline(projId) {

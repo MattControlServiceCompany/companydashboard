@@ -2507,6 +2507,12 @@ async function siteResetAllMeterTableSettings() {
    site-ui.js delegates to this array and should NOT maintain its own copy.
 */
 var RELEASE_NOTES = [
+  { v: 'v2026.11.03.204', date: '2026-11-03', title: 'Project header: Service Agreement number',
+    items: [
+      { type: 'fix', text: 'Project header and Project Info no longer show an empty "SA —" or "Service Agreement #: —" when a project has no Service Agreement.' },
+      { type: 'change', text: 'When a project has a Service Agreement, the project header shows it as "SA# 277". A saved "SA054" shows as "SA# 054".' }
+    ]
+  },
   { v: 'v2026.11.03.203', date: '2026-11-03', title: 'Project tabs: fewer tabs, more sections',
     items: [
       { type: 'change', text: 'Equipment Matrix now holds Facility Audit, Set Points, BAS Trends and BAS Alarms as sections. Use the buttons at the top of the tab to switch.' },
