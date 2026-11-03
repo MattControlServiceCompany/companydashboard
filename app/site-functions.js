@@ -2507,6 +2507,12 @@ async function siteResetAllMeterTableSettings() {
    site-ui.js delegates to this array and should NOT maintain its own copy.
 */
 var RELEASE_NOTES = [
+  { v: 'v2026.11.03.213', date: '2026-11-03', title: 'Report History button is back',
+    items: [
+      { type: 'fix', text: 'Meetings > Report History: the Report History button is back next to Generate Report.' },
+      { type: 'fix', text: 'Meetings > Report History: each saved report now shows its real type instead of a generic label.' }
+    ]
+  },
   { v: 'v2026.11.03.212', date: '2026-11-03', title: 'Internal test update, no change to the site',
     items: [
       { type: 'change', text: 'Behind the scenes: the automatic savings check now loads the same scripts as the Energy page. Nothing changes on screen.' }

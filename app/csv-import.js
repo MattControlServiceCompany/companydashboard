@@ -3325,6 +3325,7 @@ function _renderDocsMeetings(body, projId) {
               </div>
             </div>
             <div style="display:flex;gap:6px">
+              <button class="btn btn-ghost btn-sm" onclick="openReportHistory(${projId})">Report History</button>
               <button class="btn btn-ghost btn-sm" onclick="openReportModalV2(${projId})">📊 Generate Report</button>
               <button class="btn btn-em btn-sm" onclick="openMeetingEditor(${projId})">+ New Agenda</button>
             </div>
@@ -3763,7 +3764,7 @@ function renderMeetingsList(projId) {
         return `<div class="mtg-row" onclick="reopenReport('${r.id}')">
             <span class="mtg-date">${ds}</span>
             <span class="mtg-badge" style="background:rgba(59,130,246,0.15);color:#3b82f6">Report</span>
-            <span class="mtg-title">${r.period || ''} ${r.type === 'quarterly' ? 'Quarterly' : 'Annual'} Report · ${ts}</span>
+            <span class="mtg-title">${reportHistoryLabel({ type: r.type, period: r.period || '' })} · ${ts}</span>
             <div class="mtg-actions" onclick="event.stopPropagation()">
               <button class="btn btn-ghost btn-sm" onclick="reopenReport('${r.id}')" title="Open">📊</button>
               <button class="btn btn-ghost btn-sm" onclick="reexportReport('${r.id}')" title="Export PDF">📄</button>

@@ -11303,6 +11303,13 @@ function saveReportToHistory() {
   showToast('Report saved to history ?');
 }
 
+// Single label for a saved-report entry. Audit/proposal titles already name the document, so no suffix.
+const REPORT_HISTORY_TYPE_SUFFIX = { quarterly: 'Quarterly', annual: 'Annual', audit: '', proposal: '' };
+function reportHistoryLabel(entry) {
+  const suffix = REPORT_HISTORY_TYPE_SUFFIX[entry.type];
+  return suffix ? entry.period + ' ' + suffix : String(entry.period);
+}
+
 function openReportHistory(projId) {
   const history = DB.get('en_report_history', []);
   const filtered = projId ? history.filter((h) => String(h.projectId) === String(projId)) : history;
@@ -11319,7 +11326,7 @@ function openReportHistory(projId) {
         const timeStr = date.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' });
         return `<div style="display:flex;align-items:center;justify-content:space-between;padding:10px 12px;border-radius:8px;background:var(--s2);margin-bottom:6px">
               <div>
-                <div style="font-size:13px;font-weight:600;color:var(--text)">${entry.period} ${entry.type === 'quarterly' ? 'Quarterly' : 'Annual'}</div>
+                <div style="font-size:13px;font-weight:600;color:var(--text)">${reportHistoryLabel(entry)}</div>
                 <div style="font-size:11px;color:var(--text3)">${entry.projectName} • Saved ${dateStr} ${timeStr}</div>
               </div>
               <div style="display:flex;gap:6px">
