@@ -1,7 +1,8 @@
 // app/sched-actions.js
 //
-// "What needs to change" card at the top of the Project page, District Calendar tab. One line per Not covered
-// event, with Open / Done, and a short list of BAS schedules that are occupied all day with no event.
+// "What needs to change" card of the Project page, District Calendar tab. It follows the shown period of the calendar
+// (Day / Week / Month / Year, window.pcalPeriod): the BAS changes needed in that period, with To do / Done, what the BAS has now,
+// why events could not be compared, and a short list of BAS schedules occupied all day with no event.
 // This file only draws the result and saves it. The rules (which events need a change, closing and reopening, waste) are in
 // computations/sched-actions.js (SchedActions); the coverage check is computations/bas-coverage.js (BasCoverage).
 //
@@ -55,6 +56,18 @@
     await DB.set('en_bas_acthist_' + pid, [rec].concat(Array.isArray(h) ? h : []).slice(0, HIST_MAX));
   }
 
+  // The headline of the card and the reasons why events could not be compared. st = SchedActions.periodView(...).status.
+  function headline(st, nNeeds, nOpen, per) {
+    var where = 'in this ' + per.view;
+    if (!st.total) return 'No events ' + where + '.';
+    if (!st.checked) return 'Cannot tell yet: no event ' + where + ' could be compared with the BAS schedules.';
+    var checked = st.checked + (st.checked === 1 ? ' event was' : ' events were') + ' compared with the BAS schedules';
+    var tail = st.uncheckable ? ' ' + st.uncheckable + (st.uncheckable === 1 ? ' event' : ' events') + ' could not be checked.' : '';
+    if (nNeeds) return nNeeds + (nNeeds === 1 ? ' change needs' : ' changes need') + ' to be made ' + where + ' (' + nOpen + ' to do). ' + checked + '.' + tail;
+    if (st.uncheckable) return 'No change found. ' + checked + '.' + tail;
+    return 'Nothing needs to change ' + where + '. All ' + st.checked + ' checked ' + (st.checked === 1 ? 'event is' : 'events are') + ' covered by the BAS schedule.';
+  }
+
   function render(pid) {
     var host = document.getElementById('sact-panel-' + pid);
     if (!host) return;
@@ -62,37 +75,75 @@
     window.pcalUi.ensureStyle();
     var inp = input(pid);
     var v = SchedActions.reconcile(inp);
-    var list = Object.keys(v.stored.actions)
+    var per = window.pcalPeriod(pid);
+    var rows = CalendarDiff.listView({ events: inp.events, last: null, tz: inp.tz, from: per.from, to: per.to, q: '', changesOnly: false }).items.map(function (x) {
+      return x.row;
+    });
+    var pv = SchedActions.periodView(Object.assign({}, inp, { from: per.from, to: per.to, rows: rows }));
+    var needs = pv.needs.sort(function (a, b) {
+      var sa = v.stored.actions[a.id];
+      var sb = v.stored.actions[b.id];
+      var da = sa && sa.status === 'done' ? 1 : 0;
+      var db = sb && sb.status === 'done' ? 1 : 0;
+      return da - db;
+    });
+    var closed = Object.keys(v.stored.actions)
       .map(function (k) {
         return v.stored.actions[k];
+      })
+      .filter(function (a) {
+        return a.status === 'closed';
       })
       .sort(function (a, b) {
         return a.date < b.date ? 1 : a.date > b.date ? -1 : a.id < b.id ? 1 : -1;
       });
-    var live = list.filter(function (a) {
-      return a.status !== 'closed';
+    _ids[pid] = needs.map(function (n) {
+      return n.id;
     });
-    var closed = list.filter(function (a) {
-      return a.status === 'closed';
-    });
-    _ids[pid] = live.map(function (a) {
-      return a.id;
-    });
-    var nOpen = live.filter(function (a) {
-      return a.status === 'open';
+    var nOpen = needs.filter(function (n) {
+      var s = v.stored.actions[n.id];
+      return !s || s.status === 'open';
     }).length;
-    var summary = live.length
-      ? nOpen + ' to do, ' + (live.length - nOpen) + ' done (checked again at the next BAS import or calendar sync).'
-      : 'Nothing needs to change. Every checked event is covered by the BAS schedule.';
-    var rows = live.map(function (a, i) {
-      var who = a.status === 'done' ? 'Done by ' + (a.doneBy || 'someone') + ', ' + CalendarDiff.calendarDay(a.doneAt, inp.tz) : 'Open';
-      var b =
-        a.status === 'done'
-          ? '<button class="btn btn-ghost btn-sm" onclick="sactSet(' + pid + ',' + i + ',\'open\')">Open again</button>'
-          : '<button class="btn btn-em btn-sm" onclick="sactSet(' + pid + ',' + i + ',\'done\')">Done</button>';
-      return [esc(a.text) + (a.note ? '<div class="pcal-chg">' + esc(a.note) + '</div>' : ''), esc(who), b];
+    var st = pv.status;
+    var reasons = st.reasons.length
+      ? '<ul class="pcal-why">' +
+        st.reasons
+          .map(function (r) {
+            return '<li>' + esc(r) + '</li>';
+          })
+          .join('') +
+        '</ul>'
+      : '';
+    var places = st.unmappedPlaces.length
+      ? '<details><summary>Places not matched to a BAS space (' + st.unmappedPlaces.length + ')</summary><div class="pcal-chg">' +
+        esc(
+          st.unmappedPlaces
+            .map(function (u) {
+              return u.name + ' (' + u.count + ')';
+            })
+            .join(', '),
+        ) +
+        '</div></details>'
+      : '';
+    var trows = needs.map(function (n, i) {
+      var s = v.stored.actions[n.id];
+      var done = s && s.status === 'done';
+      var who = done ? 'Done by ' + (s.doneBy || 'someone') + ', ' + CalendarDiff.calendarDay(s.doneAt, inp.tz) : 'To do';
+      var b = done
+        ? '<button class="btn btn-ghost btn-sm" onclick="sactSet(' + pid + ',' + i + ",'open')\">Open again</button>"
+        : '<button class="btn btn-em btn-sm" onclick="sactSet(' + pid + ',' + i + ",'done')\">Done</button>";
+      var note = s && s.note ? '<div class="pcal-chg">' + esc(s.note) + '</div>' : '';
+      var rep = n.repeats ? ' <span class="pcal-badge" title="The same change repeats every week. Add one repeating schedule to the scheduling group instead of one line for each date.">Repeats weekly</span>' : '';
+      return [
+        '<b>' + esc(n.change) + '</b>' + rep + '<div class="pcal-chg">For: ' + esc(n.forText) + '</div>' + note,
+        esc(n.dates),
+        esc(n.inBas || 'No BAS copy for this day'),
+        esc(who) + '<div style="margin-top:4px">' + b + '</div>',
+      ];
     });
-    var tbl = rows.length ? T([['Action', '62%'], ['Status', '22%'], ['', '16%']], rows) : '';
+    var tbl = trows.length
+      ? T([['Change needed', '32%'], ['Dates', '26%'], ['In the BAS now', '24%'], ['Status', '18%']], trows)
+      : '';
     var closedHtml = closed.length
       ? '<details><summary>Closed (' + closed.length + ')</summary>' +
         T(
@@ -115,10 +166,9 @@
         '<div style="font-size:12px;margin-top:8px">Check that the building needs these on when it is closed. Air handlers that serve boxes and hot and chilled water plants are not listed.</div>'
       : '';
     host.innerHTML =
-      '<div class="card pcal" style="margin-bottom:16px"><div class="card-hdr"><span class="card-title">What needs to change</span></div>' +
-      '<div style="padding:16px"><div style="font-size:12px">Each line is an upcoming event that the BAS schedule does not cover. After the next BAS import or calendar sync, a fixed line closes by itself and a Done line that is still not covered opens again.</div>' +
-      '<div class="pcal-sum">' + esc(summary) + '</div>' +
-      tbl + closedHtml + wasteHtml + '</div></div>';
+      '<div class="card pcal" style="margin-bottom:16px"><div class="card-hdr"><span class="card-title" title="Events in the shown period that the BAS schedule does not cover. After the next BAS import or calendar sync, a fixed line closes by itself and a Done line that is still not covered opens again.">What needs to change: ' + esc(per.label) + '</span></div>' +
+      '<div style="padding:16px"><div class="pcal-sum" style="margin-top:0">' + esc(headline(st, needs.length, nOpen, per)) + '</div>' +
+      reasons + places + tbl + closedHtml + wasteHtml + '</div></div>';
   }
 
   // Saves what the check found now: new actions, closed actions, reopened actions. Called after a calendar sync and a BAS import.

@@ -2507,6 +2507,14 @@ async function siteResetAllMeterTableSettings() {
    site-ui.js delegates to this array and should NOT maintain its own copy.
 */
 var RELEASE_NOTES = [
+  { v: 'v2026.11.03.206', date: '2026-11-03', title: 'District Calendar: Day, Week, Month and Year views',
+    items: [
+      { type: 'feature', text: 'Project > District Calendar tab: choose Day, Week, Month or Year, and use Back, Forward and Today. The first view is the current week from today, with no past days.' },
+      { type: 'feature', text: 'Each event shows a New, Moved, Changed or Canceled mark. "What needs to change" follows the period you are viewing, and a weekly pattern shows once as a repeating group schedule.' },
+      { type: 'feature', text: 'A new "In the BAS now" column shows what the BAS has today. When events cannot be compared, the tab says "Cannot tell yet" and gives the reasons.' },
+      { type: 'change', text: 'A Monday to Thursday date with no BAS copy of its own weekday uses the nearest Monday to Thursday copy. Hover over it to see which copy it uses.' }
+    ]
+  },
   { v: 'v2026.11.03.205', date: '2026-11-03', title: 'New versions load on their own',
     items: [
       { type: 'feature', text: 'Whole site: when a new version is released, the page shows "Updating to the new version" and reloads by itself, back to the same view.' },

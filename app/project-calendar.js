@@ -26,15 +26,15 @@
     ['America/Los_Angeles', 'Pacific'],
   ];
   var FIELD_LABEL = { title: 'Title', start: 'Start', end: 'End', allDay: 'All-day', location: 'Location' };
-  var _st = {}; // per project: { view, month, q, changesOnly, limit, busy, msg }
+  var _st = {}; // per project: { view ('day'|'week'|'month'|'year'), anchor (YYYY-MM-DD or null = today), q, changesOnly, limit, busy, msg }
 
   function k(kind, pid) {
     return 'en_cal_' + kind + '_' + pid;
   }
   function state(pid) {
     return (_st[pid] = _st[pid] || {
-      view: 'next14',
-      month: null,
+      view: 'week',
+      anchor: null,
       q: '',
       changesOnly: false,
       limit: PAGE_ROWS,
@@ -100,15 +100,6 @@
       minute: '2-digit',
     });
   }
-  function monthLabel(m) {
-    var a = m.split('-');
-    return new Date(Number(a[0]), Number(a[1]) - 1, 1).toLocaleDateString('en-US', { month: 'long', year: 'numeric' });
-  }
-  function shiftMonth(m, delta) {
-    var a = m.split('-');
-    var d = new Date(Number(a[0]), Number(a[1]) - 1 + delta, 1);
-    return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0');
-  }
   function fieldValue(name, v, tz) {
     if (name === 'start' || name === 'end') return v ? when(v, false, tz) : 'none';
     if (name === 'allDay') return v ? 'yes' : 'no';
@@ -147,6 +138,7 @@
       '.pcal-chg{margin-top:2px;font-size:12px;color:var(--text)}',
       '.pcal-nav{display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin-top:12px}',
       '.pcal-hist-item{margin-top:8px;border:1px solid var(--border);border-radius:6px;padding:8px 10px}',
+      '.pcal-why{margin:6px 0 0;padding-left:18px;font-size:12px;color:var(--text)}',
       '.pcal h4{margin:12px 0 0;font-size:12px;font-weight:700;color:var(--text)}',
     ].join('');
     document.head.appendChild(s);
@@ -248,15 +240,26 @@
   function todayOf(tz) {
     return dayKey(new Date().toISOString(), tz);
   }
-  function currentMonth(tz) {
-    return todayOf(tz).slice(0, 7);
+  // The shown period (view + anchor day) of a project. The "What needs to change" card (app/sched-actions.js) reads it too.
+  function periodOf(pid) {
+    var s = state(pid);
+    var today = todayOf(tzOf(pid));
+    var anchor = s.anchor || today;
+    // The default period (nobody stepped) starts today: no past days. Stepping back shows the whole earlier period.
+    return Object.assign({ view: s.view, anchor: anchor }, CalendarDiff.periodRange(s.view, anchor, s.anchor ? '' : today));
   }
-  var VIEW_NAME = { next14: 'in the next 14 days', month: '', past: 'before today' };
-  function btn(label, on, call) {
-    return '<button class="btn btn-sm ' + (on ? 'btn-em' : 'btn-ghost') + '" onclick="' + call + '"' + (on ? ' aria-pressed="true"' : '') + '>' + label + '</button>';
+  var VIEWS = [['day', 'Day'], ['week', 'Week'], ['month', 'Month'], ['year', 'Year']];
+  var VIEW_HINT = {
+    day: 'Show one day',
+    week: 'Show one week, Monday to Sunday',
+    month: 'Show one month',
+    year: 'Show one year, month by month',
+  };
+  function btn(label, on, call, tip) {
+    return '<button class="btn btn-sm ' + (on ? 'btn-em' : 'btn-ghost') + '" onclick="' + call + '"' + (on ? ' aria-pressed="true"' : '') + (tip ? ' title="' + _escHtml(tip) + '"' : '') + '>' + label + '</button>';
   }
-  function badge(status) {
-    return status ? '<span class="pcal-badge pcal-' + status + '">' + (status === 'new' ? 'New' : status === 'changed' ? 'Changed' : 'Canceled') + '</span>' : '';
+  function badge(status, lines) {
+    return status ? '<span class="pcal-badge pcal-' + status + '">' + CalendarDiff.markLabel(status, lines) + '</span>' : '';
   }
   // The BAS column: one cell per event from BasCoverage.eventCoverage (computations/bas-coverage.js, the only copy).
   function basCell(row, status, ctx) {
@@ -266,9 +269,59 @@
     var cls = c.status === 'covered' ? ' pcal-new' : c.status === 'short' ? ' pcal-changed' : '';
     var tip = '';
     if (c.from) {
-      tip = 'Checked against the ' + (c.exact ? '' : 'same-weekday ') + BasDiff.dateText(c.from) + ' BAS copy' + (c.program ? '. Least covered: ' + BasDiff.splitKey(c.program).program : '');
+      tip = 'Checked against the ' + c.source + (c.program ? '. Least covered: ' + BasDiff.splitKey(c.program).program : '');
     }
     return '<span class="pcal-badge' + cls + '"' + (tip ? ' title="' + _escHtml(tip) + '"' : '') + '>' + _escHtml(c.label) + '</span>';
+  }
+  // The events of one project in the shown period, with marks. The one call of CalendarDiff.listView for this tab.
+  function viewOf(pid, snap, q, changesOnly) {
+    var tz = tzOf(pid);
+    var per = periodOf(pid);
+    return CalendarDiff.listView({
+      events: snap.events,
+      last: CalendarDiff.carriedMarks(histOf(pid), { events: snap.events, tz: tz, today: todayOf(tz), nowMs: Date.now() }),
+      tz: tz,
+      from: per.from,
+      to: per.to,
+      q: q,
+      changesOnly: changesOnly,
+    });
+  }
+  // The top card: Day / Week / Month / Year, step back and forward, and the change counts of the shown period.
+  function renderTop(pid) {
+    var host = document.getElementById('pcal-top-' + pid);
+    if (!host) return;
+    var snap = snapOf(pid);
+    if (!snap) {
+      host.innerHTML = '';
+      return;
+    }
+    ensureStyle();
+    var s = state(pid);
+    var per = periodOf(pid);
+    var v = viewOf(pid, snap, '', false);
+    var line;
+    if (!v.compared) {
+      line = 'No earlier sync to compare yet.';
+    } else {
+      var c = v.counts;
+      var parts = [];
+      if (c['new']) parts.push(num(c['new']) + ' new');
+      if (c.changed) parts.push(num(c.changed) + ' moved or changed');
+      if (c.canceled) parts.push(num(c.canceled) + ' canceled');
+      line = (parts.length ? parts.join(', ') : 'No new, moved or canceled events') + ' in this ' + per.view + ' since the last sync';
+    }
+    var today = todayOf(tzOf(pid));
+    var onToday = per.from <= today && today <= per.to;
+    host.innerHTML =
+      '<div class="card pcal" style="margin-bottom:16px"><div class="card-hdr"><span class="card-title">District calendar</span></div>' +
+      '<div style="padding:16px"><div class="pcal-nav" style="margin-top:0">' +
+      VIEWS.map(function (x) { return btn(x[1], s.view === x[0], 'pcalView(' + pid + ",'" + x[0] + "')", VIEW_HINT[x[0]]); }).join('') +
+      '<button class="btn btn-ghost btn-sm" aria-label="Previous ' + per.view + '" title="Go back one ' + per.view + '" onclick="pcalStep(' + pid + ',-1)">&#9664;</button>' +
+      '<span class="pcal-range">' + _escHtml(per.label) + '</span>' +
+      '<button class="btn btn-ghost btn-sm" aria-label="Next ' + per.view + '" title="Go forward one ' + per.view + '" onclick="pcalStep(' + pid + ',1)">&#9654;</button>' +
+      (onToday ? '' : '<button class="btn btn-ghost btn-sm" title="Go back to the ' + per.view + ' that has today" onclick="pcalToday(' + pid + ')">Today</button>') +
+      '</div><div class="pcal-sum" title="Compared with the calendar feed as saved at each sync. A mark stays ' + CalendarDiff.MARK_DAYS + ' days or until the date passes.">' + _escHtml(line) + '</div></div></div>';
   }
   function renderList(pid) {
     var host = document.getElementById('pcal-list-' + pid);
@@ -280,101 +333,96 @@
     }
     var s = state(pid);
     var tz = tzOf(pid);
-    if (!s.month) s.month = currentMonth(tz);
     var hist = histOf(pid);
-    var v = CalendarDiff.listView({
-      events: snap.events,
-      last: CalendarDiff.carriedMarks(hist, { events: snap.events, tz: tz, today: todayOf(tz), nowMs: Date.now() }),
-      tz: tz,
-      today: todayOf(tz),
-      mode: s.view,
-      month: s.month,
-      q: s.q,
-      changesOnly: s.changesOnly,
-    });
+    var per = periodOf(pid);
     var q = s.q.trim();
-    var scope = s.view === 'month' ? 'in ' + monthLabel(s.month) : VIEW_NAME[s.view];
-    var line;
-    if (!v.compared) {
-      line = 'No earlier sync to compare yet.';
-    } else {
-      var c = v.counts;
-      var parts = [];
-      if (c['new']) parts.push(num(c['new']) + ' new');
-      if (c.changed) parts.push(num(c.changed) + ' changed');
-      if (c.canceled) parts.push(num(c.canceled) + ' canceled');
-      line = 'Recent changes (kept ' + CalendarDiff.MARK_DAYS + ' days or until the date passes): ' + (parts.length ? parts.join(', ') : 'no changes') + ' ' + scope;
-    }
+    var v = viewOf(pid, snap, s.q, s.changesOnly);
     var last = hist[0];
     var lc = last && !last.first ? last.counts : null;
     var feedLine =
       'Whole feed: ' + num(snap.count) + (snap.count === 1 ? ' event' : ' events') +
       '; last sync ' + stampShort(snap.fetchedAt) +
       (lc ? ': ' + num(lc.added) + ' new, ' + num(lc.changed) + ' changed, ' + num(lc.removed) + ' canceled' : '');
-    var stepper = '';
-    var range14 = '';
-    if (!q && s.view === 'month') {
-      stepper =
-        '<div class="pcal-nav"><button class="btn btn-ghost btn-sm" aria-label="Previous month" onclick="pcalMonth(' + pid + ',-1)">&#9664;</button>' +
-        '<span class="pcal-range">' + _escHtml(monthLabel(s.month)) + '</span>' +
-        '<button class="btn btn-ghost btn-sm" aria-label="Next month" onclick="pcalMonth(' + pid + ',1)">&#9654;</button></div>';
-    } else if (!q && s.view === 'next14') {
-      var d0 = todayOf(tz);
-      var d1 = CalendarDiff.addDays(d0, 13);
-      var md = function (d) { return dayText(d).replace(/,\s*\d{4}$/, ''); };
-      range14 = md(d0) + ' – ' + md(d1);
-    }
     var controls =
-      '<div class="pcal-nav">' +
-      btn('Next 14 days', s.view === 'next14' && !q, 'pcalView(' + pid + ",'next14')") +
-      btn('This month', s.view === 'month' && !q, 'pcalView(' + pid + ",'month')") +
-      btn('Show past', s.view === 'past' && !q, 'pcalView(' + pid + ",'past')") +
-      (v.compared ? btn('Changes only', s.changesOnly, 'pcalChangesOnly(' + pid + ')') : '') +
-      '</div>' + stepper;
-    var shown = v.items.slice(0, s.limit);
+      '<div class="pcal-nav">' + (v.compared ? btn('Changes only', s.changesOnly, 'pcalChangesOnly(' + pid + ')', 'Show only new, moved and canceled events') : '') + '</div>';
     var basCtx = { tz: tz, map: DB.get('en_space_map_' + pid, null), snaps: DB.get('en_bas_snap_' + pid, {}) };
-    var today = todayOf(tz);
-    var yr = today.slice(0, 4);
-    var body = '';
-    var lastDay = null;
-    shown.forEach(function (e) {
-      if (e.day !== lastDay) {
-        lastDay = e.day;
+    var heading;
+    var tbl;
+    var more = '';
+    if (!q && s.view === 'year') {
+      // Year: one line for each month; choose a month to see its events.
+      var months = {};
+      v.items.forEach(function (e) {
+        var m = (months[e.day.slice(0, 7)] = months[e.day.slice(0, 7)] || { n: 0, nw: 0, ch: 0, ca: 0 });
+        m.n++;
+        if (e.status === 'new') m.nw++;
+        else if (e.status === 'changed') m.ch++;
+        else if (e.status === 'canceled') m.ca++;
+      });
+      var yrows = [];
+      for (var mi = +per.from.slice(5, 7); mi <= +per.to.slice(5, 7); mi++) {
+        var mk = per.from.slice(0, 5) + String(mi).padStart(2, '0');
+        var m = months[mk] || { n: 0, nw: 0, ch: 0, ca: 0 };
+        yrows.push(
+          '<tr><td><button class="btn btn-ghost btn-sm" title="Show this month" onclick="pcalGo(' + pid + ",'month','" + mk + "-01')\">" +
+          _escHtml(CalendarDiff.periodRange('month', mk + '-01').label.replace(/ \d{4}$/, '')) + '</button></td><td>' + num(m.n) + '</td><td>' + num(m.nw) + '</td><td>' + num(m.ch) + '</td><td>' + num(m.ca) + '</td></tr>'
+        );
+      }
+      tbl =
+        '<div class="pcal-outer"><table class="pcal-tbl pcal-ev-tbl"><colgroup><col style="width:34%"><col style="width:16%"><col style="width:16%"><col style="width:18%"><col style="width:16%"></colgroup>' +
+        '<thead><tr><th>Month</th><th>Events</th><th>New</th><th title="Events whose day, time, place or name changed">Moved or changed</th><th>Canceled</th></tr></thead><tbody>' + yrows.join('') + '</tbody></table></div>';
+      heading = per.label + ' (' + num(v.items.length) + (v.items.length === 1 ? ' event)' : ' events)');
+    } else {
+      var shown = v.items.slice(0, s.limit);
+      var today = todayOf(tz);
+      var yr = today.slice(0, 4);
+      var body = '';
+      var lastDay = null;
+      shown.forEach(function (e) {
+        if (e.day !== lastDay) {
+          lastDay = e.day;
+          body +=
+            '<tr class="pcal-day"><th colspan="4" scope="colgroup">' +
+            _escHtml(CalendarDiff.dayLabel(e.day) + (e.day.slice(0, 4) !== yr ? ', ' + e.day.slice(0, 4) : '') + (e.day === today ? ' (today)' : '')) +
+            '</th></tr>';
+        }
+        var pl = CalendarDiff.eventPlace({ title: e.row[0], location: e.row[4] });
+        var place = pl.fromTitle ? '<span title="Taken from the event title">' + _escHtml(pl.text) + '</span>' : _escHtml(pl.text);
+        var multi = '';
+        if (e.row[3] || /^\d{4}-\d{2}-\d{2}$/.test(e.row[1])) {
+          var lastD = CalendarDiff.allDayLastDay(e.row[1], e.row[2], tz);
+          if (lastD > dayKey(e.row[1], tz)) multi = ' (through ' + dayText(lastD) + ')';
+        }
+        var what =
+          '<span class="pcal-ev">' + _escHtml(e.row[0]) + '</span> ' + badge(e.status, e.lines) +
+          (e.lines.length ? '<div class="pcal-chg">' + e.lines.map(_escHtml).join('<br>') + '</div>' : '');
+        var tip = e.lines.length ? ' title="' + _escHtml(e.lines.join('; ')) + '"' : '';
         body +=
-          '<tr class="pcal-day"><th colspan="4" scope="colgroup">' +
-          _escHtml(CalendarDiff.dayLabel(e.day) + (e.day.slice(0, 4) !== yr ? ', ' + e.day.slice(0, 4) : '') + (e.day === today ? ' (today)' : '')) +
-          '</th></tr>';
-      }
-      var pl = CalendarDiff.eventPlace({ title: e.row[0], location: e.row[4] });
-      var place = pl.fromTitle ? '<span title="Taken from the event title">' + _escHtml(pl.text) + '</span>' : _escHtml(pl.text);
-      var multi = '';
-      if (e.row[3] || /^\d{4}-\d{2}-\d{2}$/.test(e.row[1])) {
-        var lastD = CalendarDiff.allDayLastDay(e.row[1], e.row[2], tz);
-        if (lastD > dayKey(e.row[1], tz)) multi = ' (through ' + dayText(lastD) + ')';
-      }
-      var what =
-        '<span class="pcal-ev">' + _escHtml(e.row[0]) + '</span> ' + badge(e.status) +
-        (e.lines.length ? '<div class="pcal-chg">' + e.lines.map(_escHtml).join('<br>') + '</div>' : '');
-      var tip = e.lines.length ? ' title="' + _escHtml(e.lines.join('; ')) + '"' : '';
-      body +=
-        '<tr class="pcal-r' + (e.status === 'canceled' ? ' pcal-gone' : '') + '"' + tip + '><td>' +
-        _escHtml(CalendarDiff.timeText(e.row, tz) + multi) +
-        '</td><td>' + what + '</td><td>' + place + '</td><td>' + basCell(e.row, e.status, basCtx) + '</td></tr>';
-    });
-    var tbl = shown.length
-      ? '<div class="pcal-outer"><table class="pcal-tbl pcal-ev-tbl"><colgroup><col style="width:19%"><col style="width:35%"><col style="width:22%"><col style="width:24%"></colgroup>' +
-        '<thead><tr><th>Time</th><th>Event</th><th>Location</th><th>BAS</th></tr></thead><tbody>' + body + '</tbody></table></div>'
-      : '<div style="font-size:12px;margin-top:8px">' +
-        (s.changesOnly ? 'No changes ' + _escHtml(scope) + '.' : 'No events found.') + '</div>';
-    var heading = q
-      ? 'Events matching "' + q + '" (' + num(v.items.length) + ')'
-      : (s.view === 'month' ? monthLabel(s.month) : s.view === 'past' ? 'Past events, newest first' : 'Next 14 days' + (range14 ? ', ' + range14 : '')) + ' (' + num(v.items.length) + (v.items.length === 1 ? ' event)' : ' events)');
-    host.innerHTML =
-      '<div class="pcal-sum">' + _escHtml(line) + '</div><div class="pcal-feed">' + _escHtml(feedLine) + '</div>' + controls + '<h4>' + _escHtml(heading) + '</h4>' + tbl +
-      (v.items.length > shown.length
+          '<tr class="pcal-r' + (e.status === 'canceled' ? ' pcal-gone' : '') + '"' + tip + '><td>' +
+          _escHtml(CalendarDiff.timeText(e.row, tz) + multi) +
+          '</td><td>' + what + '</td><td>' + place + '</td><td>' + basCell(e.row, e.status, basCtx) + '</td></tr>';
+      });
+      tbl = shown.length
+        ? '<div class="pcal-outer"><table class="pcal-tbl pcal-ev-tbl"><colgroup><col style="width:19%"><col style="width:35%"><col style="width:22%"><col style="width:24%"></colgroup>' +
+          '<thead><tr><th>Time</th><th>Event</th><th>Location</th><th title="Whether the BAS schedule is on for the whole event">BAS</th></tr></thead><tbody>' + body + '</tbody></table></div>'
+        : '<div style="font-size:12px;margin-top:8px">' +
+          (s.changesOnly ? 'No new, moved or canceled events in this ' + per.view + '.' : q ? 'No events found.' : 'No events in this ' + per.view + '.') + '</div>';
+      heading = q
+        ? 'Events matching "' + q + '" (' + num(v.items.length) + '), any date'
+        : per.label + ' (' + num(v.items.length) + (v.items.length === 1 ? ' event)' : ' events)');
+      more = v.items.length > shown.length
         ? '<div class="pcal-nav"><span style="font-size:12px">Showing ' + num(shown.length) + ' of ' + num(v.items.length) +
           '.</span><button class="btn btn-ghost btn-sm" onclick="pcalMore(' + pid + ')">Show more</button></div>'
-        : '');
+        : '';
+    }
+    host.innerHTML =
+      '<div class="pcal-feed">' + _escHtml(feedLine) + '</div>' + controls + '<h4>' + _escHtml(heading) + '</h4>' + tbl + more;
+  }
+  // Redraw everything that follows the shown period.
+  function refresh(pid) {
+    renderTop(pid);
+    renderList(pid);
+    if (typeof window.sactRender === 'function') window.sactRender(pid);
   }
 
   // --- panel -------------------------------------------------------------------
@@ -500,6 +548,7 @@
       '<div id="pcal-list-' +
       pid +
       '"></div></div></div>';
+    renderTop(pid);
     renderList(pid);
     if (typeof window.spaceMapRender === 'function') window.spaceMapRender(pid);
     if (typeof window.sactRender === 'function') window.sactRender(pid);
@@ -520,7 +569,6 @@
     if (bad) return say(pid, bad);
     var had = !!cfgOf(pid);
     await DB.set(k('cfg', pid), { icsUrl: url, timezone: tz });
-    state(pid).month = null;
     if (had) {
       say(pid, 'Feed address saved.');
       render(pid);
@@ -579,7 +627,6 @@
       await DB.set(k('hist', pid), [rec].concat(hist).slice(0, HIST_MAX));
       await DB.set(k('snap', pid), snap);
       if (typeof window.sactPersist === 'function') await window.sactPersist(pid); // closes or reopens actions against the new copy
-      s.month = null;
     } catch (e) {
       s.msg = 'The calendar feed could not be read. The last saved copy is kept.';
     } finally {
@@ -621,23 +668,38 @@
     });
   }
   window.pcalSave = save;
-  window.pcalMonth = function (pid, d) {
+  window.pcalPeriod = periodOf;
+  window.pcalView = function (pid, view) {
     var s = state(pid);
-    s.view = 'month';
-    s.month = shiftMonth(s.month || currentMonth(tzOf(pid)), d);
+    s.view = view;
     s.q = '';
     s.limit = PAGE_ROWS;
     var q = document.getElementById('pcal-q-' + pid);
     if (q) q.value = '';
-    renderList(pid);
+    refresh(pid);
   };
-  window.pcalView = function (pid, view) {
+  window.pcalStep = function (pid, d) {
     var s = state(pid);
-    s.view = view;
-    s.month = null;
+    s.anchor = CalendarDiff.shiftAnchor(s.view, periodOf(pid).anchor, d);
     s.q = '';
     s.limit = PAGE_ROWS;
-    render(pid);
+    var q = document.getElementById('pcal-q-' + pid);
+    if (q) q.value = '';
+    refresh(pid);
+  };
+  window.pcalToday = function (pid) {
+    var s = state(pid);
+    s.anchor = null;
+    s.limit = PAGE_ROWS;
+    refresh(pid);
+  };
+  window.pcalGo = function (pid, view, anchor) {
+    var s = state(pid);
+    s.view = view;
+    s.anchor = anchor;
+    s.q = '';
+    s.limit = PAGE_ROWS;
+    refresh(pid);
   };
   window.pcalChangesOnly = function (pid) {
     var s = state(pid);

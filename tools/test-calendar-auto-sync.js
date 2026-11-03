@@ -105,7 +105,7 @@ function run(snap, cfgv, token, opens) {
   eq(m.added.map((x) => x.key), ['a'], 'empty latest sync keeps a 2-day-old New; drops 9-day-old and past-date marks');
   eq(m.changed.map((x) => x.key), ['d'], 'Changed kept');
   eq(m.removed.map((x) => x.key), ['z'], 'Canceled kept');
-  const v = D.listView({ events: ev, last: m, tz: TZ, today: '2026-10-29', mode: 'next14', month: '2026-10', q: '', changesOnly: false });
+  const v = D.listView({ events: ev, last: m, tz: TZ, from: '2026-10-29', to: '2026-11-11', q: '', changesOnly: false });
   eq(v.items.map((i) => i.key + ':' + i.status), ['a:new', 'b:', 'd:changed', 'z:canceled'], 'listView runs on carried marks');
   eq(v.counts, { new: 1, changed: 1, canceled: 1 }, 'counts from carried marks');
   eq(D.carriedMarks([hist[3]], o).first, true, 'only first copy -> not compared');

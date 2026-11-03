@@ -231,22 +231,28 @@
   function dow(ymd) {
     return new Date(Date.UTC(+ymd.slice(0, 4), +ymd.slice(5, 7) - 1, +ymd.slice(8, 10))).getUTCDay();
   }
-  // The copy for the date; when there is none, the newest earlier copy of the same weekday (else the nearest later one).
-  // Returns { date, rows, exact } or null.
+  // The copy for the date. When there is none: the newest earlier copy of the same weekday (else the nearest later one); for a
+  // Monday to Thursday date with no copy of its weekday, the nearest copy of another Monday to Thursday day (the BAS runs one
+  // weekday schedule on Monday to Thursday; Friday and the weekend can differ, so they are never borrowed).
+  // Returns { date, rows, exact, kind } or null. kind: 'date' (the day itself), 'weekday' (same weekday), 'monthu' (Monday to Thursday).
+  function pickCopy(snaps, date, days, kind) {
+    var all = Object.keys(snaps || {}).filter(function (d) {
+      return BD.isDate(d) && snaps[d] && snaps[d].rows && days.indexOf(dow(d)) !== -1;
+    }).sort();
+    if (!all.length) return null;
+    var before = all.filter(function (d) { return d < date; });
+    var pick = before.length ? before[before.length - 1] : all[0];
+    return { date: pick, rows: snaps[pick].rows, exact: false, kind: kind };
+  }
   function snapshotForDate(snaps, date) {
     var all = Object.keys(snaps || {}).filter(BD.isDate);
-    if (all.indexOf(date) !== -1 && snaps[date] && snaps[date].rows) return { date: date, rows: snaps[date].rows, exact: true };
-    var same = all
-      .filter(function (d) {
-        return dow(d) === dow(date) && snaps[d] && snaps[d].rows;
-      })
-      .sort();
-    if (!same.length) return null;
-    var before = same.filter(function (d) {
-      return d < date;
-    });
-    var pick = before.length ? before[before.length - 1] : same[0];
-    return { date: pick, rows: snaps[pick].rows, exact: false };
+    if (all.indexOf(date) !== -1 && snaps[date] && snaps[date].rows) return { date: date, rows: snaps[date].rows, exact: true, kind: 'date' };
+    return pickCopy(snaps, date, [dow(date)], 'weekday') || (dow(date) >= 1 && dow(date) <= 4 ? pickCopy(snaps, date, [1, 2, 3, 4], 'monthu') : null);
+  }
+  // Plain words for the copy a check used, for hover text: 'Thu Oct 29 BAS copy', 'same-weekday Thu Oct 29 BAS copy', 'Mon-Thu schedule (Thu Oct 29 BAS copy)'.
+  function sourceText(snap) {
+    var d = BD.dateText(snap.date);
+    return snap.kind === 'monthu' ? 'Mon-Thu schedule (' + d + ' BAS copy)' : (snap.exact ? '' : 'same-weekday ') + d + ' BAS copy';
   }
 
   // Minutes since midnight of a stored time in the calendar time zone.
@@ -299,7 +305,7 @@
 //   fromMin/toMin = the event as minutes of that day.
   function eventCoverage(row, ctx) {
     var place = CD.eventPlace({ title: row[0], location: row[4] }).text;
-    var res = { status: '', label: '', space: place, short: 0, program: '', from: '', exact: true, fromMin: 0, toMin: 0, gaps: [] };
+    var res = { status: '', label: '', space: place, short: 0, program: '', from: '', exact: true, source: '', fromMin: 0, toMin: 0, gaps: [] };
     var done = function (status, label) {
       res.status = status;
       res.label = label;
@@ -317,6 +323,7 @@
     if (!snap) return done('nocopy', 'No BAS copy for this weekday');
     res.from = snap.date;
     res.exact = snap.exact;
+    res.source = sourceText(snap);
     var keys = resolveKeys(snap.rows, entry.programs);
     if (!keys.length) return done('nobas', 'No BAS schedule for this space');
     var from = minuteOfDay(row[1], ctx.tz);
@@ -338,7 +345,65 @@
     return done('short', 'Not covered, ' + res.short + ' min short');
   }
 
+  // --- can the shown events be compared with the BAS copies? ----------------------------------
+  // checkStatus(rows, ctx) -> counts of the eventCoverage results for these events (canceled ones are not passed), plus the
+  // plain reasons why some events cannot be compared. rows = [[title, start, end, allDay, location]], ctx = { tz, map, snaps }.
+  //   checked = covered + short (events that could be compared); skipped = all-day and off-site events (nothing to compare).
+  //   uncheckable = total - checked - skipped.
+  var WD = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+  function checkStatus(rows, ctx) {
+    var copyDates = Object.keys(ctx.snaps || {}).filter(function (d) {
+      return BD.isDate(d) && ctx.snaps[d] && ctx.snaps[d].rows;
+    });
+    var out = { total: 0, covered: 0, short: 0, notmapped: 0, offsite: 0, nocopy: 0, nobas: 0, allday: 0, checked: 0, skipped: 0, uncheckable: 0, noCopyDay: 0, noCopyDays: [], noPlace: 0, unmappedPlaces: [], copies: copyDates.length, copyWeekdays: [], reasons: [] };
+    var seen = {};
+    copyDates.forEach(function (d) {
+      var w = WD[dow(d)];
+      if (out.copyWeekdays.indexOf(w) === -1) out.copyWeekdays.push(w);
+    });
+    var order = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
+    out.copyWeekdays.sort(function (a, b) { return order.indexOf(a) - order.indexOf(b); });
+    (rows || []).forEach(function (row) {
+      if (!row || !row[1]) return;
+      out.total++;
+      var c = eventCoverage(row, ctx);
+      if (c.status === 'notmapped') {
+        out.notmapped++;
+        if (c.space) {
+          var u = (seen[c.space] = seen[c.space] || { name: c.space, count: 0 });
+          u.count++;
+        } else out.noPlace++;
+      } else out[c.status] = (out[c.status] || 0) + 1;
+      if (c.status !== 'allday' && c.status !== 'offsite') {
+        var cd = CD.calendarDay(row[1], ctx.tz);
+        if (!snapshotForDate(ctx.snaps, cd)) {
+          out.noCopyDay++;
+          var wn = WD[dow(cd)];
+          if (out.noCopyDays.indexOf(wn) === -1) out.noCopyDays.push(wn);
+        }
+      }
+    });
+    out.unmappedPlaces = Object.keys(seen).map(function (k) { return seen[k]; }).sort(function (a, b) { return b.count - a.count || (a.name < b.name ? -1 : 1); });
+    out.noCopyDays.sort(function (a, b) { return order.indexOf(a) - order.indexOf(b); });
+    out.checked = out.covered + out.short;
+    out.skipped = out.allday + out.offsite;
+    out.uncheckable = out.total - out.checked - out.skipped;
+    if (out.uncheckable > 0 || out.noCopyDay > 0) {
+      if (!out.copies) out.reasons.push('No BAS schedule copy is imported. Import one in the BAS schedules card.');
+      if (out.unmappedPlaces.length) {
+        out.reasons.push(out.unmappedPlaces.length + (out.unmappedPlaces.length === 1 ? ' place is' : ' places are') + ' not matched to a BAS space (' + out.notmapped + (out.notmapped === 1 ? ' event' : ' events') + '). Match them in the Space map card.');
+      }
+      if (out.noPlace) out.reasons.push(out.noPlace + (out.noPlace === 1 ? ' event has' : ' events have') + ' no place, so it cannot be matched.');
+      if (out.copies && out.noCopyDay) {
+        out.reasons.push('Days with no BAS copy (' + out.noCopyDays.join(', ') + '): ' + out.noCopyDay + (out.noCopyDay === 1 ? ' event cannot' : ' events cannot') + ' be checked. BAS copies exist for ' + out.copyWeekdays.join(', ') + (out.copyWeekdays.some(function (w) { return ['Mon', 'Tue', 'Wed', 'Thu'].indexOf(w) !== -1; }) ? ' (one copy covers Mon-Thu)' : '') + '.');
+      }
+      if (out.nobas) out.reasons.push(out.nobas + (out.nobas === 1 ? ' event is' : ' events are') + ' in a space with no BAS schedule.');
+    }
+    return out;
+  }
+
   var api = {
+    checkStatus: checkStatus,
     spaceKey: spaceKey,
     isServingProgram: isServingProgram,
     isOutOfScopeProgram: isOutOfScopeProgram,
@@ -350,6 +415,7 @@
     buildingOfPlace: buildingOfPlace,
     entriesFromCsv: entriesFromCsv,
     snapshotForDate: snapshotForDate,
+    sourceText: sourceText,
     minutesShort: minutesShort,
     gapsOf: gapsOf,
     eventCoverage: eventCoverage,

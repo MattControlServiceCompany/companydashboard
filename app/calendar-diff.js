@@ -218,16 +218,64 @@
     var last = isAllDay(row) ? allDayLastDay(row[1], row[2], tz) : first;
     return [first, last];
   }
-  // Does a day span touch the view? mode: 'next14' (today and 13 more days), 'month' (opts.month YYYY-MM), 'past' (before today).
+  // Does a day span touch the shown period? o.from and o.to are YYYY-MM-DD (both included).
   function inView(days, o) {
-    if (o.mode === 'month') return days[1].slice(0, 7) >= o.month && days[0].slice(0, 7) <= o.month;
-    if (o.mode === 'past') return days[0] < o.today;
-    return days[1] >= o.today && days[0] <= addDays(o.today, 13);
+    return days[1] >= o.from && days[0] <= o.to;
   }
 
-  // opts: { events (snapshot events), last (newest history record or null), tz, today (YYYY-MM-DD), mode, month, q, changesOnly }
+  // The shown period for a view ('day', 'week', 'month', 'year') around an anchor day (YYYY-MM-DD).
+  // A week runs Monday to Sunday. clipFrom (optional, YYYY-MM-DD) cuts the start of the period to that day, so the default
+  // view starts today and shows no past days. Returns { from, to, label } (the label is plain words, e.g. 'Nov 2 - Nov 8, 2026').
+  function periodRange(view, anchor, clipFrom) {
+    var y = +anchor.slice(0, 4);
+    var m = +anchor.slice(5, 7);
+    var pad = function (n) { return String(n).padStart(2, '0'); };
+    var md = function (d) { return dayLabel(d).replace(/^\w+, /, ''); };
+    if (view === 'day') return { from: anchor, to: anchor, label: dayLabel(anchor) + ', ' + y };
+    var from;
+    var to;
+    var label;
+    if (view === 'month') {
+      from = y + '-' + pad(m) + '-01';
+      to = y + '-' + pad(m) + '-' + pad(new Date(Date.UTC(y, m, 0)).getUTCDate());
+      label = new Date(y, m - 1, 1).toLocaleDateString('en-US', { month: 'long', year: 'numeric' });
+    } else if (view === 'year') {
+      from = y + '-01-01';
+      to = y + '-12-31';
+      label = String(y);
+    } else {
+      var wd = new Date(Date.UTC(y, m - 1, +anchor.slice(8, 10))).getUTCDay(); // 0 = Sunday
+      from = addDays(anchor, -((wd + 6) % 7));
+      to = addDays(from, 6);
+      label = md(from) + ' - ' + md(to) + ', ' + to.slice(0, 4);
+    }
+    if (clipFrom && from < clipFrom && clipFrom <= to) {
+      from = clipFrom;
+      label = md(from) + ' - ' + md(to) + ', ' + to.slice(0, 4);
+    }
+    return { from: from, to: to, label: label };
+  }
+  // Move the anchor one period: delta -1 (back) or 1 (forward).
+  function shiftAnchor(view, anchor, delta) {
+    if (view === 'day') return addDays(anchor, delta);
+    if (view === 'week') return addDays(anchor, 7 * delta);
+    var y = +anchor.slice(0, 4);
+    var m = +anchor.slice(5, 7);
+    if (view === 'year') return (y + delta) + '-' + anchor.slice(5, 7) + '-01';
+    var d = new Date(y, m - 1 + delta, 1);
+    return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-01';
+  }
+  // The word on an event's mark. A changed event whose day or time changed is 'Moved'; any other change is 'Changed'.
+  function markLabel(status, lines) {
+    if (status === 'new') return 'New';
+    if (status === 'canceled') return 'Canceled';
+    if (status !== 'changed') return '';
+    return (lines || []).some(function (l) { return /^(Date|Time) /.test(l); }) ? 'Moved' : 'Changed';
+  }
+
+  // opts: { events (snapshot events), last (newest history record or null), tz, from, to (the shown period, YYYY-MM-DD), q, changesOnly }
   // Returns { items:[{key,row,day,status:'new'|'changed'|'canceled'|'',lines:[]}], counts:{new,changed,canceled}, compared }.
-  // counts cover the whole view (not the search or the Changes-only filter). items are sorted by day, then start; 'past' is newest first.
+  // counts cover the whole view (not the search or the Changes-only filter). items are sorted by day, then start (a calendar reads left to right in time).
   function listView(o) {
     var compared = !!(o.last && !o.last.first);
     var tag = {};
@@ -253,17 +301,16 @@
       if (inV && e.tag) counts[e.tag.status]++;
       var keep = q ? (e.row[0] + ' ' + e.row[4]).toLowerCase().indexOf(q) !== -1 : inV;
       if (!keep || (o.changesOnly && !e.tag)) return;
-      // An event that began before today is listed under the first day of the view that it covers.
+      // An event that began before the period is listed under the first day of the period that it covers.
       var day = days[0];
-      if (!q && o.mode === 'next14' && day < o.today) day = o.today;
+      if (!q && day < o.from) day = o.from;
       items.push({ key: e.key, row: e.row, day: day, status: e.tag ? e.tag.status : '', lines: e.tag ? e.tag.lines : [] });
     });
-    var dir = o.mode === 'past' && !q ? -1 : 1;
     items.sort(function (a, b) {
-      if (a.day !== b.day) return a.day < b.day ? -dir : dir;
+      if (a.day !== b.day) return a.day < b.day ? -1 : 1;
       var x = a.row[1];
       var y = b.row[1];
-      return x < y ? -dir : x > y ? dir : 0;
+      return x < y ? -1 : x > y ? 1 : 0;
     });
     return { items: items, counts: counts, compared: compared };
   }
@@ -336,6 +383,9 @@
     historyRecord: historyRecord,
     eventPlace: eventPlace,
     listView: listView,
+    periodRange: periodRange,
+    shiftAnchor: shiftAnchor,
+    markLabel: markLabel,
     timeText: timeText,
     dayLabel: dayLabel,
     changeLines: changeLines,

@@ -160,6 +160,9 @@
           program: programs[0],
           short: ds.reduce(function (n, d) { return n + d.short; }, 0),
           group: u.group,
+          unit: u.group || names.join(', '),
+          spanText: spansText(spans),
+          titleText: titlesText(events.map(function (e) { return e.title; })),
           text:
             whenText(dates) + ' ' + titlesText(events.map(function (e) { return e.title; })) + ': ' +
             names.join(', ') + ' unoccupied ' + spansText(spans) +
@@ -170,6 +173,72 @@
     return out.sort(function (a, b) {
       return a.date < b.date ? 1 : a.date > b.date ? -1 : a.id < b.id ? 1 : -1;
     });
+  }
+
+  // --- the needs of one shown period ----------------------------------------------------------
+  var WD_ORDER = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
+  // Dates of one action that repeat: a weekday with 3 or more dates is a weekly pattern (one repeating schedule to add).
+  // Returns { weekdays:[ 'Thu' ], dates:[repeating dates], rest:[other dates] }.
+  function repeatOf(dates) {
+    var byDay = {};
+    dates.forEach(function (d) {
+      var w = dayText(d).split(' ')[0];
+      (byDay[w] = byDay[w] || []).push(d);
+    });
+    var out = { weekdays: [], dates: [], rest: [] };
+    Object.keys(byDay).forEach(function (w) {
+      if (byDay[w].length >= 3) {
+        out.weekdays.push(w);
+        out.dates = out.dates.concat(byDay[w]);
+      } else out.rest = out.rest.concat(byDay[w]);
+    });
+    out.weekdays.sort(function (a, b) { return WD_ORDER.indexOf(a) - WD_ORDER.indexOf(b); });
+    out.dates.sort();
+    out.rest.sort();
+    return out;
+  }
+  // The lines of "What needs to change" for the period [o.from, o.to]. An action is listed when at least one of its dates is in
+  // the period, so a one-time need in December is not listed in a November week. A weekly pattern is one line (one repeating
+  // schedule to add to the scheduling group), whatever part of it falls in the period.
+  // o = computeActions input + { from, to }. -> [{ id, change, dates, forText, unit, inBas, repeats, action }]
+  function periodNeeds(o) {
+    var out = [];
+    computeActions(o).forEach(function (a) {
+      var inP = a.dates.filter(function (d) { return d >= o.from && d <= o.to; });
+      if (!inP.length) return;
+      var rep = repeatOf(a.dates);
+      var repIn = rep.dates.some(function (d) { return d >= o.from && d <= o.to; });
+      var parts = [];
+      if (repIn) {
+        parts.push('Every ' + rep.weekdays.join('/') + ', ' + CD.dayLabel(rep.dates[0]).replace(/^\w+, /, '') + ' - ' + CD.dayLabel(rep.dates[rep.dates.length - 1]).replace(/^\w+, /, '') + ' (' + rep.dates.length + ' dates). Add once as a repeating schedule');
+      }
+      var oneIn = (repIn ? rep.rest : a.dates).filter(function (d) { return d >= o.from && d <= o.to; });
+      if (oneIn.length) parts.push(oneIn.map(dayText).join(', '));
+      var snap = BC.snapshotForDate(o.snaps, inP[0]);
+      var inBas = '';
+      if (snap) {
+        inBas = BD.blocksText(snap.rows[a.program]) + '. Source: ' + BC.sourceText(snap);
+      }
+      out.push({
+        id: a.id,
+        change: 'Add ' + a.spanText + (a.group ? ' to group ' + a.group : ' to ' + a.unit),
+        dates: parts.join('. '),
+        repeats: repIn,
+        forText: a.titleText,
+        unit: a.unit,
+        inBas: inBas,
+        action: a,
+      });
+    });
+    return out.sort(function (a, b) { return a.action.start < b.action.start ? -1 : a.action.start > b.action.start ? 1 : a.id < b.id ? -1 : 1; });
+  }
+  // Everything the District Calendar needs for one shown period: the needs lines and the comparison status.
+  // o = computeActions input + { from, to, rows (the live events of the period) }.
+  function periodView(o) {
+    return {
+      needs: periodNeeds(o),
+      status: BC.checkStatus(o.rows, { tz: o.tz, map: o.map, snaps: o.snaps }),
+    };
   }
 
   // The newest time the data changed: the newest BAS import or the calendar sync (ISO text), '' when unknown.
@@ -344,6 +413,9 @@
 
   var api = {
     computeActions: computeActions,
+    periodNeeds: periodNeeds,
+    periodView: periodView,
+    repeatOf: repeatOf,
     reconcile: reconcile,
     setStatus: setStatus,
     wasteFindings: wasteFindings,
