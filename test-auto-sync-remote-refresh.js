@@ -171,7 +171,7 @@ const proj = (name) => ({
     await remote('Leave Remote Name');
     await page.waitForTimeout(500);
     ok((await detailText()).includes('Dirty Remote Name'), 'dirty again: not redrawn');
-    await page.click('.pdt[data-tab="hours"]');
+    await page.click('.pdt[data-tab="utility"]');
     await page.waitForTimeout(500);
     ok((await detailText()).includes('Leave Remote Name'), 'tab change: the pending redraw ran');
     await page.click('.pdt[data-tab="dashboard"]');
@@ -445,7 +445,7 @@ const proj = (name) => ({
     const hours = (note) => ({ projId: PID, entries: [{ id: 'h1', date: '2026-01-05', hours: 2, category: 'Reporting', note }] });
     await page.evaluate(async (a) => {
       await DB.set('en_hours_' + a.pid, a.v);
-      sPTab('hours', document.querySelector('.pdt[data-tab="hours"]'));
+      sPTab('dashboard', null, 'hours');
     }, { pid: PID, v: hours('first synthetic note') });
     await page.waitForTimeout(800);
     ok((await tabText('#projDetailView')).includes('first synthetic note'), 'hours: start shows the first note');

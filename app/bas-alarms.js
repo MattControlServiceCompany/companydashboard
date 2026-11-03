@@ -412,7 +412,7 @@ function baRunImport() {
   }
 
   // Refresh the view if the alarm tab is currently open for this project
-  if (String(window._activeProjId) === String(projId) && window._activeProjTab === 'bas-alarms') {
+  if (projSubIsActive(projId, 'eq-matrix', 'bas-alarms')) {
     baRenderView(projId);
   }
 

@@ -88,13 +88,12 @@ const before = Object.keys(sb.__store).length;
 run([spOff, schedLong]);
 t.eq(Object.keys(sb.__store).length, before, 'computing findings writes nothing');
 
-// 6. Set points come from the same source as the Set Points tab, not stored
+// 6. Set points are not shown or stored by Facility Audit (the Set Points section is the one place)
 sb.__store['en_eqmatrix_900'] = JSON.stringify({ rows: [spOff], importedAt: 'x', buildings: [] });
 sb.getUDBldgs = () => [{ id: 'b900', name: 'Fake Hall A', meters: [] }];
-const viaTab = sb.faSetPointRows(900);
 const viaZones = sb.emCurrentSetpointZones(900, 'b900');
-t.eq(viaTab.length, viaZones.length, 'Set Points view has one row per Set Points zone');
-t.ok(viaTab.length === 1 && viaTab[0][2] === '72', 'set point value comes from the matrix row');
+t.ok(viaZones.length === 1 && String(viaZones[0].occHeat) === '72', 'set point value comes from the matrix row (Set Points source)');
+t.ok(typeof sb.faSetPointRows === 'undefined', 'Facility Audit has no set point table of its own');
 sb.faEdit(900, 'auto:' + spOff.id + '::setpoint-off-standard', 'status', 'Planned');
 sb.faAdd(900);
 const saved = sb.__store['en_audit_900'] || '';

@@ -231,7 +231,9 @@ async function scanHeaders(page, containerSel, label, results) {
     // ─── Client C Schools: Documents → Generate Report ───────────────────────────────
     await clickText(page, 'Spring Hill Schools', true);
     await page.waitForTimeout(1200);
-    await page.locator('#pdTabBar button', { hasText: 'Documents' }).click();
+    await page.locator('#pdTabBar .pdt[data-tab="dashboard"]').click(); // Documents is a Dashboard section
+    await page.waitForTimeout(500);
+    await page.locator('.ptab-subbar [data-sub="docs"]').click();
     await page.waitForTimeout(1000);
     for (let i = 0; i < 4; i++) {
       const dismissed = await clickText(page, "Don't show again", true);

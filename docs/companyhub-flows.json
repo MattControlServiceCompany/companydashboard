@@ -273,10 +273,17 @@
           "keyFields": ["project.baselineComparison", "project.estimatedSavings", "project.utilityEscalation", "project.cscCompensation"]
         },
         {
+          "id": "project-tab-sections",
+          "name": "Project tab sections (PROJ_SUBTABS)",
+          "description": "A project tab can hold labeled sections, shown as pill buttons at the top of the tab. The ONE list is PROJ_SUBTABS in app/core.js; projTabResolve(id) turns any tab id (including the old top-level ids facility-audit, setpoints, bas-trends, bas-alarms) into { tab, sub }, so saved tabs, ?tab= links and sPTab() calls open the new place. sPTab(tab, el, sub) opens a tab and a section; the last section used is kept per project in localStorage ch_lastProjSub_<pid>_<tab>. Equipment Matrix tab sections: Equipment Matrix, Facility Audit, Set Points, BAS Trends, BAS Alarms. Dashboard tab sections: Overview, Contacts, Hours, Documents (old top-level ids contacts, hours, docs also resolve here). Cost Estimate tab sections: Cost Estimate, Budget (old top-level id budget also resolves here).",
+          "functions": ["projTabResolve(id)", "projSubCurrent(projId, tab, wanted)", "projSubIsActive(projId, tab, sub)", "projSubPaneId(tab, sub)", "_projSubShow(tab, sub, p)", "sPTab(tab, el, sub)"],
+          "keyFields": ["PROJ_SUBTABS", "ch_lastProjSub_<pid>_<tab>"]
+        },
+        {
           "id": "facility-audit",
-          "name": "Facility Audit tab",
-          "description": "Project tab with one synced key en_audit_<pid>: findings the user added or imported plus user edits to automatic findings. Automatic findings (set points off the standard, sensor deficiencies, schedule extra hours) are recomputed from the Equipment Matrix on every read; serving units and plants never get a schedule finding. The Deficiency List is a filter on the same records. Set points are read from emBuildSetpointExportRows and never stored. Cost and savings link by measureId to the existing measures.",
-          "functions": ["auditComputeAutoFindings(rows, ctx)", "auditImportSheets(sheets, matrixRows, existing)", "faAllFindings(pid)", "faSetPointRows(pid)"],
+          "name": "Facility Audit section (Equipment Matrix tab)",
+          "description": "Project tab with one synced key en_audit_<pid>: findings the user added or imported plus user edits to automatic findings. Automatic findings (set points off the standard, sensor deficiencies, schedule extra hours) are recomputed from the Equipment Matrix on every read; serving units and plants never get a schedule finding. The Deficiency List is a filter on the same records. Set points are not shown here; the Set Points section of the Equipment Matrix tab is the one place. Cost and savings link by measureId to the existing measures.",
+          "functions": ["auditComputeAutoFindings(rows, ctx)", "auditImportSheets(sheets, matrixRows, existing)", "faAllFindings(pid)"],
           "keyFields": ["en_audit_<pid>.findings", "en_audit_<pid>.edits"]
         },
         {

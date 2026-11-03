@@ -30,18 +30,13 @@ t.ok(read('app/bas-schedules.js').indexOf('emAttachParsedSchedules(pid, p.parsed
 t.ok(read('app/equipment-matrix.js').indexOf('em-import-schedules-btn') === -1, 'Equipment Matrix import button is gone');
 t.ok(read('app/graphics-setpoints.js').indexOf('Drop BAS export here') === -1, 'Set Points drop zone is gone');
 
-// ---- #15 Facility Audit set points = Set Points tab, one function ----
-const faRows = sb.faSetPointRows(PID);
-t.eq(faRows.length, 1, 'audit has one row for the one zone');
-t.eq(faRows[0][1], after[0].name, 'audit zone name equals Set Points zone name');
-t.eq(faRows[0][6], after[0].schedule, 'audit schedule equals Set Points schedule');
-// a saved Set Points record wins in both views
+// ---- Set Points zones come from one shared function; Facility Audit has no copy ----
+// a saved Set Points record wins
 sb.projects = [{ id: PID, setpoints: [{ buildingId: 'b1', zones: [{ name: 'Saved Zone', occHeat: 71, occCool: 75, unoccHeat: 60, unoccCool: 85, schedule: 'Mon-Fri 7-4' }] }] }];
 t.eq(sb.emCurrentSetpointZones(PID, 'b1')[0].name, 'Saved Zone', 'saved record is the source');
-t.eq(sb.faSetPointRows(PID)[0], ['Fake Hall A', 'Saved Zone', '71', '75', '60', '85', 'Mon-Fri 7-4'], 'audit shows the saved record');
 const sp = read('app/graphics-setpoints.js');
 t.ok(sp.indexOf('emCurrentSetpointZones(projId, activeBldgId)') !== -1, 'Set Points tab reads the shared function');
-t.ok(read('app/facility-audit.js').indexOf('emCurrentSetpointZones(pid, b.id)') !== -1, 'Facility Audit reads the shared function');
+t.ok(read('app/facility-audit.js').indexOf('emCurrentSetpointZones') === -1, 'Facility Audit has no set point table of its own');
 
 // ---- #18 readable WebCTRL text ----
 const BasDiff = require(path.join(ROOT, 'app/bas-diff.js'));
@@ -68,7 +63,7 @@ t.ok(none.open && /Missing/.test(none.missing) && /Utility Data/.test(none.missi
 const bills = ctx2.hvlSourceHelp({ source: 'bills' });
 t.ok(!bills.open && /Optional/.test(bills.summary) && bills.missing === '', 'bills: entry closed and labelled optional');
 t.ok(ctx2.hvlSourceHelp({ source: 'annual' }).open, 'annual: entry open');
-// ---- v187 fixes: a saved Set Points record gets the import's schedules; audit = tab cell for cell ----
+// ---- v187 fixes: a saved Set Points record gets the import's schedules----
 const PID2 = 901;
 const servRow = { id: 'r2', building: 'Fake Hall A', category: 'ahu', equipName: 'TST-0002', location: 'TST-0002', bacnetLocation: '/Fake District/Fake Hall A/Roof', schema: 2, pointsRaw: {}, checks: {}, points: {} };
 const boxRow = Object.assign({}, eqRow, { id: 'r3', equipName: 'TST-0003', location: 'TST-0003' });
@@ -85,12 +80,6 @@ t.eq(zs[1].schedule, 'M-F 7:00-16:00', 'import fills the schedule of a saved Set
 t.eq(zs[0].schedule, '', 'serving unit with no schedule in the file stays blank (no gap marker)');
 t.eq(zs[2].schedule, 'typed by hand', 'a typed schedule is never replaced');
 t.eq(JSON.parse(sb.__store['en_projects'])[0].setpoints[0].zones[1].schedule, 'M-F 7:00-16:00', 'the filled schedule is saved');
-const faCells = sb.faSetPointRows(PID2);
-t.eq(faCells[0], ['Fake Hall A', 'TST-0002', '70', '74', '60', '85', ''], 'audit shows the italic defaults like the tab');
-t.eq(faCells[1], ['Fake Hall A', 'TST-0003', '70', '74', '?', '85', 'M-F 7:00-16:00'], 'audit keeps ? and values like the tab');
-const faHtml = sb._faSetPointsTable(PID2).split('</tr>');
-t.ok(/<td><i>70<\/i><\/td><td><i>74<\/i><\/td><td><i>60<\/i><\/td><td><i>85<\/i><\/td>/.test(faHtml[1]), 'audit shows empty cells as italic defaults');
-t.ok(/<td>70<\/td><td>74<\/td><td>\?<\/td><td>85<\/td>/.test(faHtml[2]), 'audit shows saved values and ? as plain text');
 t.eq(BasDiff.readableDates('Day of Month 28; Month February; Day of Week Any; Week Any; Year 0000 (any)'), 'Feb 28', 'fixed day reads like a date');
 t.eq(BasDiff.readableDates('Day of Month 00 (any); Month Any; Day of Week Monday; Week 2nd; Year 0000 (any)'), '2nd Monday of every month', 'nth weekday of every month');
 t.eq(BasDiff.readableDates('Day of Month 00 (any); Month March; Day of Week Monday; Week 2nd; Year 0000 (any)'), '2nd Monday in March', 'nth weekday in a month');

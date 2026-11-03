@@ -100,21 +100,29 @@ const SIDEBAR_VIEWS = [
 ];
 const PROJECT_TAB_SEL = {
   dashboard: 'button',
-  contacts: 'button',
   utility: 'button',
   hvacload: '*',
   energygfx: 'button',
   district: 'input, select',
-  setpoints: '*',
   savings: 'button',
-  docs: 'button',
   settings: 'input, select',
   'eq-matrix': 'button',
+  'cost-estimate': 'button',
+};
+
+// Sections inside a project tab (PROJ_SUBTABS in app/core.js): each must open from sPTab and show its controls.
+const PROJECT_SUB_SEL = {
+  matrix: 'button',
+  'facility-audit': 'button',
+  setpoints: '*',
   'bas-trends': 'button',
   'bas-alarms': 'button',
-  budget: 'input, select',
+  overview: 'button',
+  contacts: 'button',
   hours: 'table',
-  'cost-estimate': 'button',
+  docs: 'button',
+  estimate: 'button',
+  budget: 'input, select',
 };
 
 // A console.error that is an actual JS failure (the app also uses console.error for its own
@@ -616,6 +624,39 @@ async function main() {
           p.name + ': tab ' + t,
           ok ? 'PASS' : 'FAIL',
           ok ? '' : `active=${act.active} controls(${sel})=${info.has} textLen=${info.len} ${errs.join(' ; ')}`,
+        );
+      }
+      for (const sub of Object.keys(PROJECT_SUB_SEL)) {
+        takeErrors();
+        const act = await page.evaluate((sub) => {
+          let thrown = '';
+          let paneId = '';
+          try {
+            const r = projTabResolve(sub);
+            sPTab(r.tab, null, sub);
+            paneId = projSubPaneId(r.tab, sub);
+          } catch (e) {
+            thrown = 'threw: ' + e.message;
+          }
+          const el = document.getElementById(paneId);
+          return { paneId, on: !!(el && el.classList.contains('on')), thrown };
+        }, sub);
+        await page.waitForTimeout(350);
+        const info = await page.evaluate(
+          (a) => {
+            const el = document.getElementById(a.paneId);
+            return { has: el ? el.querySelectorAll(a.sel).length : 0, len: el ? el.innerText.length : 0 };
+          },
+          { paneId: act.paneId, sel: PROJECT_SUB_SEL[sub] },
+        );
+        const errs = takeErrors();
+        if (act.thrown) errs.push(act.thrown);
+        const ok = act.on && info.has > 0 && info.len > 20 && !errs.length;
+        add(
+          'pages',
+          p.name + ': section ' + sub,
+          ok ? 'PASS' : 'FAIL',
+          ok ? '' : `on=${act.on} controls(${PROJECT_SUB_SEL[sub]})=${info.has} textLen=${info.len} ${errs.join(' ; ')}`,
         );
       }
     }

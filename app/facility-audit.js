@@ -3,8 +3,8 @@
 //   findings  - records the user added or imported (rowId links to the Equipment Matrix row).
 //   edits     - the user's changes to automatic findings (status, notes, cost, hours, picture, link).
 // Automatic findings are NOT stored: computations/audit-rules.js recomputes them on every read.
-// The Deficiency List is a filter on the same records. Set points are NEVER stored here: the Set Points
-// view reads emCurrentSetpointZones (app/equipment-matrix.js, same as the Set Points tab) each time.
+// The Deficiency List is a filter on the same records. Set points are NEVER stored or shown here: the
+// Set Points section of the Equipment Matrix tab is the one place for them.
 // The Coverage view (default) is the internal tracker: computations/audit-coverage.js auditComputeCoverage, render only.
 // Screenshot evidence: en_audit_<pid>.evidence = { <auditCovLineKey>: { files:[...], note, who, when } }.
 // A Still-need line with evidence counts as covered (auditComputeCoverage gets it passed in). Same synced key.
@@ -60,33 +60,6 @@ function faAllFindings(pid) {
 
 function faIsDeficiency(f) {
   return !!(f.deficiency || f.cscList || f.issueType === 'Deficiency');
-}
-
-// Set points: the same source as the Set Points tab (emCurrentSetpointZones), read every time, never stored.
-var FA_SETPOINT_HEADERS = ['Building', 'Zone / System', 'Occupied Heat °F', 'Occupied Cool °F', 'Unoccupied Heat °F', 'Unoccupied Cool °F', 'Schedule'];
-function faSetPointCells(pid) {
-  var out = [];
-  var bldgs = typeof getUDBldgs === 'function' ? getUDBldgs(pid) : [];
-  var blank = function (x) {
-    return x === null || x === undefined || x === '';
-  };
-  bldgs.forEach(function (b) {
-    emCurrentSetpointZones(pid, b.id).forEach(function (z) {
-      // Same as the Set Points tab: an empty cell shows the italic default, a '?' stays '?', a blank schedule stays blank.
-      var t = function (k) {
-        return blank(z[k]) ? { text: EM_SP_PLACEHOLDER[k], dflt: true } : { text: String(z[k]) };
-      };
-      out.push([{ text: b.name || 'Building' }, { text: z.name || '?' }, t('occHeat'), t('occCool'), t('unoccHeat'), t('unoccCool'), { text: z.schedule || '' }]);
-    });
-  });
-  return out;
-}
-function faSetPointRows(pid) {
-  return faSetPointCells(pid).map(function (r) {
-    return r.map(function (c) {
-      return c.text;
-    });
-  });
 }
 
 function faEdit(pid, id, field, value) {
@@ -339,35 +312,6 @@ function _faFindingsTable(pid, list) {
   );
 }
 
-function _faSetPointsTable(pid) {
-  var rows = faSetPointCells(pid);
-  if (!rows.length) return '<div class="fa-empty">No set points yet.</div>';
-  var heads = FA_SETPOINT_HEADERS;
-  return (
-    '<div class="fa-sub">Same rows as the Set Points tab. Nothing is stored here.</div><div class="ch-tbl-outer fa-outer fa-scroll"><table class="fa-tbl"><thead><tr>' +
-    heads
-      .map(function (h) {
-        return '<th>' + _escHtml(h) + '</th>';
-      })
-      .join('') +
-    '</tr></thead><tbody>' +
-    rows
-      .map(function (r) {
-        return (
-          '<tr>' +
-          r
-            .map(function (c) {
-              return '<td>' + (c.dflt ? '<i>' + _escHtml(c.text) + '</i>' : _escHtml(c.text)) + '</td>';
-            })
-            .join('') +
-          '</tr>'
-        );
-      })
-      .join('') +
-    '</tbody></table></div>'
-  );
-}
-
 // Shown only on the render right after an import (res passed in); never stored.
 function _faImportReview(r) {
   if (!r) return '';
@@ -524,7 +468,6 @@ function faRender(pid, importResult) {
     ['coverage', 'Coverage'],
     ['findings', 'All findings'],
     ['deficiency', 'Deficiency list'],
-    ['setpoints', 'Set points'],
   ]
     .map(function (v) {
       return '<button class="fa-pill' + (_faView === v[0] ? ' on' : '') + '" data-action="view" data-pid="' + _escHtml(pid) + '" data-view="' + _escHtml(v[0]) + '">' + v[1] + '</button>';
@@ -545,7 +488,7 @@ function faRender(pid, importResult) {
     _escHtml(pid) +
     '"></label></div>') +
     _faImportReview(importResult) +
-    (_faView === 'coverage' ? _faCoverageView(pid) : _faView === 'setpoints' ? _faSetPointsTable(pid) : _faFindingsTable(pid, shown)) +
+    (_faView === 'coverage' ? _faCoverageView(pid) : _faFindingsTable(pid, shown)) +
     '</div>';
 }
 

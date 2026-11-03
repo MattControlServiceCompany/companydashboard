@@ -67,7 +67,7 @@ function check(name, ok, extra) {
         deptHidden: getComputedStyle(document.getElementById('hdrDeptTab')).display === 'none',
       };
     });
-    check('tabs are in the header row', h.inHeader && h.n > 10);
+    check('tabs are in the header row', h.inHeader && h.n >= 8);
     check('text only tabs, no old arrow/fade elements or old tab row', h.icons === 0 && h.arrows === 0);
     // Page never scrolls sideways at 1280 or 640; at 640 the tab strip scrolls inside itself.
     for (const w of [1280, 640]) {

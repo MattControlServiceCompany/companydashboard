@@ -3,7 +3,7 @@
 // Checks at 1536 px and 640 px: (1) every tab label box is on one line (same top within 2 px); (2) the horizontal scrollbar
 // strip (bottom of #hdrTabs minus the scrollbar thickness) starts at or below the bottom of every label box, and the row keeps
 // >= 10 px of its own space under the labels (an overlay scrollbar takes no layout space and would cover them);
-// (3) the row really does scroll sideways (scrollWidth > clientWidth), so the check is not vacuous.
+// (3) at 640 px the row really does scroll sideways (scrollWidth > clientWidth), so the check is not vacuous.
 // SYNTHETIC data only. Run: node tools/test-tab-row-scroll-room.js   (CH_GATE_BROWSER=firefox for Firefox)
 const path = require('path');
 const fs = require('fs');
@@ -83,8 +83,9 @@ function measure() {
       await page.waitForTimeout(500);
       const m = await page.evaluate(measure);
       console.log(BROWSER + ' @' + w + ': ' + JSON.stringify(m));
-      if (m.n < 10) fails.push('@' + w + ' only ' + m.n + ' tabs found (expected the full tab row)');
-      if (!m.scrolls) fails.push('@' + w + ' tab row does not scroll sideways (check is vacuous)');
+      if (m.n < 8) fails.push('@' + w + ' only ' + m.n + ' tabs found (expected the full tab row)');
+      // Since the tab merge (2026-11-03) the row fits at 1536 px, so it must scroll only at the narrow width.
+      if (w === 640 && !m.scrolls) fails.push('@' + w + ' tab row does not scroll sideways (check is vacuous)');
       if (!m.oneRow) fails.push('@' + w + ' tab row is not one row (tabs wrapped)');
       // Overlay scrollbars (Windows default) take no layout space, so the row itself must keep >= 10 px free under the labels.
       if (m.reserve < 10) fails.push('@' + w + ' only ' + m.reserve + ' px free under the labels (need >= 10 for the scrollbar)');

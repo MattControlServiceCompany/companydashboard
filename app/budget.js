@@ -662,8 +662,7 @@ function renderBudgetKPICard(projId) {
 }
 
 function _budgetNavToTab(projId) {
-  const btn = document.querySelector('.pdt[data-tab="budget"]');
-  sPTab('budget', btn || null);
+  sPTab('cost-estimate', null, 'budget');
 }
 
 /* ── Add / Edit Budget Modal ── */

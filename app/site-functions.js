@@ -2507,6 +2507,14 @@ async function siteResetAllMeterTableSettings() {
    site-ui.js delegates to this array and should NOT maintain its own copy.
 */
 var RELEASE_NOTES = [
+  { v: 'v2026.11.03.203', date: '2026-11-03', title: 'Project tabs: fewer tabs, more sections',
+    items: [
+      { type: 'change', text: 'Equipment Matrix now holds Facility Audit, Set Points, BAS Trends and BAS Alarms as sections. Use the buttons at the top of the tab to switch.' },
+      { type: 'change', text: 'Dashboard now holds Contacts, Hours and Documents as sections.' },
+      { type: 'change', text: 'Cost Estimate now holds Budget as a section.' },
+      { type: 'change', text: 'Old saved tabs and old links open the new section.' }
+    ]
+  },
   { v: 'v2026.11.03.202', date: '2026-11-03', title: 'Facility Audit: missing set points',
     items: [
       { type: 'fix', text: 'Equipment Matrix > Facility Audit: coverage no longer counts a set point the BAS does not have as missing. For example, a unit with only a supply air temperature reading is now covered.' }

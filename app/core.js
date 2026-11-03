@@ -789,7 +789,9 @@ function init() {
           // 'dashboard' so the restore never tries to activate a non-existent button.
           const _rawTab = s.tab || 'dashboard';
           const _validTabIds = new Set(PROJ_TABS_DEFAULT.map((t) => t.id));
-          const _tabToRestore = _validTabIds.has(_rawTab) ? _rawTab : 'dashboard';
+          const _resTab = projTabResolve(_rawTab);
+          if (_resTab.sub) localStorage.setItem(_projSubKey(p.id, _resTab.tab), _resTab.sub);
+          const _tabToRestore = _validTabIds.has(_resTab.tab) ? _resTab.tab : 'dashboard';
           // Set _activeProjTab AND _activeProjId BEFORE openDetail() so:
           // 1. renderDetail() renders the correct pane active (_activeProjTab).
           // 2. openDetail's guard sees _prevProjId === id and preserves the pre-set tab
@@ -1379,7 +1381,9 @@ function openDetail(id) {
     const _validTabIds = new Set(PROJ_TABS_DEFAULT.map((t) => t.id));
     if (!window._activeProjTab || !_validTabIds.has(window._activeProjTab) || _prevProjId !== id) {
       const _persisted = localStorage.getItem('ch_lastProjTab_' + id);
-      window._activeProjTab = _persisted && _validTabIds.has(_persisted) ? _persisted : 'dashboard';
+      const _resPersisted = projTabResolve(_persisted);
+      if (_resPersisted.sub) localStorage.setItem(_projSubKey(id, _resPersisted.tab), _resPersisted.sub);
+      window._activeProjTab = _persisted && _validTabIds.has(_resPersisted.tab) ? _resPersisted.tab : 'dashboard';
     }
   } else {
     window._activeProjTab = _dfltTab;
@@ -1474,6 +1478,8 @@ function renderDetail(p) {
           <div id="pd-proj-panel-content-${p.id}" style="display:none;border:1px solid var(--border);border-radius:var(--r);margin-bottom:8px;overflow-y:auto"></div>
           <div class="card" id="pd-tabs-card-${p.id}" style="display:flex;flex-direction:column;flex:1;min-height:0;overflow:hidden">
             <div id="ptab-dashboard" class="ptab${window._activeProjTab === 'dashboard' || !window._activeProjTab ? ' active' : ''}" style="padding:0;overflow-y:auto;overflow-x:hidden">
+              ${_projSubbarHTML(p.id, 'dashboard')}
+              <div id="ptab-sub-overview" class="ptab-sub${_projSubOn(p.id, 'dashboard', 'overview')}">
               <div id="dash-hdr-${p.id}"></div>
               <div style="padding:16px">
                 <div class="dash-grid">
@@ -1497,6 +1503,28 @@ function renderDetail(p) {
                   </div>
                 </div>
               </div>
+              </div>
+              <div id="ptab-contacts" class="ptab-sub${_projSubOn(p.id, 'dashboard', 'contacts')}" style="padding:16px">
+                <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px">
+                  <div style="font-size:12px;color:var(--text2)">${p.contacts && p.contacts.length ? p.contacts.length + ' contact' + (p.contacts.length !== 1 ? 's' : '') : 'No contacts yet'}</div>
+                  <button class="btn btn-em btn-sm" onclick="editProj(${p.id})">✏️ Edit Contacts</button>
+                </div>
+                ${buildContactsDetailHTML(p.contacts || [], p.id)}
+              </div>
+              <div id="ptab-hours" class="ptab-sub${_projSubOn(p.id, 'dashboard', 'hours')}" style="padding:0">
+                <div id="ptab-hours-body-${p.id}">
+                  <div style="text-align:center;color:var(--text3);padding:40px;font-size:13px">Loading hours data...</div>
+                </div>
+              </div>
+              <div id="ptab-docs" class="ptab-sub${_projSubOn(p.id, 'dashboard', 'docs')}" style="padding:16px">
+                <div style="display:flex;gap:4px;margin-bottom:14px;border-bottom:1px solid var(--border);padding-bottom:10px" id="docsSubTabs">
+                  <button class="ptpill" data-dsub="contracts" onclick="renderDocsSubTab('contracts',${p.id})">📋 Contracts</button>
+                  <button class="ptpill sel" data-dsub="meetings" onclick="renderDocsSubTab('meetings',${p.id})">📋 Meetings</button>
+                  <button class="ptpill" data-dsub="approved" onclick="renderDocsSubTab('approved',${p.id})">✅ Approved Changes</button>
+                  <button class="ptpill" data-dsub="files" onclick="renderDocsSubTab('files',${p.id})">📁 Files</button>
+                </div>
+                <div id="ptab-docs-body-${p.id}"></div>
+              </div>
             </div>
             <div id="ptab-notes" class="ptab" style="padding:16px">
               <div style="font-size:12px;font-weight:600;color:var(--text2);margin-bottom:8px">Notes / Description</div>
@@ -1507,13 +1535,6 @@ function renderDetail(p) {
                 <button class="btn btn-em btn-sm" onclick="document.getElementById('mt-proj').value=${p.id};openTaskModal()">+ Add Task</button>
               </div>
               <div id="ptab-tasks-list">${tasksHTML}</div>
-            </div>
-            <div id="ptab-contacts" class="ptab" style="padding:16px">
-              <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px">
-                <div style="font-size:12px;color:var(--text2)">${p.contacts && p.contacts.length ? p.contacts.length + ' contact' + (p.contacts.length !== 1 ? 's' : '') : 'No contacts yet'}</div>
-                <button class="btn btn-em btn-sm" onclick="editProj(${p.id})">✏️ Edit Contacts</button>
-              </div>
-              ${buildContactsDetailHTML(p.contacts || [], p.id)}
             </div>
             <div id="ptab-utility" class="ptab" style="padding:0">
               <!-- Full Utility Data layout embedded, scoped to this project -->
@@ -1577,31 +1598,35 @@ function renderDetail(p) {
               <!-- Merged into Utility Data tab (fix 35571527) — kept for backward compat -->
               <div style="text-align:center;color:var(--text3);padding:40px;font-size:13px">Saved Bills have moved to the ⚡ Utility Data tab.</div>
             </div>
-            <div id="ptab-budget" class="ptab" style="padding:0;overflow-y:auto">
-              <div id="ptab-budget-body-${p.id}">
-                <div style="text-align:center;color:var(--text3);padding:40px;font-size:13px">Loading budget data...</div>
-              </div>
-            </div>
-            <div id="ptab-hours" class="ptab" style="padding:0;overflow-y:auto">
-              <div id="ptab-hours-body-${p.id}">
-                <div style="text-align:center;color:var(--text3);padding:40px;font-size:13px">Loading hours data...</div>
-              </div>
-            </div>
             <div id="ptab-eq-matrix" class="ptab" style="padding:0">
-              <div id="em-proj-wrap"></div>
-            </div>
-            <div id="ptab-facility-audit" class="ptab" style="padding:0;overflow-y:auto">
-              <div id="ptab-facility-audit-body-${p.id}"></div>
-            </div>
-            <div id="ptab-bas-trends" class="ptab" style="padding:0;overflow-y:auto">
-              <div id="ptab-bas-trends-body-${p.id}"></div>
-            </div>
-            <div id="ptab-bas-alarms" class="ptab" style="padding:0;overflow-y:auto">
-              <div id="ptab-bas-alarms-body-${p.id}" style="flex:1;overflow-y:auto;min-height:0;"></div>
+              ${_projSubbarHTML(p.id, 'eq-matrix')}
+              <div id="ptab-sub-matrix" class="ptab-sub${_projSubOn(p.id, 'eq-matrix', 'matrix')}"><div id="em-proj-wrap"></div></div>
+              <div id="ptab-facility-audit" class="ptab-sub${_projSubOn(p.id, 'eq-matrix', 'facility-audit')}" style="padding:0">
+                <div id="ptab-facility-audit-body-${p.id}"></div>
+              </div>
+              <div id="ptab-setpoints" class="ptab-sub${_projSubOn(p.id, 'eq-matrix', 'setpoints')}" style="padding:16px">
+                <div id="ptab-setpoints-body-${p.id}">
+                  <div style="text-align:center;color:var(--text3);padding:40px;font-size:13px">Loading set points…</div>
+                </div>
+              </div>
+              <div id="ptab-bas-trends" class="ptab-sub${_projSubOn(p.id, 'eq-matrix', 'bas-trends')}" style="padding:0">
+                <div id="ptab-bas-trends-body-${p.id}"></div>
+              </div>
+              <div id="ptab-bas-alarms" class="ptab-sub${_projSubOn(p.id, 'eq-matrix', 'bas-alarms')}" style="padding:0">
+                <div id="ptab-bas-alarms-body-${p.id}" style="flex:1;overflow-y:auto;min-height:0;"></div>
+              </div>
             </div>
             <div id="ptab-cost-estimate" class="ptab" style="padding:0;overflow:hidden">
-              <div id="ptab-cost-estimate-body-${p.id}" style="display:flex;flex-direction:column;flex:1;min-height:0;overflow:hidden">
-                <div style="text-align:center;color:var(--text3);padding:40px;font-size:13px">Loading cost estimate...</div>
+              ${_projSubbarHTML(p.id, 'cost-estimate')}
+              <div id="ptab-sub-estimate" class="ptab-sub${_projSubOn(p.id, 'cost-estimate', 'estimate')}">
+                <div id="ptab-cost-estimate-body-${p.id}" style="display:flex;flex-direction:column;flex:1;min-height:0;overflow:hidden">
+                  <div style="text-align:center;color:var(--text3);padding:40px;font-size:13px">Loading cost estimate...</div>
+                </div>
+              </div>
+              <div id="ptab-budget" class="ptab-sub${_projSubOn(p.id, 'cost-estimate', 'budget')}" style="padding:0">
+                <div id="ptab-budget-body-${p.id}">
+                  <div style="text-align:center;color:var(--text3);padding:40px;font-size:13px">Loading budget data...</div>
+                </div>
               </div>
             </div>
             <div id="ptab-hvacload" class="ptab" style="padding:0;overflow-y:auto">
@@ -1737,20 +1762,6 @@ function renderDetail(p) {
             </div>
             <div id="ptab-savings" class="ptab" style="padding:16px;overflow-y:auto">
               <div style="text-align:center;color:var(--text3);padding:40px;font-size:13px">Loading savings data...</div>
-            </div>
-            <div id="ptab-docs" class="ptab" style="padding:16px;overflow-y:auto">
-              <div style="display:flex;gap:4px;margin-bottom:14px;border-bottom:1px solid var(--border);padding-bottom:10px" id="docsSubTabs">
-                <button class="ptpill" data-dsub="contracts" onclick="renderDocsSubTab('contracts',${p.id})">📋 Contracts</button>
-                <button class="ptpill sel" data-dsub="meetings" onclick="renderDocsSubTab('meetings',${p.id})">📋 Meetings</button>
-                <button class="ptpill" data-dsub="approved" onclick="renderDocsSubTab('approved',${p.id})">✅ Approved Changes</button>
-                <button class="ptpill" data-dsub="files" onclick="renderDocsSubTab('files',${p.id})">📁 Files</button>
-              </div>
-              <div id="ptab-docs-body-${p.id}"></div>
-            </div>
-            <div id="ptab-setpoints" class="ptab" style="padding:16px;overflow-y:auto">
-              <div id="ptab-setpoints-body-${p.id}">
-                <div style="text-align:center;color:var(--text3);padding:40px;font-size:13px">Loading set points…</div>
-              </div>
             </div>
             <div id="ptab-settings" class="ptab" style="padding:16px;overflow-y:auto">
               <div style="display:flex;flex-wrap:wrap;gap:16px">
@@ -1898,7 +1909,13 @@ function renderDetail(p) {
   });
   // renderDetail rebuilds every pane with only the dashboard pane active. Re-activate the
   // current tab here so every caller keeps the open tab (a rebuild after "Building added" blanked it).
-  if (window._activeProjId == p.id && window._activeProjTab && window._activeProjTab !== 'dashboard') {
+  // The dashboard pane is built active; it only needs the call when a section other than Overview is current.
+  const _rebuildTab = window._activeProjTab;
+  if (
+    window._activeProjId == p.id &&
+    _rebuildTab &&
+    (_rebuildTab !== 'dashboard' || projSubCurrent(p.id, 'dashboard') !== PROJ_SUBTABS.dashboard[0].id)
+  ) {
     const _tabBtn = document.querySelector(`.pdt[data-tab="${window._activeProjTab}"]`);
     if (_tabBtn) sPTab(window._activeProjTab, _tabBtn);
   }
@@ -3018,6 +3035,77 @@ function isCalcCommodity(projectId, commodity) {
   return p.calcCommodities.includes(commodity);
 }
 
+/* ── PROJECT SUB-TABS ──
+   A project tab can hold labeled sections (pill buttons at the top of the tab). The ONE list of them is
+   PROJ_SUBTABS. The first entry of each list is the section the tab opens on. projTabResolve() is the ONE
+   place that turns any tab id (a tab, or a section that used to be its own tab) into { tab, sub }. Saved tab
+   ids, ?tab= links, report "Edit" links and sPTab() calls all go through it. */
+const PROJ_SUBTABS = {
+  'eq-matrix': [
+    { id: 'matrix', label: 'Equipment Matrix' },
+    { id: 'facility-audit', label: 'Facility Audit' },
+    { id: 'setpoints', label: 'Set Points' },
+    { id: 'bas-trends', label: 'BAS Trends' },
+    { id: 'bas-alarms', label: 'BAS Alarms' },
+  ],
+  dashboard: [
+    { id: 'overview', label: 'Overview' },
+    { id: 'contacts', label: 'Contacts' },
+    { id: 'hours', label: 'Hours' },
+    { id: 'docs', label: 'Documents' },
+  ],
+  'cost-estimate': [
+    { id: 'estimate', label: 'Cost Estimate' },
+    { id: 'budget', label: 'Budget' },
+  ],
+};
+function projTabResolve(id) {
+  if (PROJ_SUBTABS[id]) return { tab: id, sub: null };
+  for (const tab of Object.keys(PROJ_SUBTABS)) {
+    if (PROJ_SUBTABS[tab].some((s) => s.id === id)) return { tab, sub: id };
+  }
+  return { tab: id, sub: null };
+}
+// The pane element id of a section. The first section's pane wraps the tab's original content.
+function projSubPaneId(tab, sub) {
+  return sub === PROJ_SUBTABS[tab][0].id ? 'ptab-sub-' + sub : 'ptab-' + sub;
+}
+function _projSubKey(projId, tab) {
+  return 'ch_lastProjSub_' + projId + '_' + tab;
+}
+// The section a tab shows for a project: the one asked for, else the last one used, else the first.
+function projSubCurrent(projId, tab, wanted) {
+  const list = PROJ_SUBTABS[tab] || [];
+  if (!list.length) return null;
+  const saved = wanted || localStorage.getItem(_projSubKey(projId, tab));
+  return list.some((s) => s.id === saved) ? saved : list[0].id;
+}
+// True when the section is on screen now (tab open and section chosen).
+function projSubIsActive(projId, tab, sub) {
+  return (
+    String(window._activeProjId) === String(projId) &&
+    window._activeProjTab === tab &&
+    projSubCurrent(projId, tab) === sub
+  );
+}
+// ' on' for the pane of the section that is current, else ''. renderDetail uses it so a rebuilt tab matches its pill bar.
+function _projSubOn(projId, tab, sub) {
+  return projSubCurrent(projId, tab) === sub ? ' on' : '';
+}
+function _projSubbarHTML(projId, tab) {
+  const cur = projSubCurrent(projId, tab);
+  return (
+    '<div class="ptab-subbar" role="tablist" aria-label="Sections">' +
+    PROJ_SUBTABS[tab]
+      .map(
+        (s) =>
+          `<button type="button" class="ptpill${s.id === cur ? ' sel' : ''}" role="tab" aria-selected="${s.id === cur}" data-sub="${s.id}" onclick="sPTab('${tab}',null,'${s.id}')">${s.label}</button>`,
+      )
+      .join('') +
+    '</div>'
+  );
+}
+
 /* ── PROJECT TAB ORDER (draggable) ── */
 // Fix 35571527: notes, tasks merged into Dashboard; savedbills merged into Utility Data.
 // These IDs are retained in PROJ_TABS_DEFAULT for backward compat (stored tab orders)
@@ -3025,21 +3113,13 @@ function isCalcCommodity(projectId, commodity) {
 const PROJ_TABS_HIDDEN = new Set(['notes', 'tasks', 'savedbills']);
 const PROJ_TABS_DEFAULT = [
   { id: 'dashboard', label: 'Dashboard' },
-  { id: 'contacts', label: 'Contacts' },
   { id: 'utility', label: 'Utility Data' },
   { id: 'savedbills', label: 'Saved Bills' },
   { id: 'eq-matrix', label: 'Equipment Matrix' },
-  { id: 'facility-audit', label: 'Facility Audit' },
-  { id: 'bas-trends', label: 'BAS Trends' },
-  { id: 'bas-alarms', label: 'BAS Alarms' },
   { id: 'hvacload', label: 'HVAC Load Estimate' },
   { id: 'savings', label: 'Energy Savings' },
   { id: 'energygfx', label: 'Energy Graphics' },
-  { id: 'budget', label: 'Budget' },
-  { id: 'hours', label: 'Hours' },
   { id: 'district', label: 'District Calendar' },
-  { id: 'docs', label: 'Documents' },
-  { id: 'setpoints', label: 'Set Points' },
   { id: 'cost-estimate', label: 'Cost Estimate' },
   // Fix 128f49b2: Project Settings moved to the END of the bar (settings tabs
   // conventionally sit last). It used to sit mid-bar (before Cost Estimate) purely
@@ -3252,7 +3332,40 @@ function toggleProjDetailPanel(projId, panelKey) {
 }
 
 const FULLWIN_TABS = ['savings', 'hvacload', 'utility', 'energygfx'];
-function sPTab(tab, el) {
+// Show one section of a tab (pill + pane) and start it.
+const PROJ_SUB_INIT = {
+  matrix: (id) => typeof initEquipMatrix === 'function' && initEquipMatrix(id),
+  'facility-audit': (id) => typeof initFacilityAuditTab === 'function' && initFacilityAuditTab(id),
+  setpoints: (id) => renderSetpointsTab(id),
+  'bas-trends': (id) => typeof btInitView === 'function' && btInitView(id),
+  'bas-alarms': (id) => typeof baInitView === 'function' && baInitView(id),
+  overview: (id) => initDashboardTab(id),
+  hours: (id) => initHoursTab(id),
+  docs: (id) => renderDocsSubTab(window._docsSubTab || 'meetings', id),
+  estimate: (id) => typeof initCostEstimateTab === 'function' && initCostEstimateTab(id),
+  budget: (id) => initBudgetTab(id),
+};
+function _projSubShow(tab, sub, p) {
+  const root = document.getElementById('ptab-' + tab);
+  if (!root) return;
+  PROJ_SUBTABS[tab].forEach((s) => {
+    const pane = document.getElementById(projSubPaneId(tab, s.id));
+    if (pane) pane.classList.toggle('on', s.id === sub);
+  });
+  root.querySelectorAll('.ptab-subbar [data-sub]').forEach((b) => {
+    const on = b.dataset.sub === sub;
+    b.classList.toggle('sel', on);
+    b.setAttribute('aria-selected', String(on));
+  });
+  if (PROJ_SUB_INIT[sub]) PROJ_SUB_INIT[sub](p.id);
+}
+// Open a project tab. `sub` (optional) picks a section inside it. A tab id that is now a section of another
+// tab (see PROJ_SUBTABS) opens that section.
+function sPTab(tab, el, sub) {
+  const _res = projTabResolve(tab);
+  tab = _res.tab;
+  sub = sub || _res.sub;
+  el = el || document.querySelector('.pdt[data-tab="' + tab + '"]');
   document.querySelectorAll('.ptab').forEach((b) => b.classList.remove('active'));
   document.querySelectorAll('.pdt').forEach((b) => {
     b.classList.remove('active');
@@ -3282,27 +3395,23 @@ function sPTab(tab, el) {
   if (hero) hero.style.display = 'none';
   const p = projects.find((x) => x.id === window._activeProjId);
   if (!p) return;
-  if (tab === 'dashboard') initDashboardTab(p.id);
   if (tab === 'utility') initProjUDTab(p.id);
   if (tab === 'savedbills') renderProjSavedBills(p.id);
-  if (tab === 'budget') initBudgetTab(p.id);
-  if (tab === 'hours') initHoursTab(p.id);
   if (tab === 'savings') initSavingsTab(p.id);
   if (tab === 'hvacload') requestAnimationFrame(() => initHvacLoadTab(p.id));
   if (tab === 'energygfx') egfxRefresh(p.id);
-  if (tab === 'docs') renderDocsSubTab(window._docsSubTab || 'meetings', p.id);
   if (tab === 'district') {
     renderDistCalTable(p.id);
     if (typeof pcalRender === 'function') pcalRender(p.id);
     if (typeof pcalAutoSync === 'function') pcalAutoSync(p.id);
     if (typeof basRender === 'function') basRender(p.id);
   }
-  if (tab === 'setpoints') renderSetpointsTab(p.id);
-  if (tab === 'eq-matrix' && typeof initEquipMatrix === 'function') initEquipMatrix(p.id);
-  if (tab === 'facility-audit' && typeof initFacilityAuditTab === 'function') initFacilityAuditTab(p.id);
-  if (tab === 'bas-trends' && typeof btInitView === 'function') btInitView(p.id);
-  if (tab === 'bas-alarms' && typeof baInitView === 'function') baInitView(p.id);
-  if (tab === 'cost-estimate' && typeof initCostEstimateTab === 'function') initCostEstimateTab(p.id);
+  if (PROJ_SUBTABS[tab]) {
+    const _cur = projSubCurrent(p.id, tab, sub);
+    localStorage.setItem(_projSubKey(p.id, tab), _cur);
+    window._activeProjTab = tab; // set before the section starts: section code asks projSubIsActive()
+    _projSubShow(tab, _cur, p);
+  }
   window._activeProjTab = tab;
   // Persist per-project last-used tab so it survives page reloads.
   if (window._activeProjId != null) {
