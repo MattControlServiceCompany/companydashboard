@@ -271,7 +271,7 @@ var FLOWS = [
       { from:'store', to:'energy', label:'Quarterly report reads en_bas_schedhistory_{pid}', detail:'One table page of baseline and quarter operating hours and set points per building; omitted when the project has no record.' },
       { from:'energy', to:'store', label:'Saved to en_report_history', detail:'HTML stored in en_report_{id}.' },
       { from:'energy', to:'store', label:'Marked presented to en_presented_savings', detail:'Preview button opens a form for the printed figures (CSV import can also carry every other printed figure); totalSavingsWithPresented uses them for period totals; the updated report of a presented period shows all printed figures (app/report-printed.js).' },
-      { from:'energy', to:'user', label:'Report overlay displayed', detail:'Print-preview with Export to PDF button.' },
+      { from:'energy', to:'user', label:'Report overlay displayed', detail:'Print-preview with Download PDF (one click, app/report-pdf.js) and Print buttons.' },
     ]
   },
   {

@@ -313,8 +313,8 @@
         {
           "id": "report-generation",
           "name": "Report Generation",
-          "description": "Generate quarterly, annual, cumulative, or custom reports with selectable sections and a building -> meter scope tree (shared component app/scope-tree.js, also used by the ASHRAE 36 report modal's building filter and the Export Utility Data modal). Output as HTML pages with charts and tables. Export to PDF / Word available.",
-          "functions": ["openReportModalV2(projId)", "_rptV2ReadConfig()", "collectReportData(projId, buildingIds, reportDateStr, reportType, selectedPeriod, meterIds)", "generateReportPreview()", "scopeTreeHTML(nodes, opts)", "scopeTreeChecked(root, kind, attr)", "exportReportToPDF()", "saveReportToHistory()", "showReportHistory()"],
+          "description": "Generate quarterly, annual, cumulative, or custom reports with selectable sections and a building -> meter scope tree (shared component app/scope-tree.js, also used by the ASHRAE 36 report modal's building filter and the Export Utility Data modal). Output as HTML pages with charts and tables. Download PDF (one click, saves a file), Print, and Word available.",
+          "functions": ["openReportModalV2(projId)", "_rptV2ReadConfig()", "collectReportData(projId, buildingIds, reportDateStr, reportType, selectedPeriod, meterIds)", "generateReportPreview()", "scopeTreeHTML(nodes, opts)", "scopeTreeChecked(root, kind, attr)", "exportReportToPDF() (Print)", "downloadReportPdf() (app/report-pdf.js, one-click PDF file)", "rptReportFileName(data, ext) (lib/report-file-name.js)", "saveReportToHistory()", "showReportHistory()"],
           "modalIds": ["#reportGenModal", "#reportOverlay"],
           "storageKeys": ["en_report_history", "en_report_<id>", "en_bas_schedhistory_<projId>"],
           "reportSections": ["Executive Summary", "Energy Analysis", "Savings", "Equipment", "Baseline", "Emissions", "Operating Hours and Set Points (quarterly, from en_bas_schedhistory_<projId>)"]

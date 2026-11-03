@@ -2507,6 +2507,12 @@ async function siteResetAllMeterTableSettings() {
    site-ui.js delegates to this array and should NOT maintain its own copy.
 */
 var RELEASE_NOTES = [
+  { v: 'v2026.11.03.208', date: '2026-11-03', title: 'Reports: Download PDF',
+    items: [
+      { type: 'feature', text: 'Report page: a new Download PDF button sits next to Print in the report toolbar. One click saves the report as a PDF file with the pages exactly as they look on screen, and no print dialog opens.' },
+      { type: 'change', text: 'Report page: the saved PDF has a file name that shows the report type and the period, and the text in it can be searched and copied.' }
+    ]
+  },
   { v: 'v2026.11.03.207', date: '2026-11-03', title: 'Energy Graphics: kWh vs kW analysis and Where the energy goes',
     items: [
       { type: 'feature', text: 'Project > Energy Graphics tab: a new kWh vs kW analysis card sits under the Monthly Electric kWh and kW charts. Pick a building to see two years month by month with kWh, peak kW, load factor, full-load hours, and use per degree day. Hover over a value to see how it is worked out.' },

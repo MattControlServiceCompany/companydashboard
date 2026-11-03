@@ -556,6 +556,16 @@ No timer, env var or host change. Runs on report render only.
 - PDF text layer: the app print (window.print, Save as PDF) keeps every digit. A PDF run through the Bluebeam printer driver (Producer "Bluebeam Brewery") lost digit "1" in the text layer; that is the driver, not the app.
 - Check: `node tools/test-report-q3-review-findings.js` and `node tools/test-report-pdf-text-digits.js` (headless Chromium + pdftotext).
 
+## Download PDF button on reports (2026-11-03, branch feat/2026-11-03-report-pdf-download)
+
+No timer, env var, host or server change. Runs in the browser on click. No network call except the one-time load of the two libraries below.
+- Button: "Download PDF" next to "Print" in the report toolbar (`#rptPreviewToolbar` for Quarterly/Annual/Cumulative/Custom, `#reportOverlay` toolbar for every other report). Both call `downloadReportPdf()` (app/report-pdf.js). "Print" calls `exportReportToPDF()` (app/report-engine.js), unchanged: browser print dialog.
+- Method: for each report page (`.rpt-page`, or `.soo-doc-page` for Sequence of Operations) html2canvas 1.4.1 draws the page at 1.25x (120 dpi), jsPDF 2.5.2 puts it on an 8.5 x 11 in page as JPEG (quality 0.6), then adds the words of the page as invisible text at the word positions. Look is the screen page; text can be selected, copied and searched. Text is a picture, not vector. Both libraries were already loaded in energy-department.html (cdn.jsdelivr.net, pinned, SRI).
+- Pages: `_rptReportExportPages(data)` and `_rptForceOpenTierPanels(root)` (report-engine.js) give the pages for both Print and Download. A page taller than one sheet is cut between lines of text (`_rptPdfPageCuts`).
+- File name: `rptReportFileName(data, ext)` (lib/report-file-name.js) is the one rule for print title, .pdf, .doc and .docx: `<client or project> - <report name> <period or local date><ext>`. Cumulative, custom and current reports now name their first and last month, not "Annual".
+- Cost: a 57-page report is about 6 MB and takes about 20 s; an 8-page report about 1 MB and 3 s (headless Chromium, 2026-11-03). html2canvas copies the document on every call, so `ignoreElements` skips every element that is not the page or a parent of it (this cut the time ten times). The page yields to the browser between pages and each canvas is released after use. A toast shows "Building PDF: page n of N".
+- Check: `node tools/test-report-file-name.js`. Then open a report, click Download PDF: a .pdf file saves with no print dialog; page count equals the Print page count.
+
 ## 7. How to keep this file current
 
 Any commit that changes these facts must update this file in the same commit.

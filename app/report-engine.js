@@ -1892,22 +1892,6 @@ function _scopeMonthlyToPeriod(monthlyArr, yearMonths) {
 }
 
 /**
- * _rptFilenamePeriodTag — H/13 fix (2026-09-09): quarterly exports (PDF/.doc/.docx) previously
- * used a bare "Quarterly" type label with no actual quarter/year in the filename (e.g.
- * "Client - Quarterly Savings Report 2026.09.09" — the date is EXPORT date, not the period the
- * report covers). Returns " Q2-2026" for a quarterly report, " 2026" for an annual report, or ''
- * if the period isn't known, so every export filename names the period it actually reports on.
- * @param {object} data - collectReportData() output (reads data.period)
- */
-function _rptFilenamePeriodTag(data) {
-  var per = data && data.period;
-  if (!per) return '';
-  if (per.type === 'quarterly' && per.quarter && per.year) return ' Q' + per.quarter + '-' + per.year;
-  if (per.type !== 'quarterly' && per.year) return ' ' + per.year;
-  return '';
-}
-
-/**
  * _rptYtdKicker — small uppercase eyebrow label prepended to each page inside the closing
  * "Year-to-Date / Overall Performance" section (EUI Benchmarking, the new YTD Trend page, and
  * Contract Projection) so a reader understands the three pages are one grouped section, distinct
@@ -11369,6 +11353,45 @@ function deleteReport(entryId) {
 }
 
 /**
+ * _rptReportExportPages - the pages of the report that is open now. Shared by the print path
+ * (exportReportToPDF) and the one-click file path (downloadReportPdf, app/report-pdf.js), so both
+ * export the same pages.
+ * The Quarterly/Annual preview (report-preview.js) renders into #reportPreviewContainer /
+ * #rptPreviewPages; every other report renders into #reportOverlay / #reportPages. The two
+ * containers are never open together. A Sequence of Operations document renders `.soo-doc-page`
+ * (soo-generator.js), every other report `.rpt-page`. Pages hidden by the section list in the
+ * preview (display:none on the wrapper) are not returned.
+ * @returns {{pagesRoot: string, pages: Element[]}}
+ */
+function _rptReportExportPages(data) {
+  const v2Container = document.getElementById('reportPreviewContainer');
+  const isV2Preview = !!(v2Container && v2Container.style.display !== 'none');
+  const pagesRoot = isV2Preview ? '#rptPreviewPages' : '#reportPages';
+  const pageSelector = data && data._soo ? '.soo-doc-page' : '.rpt-page';
+  const pages = Array.from(document.querySelectorAll(pagesRoot + ' ' + pageSelector));
+  return { pagesRoot: pagesRoot, pages: pages };
+}
+
+/**
+ * _rptForceOpenTierPanels - opens every proposal-tier "Install & Programming Detail" panel
+ * (fix/proposal-tier-option-chooser, 2026-07-19). Nothing in the exported output is interactive,
+ * so a tier the user collapsed on screen must still export fully open. Returns a function that
+ * puts the panels back as they were.
+ */
+function _rptForceOpenTierPanels(pagesRoot) {
+  const panels = Array.from(document.querySelectorAll(pagesRoot + ' [id^="rpt-tier-detail-"]'));
+  const prior = panels.map((panel) => panel.style.display);
+  panels.forEach((panel) => {
+    panel.style.display = 'block';
+  });
+  return () => {
+    panels.forEach((panel, i) => {
+      panel.style.display = prior[i];
+    });
+  };
+}
+
+/**
  * exportReportToPDF — 2026-07-22 rewrite (fix/report-not-copyable). Matt: "The PDF is still
  * not copyable like I would like."
  *
@@ -11403,74 +11426,15 @@ async function exportReportToPDF() {
     return;
   }
 
-  // fix/quarterly-text-pdf (2026-09-25): the Quarterly/Annual report preview (report-preview.js
-  // generateReportPreview()/_showPreview()) renders into #reportPreviewContainer/#rptPreviewPages,
-  // NOT the legacy #reportOverlay/#reportPages this function was originally built against — it
-  // used to have its own separate html2canvas+jsPDF export (downloadReportPDF(), removed) that
-  // produced an image-only, non-selectable-text PDF (bug filed 2026-09-25 E2E). Both containers
-  // render the exact same rptPage()-produced `.rpt-page` markup, so the only thing that differs
-  // is which root to query — pick it by which container is actually open (the two are mutually
-  // exclusive; whichever one isn't in use stays `display:none` and is never touched here).
-  const v2Container = document.getElementById('reportPreviewContainer');
-  const isV2Preview = !!(v2Container && v2Container.style.display !== 'none');
-  const pagesRoot = isV2Preview ? '#rptPreviewPages' : '#reportPages';
-
-  // SOO Generator Phase 3 (item 3f1415af): a Sequence of Operations preview renders inside
-  // `.soo-doc-page` (soo-generator.js's own plain master-format shell), never `.rpt-page` — this
-  // selector previously always matched `.rpt-page` only, so Print/Export-to-PDF silently found
-  // zero pages for every SOO document and aborted with "No report pages to export" before
-  // window.print() was ever called. Same print-to-PDF mechanism either way, just the right
-  // selector for what's actually in the live DOM.
-  const pageSelector = data._soo ? '.soo-doc-page' : '.rpt-page';
-  const pages = document.querySelectorAll(pagesRoot + ' ' + pageSelector);
-  if (!pages.length) {
+  const found = _rptReportExportPages(data);
+  if (!found.pages.length) {
     showToast('No report pages to export');
     return;
   }
-
-  // Force ALL proposal-tier "Install & Programming Detail" panels open before printing
-  // (fix/proposal-tier-option-chooser, 2026-07-19). Nothing in the printed output is
-  // interactive — so whichever tier(s) the user had collapsed in the live preview must still
-  // render fully expanded. State is restored below so the interactive preview is unaffected.
-  const tierDetailPanels = document.querySelectorAll(pagesRoot + ' [id^="rpt-tier-detail-"]');
-  const tierDetailPriorDisplay = [];
-  tierDetailPanels.forEach((panel) => {
-    tierDetailPriorDisplay.push(panel.style.display);
-    panel.style.display = 'block';
-  });
-
-  // Same filename convention the old jsPDF path used, minus the extension — used only to
-  // seed the browser's "Save as PDF" filename suggestion via document.title.
-  const client = data.project.client || data.project.name || 'Report';
-  const dateStr = new Date().toISOString().slice(0, 10).replace(/-/g, '.');
-  let filename;
-  if (data._agreement) {
-    filename = client + ' - Energy Management Services Agreement ' + dateStr;
-  } else if (data._ashrae) {
-    filename =
-      data._ashrae.type === 'proposal'
-        ? client + ' - Service Proposal ' + dateStr
-        : client + ' - ASHRAE 36 Audit Report ' + dateStr;
-  } else if (data._soo) {
-    filename = client + ' - Sequence of Operations ' + dateStr;
-  } else if (data._auditProposal) {
-    filename =
-      client +
-      ' - ' +
-      (data._auditProposal.type === 'full'
-        ? 'Full Facility Audit Proposal '
-        : 'Building Automation System Audit Proposal ') +
-      dateStr;
-  } else if (data._woodland) {
-    filename =
-      (data.building && data.building.name ? data.building.name : client) +
-      ' - Baseline & BAS Savings Report ' +
-      dateStr;
-  } else {
-    const typeLabel = data.period && data.period.type === 'quarterly' ? 'Quarterly' : 'Annual';
-    filename =
-      client + ' - ' + typeLabel + _rptFilenamePeriodTag(data) + ' Savings Report ' + dateStr;
-  }
+  const restoreTierPanels = _rptForceOpenTierPanels(found.pagesRoot);
+  // The one file-name rule (lib/report-file-name.js), without extension: seeds the browser's
+  // "Save as PDF" file name suggestion via document.title.
+  const filename = rptReportFileName(data, '');
   const originalTitle = document.title;
   document.title = filename;
 
@@ -11478,9 +11442,7 @@ async function exportReportToPDF() {
   const restore = () => {
     if (restored) return;
     restored = true;
-    tierDetailPanels.forEach((panel, i) => {
-      panel.style.display = tierDetailPriorDisplay[i];
-    });
+    restoreTierPanels();
     document.title = originalTitle;
     window.removeEventListener('afterprint', restore);
   };
@@ -12268,19 +12230,7 @@ async function exportReportToWord() {
     );
 
     const client = data.project.client || data.project.name || 'Report';
-    const dateStr = new Date().toISOString().slice(0, 10).replace(/-/g, '.');
-    let filename;
-    if (data._agreement) {
-      filename = client + ' - Energy Management Services Agreement ' + dateStr + '.doc';
-    } else if (data._ashrae) {
-      filename =
-        data._ashrae.type === 'proposal'
-          ? client + ' - Service Proposal ' + dateStr + '.doc'
-          : client + ' - ASHRAE 36 Audit Report ' + dateStr + '.doc';
-    } else {
-      const typeLabel = data.period && data.period.type === 'quarterly' ? 'Quarterly' : 'Annual';
-      filename = client + ' - ' + typeLabel + _rptFilenamePeriodTag(data) + ' Savings Report ' + dateStr + '.doc';
-    }
+    const filename = rptReportFileName(data, '.doc');
 
     // Word-only page setup + chrome overrides (2026-07-22 fix, Matt: "the word files footer
     // and headers and other formatting did not translate correctly... text is running off all
@@ -13036,28 +12986,7 @@ async function exportReportToDocx() {
 
     const translated = _docxTranslatePages(pageEls);
 
-    const client = data.project.client || data.project.name || 'Report';
-    // LOCAL calendar date, not toISOString() (UTC): in Kansas (UTC-5/-6) any export after ~6-7 PM
-    // stamped TOMORROW's date into the suggested filename (true-Word review, 2026-08-03).
-    const _fnNow = new Date();
-    const dateStr =
-      _fnNow.getFullYear() +
-      '.' +
-      String(_fnNow.getMonth() + 1).padStart(2, '0') +
-      '.' +
-      String(_fnNow.getDate()).padStart(2, '0');
-    let filename;
-    if (data._agreement) {
-      filename = client + ' - Energy Management Services Agreement ' + dateStr + '.docx';
-    } else if (data._ashrae) {
-      filename =
-        data._ashrae.type === 'proposal'
-          ? client + ' - Service Proposal ' + dateStr + '.docx'
-          : client + ' - ASHRAE 36 Audit Report ' + dateStr + '.docx';
-    } else {
-      const typeLabel = data.period && data.period.type === 'quarterly' ? 'Quarterly' : 'Annual';
-      filename = client + ' - ' + typeLabel + _rptFilenamePeriodTag(data) + ' Savings Report ' + dateStr + '.docx';
-    }
+    const filename = rptReportFileName(data, '.docx');
 
     await _docxAssemble(translated.xml, {
       filename: filename,
