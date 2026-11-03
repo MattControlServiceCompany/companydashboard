@@ -2507,6 +2507,13 @@ async function siteResetAllMeterTableSettings() {
    site-ui.js delegates to this array and should NOT maintain its own copy.
 */
 var RELEASE_NOTES = [
+  { v: 'v2026.11.03.207', date: '2026-11-03', title: 'Energy Graphics: kWh vs kW analysis and Where the energy goes',
+    items: [
+      { type: 'feature', text: 'Project > Energy Graphics tab: a new kWh vs kW analysis card sits under the Monthly Electric kWh and kW charts. Pick a building to see two years month by month with kWh, peak kW, load factor, full-load hours, and use per degree day. Hover over a value to see how it is worked out.' },
+      { type: 'change', text: 'Project > Energy Graphics tab: the HVAC End-Use Estimate is now a plain table named Where the energy goes. It shows gas, electric and peak demand split into heating or cooling, year-round, and total, with a short reading line.' },
+      { type: 'change', text: 'Project > Energy Graphics tab: use per degree day shows a dash for a month with fewer than 50 degree days, because the ratio is not reliable then.' }
+    ]
+  },
   { v: 'v2026.11.03.206', date: '2026-11-03', title: 'District Calendar: Day, Week, Month and Year views',
     items: [
       { type: 'feature', text: 'Project > District Calendar tab: choose Day, Week, Month or Year, and use Back, Forward and Today. The first view is the current week from today, with no past days.' },

@@ -530,6 +530,256 @@ function egfxRenderPerfVerify(projId) {
   content.innerHTML = html || '<div style="color:var(--text3);font-size:12px">No baseline data available.</div>';
 }
 
+/* ══════════════════════════════════════════════════════
+   kWh vs kW analysis card (Energy Graphics tab, right below the kWh / kW charts).
+   Math: computations/energy-analysis.js. Month rule, day count, gas therms and degree days come from the
+   shared functions it calls. Every value carries its arithmetic in its hover text.
+══════════════════════════════════════════════════════ */
+// Table look shared by the kWh vs kW card and the Where-the-energy-goes table (ui-standards.md Tables: outer border,
+// --s1 header, grid lines, totals footer). Rendered once at the top of the charts area.
+const _EGFX_TBL_CSS = `<style>
+        .ea-tbl-outer{border:1px solid var(--border);border-radius:6px;overflow:hidden;max-width:100%}
+        .ea-scroll{overflow-x:auto}
+        .ea-tbl{border-collapse:separate;border-spacing:0;width:100%;font-size:11px;font-variant-numeric:tabular-nums}
+        .ea-tbl th,.ea-tbl td{padding:4px 5px;border-right:1px solid var(--border);border-bottom:1px solid var(--border);color:var(--text);white-space:nowrap;text-align:right}
+        .ea-tbl th:last-child,.ea-tbl td:last-child{border-right:none}
+        .ea-tbl tbody tr:last-child td{border-bottom:none}
+        .ea-tbl thead th{background:var(--s1);color:var(--text2);font-size:10px;font-weight:700;letter-spacing:.3px;text-align:center;cursor:help;white-space:normal;line-height:1.2;border-bottom:1px solid var(--border2)}
+        .ea-tbl td.ea-l,.ea-tbl th.ea-l{text-align:left}
+        .ea-tbl td[title]{cursor:help}
+        .ea-tbl td.ea-wrap{white-space:normal}
+        .ea-tbl tfoot td{background:var(--s1);font-weight:700;border-top:2px solid var(--border2);border-bottom:none}
+        .ea-tbl tbody tr:hover td{background:var(--s4)}
+        @media (max-width:1200px){.ea-tbl th,.ea-tbl td{padding:3px 3px}.ea-tbl{font-size:10.5px}}
+</style>`;
+
+var _egfxEaSel = {}; // projId -> selected building id
+
+function _eaFmt(v, d) {
+  return v == null || !isFinite(v) ? '—' : Number(v).toLocaleString('en-US', { minimumFractionDigits: d || 0, maximumFractionDigits: d || 0 });
+}
+// kW values keep one decimal only when the bill has one; degree-day ratios keep digits that matter.
+function _eaFmtKw(v) {
+  return v == null || !isFinite(v) ? '—' : Number(v).toLocaleString('en-US', { maximumFractionDigits: 1 });
+}
+function _eaFmtRatio(v) {
+  return v == null || !isFinite(v) ? '—' : _eaFmt(v, v >= 100 ? 0 : v >= 10 ? 1 : 2);
+}
+function _eaPct(v) {
+  return v == null || !isFinite(v) ? '—' : Math.round(v * 100) + '%';
+}
+function _eaSigned(v) {
+  if (v == null || !isFinite(v)) return '—';
+  const r = Math.round(v * 100);
+  return (r > 0 ? '+' : r < 0 ? '-' : '') + Math.abs(r) + '%';
+}
+// The numbers one building's card needs. Used by the reading list and by the table.
+function _egfxEaCompute(projId, b) {
+  const ea = getEnergyAnalysis(projId, b);
+  const r = { ea: ea, cy: null, py: null, S: [], G: [], cur: null, prev: null, label: '', reading: '' };
+  if (!ea.years.length) {
+    r.reading = 'No electric bills for this building.';
+    return r;
+  }
+  r.cy = ea.years[ea.years.length - 1];
+  if (ea.years.length < 2) {
+    r.reading = 'Only one year of electric bills. Add another year to compare.';
+    return r;
+  }
+  r.py = ea.years[ea.years.length - 2];
+  const cm = ea.byYear[r.cy].months;
+  const pm = ea.byYear[r.py].months;
+  r.S = eaCommonMonths(cm, pm, (m) => m && m.kwh > 0 && m.kw > 0);
+  r.G = eaCommonMonths(cm, pm, (m) => m && m.therms > 0);
+  r.cur = eaYearSummary(cm, r.S, r.G);
+  r.prev = eaYearSummary(pm, r.S, r.G);
+  r.label = eaMonthsLabel(r.S);
+  r.reading = r.S.length ? eaReadingText(r.cy, r.py, r.cur, r.prev, r.label) : 'Not enough months in both years to compare.';
+  return r;
+}
+
+function _egfxEaCardHtml(projId) {
+  const bl = getUDBldgs(projId).filter((b) => getEnergyAnalysis(projId, b).years.length);
+  if (!bl.length) return '';
+  if (!bl.some((b) => String(b.id) === String(_egfxEaSel[projId]))) _egfxEaSel[projId] = bl[0].id;
+  const selId = _egfxEaSel[projId];
+  const readings = bl
+    .map(
+      (b) =>
+        `<div style="font-size:12px;color:var(--text)"><span style="color:var(--text2);font-weight:700">${_escHtml(b.name || 'Unknown')}:</span> ${_escHtml(_egfxEaCompute(projId, b).reading)}</div>`,
+    )
+    .join('');
+  const opts = bl
+    .map((b) => `<option value="${_escHtml(b.id)}"${String(b.id) === String(selId) ? ' selected' : ''}>${_escHtml(b.name || 'Unknown')}</option>`)
+    .join('');
+  return `<div class="card ea-card" id="egfx-ea-${projId}" style="padding:14px;margin-bottom:12px">
+      <div style="font-size:12px;font-weight:700;color:var(--text2);margin-bottom:4px">⚡ kWh vs kW — more energy, or the same building running longer?</div>
+      <div style="font-size:11px;color:var(--text3);margin-bottom:10px">kWh is the energy used. kW is the highest power demand. Hover over any number or column heading to see how it is worked out.</div>
+      <div style="display:flex;flex-direction:column;gap:3px;margin-bottom:12px" id="egfx-ea-readings-${projId}">${readings}</div>
+      <div style="display:flex;align-items:center;gap:8px;margin-bottom:10px">
+        <label for="egfx-ea-sel-${projId}" style="font-size:11px;color:var(--text2);font-weight:700">Building</label>
+        <select id="egfx-ea-sel-${projId}" class="fs" style="width:auto;max-width:100%;padding:4px 8px;font-size:12px" onchange="egfxEaSelect('${projId}', this.value)">${opts}</select>
+      </div>
+      <div id="egfx-ea-body-${projId}">${_egfxEaBodyHtml(projId, selId)}</div>
+    </div>`;
+}
+
+function egfxEaSelect(projId, bId) {
+  _egfxEaSel[projId] = bId;
+  const el = document.getElementById(`egfx-ea-body-${projId}`);
+  if (el) el.innerHTML = _egfxEaBodyHtml(projId, bId);
+}
+
+function _egfxEaBodyHtml(projId, bId) {
+  const b = getUDBldgs(projId).find((x) => String(x.id) === String(bId));
+  if (!b) return '';
+  const c = _egfxEaCompute(projId, b);
+  const ea = c.ea;
+  const years = c.py != null ? [c.py, c.cy] : [c.cy];
+  const MO = EA_MONTHS;
+  const baseKw = typeof resolveHvacLoadData === 'function' ? resolveHvacLoadData(projId, b).kwArr : Array(12).fill(null);
+  const showGas = ea.hasGas;
+  const kw1 = (v) => _eaFmtKw(v) + ' kW';
+
+  // ---- hover text, one per figure (the arithmetic) ----
+  const tLf = (m) =>
+    m.kw > 0 && m.hours > 0 && m.kwh > 0
+      ? `${_eaFmt(m.kwh)} kWh ÷ (${_eaFmtKw(m.kw)} kW × ${_eaFmt(m.hours)} hours) = ${_eaPct(eaLoadFactor(m.kwh, m.kw, m.hours))}`
+      : 'Needs kWh, peak kW and the bill dates';
+  const tFlh = (m) =>
+    m.kw > 0 && m.kwh > 0 ? `${_eaFmt(m.kwh)} kWh ÷ ${_eaFmtKw(m.kw)} kW = ${_eaFmt(eaFullLoadHours(m.kwh, m.kw))} hours` : 'Needs kWh and peak kW';
+  const tLow = (kind) => `Fewer than ${EA_MIN_DEGREE_DAYS} ${kind} degree days this month, so this ratio is not meaningful.`;
+  const tCdd = (m) =>
+    m.kwh > 0 && m.cdd > 0 && m.cdd < EA_MIN_DEGREE_DAYS
+      ? tLow('cooling')
+      : m.kwh > 0 && m.cdd > 0
+      ? `${_eaFmt(m.kwh)} kWh ÷ ${_eaFmt(m.cdd, 0)} cooling degree days = ${_eaFmtRatio(eaPerDegreeDay(m.kwh, m.cdd))} kWh per degree day`
+      : 'No cooling degree days that month (nothing to divide by)';
+  const tHdd = (m) =>
+    m.therms > 0 && m.hdd > 0 && m.hdd < EA_MIN_DEGREE_DAYS
+      ? tLow('heating')
+      : m.therms > 0 && m.hdd > 0
+      ? `${_eaFmt(m.therms)} therms ÷ ${_eaFmt(m.hdd, 0)} heating degree days = ${_eaFmtRatio(eaPerDegreeDay(m.therms, m.hdd))} therms per degree day`
+      : 'No heating degree days that month (nothing to divide by)';
+  const HELP = {
+    kwh: 'Electric energy used in the month: the sum of the kWh on the bills in that month.',
+    kw: 'Highest power demand (kW) on the bill for the month. Baseline is the same calendar month in the baseline year.',
+    lf: 'Load factor: how much of the time the building ran at its highest demand. 100% would mean the peak kW lasted every hour of the bill period. Worked out as kWh ÷ (peak kW × hours in the bill period).',
+    flh: 'Equivalent full-load hours: the hours the building would need to run at its peak kW to use that many kWh. Worked out as kWh ÷ peak kW.',
+    cdd: 'kWh for each cooling degree day. A cooling degree day measures how much hotter than mild the outdoor air was, so a hot month has more of them. This lets months with different weather be compared. Worked out as kWh ÷ cooling degree days.',
+    hdd: 'Therms of gas for each heating degree day. A heating degree day measures how much colder than mild the outdoor air was. Worked out as therms ÷ heating degree days.',
+  };
+  const yr = (help) => years.map((y) => `<th title="${_escHtml(help)}">${y}</th>`).join('');
+
+  // ---- monthly table ----
+  const grp = (label, help, n) => `<th colspan="${n}" title="${_escHtml(help)}">${label}</th>`;
+  const head =
+    `<tr><th rowspan="2" class="ea-l" style="cursor:default">Month</th>` +
+    grp('kWh', HELP.kwh, years.length) +
+    grp('Peak kW', HELP.kw, years.length + 1) +
+    grp('Load factor', HELP.lf, years.length) +
+    grp('Full-load hours', HELP.flh, years.length) +
+    grp('kWh per cooling degree day', HELP.cdd, years.length) +
+    (showGas ? grp('Therms per heating degree day', HELP.hdd, years.length) : '') +
+    `</tr><tr>` +
+    yr(HELP.kwh) +
+    yr(HELP.kw) +
+    `<th title="${_escHtml(HELP.kw)}">Baseline</th>` +
+    yr(HELP.lf) +
+    yr(HELP.flh) +
+    yr(HELP.cdd) +
+    (showGas ? yr(HELP.hdd) : '') +
+    `</tr>`;
+  const cell = (txt, tip) => `<td title="${_escHtml(tip)}">${txt}</td>`;
+  const rows = [];
+  for (let i = 0; i < 12; i++) {
+    const ms = years.map((y) => (ea.byYear[y] ? ea.byYear[y].months[i] : null));
+    if (!ms.some((m) => m && m.hasElec)) continue;
+    const blv = baseKw[i];
+    const per = (fn) => ms.map((m) => (m && m.hasElec ? fn(m) : cell('—', 'No electric bill in this month'))).join('');
+    rows.push(
+      `<tr><td class="ea-l">${MO[i]}</td>` +
+        per((m) => cell(_eaFmt(m.kwh), `${MO[i]}: ${_eaFmt(m.kwh)} kWh (sum of the bills in the month)`)) +
+        per((m) => cell(_eaFmtKw(m.kw), `${MO[i]}: highest demand on the bill = ${kw1(m.kw)}`)) +
+        cell(blv != null ? _eaFmtKw(blv) : '—', blv != null ? `Baseline year, ${MO[i]}: ${kw1(blv)}` : 'No baseline bill for this month') +
+        per((m) => cell(_eaPct(eaLoadFactor(m.kwh, m.kw, m.hours)), tLf(m))) +
+        per((m) => cell(_eaFmt(eaFullLoadHours(m.kwh, m.kw)), tFlh(m))) +
+        per((m) => cell(_eaFmtRatio(eaPerDegreeDay(m.kwh, m.cdd)), tCdd(m))) +
+        (showGas
+          ? ms.map((m) => (m && m.hasGas ? cell(_eaFmtRatio(eaPerDegreeDay(m.therms, m.hdd)), tHdd(m)) : cell('—', 'No gas bill in this month'))).join('')
+          : '') +
+        `</tr>`,
+    );
+  }
+
+  // ---- same-months summary (the totals row of the monthly table, and the comparison table) ----
+  let foot = '';
+  let summary = '';
+  if (c.cur && c.S.length) {
+    const sums = [c.prev, c.cur];
+    const blS = c.S.map((i) => baseKw[i]).filter((v) => v != null && v > 0);
+    const blPeak = blS.length ? Math.max(...blS) : null;
+    const tLfS = (s) =>
+      s.loadFactor != null
+        ? `${_eaFmt(s.lfKwh)} kWh ÷ (${_eaFmtKw(s.peakKw)} kW × ${_eaFmt(s.hours)} hours) = ${_eaPct(s.loadFactor)}`
+        : 'Needs kWh, peak kW and the bill dates';
+    const tFlhS = (s) => `${_eaFmt(s.kwh)} kWh ÷ ${_eaFmtKw(s.peakKw)} kW = ${_eaFmt(s.fullLoadHours)} hours`;
+    const tCddS = (s) => (s.kwhPerCdd != null ? `${_eaFmt(s.cddKwh)} kWh ÷ ${_eaFmt(s.cddSum)} cooling degree days = ${_eaFmtRatio(s.kwhPerCdd)}` : 'No cooling degree days');
+    const tHddS = (s) => (s.thermsPerHdd != null ? `${_eaFmt(s.therms)} therms ÷ ${_eaFmt(s.hddSum)} heating degree days = ${_eaFmtRatio(s.thermsPerHdd)}` : 'No heating degree days');
+    const scope = `${c.label}, the months with bills in both ${c.py} and ${c.cy}`;
+    foot =
+      `<tfoot><tr><td class="ea-l" title="${_escHtml('Months with bills in both years: ' + c.label)}">${_escHtml(c.label)}</td>` +
+      sums.map((s) => cell(_eaFmt(s.kwh), `Sum of kWh, ${scope}`)).join('') +
+      sums.map((s) => cell(_eaFmtKw(s.peakKw), `Highest of the monthly peak kW, ${scope}`)).join('') +
+      cell(_eaFmtKw(blPeak), `Highest baseline kW over the same months`) +
+      sums.map((s) => cell(_eaPct(s.loadFactor), tLfS(s))).join('') +
+      sums.map((s) => cell(_eaFmt(s.fullLoadHours), tFlhS(s))).join('') +
+      sums.map((s) => cell(_eaFmtRatio(s.kwhPerCdd), tCddS(s))).join('') +
+      (showGas ? sums.map((s) => cell(_eaFmtRatio(s.thermsPerHdd), tHddS(s))).join('') : '') +
+      `</tr></tfoot>`;
+
+    // comparison table: one row per measure, the two years side by side, and the change
+    const chg = (a, p) => eaPctChange(a, p);
+    const row = (label, help, pv, cv, pt, ct, change, changeTip) =>
+      `<tr><td class="ea-l" title="${_escHtml(help)}" style="cursor:help">${label}</td>` + cell(pv, pt) + cell(cv, ct) + cell(change, changeTip) + `</tr>`;
+    const dLf = c.cur.loadFactor != null && c.prev.loadFactor != null ? c.cur.loadFactor - c.prev.loadFactor : null;
+    const dTip = (a, p) => {
+      const ca = chg(a, p);
+      return ca != null ? `(${_eaFmtRatio(a)} − ${_eaFmtRatio(p)}) ÷ ${_eaFmtRatio(p)} = ${_eaSigned(ca)}` : 'Needs both years';
+    };
+    const blPct = (s) => (s.peakKw != null && blPeak ? (s.peakKw - blPeak) / blPeak : null);
+    const blTip = (s) =>
+      blPct(s) != null ? `(${_eaFmtKw(s.peakKw)} kW − ${_eaFmtKw(blPeak)} kW) ÷ ${_eaFmtKw(blPeak)} kW = ${_eaSigned(blPct(s))}` : 'No baseline kW to compare with';
+    const blTxt = (s) => (s.baseload ? _eaFmt(s.baseload.perDay) : '—');
+    const blTipTxt = (s) =>
+      s.baseload
+        ? `Lowest month: ${MO[s.baseload.mo]}. ${_eaFmt(s.baseload.kwh)} kWh ÷ ${_eaFmt(s.baseload.days, 1)} days = ${_eaFmt(s.baseload.perDay)} kWh per day`
+        : 'No month with kWh and bill dates';
+    const bC = chg(c.cur.baseload && c.cur.baseload.perDay, c.prev.baseload && c.prev.baseload.perDay);
+    const pk = (s, y) => `Highest monthly peak kW in ${y}${s.peakMo != null ? ' (' + MO[s.peakMo] + ')' : ''}`;
+    summary =
+      `<div style="font-size:11px;font-weight:700;color:var(--text2);margin:14px 0 6px">${c.cy} compared with ${c.py}, ${_escHtml(c.label)} (the months with bills in both years)</div>` +
+      `<div class="ea-tbl-outer" style="max-width:640px"><table class="ea-tbl"><thead><tr><th class="ea-l" style="cursor:default">Measure</th><th style="cursor:default">${c.py}</th><th style="cursor:default">${c.cy}</th><th style="cursor:default">Change</th></tr></thead><tbody>` +
+      row('Electric use (kWh)', HELP.kwh, _eaFmt(c.prev.kwh), _eaFmt(c.cur.kwh), `Sum of kWh, ${scope}`, `Sum of kWh, ${scope}`, _eaSigned(chg(c.cur.kwh, c.prev.kwh)), dTip(c.cur.kwh, c.prev.kwh)) +
+      row('Peak kW (highest month)', HELP.kw, _eaFmtKw(c.prev.peakKw), _eaFmtKw(c.cur.peakKw), pk(c.prev, c.py), pk(c.cur, c.cy), _eaSigned(chg(c.cur.peakKw, c.prev.peakKw)), dTip(c.cur.peakKw, c.prev.peakKw)) +
+      row('Peak kW compared with baseline year', 'How far the highest monthly kW is above (+) or below (−) the highest baseline kW over the same months.', _eaSigned(blPct(c.prev)), _eaSigned(blPct(c.cur)), blTip(c.prev), blTip(c.cur), '—', 'Each year is compared with the baseline year, not with the other year') +
+      row('Load factor', HELP.lf, _eaPct(c.prev.loadFactor), _eaPct(c.cur.loadFactor), tLfS(c.prev), tLfS(c.cur), dLf == null ? '—' : (Math.round(dLf * 100) > 0 ? '+' : '') + Math.round(dLf * 100) + ' points', dLf == null ? 'Needs both years' : `${_eaPct(c.cur.loadFactor)} − ${_eaPct(c.prev.loadFactor)} = ${Math.round(dLf * 100)} percentage points`) +
+      row('Full-load hours', HELP.flh, _eaFmt(c.prev.fullLoadHours), _eaFmt(c.cur.fullLoadHours), tFlhS(c.prev), tFlhS(c.cur), _eaSigned(chg(c.cur.fullLoadHours, c.prev.fullLoadHours)), dTip(c.cur.fullLoadHours, c.prev.fullLoadHours)) +
+      row('Baseload (lowest month, kWh per day)', 'The lowest daily electric use of any month. Worked out as the month kWh ÷ the days in the bill period; the lowest month is used.', blTxt(c.prev), blTxt(c.cur), blTipTxt(c.prev), blTipTxt(c.cur), _eaSigned(bC), bC != null ? `(${blTxt(c.cur)} − ${blTxt(c.prev)}) ÷ ${blTxt(c.prev)} = ${_eaSigned(bC)}` : 'Needs both years') +
+      row('kWh per cooling degree day', HELP.cdd, _eaFmtRatio(c.prev.kwhPerCdd), _eaFmtRatio(c.cur.kwhPerCdd), tCddS(c.prev), tCddS(c.cur), _eaSigned(chg(c.cur.kwhPerCdd, c.prev.kwhPerCdd)), dTip(c.cur.kwhPerCdd, c.prev.kwhPerCdd)) +
+      (showGas && c.G.length
+        ? row('Therms per heating degree day', HELP.hdd, _eaFmtRatio(c.prev.thermsPerHdd), _eaFmtRatio(c.cur.thermsPerHdd), tHddS(c.prev), tHddS(c.cur), _eaSigned(chg(c.cur.thermsPerHdd, c.prev.thermsPerHdd)), dTip(c.cur.thermsPerHdd, c.prev.thermsPerHdd))
+        : '') +
+      `</tbody></table></div>`;
+  }
+
+  return (
+    summary +
+    `<div style="font-size:11px;font-weight:700;color:var(--text2);margin:14px 0 6px">Month by month</div>` +
+    `<div class="ea-tbl-outer"><div class="ea-scroll"><table class="ea-tbl"><thead>${head}</thead><tbody>${rows.join('')}</tbody>${foot}</table></div></div>`
+  );
+}
+
 function egfxRefresh(projId) {
   const p = projects.find((x) => x.id === projId);
   if (!p) return;
@@ -1458,48 +1708,71 @@ function egfxRefresh(projId) {
     );
   }
 
-  // HVAC End-Use Estimate — one card per building, weather-independent 3-lowest-month
-  // baseload subtraction method (matches the Excel "HVAC End-Use Estimate" deliverable).
+  // Where the energy goes (HVAC End-Use Estimate) - one plain table per building. Numbers come from
+  // resolveHvacLoadData(...).enduse = computeHvacEnduse (computations/hvac-enduse.js): the weather-independent
+  // 3-lowest-month baseload split (matches the Excel "HVAC End-Use Estimate" deliverable). Totals are the sums of
+  // the real baseline bills (totalGas, totalKwh) and the real highest monthly kW (peakKw); nothing is back-calculated.
   function _hvacEnduseCardsHtml() {
     if (typeof computeHvacEnduse !== 'function' || typeof resolveHvacLoadData !== 'function') return '';
     if (!bldgs.length) return '';
-    const cards = bldgs
+    const fmt = (v) => Math.round(v).toLocaleString('en-US');
+    const pct = (part, total) => (total > 0 ? Math.round((part / total) * 100) + '%' : '—');
+    const kw = (v) => _eaFmtKw(v);
+    return bldgs
       .map((b) => {
-        const bh = { name: b.name || 'Unknown' };
+        const name = b.name || 'Unknown';
         const r = resolveHvacLoadData(projId, b).enduse;
         if (!r.elecValid && !r.gasValid) return '';
-        const pct1 = (v) => (v * 100).toFixed(1) + '%';
+        // one table cell: "Label: value unit (nn%)"; the hover shows the arithmetic
+        const td = (label, value, unit, part, total, tip) =>
+          `<td class="ea-l ea-wrap" title="${_escHtml(tip)}">${label}: <strong>${value} ${unit}</strong>${total != null ? ' (' + pct(part, total) + ')' : ''}</td>`;
+        const share = (partTxt, totalTxt, part, total) => `${partTxt} ÷ ${totalTxt} = ${pct(part, total)}`;
         const rows = [];
+        const reading = [];
         if (r.gasValid) {
+          const base = fmt(r.baseloadGas);
           rows.push(
-            `<div><span style="color:var(--text2)">Gas heating:</span> <strong>${Math.round(r.heatingTherms).toLocaleString()} Therms</strong> (${pct1(r.heatingPct)} of gas use)</div>`,
+            `<tr><td class="ea-l">Gas (therms)</td>` +
+              td('Heating', fmt(r.heatingTherms), 'therms', r.heatingTherms, r.totalGas, `Heating: ${share(fmt(r.heatingTherms), fmt(r.totalGas), r.heatingTherms, r.totalGas)}. Heating is the gas used above ${base} therms a month (the average of the 3 lowest months), added up over the months.`) +
+              td('Year-round', fmt(r.yearRoundGas), 'therms', r.yearRoundGas, r.totalGas, `Year-round: ${share(fmt(r.yearRoundGas), fmt(r.totalGas), r.yearRoundGas, r.totalGas)}. Year-round is the gas used at or below ${base} therms a month, added up over the months.`) +
+              td('Total', fmt(r.totalGas), 'therms', 0, null, `Total: the gas on the baseline bills added up. ${fmt(r.heatingTherms)} + ${fmt(r.yearRoundGas)} = ${fmt(r.totalGas)} therms.`) +
+              `</tr>`,
           );
+          reading.push(`${pct(r.heatingTherms, r.totalGas)} of gas goes to heating.`);
         }
         if (r.elecValid) {
+          const base = fmt(r.baseloadElec);
           rows.push(
-            `<div><span style="color:var(--text2)">Electric cooling:</span> <strong>${Math.round(r.coolingKwh).toLocaleString()} kWh</strong> (${pct1(r.coolingPct)} of electric use)</div>`,
+            `<tr><td class="ea-l">Electric (kWh)</td>` +
+              td('Cooling', fmt(r.coolingKwh), 'kWh', r.coolingKwh, r.totalKwh, `Cooling: ${share(fmt(r.coolingKwh), fmt(r.totalKwh), r.coolingKwh, r.totalKwh)}. Cooling is the electricity used above ${base} kWh a month (the average of the 3 lowest months), added up over the months.`) +
+              td('Year-round', fmt(r.yearRoundKwh), 'kWh', r.yearRoundKwh, r.totalKwh, `Year-round: ${share(fmt(r.yearRoundKwh), fmt(r.totalKwh), r.yearRoundKwh, r.totalKwh)}. Year-round is the electricity used at or below ${base} kWh a month, added up over the months.`) +
+              td('Total', fmt(r.totalKwh), 'kWh', 0, null, `Total: the electricity on the baseline bills added up. ${fmt(r.coolingKwh)} + ${fmt(r.yearRoundKwh)} = ${fmt(r.totalKwh)} kWh.`) +
+              `</tr>`,
           );
+          reading.push(`${pct(r.coolingKwh, r.totalKwh)} of electricity goes to cooling.`);
         }
         if (r.demandValid) {
           rows.push(
-            `<div><span style="color:var(--text2)">Cooling-attributable demand:</span> <strong>${r.coolingDemandKw.toFixed(2)} kW</strong> (${pct1(r.coolingDemandPct)} of peak ${r.peakKw.toFixed(2)} kW)</div>`,
+            `<tr><td class="ea-l">Peak demand (kW)</td>` +
+              td('Cooling', kw(r.coolingDemandKw), 'kW', r.coolingDemandKw, r.peakKw, `Cooling: ${share(kw(r.coolingDemandKw), kw(r.peakKw), r.coolingDemandKw, r.peakKw)}. Cooling kW is the summer peak ${kw(r.peakKw)} kW minus the winter level ${kw(r.winterDemandBase)} kW.`) +
+              td('Winter', kw(r.winterDemandBase), 'kW', r.winterDemandBase, r.peakKw, `Winter: ${share(kw(r.winterDemandBase), kw(r.peakKw), r.winterDemandBase, r.peakKw)}. The winter level is the average of the billed kW in December, January and February.`) +
+              td('Summer peak', kw(r.peakKw), 'kW', 0, null, `Summer peak: the highest monthly billed kW of the year. ${kw(r.coolingDemandKw)} + ${kw(r.winterDemandBase)} = ${kw(r.peakKw)} kW.`) +
+              `</tr>`,
           );
+          reading.push(`Cooling adds ${kw(r.coolingDemandKw)} kW to the summer peak.`);
         }
-        const baseNote = [];
-        if (r.elecValid) baseNote.push(`electric baseload ${r.baseloadElec.toFixed(2)} kWh/mo`);
-        if (r.gasValid) baseNote.push(`gas baseload ${r.baseloadGas.toFixed(2)} Therms/mo`);
-        if (r.demandValid) baseNote.push(`winter demand base ${r.winterDemandBase.toFixed(2)} kW`);
         return `<div class="card" style="padding:14px;margin-bottom:12px">
-            <div style="font-size:12px;font-weight:700;color:var(--text2);margin-bottom:8px">🌡️ HVAC End-Use Estimate — ${_escHtml(bh.name)}</div>
-            <div style="display:flex;flex-direction:column;gap:4px;font-size:12px;color:var(--text)">
-              ${rows.join('')}
-            </div>
-            <div style="font-size:10px;color:var(--text3);margin-top:8px">Baseload: ${baseNote.join(', ')}. This is a general estimate from billed usage, refined by BAS trend points where available.</div>
+            <div style="font-size:12px;font-weight:700;color:var(--text2);margin-bottom:4px">🌡️ Where the energy goes — ${_escHtml(name)}</div>
+            <div style="font-size:12px;color:var(--text);margin-bottom:10px">${_escHtml(reading.join(' '))}</div>
+            <div class="ea-tbl-outer"><table class="ea-tbl">
+              <thead><tr><th class="ea-l" style="cursor:default"></th><th class="ea-l" title="The part of the use that comes and goes with the weather: gas for heating, electricity for cooling.">Heating / Cooling</th><th class="ea-l" title="The part used in every month of the year, taken as the average of the 3 lowest months.">Year-round</th><th class="ea-l" title="The real total from the baseline bills.">Total</th></tr></thead>
+              <tbody>${rows.join('')}</tbody>
+            </table></div>
+            <div style="font-size:10px;color:var(--text3);margin-top:8px">Year-round is the average of the 3 lowest months, used for all 12 months. Heating and cooling are the use above it. Estimated from the baseline bills. Hover over a figure to see its arithmetic.</div>
           </div>`;
       })
       .filter(Boolean)
       .join('');
-    return cards;
   }
 
   const hasGas = totalBlGas > 0 || sortedYears.some((y) => yearData[y].gas.some((g) => g > 0));
@@ -1570,15 +1843,17 @@ function egfxRefresh(projId) {
 
   chartsEl.innerHTML = `
           ${_wxPendingHtml}
+          ${_EGFX_TBL_CSS}
           ${_yoyHtml('Electric kWh', '⚡', 'kWh', 'kwh', blKwhAvg)}
           ${totalBlKwh > 0 ? _yoyHtml('Electric kW', '⚡', 'kW', 'kw', _blKwFromMap) : ''}
+          ${_egfxEaCardHtml(projId)}
           ${hasGas ? _yoyHtml('Gas Therms', '🔥', 'therms', 'gas', blGasAvg) : ''}
           ${hasPropane ? _yoyHtml('Propane Gallons', '🛢️', 'gal', 'propane', blPropaneBl) : ''}
           ${_hvacEnduseCardsHtml()}
           <div class="card" style="padding:14px">
             <div style="font-size:12px;font-weight:700;color:var(--text2);margin-bottom:10px">📊 Annual Summary by Year</div>
             <div style="overflow-x:auto">
-              <table class="dtbl" style="min-width:500px">
+              <table class="dtbl" data-egfx-export="annual" style="min-width:500px">
                 <thead><tr><th>Year</th><th style="text-align:right">kWh</th><th style="text-align:right">kW</th><th style="text-align:right">Gas Therms</th>${hasPropane ? '<th style="text-align:right">Propane Gal</th>' : ''}<th style="text-align:right">Site Energy Use Intensity kBtu/ft²</th><th style="text-align:right">Baseline Site Energy Use Intensity</th><th style="text-align:right">vs Baseline</th></tr></thead>
                 <tbody>
                   ${yrsToShow
@@ -2411,7 +2686,7 @@ function egfxRefresh(projId) {
 }
 function egfxExport(projId) {
   const chartsEl = document.getElementById(`egfx-charts-${projId}`);
-  const table = chartsEl ? chartsEl.querySelector('table') : null;
+  const table = chartsEl ? chartsEl.querySelector('table[data-egfx-export="annual"]') : null;
   if (!chartsEl || !table) {
     showToast('Open the Energy Graphics tab and let it load first');
     return;

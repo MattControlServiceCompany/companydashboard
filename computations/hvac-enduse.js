@@ -74,6 +74,8 @@ function _hvacPeakOf(arr) {
  *   coolingKwh[mo] = max(0, kwh[mo] - baseloadElec); summed over populated months
  *   heatingTherms[mo] = max(0, gas[mo] - baseloadGas); summed over populated months
  *   coolingDemandKw = peakKw - winterDemandBase
+ *   totalKwh / totalGas = the sum of the populated months (the real total of the bills used);
+ *   yearRoundKwh / yearRoundGas = the sum of min(month, baseload), so heating + year-round = total exactly.
  *
  * @param {Array<number|null>} kwhArr12 - monthly electric kWh, indexed Jan(0)..Dec(11).
  *   Already averaged across baseline years per calendar month by the caller. `null` = no
@@ -83,6 +85,7 @@ function _hvacPeakOf(arr) {
  * @returns {{baseloadElec:number, baseloadGas:number, winterDemandBase:number,
  *   coolingKwh:number, coolingPct:number, heatingTherms:number, heatingPct:number,
  *   peakKw:number, coolingDemandKw:number, coolingDemandPct:number,
+ *   totalKwh:number, yearRoundKwh:number, totalGas:number, yearRoundGas:number,
  *   elecValid:boolean, gasValid:boolean, demandValid:boolean}}
  */
 function computeHvacEnduse(kwhArr12, kwArr12, gasArr12) {
@@ -97,6 +100,10 @@ function computeHvacEnduse(kwhArr12, kwArr12, gasArr12) {
     peakKw: 0,
     coolingDemandKw: 0,
     coolingDemandPct: 0,
+    totalKwh: 0,
+    yearRoundKwh: 0,
+    totalGas: 0,
+    yearRoundGas: 0,
     elecValid: false,
     gasValid: false,
     demandValid: false,
@@ -121,6 +128,10 @@ function computeHvacEnduse(kwhArr12, kwArr12, gasArr12) {
       return v === null || v === undefined ? s : s + Math.max(0, v - out.baseloadElec);
     }, 0);
     out.coolingKwh = coolKwh;
+    out.totalKwh = totalKwh;
+    out.yearRoundKwh = kwh.reduce(function (s, v) {
+      return v === null || v === undefined ? s : s + Math.min(v, out.baseloadElec);
+    }, 0);
     out.coolingPct = totalKwh > 0 ? coolKwh / totalKwh : 0;
   }
 
@@ -134,6 +145,10 @@ function computeHvacEnduse(kwhArr12, kwArr12, gasArr12) {
       return v === null || v === undefined ? s : s + Math.max(0, v - out.baseloadGas);
     }, 0);
     out.heatingTherms = heatTherms;
+    out.totalGas = totalGas;
+    out.yearRoundGas = gas.reduce(function (s, v) {
+      return v === null || v === undefined ? s : s + Math.min(v, out.baseloadGas);
+    }, 0);
     out.heatingPct = totalGas > 0 ? heatTherms / totalGas : 0;
   }
 
