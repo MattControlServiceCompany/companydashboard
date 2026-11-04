@@ -123,6 +123,39 @@ const ok = (c, m) => {
     const last = (await frameInfo()).url;
     await page.evaluate(() => closeMeetingModal());
     ok((await page.evaluate(() => window.__revoked)).includes(last), 'close: the last blob URL was revoked');
+    // Date line: month, day, superscript suffix and the rest sit with no extra gap (st, nd, rd, th, two-digit day).
+    await page.evaluate(() => closeMeetingModal());
+    for (const [iso, want] of [
+      ['2026-03-01T10:00', 'Meeting Date: Sunday March 1st, 2026 10 AM'],
+      ['2026-03-22T10:00', 'Meeting Date: Sunday March 22nd, 2026 10 AM'],
+      ['2026-03-03T10:00', 'Meeting Date: Tuesday March 3rd, 2026 10 AM'],
+      ['2026-03-11T10:00', 'Meeting Date: Wednesday March 11th, 2026 10 AM'],
+      ['2026-03-30T10:00', 'Meeting Date: Monday March 30th, 2026 10 AM'],
+    ]) {
+      const r = await page.evaluate(async (iso) => {
+        const m = { id: 1, type: 'agenda', date: iso, projectNickname: 'Test District', sectionHeading: 'Energy Management Services Program', contactTables: [], topics: [], history: [] };
+        const buf = buildMeetingPDF(m, true).output('arraybuffer');
+        window.pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+        const pdf = await window.pdfjsLib.getDocument({ data: new Uint8Array(buf) }).promise;
+        const pg = await pdf.getPage(1);
+        const items = (await pg.getTextContent()).items.filter((i) => i.str);
+        const k = items.findIndex((i) => /^Meeting Date:/.test(i.str));
+        const e = items.findIndex((i, n) => n >= k && /AM|PM/.test(i.str));
+        const row = items.slice(k, e + 1).map((i) => ({ str: i.str, x: i.transform[4], w: i.width }));
+        const vp = pg.getViewport({ scale: 1.5 });
+        const cv = document.createElement('canvas');
+        cv.width = vp.width;
+        cv.height = vp.height;
+        await pg.render({ canvasContext: cv.getContext('2d'), viewport: vp }).promise;
+        return { row, png: cv.toDataURL('image/png') };
+      }, iso);
+      const txt = r.row.map((i) => i.str).join('');
+      ok(txt === want, 'date line text "' + txt + '"');
+      const gaps = r.row.slice(1).map((it, i) => it.x - (r.row[i].x + r.row[i].w));
+      ok(r.row.every((i) => i.str.trim() || i.w > 2.5) && r.row.length <= 4, 'date line: the space before the day is a full space (no squeezed gap)');
+      ok(gaps.every((g) => Math.abs(g) < 0.6), 'date line parts abut, gaps pt: ' + gaps.map((g) => g.toFixed(2)).join(', '));
+      if (process.env.SHOT_DIR) fs.writeFileSync(path.join(process.env.SHOT_DIR, '2026-11-03-meeting-date-' + want.match(/\d+\w\w/)[0] + '.png'), Buffer.from(r.png.split(',')[1], 'base64'));
+    }
     ok(viol.length === 0, 'no CSP violation in the console' + (viol.length ? ': ' + viol[0] : ''));
   } finally {
     await ctx.close();

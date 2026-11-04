@@ -174,6 +174,7 @@ const ok = (c, m) => {
     ['Test District', 'Meeting Agenda', 'Meeting Date', 'Test Key Contacts', 'Pat Example', '555-0101', 'pat@example.test', 'Review test bills', 'First sub item', 'Second sub item', 'Closing question'].forEach((t) => {
       ok(mt.text.includes(t), 'meeting .docx contains "' + t + '"');
     });
+    ok(mt.text.includes('Meeting Date: Tuesday March 3rd, 2026 10 AM'), 'meeting .docx date line reads "Tuesday March 3rd, 2026 10 AM" (' + (mt.text.match(/Meeting Date:.{0,45}/) || [''])[0] + ')');
     ok(mt.hasLetterhead, 'meeting .docx has the CSC letterhead (header part + picture)');
     await page.evaluate(() => closeMeetingModal());
     // Minutes: same two buttons, same helper names

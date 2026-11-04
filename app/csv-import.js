@@ -4585,16 +4585,24 @@ function buildMeetingPDF(m, returnDoc) {
   // Meeting date (parts shared with the Word file: meetingDateParts in app/meeting-export.js)
   const dp = meetingDateParts(m);
   doc.setFontSize(11);
-  const baseW = doc.getTextWidth(dp.base);
-  const numW = doc.getTextWidth(dp.day);
-  const fullW = doc.getTextWidth(dp.base + dp.day + dp.ord + dp.suffix);
-  const startX = titleX - fullW / 2;
+  // Measured widths, one character at a time: the PDF draws text without kerning, but getTextWidth
+  // applies kern pairs (and drops a trailing space), so a whole-string width puts the next part too far left.
+  const tw = (t, size) => {
+    doc.setFontSize(size);
+    return [...t].reduce((w, ch) => w + doc.getTextWidth(ch), 0);
+  };
+  const baseW = tw(dp.base, 11);
+  const numW = tw(dp.day, 11);
+  const ordW = tw(dp.ord, 7);
+  const sufW = tw(dp.suffix, 11);
+  const startX = titleX - (baseW + numW + ordW + sufW) / 2;
+  doc.setFontSize(11);
   doc.text(dp.base, startX, y);
   doc.text(dp.day, startX + baseW, y);
   doc.setFontSize(7);
   doc.text(dp.ord, startX + baseW + numW, y - 3);
   doc.setFontSize(11);
-  doc.text(dp.suffix, startX + baseW + numW + doc.getTextWidth(dp.ord) + 1, y);
+  doc.text(dp.suffix, startX + baseW + numW + ordW, y);
   y += 22;
 
   // Contact tables
