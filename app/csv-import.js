@@ -4081,6 +4081,7 @@ function mtgToggleRecurring(checked) {
 }
 
 let _mtgPreviewTimer = null;
+let _mtgPreviewUrl = null;
 function mtgSchedulePreview() {
   clearTimeout(_mtgPreviewTimer);
   _mtgPreviewTimer = setTimeout(mtgRenderPreview, 500);
@@ -4099,8 +4100,11 @@ function mtgRenderPreview() {
     if (hd) _editingMeeting.sectionHeading = hd.value;
     const doc = buildMeetingPDF(_editingMeeting, true);
     if (doc) {
-      const uri = doc.output('datauristring');
-      frame.src = uri;
+      // blob: URL, not data: (the page CSP frame-src allows 'self' blob: only). Revoke the previous one.
+      const prev = _mtgPreviewUrl;
+      _mtgPreviewUrl = URL.createObjectURL(doc.output('blob'));
+      frame.src = _mtgPreviewUrl;
+      if (prev) URL.revokeObjectURL(prev);
     }
   } catch (e) {
     console.warn('Meeting preview error:', e);
@@ -4108,6 +4112,11 @@ function mtgRenderPreview() {
 }
 
 function closeMeetingModal() {
+  clearTimeout(_mtgPreviewTimer);
+  if (_mtgPreviewUrl) {
+    URL.revokeObjectURL(_mtgPreviewUrl);
+    _mtgPreviewUrl = null;
+  }
   document.getElementById('meetingModal').classList.remove('open');
   _editingMeeting = null;
   _editingMeetingProjId = null;

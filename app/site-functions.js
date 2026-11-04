@@ -2507,6 +2507,11 @@ async function siteResetAllMeterTableSettings() {
    site-ui.js delegates to this array and should NOT maintain its own copy.
 */
 var RELEASE_NOTES = [
+  { v: 'v2026.11.03.215', date: '2026-11-03', title: 'Meeting agenda and minutes PDF preview shows again',
+    items: [
+      { type: 'fix', text: 'Meetings > Edit Meeting Agenda: the PDF preview for meeting agendas and minutes shows again.' }
+    ]
+  },
   { v: 'v2026.11.03.214', date: '2026-11-03', title: 'Word and PDF downloads for Meetings, Scorecard and HVAC Load Estimate',
     items: [
       { type: 'feature', text: 'Meetings: meeting agendas and meeting minutes now download as Word and PDF in one click.' },

@@ -156,7 +156,16 @@ const ok = (c, m) => {
     await page.waitForTimeout(500);
     const mb = '#meetingModal button';
     ok((await page.locator(mb, { hasText: /^\s*(📄 )?PDF\s*$/ }).count()) === 0, 'meeting modal: the old "PDF" button is gone');
+    // Headless Chromium has no PDF viewer, so the editor's blob: preview iframe shows up as a download named
+    // <uuid>.pdf. Let the debounced preview render finish (blob src set, timer past) BEFORE each click, so the only
+    // download left is the one the click makes. That download must carry the meetingFileName name.
+    const settlePreview = async () => {
+      await page.waitForFunction(() => /^blob:/.test((document.getElementById('mtgPreviewFrame') || {}).src || ''));
+      await page.waitForTimeout(1500);
+    };
+    await settlePreview();
     const mw = await download(() => page.locator(mb, { hasText: 'Download Word' }).click(), 'meeting');
+    await settlePreview();
     const mp = await download(() => page.locator(mb, { hasText: 'Download PDF' }).click(), 'meeting');
     const mname = await page.evaluate(() => [meetingFileName(_editingMeeting, '.docx'), meetingFileName(_editingMeeting, '.pdf')]);
     ok(mw.head.startsWith('PK') && mw.name === mname[0], 'meeting: Download Word saves ' + mw.name);
@@ -166,6 +175,18 @@ const ok = (c, m) => {
       ok(mt.text.includes(t), 'meeting .docx contains "' + t + '"');
     });
     ok(mt.hasLetterhead, 'meeting .docx has the CSC letterhead (header part + picture)');
+    await page.evaluate(() => closeMeetingModal());
+    // Minutes: same two buttons, same helper names
+    await page.evaluate(() => {
+      projects.find((x) => x.id === 9001).meetings.push({ id: 78, type: 'minutes', date: '2026-03-03T10:00', projectNickname: 'Test District', sectionHeading: 'Energy Management Services Program', contactTables: [], topics: [{ text: 'Minutes topic', subItems: [] }], history: [] });
+      openMeetingEditor(9001, 78);
+    });
+    await settlePreview();
+    const nw = await download(() => page.locator(mb, { hasText: 'Download Word' }).click(), 'minutes');
+    await settlePreview();
+    const np = await download(() => page.locator(mb, { hasText: 'Download PDF' }).click(), 'minutes');
+    const nname = await page.evaluate(() => [meetingFileName(_editingMeeting, '.docx'), meetingFileName(_editingMeeting, '.pdf')]);
+    ok(/Minutes/.test(nname[1]) && nw.name === nname[0] && np.name === nname[1] && np.head.startsWith('%PDF') && nw.head.startsWith('PK'), 'minutes: Word and PDF save ' + nw.name + ' / ' + np.name);
     await page.evaluate(() => closeMeetingModal());
     // list-row icons: Word + PDF for meetings and for saved reports
     const rows = await page.evaluate(() => {
