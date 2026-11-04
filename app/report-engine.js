@@ -12810,14 +12810,22 @@ function _deleteReportTemplate(projId, name) {
 // -- Projects page --
 function saveProjSession() {
   const isDetail = document.getElementById('projDetailView')?.style.display !== 'none';
-  sessionStorage.setItem(
-    'ch_proj',
-    JSON.stringify({
-      view: isDetail ? 'detail' : 'list',
-      projId: isDetail ? window._activeProjId || null : null,
-      tab: window._activeProjTab || 'dashboard',
-    }),
-  );
+  let scroll = 0;
+  if (isDetail) {
+    if (window._projScrollRestoring) return; // restore in progress: keep the saved position
+    scroll = Math.round(document.querySelector('#projDetailView .ptab.active')?.scrollTop || 0);
+  }
+  try {
+    sessionStorage.setItem(
+      'ch_proj',
+      JSON.stringify({
+        view: isDetail ? 'detail' : 'list',
+        projId: isDetail ? window._activeProjId || null : null,
+        tab: window._activeProjTab || 'dashboard',
+        scroll: scroll,
+      }),
+    );
+  } catch (e) {}
 }
 
 function restoreProjSession() {

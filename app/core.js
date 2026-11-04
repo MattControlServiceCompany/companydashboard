@@ -775,7 +775,10 @@ function init() {
   // Restore last active view from session
   const lastView = localStorage.getItem('ch_activeView') || sessionStorage.getItem('ch_activeView');
   // Read project session NOW before sv('projects') → showList() overwrites it
-  const savedProjSession = sessionStorage.getItem('ch_proj');
+  let savedProjSession = null;
+  try {
+    savedProjSession = sessionStorage.getItem('ch_proj');
+  } catch (e) {}
   if (lastView && document.getElementById('view-' + lastView)) sv(lastView);
   // Restore projects drill-down if on projects page
   if (lastView === 'projects' && savedProjSession) {
@@ -803,6 +806,7 @@ function init() {
             const btn = document.querySelector('#pdTabBar button[data-tab="' + _tabToRestore + '"]');
             if (btn) sPTab(_tabToRestore, btn);
           }
+          _restoreProjScroll(Number(s.scroll) || 0);
         }
       }
     } catch (e) {}
@@ -1284,6 +1288,43 @@ function saveTask() {
 }
 
 /* ── PROJECTS: TABLE ── */
+// Scroll position of the open project tab survives a reload (same ch_proj session record as project + tab).
+// Browser storage only: no database write, nothing marked dirty.
+function _restoreProjScroll(top) {
+  if (!(top > 0)) return;
+  window._projScrollRestoring = true; // saveProjSession keeps the saved value while the tab content draws
+  let tries = 0;
+  const step = () => {
+    const el = document.querySelector('#projDetailView .ptab.active');
+    if (el) el.scrollTop = top;
+    tries++;
+    if ((el && Math.abs(el.scrollTop - top) < 2) || tries >= 20) {
+      window._projScrollRestoring = false;
+      return;
+    }
+    setTimeout(step, 150);
+  };
+  requestAnimationFrame(step);
+}
+(function () {
+  let timer = null;
+  document.addEventListener(
+    'scroll',
+    (e) => {
+      if (timer || window._projScrollRestoring) return;
+      const t = e.target;
+      if (!t || !t.classList || !t.classList.contains('ptab')) return;
+      timer = setTimeout(() => {
+        timer = null;
+        try {
+          saveProjSession();
+        } catch (err) {}
+      }, 250);
+    },
+    true,
+  );
+})();
+
 function showList() {
   document.getElementById('projListView').style.display = 'block';
   document.getElementById('projDetailView').style.display = 'none';

@@ -2507,6 +2507,11 @@ async function siteResetAllMeterTableSettings() {
    site-ui.js delegates to this array and should NOT maintain its own copy.
 */
 var RELEASE_NOTES = [
+  { v: 'v2026.11.03.220', date: '2026-11-03', title: 'Reload keeps your scroll position',
+    items: [
+      { type: 'fix', text: 'After a reload, the page keeps your scroll position in the open project.' }
+    ]
+  },
   { v: 'v2026.11.03.219', date: '2026-11-03', title: 'Faster updates',
     items: [
       { type: 'change', text: 'After an update, the site downloads only the files that changed.' }
