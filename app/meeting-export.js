@@ -78,8 +78,8 @@ function meetingBodyHtml(m) {
         )
         .join('');
       return (
-        `<p style="font-size:14px"><b><i>${esc(ct.label)}</i></b></p>` +
-        `<table style="width:100%"><thead><tr><th><u>Name</u></th><th><u>Mobile Phone</u></th><th><u>E-mail</u></th></tr></thead>` +
+        `<p style="font-size:14px"><i>${esc(ct.label)}</i></p>` +
+        `<table style="width:100%"><thead><tr><th>Name</th><th>Mobile Phone</th><th>E-mail</th></tr></thead>` +
         `<tbody>${rows}</tbody></table>`
       );
     })
@@ -101,6 +101,46 @@ function meetingBodyHtml(m) {
   );
 }
 
+/**
+ * meetingStyleWordXml - lays the translated Word body out like the 10-12 minutes: title lines and
+ * the contact tables sit close together, contact tables have NO grid lines, every cell is left aligned
+ * and the header row has one rule under it, no underlined words, and is not bold. The shared table translator draws report-style grid
+ * tables (bold, centered, TableGrid); a meeting has only these contact tables, so the change stays here.
+ */
+function meetingStyleWordXml(xml) {
+  const noBorders =
+    '<w:tblPr><w:tblW w:w="0" w:type="auto"/><w:tblBorders>' +
+    ['top', 'left', 'bottom', 'right', 'insideH', 'insideV']
+      .map((e) => `<w:${e} w:val="nil"/>`)
+      .join('') +
+    '</w:tblBorders><w:tblLayout w:type="fixed"/><w:tblCellMar><w:left w:w="0" w:type="dxa"/><w:right w:w="115" w:type="dxa"/></w:tblCellMar></w:tblPr>';
+  return xml
+    .replace(/<w:tblPr><w:tblStyle w:val="TableGrid"\/>.*?<\/w:tblPr>/g, noBorders)
+    .replace(/<w:tbl>.*?<\/w:tbl>/gs, (tbl) => {
+      const widths = [2060, 2260, 4500]; // Name and Phone columns at the 10-12 minutes positions; wide E-mail column so addresses do not wrap
+      let col = 0;
+      return tbl
+        .replace(/<w:jc w:val="center"\/>/g, '<w:jc w:val="left"/>')
+        .replace(/<w:b\/>/g, '')
+        .replace(/<w:tblGrid>.*?<\/w:tblGrid>/s, '<w:tblGrid>' + widths.map((w) => `<w:gridCol w:w="${w}"/>`).join('') + '</w:tblGrid>')
+        .replace(/<w:tr>|<w:tr /g, (m) => {
+          col = 0;
+          return m;
+        })
+        .replace(/<w:tcW w:w="\d+"/g, () => `<w:tcW w:w="${widths[col++ % 3]}"`)
+        // header row: one continuous rule under the row, E-mail sits 0.35 inch in (as in the 10-12 minutes)
+        .replace(/<w:tr><w:trPr>(?:(?!<\/w:trPr>).)*<w:tblHeader\/>.*?<\/w:tr>/s, (hdr) => {
+          let c = 0;
+          return hdr.replace(/(<w:tcW [^>]*\/>)(.*?<w:pPr>(?:<w:keepNext\/>)?<w:spacing w:after="0"\/>)/gs, (_, tcw, rest) =>
+            tcw + '<w:tcBorders><w:bottom w:val="single" w:sz="4" w:space="0" w:color="auto"/></w:tcBorders>' +
+            (c++ === 2 ? rest + '<w:ind w:left="504"/>' : rest));
+        });
+    })
+    .replace(/<\/w:tbl><w:p><w:pPr><w:spacing w:after="240"\/>(?!<\/w:pPr><w:r><w:rPr><w:rFonts[^>]*\/><w:i\/>)/g, '</w:tbl><w:p><w:pPr><w:spacing w:before="240" w:after="240"/>')
+    .replace(/<w:spacing w:after="240"\/>(?=<\/w:pPr><w:r><w:rPr><w:rFonts[^>]*\/><w:i\/>)/g, '<w:spacing w:before="160" w:after="0"/>')
+    .replace(/<w:spacing w:after="240"\/><w:jc w:val="center"\/>/g, '<w:spacing w:after="0"/><w:jc w:val="center"/>');
+}
+
 /** downloadMeetingDocx - saves the meeting as a Word file on the CSC letterhead. */
 async function downloadMeetingDocx(m) {
   if (typeof _docxTranslatePages !== 'function' || typeof _docxAssemble !== 'function') {
@@ -114,7 +154,7 @@ async function downloadMeetingDocx(m) {
   try {
     showToast('Generating Word document...');
     const translated = _docxTranslatePages([holder.firstChild]);
-    await _docxAssemble(translated.xml, {
+    await _docxAssemble(meetingStyleWordXml(translated.xml), {
       filename: meetingFileName(m, '.docx'),
       images: translated.images,
       numIds: translated.numIds,

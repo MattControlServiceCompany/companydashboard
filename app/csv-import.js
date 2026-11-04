@@ -4606,25 +4606,26 @@ function buildMeetingPDF(m, returnDoc) {
   y += 22;
 
   // Contact tables
-  const colW = [contentW * 0.33, contentW * 0.25, contentW * 0.42];
+  // Same proportions as the 10-12 minutes: a 5 inch table, one rule under the header row
+  const tableW = Math.min(contentW, 441); // 8820 twips: the same three column widths as the Word file (2060, 2260, 4500)
+  const colW = [tableW * (2060 / 8820), tableW * (2260 / 8820), tableW * (4500 / 8820)];
   m.contactTables.forEach((ct) => {
     checkPage(60);
     // Table label - bold italic
-    doc.setFont('helvetica', 'bolditalic');
+    doc.setFont('helvetica', 'italic');
     doc.setFontSize(10);
     doc.text(ct.label, ml, y);
     y += 14;
-    // Column headers - underlined
+    // Column headers - plain text with one continuous rule under the row (E-mail sits 0.35 inch in, as in the 10-12 minutes)
     doc.setFont('helvetica', 'normal');
     doc.setFontSize(9);
     const headers = ['Name', 'Mobile Phone', 'E-mail'];
     let cx = ml;
     headers.forEach((h, i) => {
-      doc.text(h, cx, y);
-      const hw = doc.getTextWidth(h);
-      doc.line(cx, y + 1, cx + hw, y + 1);
+      doc.text(h, cx + (i === 2 ? 25 : 0), y);
       cx += colW[i];
     });
+    doc.line(ml, y + 2, ml + tableW, y + 2);
     y += 13;
     // Contact rows
     doc.setFontSize(10);
@@ -4690,6 +4691,16 @@ function buildMeetingPDF(m, returnDoc) {
 
   // Add footer to last page
   addFooter();
+
+  // "Page N of M" on every page, above the wave (same wording as the Word file's footer fields)
+  const pageTotal = doc.getNumberOfPages();
+  doc.setFont('helvetica', 'normal');
+  doc.setFontSize(9);
+  doc.setTextColor(0, 0, 0);
+  for (let pg = 1; pg <= pageTotal; pg++) {
+    doc.setPage(pg);
+    doc.text(`Page ${pg} of ${pageTotal}`, pw - mr, ph - footerH - 8, { align: 'right' });
+  }
 
   // Save
   const filename = meetingFileName(m, '.pdf');

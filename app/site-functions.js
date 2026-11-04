@@ -2507,6 +2507,11 @@ async function siteResetAllMeterTableSettings() {
    site-ui.js delegates to this array and should NOT maintain its own copy.
 */
 var RELEASE_NOTES = [
+  { v: 'v2026.11.05.229', date: '2026-11-05', title: 'Meeting agenda export table',
+    items: [
+      { type: 'fix', text: 'Meeting agenda/minutes export: the contact table header has one continuous line under it, plain header words, and the E-mail column fits long addresses (Word and PDF).' }
+    ]
+  },
   { v: 'v2026.11.05.228', date: '2026-11-05', title: 'Quarterly savings report overhaul',
     items: [
       { type: 'change', text: 'Reports page: the quarterly savings report (Word and PDF downloads) has a clearer first page that shows the result at a glance.' },
