@@ -25,6 +25,13 @@ No secrets are in this file. Only env var NAMES are listed.
   How to check: `python scripts/stamp-version.py --check-refs` (exit 1 on any wrong hash; also run by `node scripts/ci-version-check.js`
   in the Release Checks workflow) and `node test-per-file-version-refs.js` (twice with no change = zero ref changes; one changed file
   = only the refs of that file change, one per page that loads it). `--refs-only` rewrites the hashes without a version change.
+- Back/Forward after a release (2026-11-03, branch fix/2026-11-03-hard-refresh): app/report-engine.js (next to the `focus` handler in the init
+  block) listens for `pageshow`. When `event.persisted` is true (Firefox page cache restore, old code still in memory) it runs
+  `_checkForVersionUpdate()` at once, without the 60 s gap. That function makes one no-store GET of site-ui.js and compares CH_VERSION
+  with RELEASE_NOTES[0].v. Same version or a failed fetch = nothing. A new version = the existing safe auto reload
+  (`chSafeToReload`, once per version per tab). A Back/Forward that loads the page again is covered by the check on load.
+  netlify.toml cannot do this: `netlify dev` overwrites a Cache-Control header rule with the static server's own
+  (netlify-cli dist/utils/proxy.js). How to check: `node test-pageshow-version-check.js`. No env var, no schedule.
 
 ## 2. Netlify functions (netlify/functions)
 

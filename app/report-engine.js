@@ -12958,6 +12958,12 @@ function initUtilityTool() {
   };
   document.addEventListener('visibilitychange', _verRecheck);
   window.addEventListener('focus', _verRecheck);
+  // Back/Forward restore from the browser's page cache (Firefox bfcache) keeps the OLD code with no reload.
+  // Check the live version then, without the 60 s gap. Same version or a failed fetch = nothing happens.
+  // A back/forward that loads the page again (no page cache) is already covered by the check on load above.
+  window.addEventListener('pageshow', (e) => {
+    if (e.persisted && !document.hidden) _checkForVersionUpdate();
+  });
   // Wait one tick: app/sync-ui.js clears its dirty mark in its own listener for these events.
   const _verRetry = () => {
     if (_chPendingVer) setTimeout(_reloadForNewVersionWhenSafe, 0);
