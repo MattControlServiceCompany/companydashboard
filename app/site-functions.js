@@ -2507,6 +2507,12 @@ async function siteResetAllMeterTableSettings() {
    site-ui.js delegates to this array and should NOT maintain its own copy.
 */
 var RELEASE_NOTES = [
+  { v: 'v2026.11.03.216', date: '2026-11-03', title: 'Scorecard Environmental Impact and Performance label fixes',
+    items: [
+      { type: 'fix', text: 'Building Scorecard: Environmental Impact now shows the cars and trees equivalent to the energy saved.' },
+      { type: 'fix', text: 'Building Scorecard: the PERFORMANCE label now fits inside the grade badge.' }
+    ]
+  },
   { v: 'v2026.11.03.215', date: '2026-11-03', title: 'Meeting agenda and minutes PDF preview shows again',
     items: [
       { type: 'fix', text: 'Meetings > Edit Meeting Agenda: the PDF preview for meeting agendas and minutes shows again.' }

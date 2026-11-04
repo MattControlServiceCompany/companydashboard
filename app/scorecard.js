@@ -280,9 +280,7 @@ function renderBuildingScorecardPane(pane, b, projId) {
 
   // ── Gather savings data ──
   var savByYM = {};
-  var kwhSaved = 0,
-    thermsSaved = 0,
-    propSaved = 0;
+  var scUnitsByYM = {};
   var totalCost = 0,
     totalKwh = 0,
     peakKW = 0,
@@ -301,14 +299,13 @@ function renderBuildingScorecardPane(pane, b, projId) {
       Object.entries(mSav.byYM || {}).forEach(function (kv) {
         savByYM[kv[0]] = (savByYM[kv[0]] || 0) + kv[1];
       });
-      // Accumulate saved units for pollution calc
-      if (m.commodity === 'Electric') {
-        kwhSaved += mSav.totalKwhSaved || 0;
-      } else if (m.commodity === 'Gas') {
-        thermsSaved += mSav.totalThermsSaved || 0;
-      } else if (m.commodity === 'Propane') {
-        propSaved += mSav.totalGalSaved || 0;
-      }
+      // Saved units by month, summed over meters; totalled below over the same months as annualSavings.
+      Object.entries(mSav.unitsByYM || {}).forEach(function (kv) {
+        var u = (scUnitsByYM[kv[0]] = scUnitsByYM[kv[0]] || { kwh: 0, therms: 0, gallons: 0 });
+        u.kwh += kv[1].kwh || 0;
+        u.therms += kv[1].therms || 0;
+        u.gallons += kv[1].gallons || 0;
+      });
     } catch (e) {
       /* no baseline yet */
     }
@@ -352,11 +349,21 @@ function renderBuildingScorecardPane(pane, b, projId) {
   // Period of this figure: the last 12 months of THIS building (all months to date when fewer than 12). The project
   // total on Utility Data covers every building and every billed quarter, so the two differ by design.
   var scPeriodWord = last12YM.length === 12 ? 'last 12 months' : 'months to date';
-  var annualSavings = billableSavingsWithPresented(projId, last12YM.length === 12 ? last12YM : ymKeys, (function () {
+  var scAnnualYms = last12YM.length === 12 ? last12YM : ymKeys;
+  var annualSavings = billableSavingsWithPresented(projId, scAnnualYms, (function () {
     var o = {};
     o[b.id] = savByYM;
     return o;
   })()).byBldg[b.id];
+  // Energy saved over the same months as annualSavings; a presented period uses its printed units (one keeper).
+  var scUnits = totalUnitsWithPresented(projId, scAnnualYms, (function () {
+    var o = {};
+    o[b.id] = scUnitsByYM;
+    return o;
+  })());
+  var kwhSaved = scUnits.kwh,
+    thermsSaved = scUnits.therms,
+    propSaved = scUnits.gallons;
 
   // ── EUI (site kBtu/sqft/yr, rolling last 12) ──
   var euiVal = 0;
