@@ -3,7 +3,7 @@
  *
  * Regression test: synced EMS Leads data (ems_leads_v1, ems_field_defs, ems_client_types) must never
  * execute script or create elements when rendered in ems-leads.html and energy-department.html.
- * SYNTHETIC data only. Headless bundled Chromium (never Edge), unique C:\Temp profile, file:// pages.
+ * SYNTHETIC data only. Headless bundled Chromium (never Edge), unique profile in CH_TMP_ROOT, file:// pages.
  *
  * Usage: node tools/test-ems-xss.js   (env APP_ROOT=<checkout> to test another tree)
  */

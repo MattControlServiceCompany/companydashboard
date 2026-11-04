@@ -17,7 +17,7 @@ const ok = (c, l) => (c ? pass++ : failures.push(l));
 const eq = (a, e, l) => ok(a === e, l + ': expected ' + JSON.stringify(e) + ', got ' + JSON.stringify(a));
 
 (async () => {
-  const tmp = fs.mkdtempSync(path.join(require('os').tmpdir(), 'importlist-'));
+  const tmp = require('./tools/tmp-root').mkTmpDir('importlist-');
   const csv = path.join(tmp, 'synth-building-list.csv');
   fs.writeFileSync(
     csv,

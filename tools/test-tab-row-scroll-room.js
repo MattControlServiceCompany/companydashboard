@@ -15,11 +15,11 @@ const PID = 999000778;
 
 async function launch(task, opts) {
   if (BROWSER === 'chromium') return require(path.join(ROOT, 'tools', 'launch-browser.js')).launchBrowser(task, opts);
-  const dir = 'C:/Temp/' + (process.env.CH_GATE_TAG ? process.env.CH_GATE_TAG + '-' : '') + task + '-ff-profile-' + Date.now() + '-' + process.pid;
+  const dir = require(path.join(ROOT, 'tools', 'tmp-root.js')).profilePath(task, 'ff-profile');
   const ctx = await require('playwright').firefox.launchPersistentContext(dir, Object.assign({ headless: true }, opts));
   const close = ctx.close.bind(ctx);
   ctx.close = async () => {
-    try { await close(); } finally { fs.rmSync(dir, { recursive: true, force: true, maxRetries: 20, retryDelay: 500 }); }
+    try { await close(); } finally { require(path.join(ROOT, 'tools', 'tmp-root.js')).rmTmp(dir); }
   };
   return ctx;
 }

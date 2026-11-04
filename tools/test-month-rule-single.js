@@ -9,7 +9,7 @@
 //   E  gate: tools/gate-single-month-rule.js passes on this tree and FAILS on a temp tree with a second rule
 process.env.TZ = 'America/Chicago';
 const fs = require('fs');
-const os = require('os');
+const TMP = require('./tmp-root.js');
 const path = require('path');
 const vm = require('vm');
 const { spawnSync } = require('child_process');
@@ -174,7 +174,7 @@ assert(
 console.log('--- E. gate ---');
 const g = spawnSync(process.execPath, [path.join(REPO, 'tools', 'gate-single-month-rule.js')], { encoding: 'utf8' });
 assert(g.status === 0, 'gate passes on this tree: ' + (g.stdout || '') + (g.stderr || ''));
-const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'month-gate-'));
+const tmp = TMP.mkTmpDir('month-gate-');
 try {
   fs.mkdirSync(path.join(tmp, 'computations'));
   fs.mkdirSync(path.join(tmp, 'app'));
@@ -207,7 +207,7 @@ try {
   });
   assert(nofn.status === 1 && /does not define billMonth/.test(nofn.stdout), 'gate FAILS when billMonth is missing');
 } finally {
-  fs.rmSync(tmp, { recursive: true, force: true });
+  TMP.rmTmp(tmp);
 }
 
 console.log('\ntest-month-rule-single: ' + passed + ' passed, ' + failed + ' failed');

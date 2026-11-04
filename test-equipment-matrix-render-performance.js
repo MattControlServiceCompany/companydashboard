@@ -12,7 +12,7 @@
 // This test builds a ~3,000-row 100% SYNTHETIC fixture (no real client/project data), seeds it
 // into IndexedDB, and times how long each view takes to open/switch to. Target: under 2s each.
 //
-// Browser: plain Chromium (never Edge/msedge), headless, unique C:\Temp profile per run, closed
+// Browser: plain Chromium (never Edge/msedge), headless, unique profile under CH_TMP_ROOT per run, closed
 // in a finally block. Run: node test-equipment-matrix-render-performance.js
 
 const { launchBrowser } = require('./tools/launch-browser.js');

@@ -11,7 +11,7 @@
 // Run: node tools/test-sticky-no-bleed.js [--verbose]   (CH_GATE_BROWSER=firefox for Firefox; CH_STICKY_SHOTS=<dir> to save a screenshot of each failing page)
 const path = require('path');
 const fs = require('fs');
-const os = require('os');
+const TMP = require('./tmp-root.js');
 const http = require('http');
 const ROOT = process.env.APP_ROOT || path.join(__dirname, '..');
 const { fastNet } = require(path.join(ROOT, 'tools', 'pdf-test-net.js'));
@@ -22,11 +22,11 @@ const PID = 999000777;
 
 async function launch(task, opts) {
   if (BROWSER === 'chromium') return require(path.join(ROOT, 'tools', 'launch-browser.js')).launchBrowser(task, opts);
-  const dir = 'C:/Temp/' + (process.env.CH_GATE_TAG ? process.env.CH_GATE_TAG + '-' : '') + task + '-ff-profile-' + Date.now() + '-' + process.pid;
+  const dir = require(path.join(ROOT, 'tools', 'tmp-root.js')).profilePath(task, 'ff-profile');
   const ctx = await require('playwright').firefox.launchPersistentContext(dir, Object.assign({ headless: true }, opts));
   const close = ctx.close.bind(ctx);
   ctx.close = async () => {
-    try { await close(); } finally { fs.rmSync(dir, { recursive: true, force: true, maxRetries: 20, retryDelay: 500 }); }
+    try { await close(); } finally { require(path.join(ROOT, 'tools', 'tmp-root.js')).rmTmp(dir); }
   };
   return ctx;
 }
@@ -307,7 +307,7 @@ async function selfTest(page) {
 (async () => {
   await new Promise((r) => srv.listen(0, r));
   const base = `http://localhost:${srv.address().port}/`;
-  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'sticky-files-'));
+  const dir = TMP.mkTmpDir('sticky-files-');
   const fA = path.join(dir, 'synthA.pdf');
   fs.writeFileSync(fA, pdfA);
   let total = 0;
@@ -420,7 +420,7 @@ async function selfTest(page) {
   } finally {
     await ctx.close();
     srv.close();
-    fs.rmSync(dir, { recursive: true, force: true });
+    TMP.rmTmp(dir);
   }
   const lint = staticStickyLint();
   lint.bad.forEach((b) => { total++; fails[b] = ['static']; });

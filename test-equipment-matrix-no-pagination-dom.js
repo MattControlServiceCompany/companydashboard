@@ -15,7 +15,7 @@
 //
 // Browser: plain Chromium (NOT Edge — msedge channel is the repo's usual tools/verify.js
 // convention, but this project's browser-safety rules for this task explicitly forbid it),
-// headless, a unique C:\Temp profile per run, closed in a finally block. Per feedback_no_edge_
+// headless, a unique profile under CH_TMP_ROOT per run, closed in a finally block. Per feedback_no_edge_
 // headed_chrome.md / feedback_browser_process_safety.md.
 //
 // Run: node test-equipment-matrix-no-pagination-dom.js   (from the repo root)

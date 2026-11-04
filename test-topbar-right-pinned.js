@@ -51,7 +51,7 @@ async function run(label, ctx, shotsDir) {
   let ff;
   try { ff = require('playwright').firefox; if (!fs.existsSync(ff.executablePath())) ff = null; } catch (e) { ff = null; }
   if (ff) {
-    const dir = 'C:/Temp/topbar-right-ff-profile-' + Date.now() + '-' + process.pid;
+    const dir = require('./tools/tmp-root').profilePath('topbar-right-ff');
     const c2 = await ff.launchPersistentContext(dir, { headless: true, viewport: { width: 1920, height: 1080 } });
     try { await run('firefox', c2, shots); } finally { await c2.close(); fs.rmSync(dir, { recursive: true, force: true, maxRetries: 20, retryDelay: 500 }); }
   } else console.log('NOTE firefox not installed for playwright; skipped');

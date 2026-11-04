@@ -108,7 +108,13 @@ const mkRow = (key, value, version, extra) =>
     },
     extra || {},
   );
-const tmp = (p) => fs.mkdtempSync(path.join(os.tmpdir(), 'ch-mseed-' + p + '-'));
+const madeDirs = [];
+const tmp = (p) => {
+  const d = require('./tools/tmp-root').mkTmpDir('ch-mseed-' + p + '-');
+  madeDirs.push(d);
+  return d;
+};
+const cleanTmp = () => madeDirs.forEach((d) => require('./tools/tmp-root').rmTmp(d));
 
 function writeBackup(dir, data) {
   const f = path.join(dir, 'CompanyHub-localdatafile-20990101.json');
@@ -1246,8 +1252,10 @@ await t('A1-2: header and code agree: a field lost inside a matched record is no
   assert.strictEqual(r2.counts.keys.held, 1);
 });
   fs.rmSync(work, { recursive: true, force: true });
+  cleanTmp();
   console.log('\n' + pass + ' tests passed');
 })().catch((e) => {
   console.error('FAIL', e && e.stack ? e.stack : e);
+  cleanTmp();
   process.exit(1);
 });

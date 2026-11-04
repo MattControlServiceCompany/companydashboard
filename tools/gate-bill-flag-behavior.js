@@ -16,7 +16,7 @@
  * Usage: node tools/gate-bill-flag-behavior.js [repo-root]
  */
 const fs = require('fs');
-const os = require('os');
+const TMP = require('./tmp-root.js');
 const path = require('path');
 const http = require('http');
 const REPO = process.argv[2] ? path.resolve(process.argv[2]) : path.join(__dirname, '..');
@@ -126,7 +126,7 @@ async function main() {
   });
   await new Promise((ok) => srv.listen(0, '127.0.0.1', ok));
   const origin = 'http://127.0.0.1:' + srv.address().port;
-  const prof = path.join(os.tmpdir(), 'bill-flag-gate-profile-' + Date.now());
+  const prof = TMP.tmpPath('bill-flag-gate-profile-' + Date.now());
   const ctx = await chromium.launchPersistentContext(prof, {
     headless: true,
     args: ['--disable-gpu'],
@@ -291,7 +291,7 @@ async function main() {
   } finally {
     await ctx.close();
     srv.close();
-    fs.rmSync(prof, { recursive: true, force: true });
+    TMP.rmTmp(prof);
   }
 }
 

@@ -2,7 +2,7 @@
  * test-restore-escape.js
  * The restore dialog result table and held-key checkbox build HTML from key names and result text.
  * A value with " ' < > & must render as TEXT and must never add an attribute or an element.
- * SYNTHETIC data only. Headless bundled Chromium (never Edge), unique C:\Temp profile, no network.
+ * SYNTHETIC data only. Headless bundled Chromium (never Edge), unique profile in CH_TMP_ROOT, no network.
  * Usage: node tools/test-restore-escape.js   (env APP_ROOT=<checkout>)
  */
 const fs = require('fs');

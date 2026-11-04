@@ -21,7 +21,7 @@ const ELEC13 = 'MTR-0001'; // long meter id kept as typed
 const PIPE = 'G-77 | G-78';
 
 (async () => {
-  const tmp = fs.mkdtempSync(path.join(require('os').tmpdir(), 'meterimport-'));
+  const tmp = require('./tools/tmp-root').mkTmpDir('meterimport-');
   const w = (name, text) => {
     const f = path.join(tmp, name);
     fs.writeFileSync(f, text);

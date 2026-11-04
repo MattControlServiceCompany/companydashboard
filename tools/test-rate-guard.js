@@ -313,7 +313,7 @@ confirmAsked.length = 0;
   assert(sb.measureRatesNow('p1', mo2).kwSummer === baseBefore.kwSummer && mo2.rates.kwSummer === 16, 'measureRatesNow returns the owner rates without saving them');
 
   console.log('=== 6. gate fails when a new rate write path skips the validator ===');
-  const tmp = fs.mkdtempSync(path.join('C:/Temp', 'rate-gate-test-'));
+  const tmp = require('./tmp-root.js').mkTmpDir('rate-gate-test-');
   try {
     ['app', 'computations', 'lib'].forEach((d) => fs.mkdirSync(path.join(tmp, d)));
     ['app/energy-savings.js', 'app/ecm-calculators.js'].forEach((f) =>
@@ -351,7 +351,7 @@ confirmAsked.length = 0;
     r = run();
     assert(r.status === 1 && /rates: literal/.test(r.stdout), 'gate fails on a measure built with a rates literal');
   } finally {
-    fs.rmSync(tmp, { recursive: true, force: true });
+    require('./tmp-root.js').rmTmp(tmp);
   }
 
   console.log('\n' + passed + ' passed, ' + failed + ' failed');

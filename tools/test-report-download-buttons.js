@@ -24,7 +24,7 @@ const ok = (c, m) => {
 
 (async () => {
   const ctx = await launchBrowser('report-download-buttons', { acceptDownloads: true });
-  const tmp = fs.mkdtempSync(path.join(process.env.CH_TMP_ROOT || os.tmpdir(), 'rpt-dl-buttons-'));
+  const tmp = require('./tmp-root').mkTmpDir('rpt-dl-buttons-');
   try {
     const page = await ctx.newPage();
     let dialogs = 0;

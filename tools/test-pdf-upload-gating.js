@@ -8,7 +8,7 @@
  */
 const path = require('path');
 const fs = require('fs');
-const os = require('os');
+const TMP = require('./tmp-root.js');
 const http = require('http');
 const ROOT = process.env.APP_ROOT || path.join(__dirname, '..');
 const { launchBrowser } = require(path.join(ROOT, 'tools', 'launch-browser.js'));
@@ -113,7 +113,7 @@ async function extractOnly(page, url, files, syncOn) {
 (async () => {
   await new Promise((r) => srv.listen(0, r));
   const url = `http://localhost:${srv.address().port}/energy-department.html`;
-  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'pdfgate-files-'));
+  const dir = TMP.mkTmpDir('pdfgate-files-');
   const fA = path.join(dir, 'synthA.pdf');
   const fB = path.join(dir, 'synthB.pdf');
   const fD = path.join(dir, 'synthD.pdf');
@@ -189,7 +189,7 @@ async function extractOnly(page, url, files, syncOn) {
   } finally {
     await ctx.close();
     srv.close();
-    fs.rmSync(dir, { recursive: true, force: true });
+    TMP.rmTmp(dir);
   }
   console.log(fails ? 'FAILED ' + fails : 'ALL PASS');
   process.exit(fails ? 1 : 0);

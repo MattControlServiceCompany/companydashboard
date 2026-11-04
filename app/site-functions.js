@@ -2507,6 +2507,11 @@ async function siteResetAllMeterTableSettings() {
    site-ui.js delegates to this array and should NOT maintain its own copy.
 */
 var RELEASE_NOTES = [
+  { v: 'v2026.11.03.218', date: '2026-11-03', title: 'Internal test change, no change to the site',
+    items: [
+      { type: 'change', text: 'Internal test change only: automated tests now use the project temp folder. Nothing on the site looks or works differently.' }
+    ]
+  },
   { v: 'v2026.11.03.217', date: '2026-11-03', title: 'Meeting agenda and minutes PDF date reads correctly',
     items: [
       { type: 'fix', text: 'Meetings agenda and minutes PDF: the meeting date now reads correctly, for example Tuesday March 3rd, 2026.' }

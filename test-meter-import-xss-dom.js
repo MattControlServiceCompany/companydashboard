@@ -24,7 +24,7 @@ const seen = (s) => s.replace(/"/g, '');
 const row = (cells) => cells.map(q).join(',');
 
 (async () => {
-  const tmp = fs.mkdtempSync(path.join(require('os').tmpdir(), 'meterxss-'));
+  const tmp = require('./tools/tmp-root').mkTmpDir('meterxss-');
   const w = (name, text) => {
     const f = path.join(tmp, name);
     fs.writeFileSync(f, text);

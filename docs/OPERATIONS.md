@@ -401,18 +401,27 @@ The app Restore path (6c) is on main only, not in stable (v87), until the Nov 2 
   reason and show as INFO; remove an entry when the test is fixed. Playwright comes from the env var
   `CH_PLAYWRIGHT_NODE_MODULES` (default `C:/Users/Matt Miller/AI/_context/tools/playwright-runtime/node_modules`, a permanent copy of the same Playwright version so the installed Chromium matches);
   the gate passes it to child tests as NODE_PATH. No junction or npm install is needed in the primary checkout or a worktree.
-  Temp-leak guard: the gate makes a run tag `ch-gate-<pid>-<start ms>` and passes it to every child test in the env var
-  `CH_GATE_TAG`. `tools/launch-browser.js` (`launchBrowser(task, opts)`) puts the tag at the start of the profile folder name
-  (`C:/Temp/<tag>-<task>-profile-...`) and `ctx.close()` there also deletes the profile. The gate's own work folder is `<tag>-work`.
-  After the tests the gate lists `C:/Temp`: a new entry whose name starts with the tag is a FAIL and the gate deletes it. Any other
-  new entry (for example a profile of another agent that ran at the same time) is shown as INFO and is never deleted and never a FAIL.
+  Scratch folder (env var `CH_TMP_ROOT`, required): every test and tool puts browser profiles and scratch files under the folder named by
+  `CH_TMP_ROOT`. The ONE owner is `tools/tmp-root.js` (`tmpRoot`, `mkTmpDir`, `tmpPath`, `profilePath`, `rmTmp`). It throws a clear error when
+  the variable is not set; there is no default and no fallback to `C:/Temp` or the OS temp folder. Set it for the shell before you run any
+  test, for example `$env:CH_TMP_ROOT = '<context dir>\temp\<dated-folder>\run'` (PowerShell); the folder is made when needed. Delete it
+  when you finish with `python -I "<context dir>\tools\2026-11-03-clean-temp.py" <path>`. `rmTmp` deletes with `fs.rmSync` and 20 retries
+  at 500 ms, so a Windows EPERM or EBUSY (a browser still holds a file) is retried before it fails. `tools/test-ocr-hidden-tab.js` also needs
+  `CH_PDFJS_CACHE`: a folder with `pdf.min.js` and `pdf.worker.min.js` (pdf.js 3.11.174, saved once from cdnjs; the test never downloads and
+  never writes into that folder).
+  Temp-leak guard: the gate needs `CH_TMP_ROOT`. It makes a run tag `ch-gate-<pid>-<start ms>`, makes ONE run folder `<CH_TMP_ROOT>/<tag>`,
+  sets `CH_TMP_ROOT` to that run folder for every child test, and passes the tag in the env var `CH_GATE_TAG`. `tools/launch-browser.js`
+  (`launchBrowser(task, opts)`) puts the profile in the run folder (`<tag>-<task>-profile-...`) and `ctx.close()` there also deletes the
+  profile. The gate's own work folder is `<tag>-work`. After the tests the gate lists the run folder: any entry left in it is a FAIL and the
+  gate deletes it, then removes the empty run folder. Profiles of other processes live in other folders under the root and are never
+  looked at, so they never count as a leak of this run.
   Flag-badge onclick gate (tools/gate-flag-badge-onclick-escape.js, in the gate's static list; run alone: `node tools/gate-flag-badge-onclick-escape.js`). Loads `udFlagBadgeHtml` (app/utility-data.js), feeds ids with `&quot;`, quotes and ampersands, decodes the onclick like a browser and fails if script runs or the decoded arguments differ from the ids. `udFlagBadgeHtml` builds each id with `_escHtml(JSON.stringify(id))`.
   Real-id gate (scripts/gate-real-ids.js, called from the gate's leak-guard group; run alone: `node scripts/gate-real-ids.js`).
   It runs `git grep -IcwF -f <list>` over all tracked files. Any hit = FAIL, printed as file name and line count only (never the
   value). The private list (one real account or meter id per line, never committed) is read from the env var `CH_REAL_IDS_FILE`.
   It is set as a Windows user environment variable on the work machine (`[Environment]::SetEnvironmentVariable('CH_REAL_IDS_FILE', <path in _context/reference/private>, 'User')`), like the other gate settings.
   Unset or missing file = SKIP (INFO, exit 0). A new shell is needed to see a new user variable.
-  Browser tests must use `launchBrowser`. Tests that use `os.tmpdir()` (AppData, not `C:/Temp`) are outside the guard.
+  Browser tests must use `launchBrowser`. Other scratch files must use `tools/tmp-root.js`; `os.tmpdir()` and `C:/Temp` are not used in `tools/`, `scripts/` or the repo-root `test-*.js` files.
 - Bill CSV header matching (app/csv-import.js `ci()` inside `parseBillCsv`). One rule for every column: exact header first,
   then whole-word match. A header with a cost, id or date word is claimed only by an alias of the same class, so
   "Energy Cost" is not kWh, "Bill ID" is not cost and "Total" is not an end date. How to check:

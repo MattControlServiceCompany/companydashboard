@@ -403,13 +403,19 @@ async function main() {
   const dataSrc = args.data && args.data !== true ? args.data : pinnedBackup(oracle);
   if (!fs.existsSync(dataSrc)) throw new Error('backup not found: ' + dataSrc);
 
-  // Temp-leak guard: every entry in these dirs before the run. After the tests, a new entry whose name starts with
-  // this run's tag (made by the gate or its child tests) = FAIL + delete. Any other new entry is another process's: INFO only.
+  // Temp-leak guard: the gate needs CH_TMP_ROOT (tools/tmp-root.js throws if it is not set). It makes ONE per-run
+  // folder <CH_TMP_ROOT>/<RUN_TAG> and points CH_TMP_ROOT at it for every child test. After the tests, any entry left
+  // in the run folder (except the gate's own work folder, which the gate deletes) = FAIL + delete. Profiles and files of
+  // other processes live in other folders under the root and are never looked at.
   const RUN_TAG = 'ch-gate-' + process.pid + '-' + Date.now();
   process.env.CH_GATE_TAG = RUN_TAG;
-  const TMP_DIRS = ['C:/Temp'];
+  const TMP_BASE = require('../tools/tmp-root.js').tmpRoot();
+  const RUN_DIR = path.join(TMP_BASE, RUN_TAG);
+  fs.mkdirSync(RUN_DIR, { recursive: true });
+  process.env.CH_TMP_ROOT = RUN_DIR;
+  const TMP_DIRS = [RUN_DIR];
   const tmpBefore = TMP_DIRS.map((d) => new Set(fs.readdirSync(d)));
-  const work = path.join('C:/Temp', RUN_TAG + '-work');
+  const work = path.join(RUN_DIR, RUN_TAG + '-work');
   fs.mkdirSync(work, { recursive: true });
   const dataCopy = path.join(work, 'backup-copy.json');
   fs.copyFileSync(dataSrc, dataCopy);
@@ -759,22 +765,21 @@ async function main() {
   const queue = toRun.slice();
   await Promise.all([1, 2, 3].map(async () => { while (queue.length) await runTest(queue.shift()); }));
 
-  // ---- temp-leak guard: the run (gate + every test) must leave nothing tagged with RUN_TAG in C:/Temp ----
+  // ---- temp-leak guard: the run (gate + every test) must leave nothing in its own run folder under CH_TMP_ROOT ----
   let leaked = 0;
   TMP_DIRS.forEach((d, i) => {
     fs.readdirSync(d)
       .filter((e) => !tmpBefore[i].has(e))
       .forEach((e) => {
-        if (e.startsWith(RUN_TAG)) {
-          leaked++;
-          add('temp-leak', d + '/' + e, 'FAIL', 'left behind by this run; deleted by the gate');
-          fs.rmSync(path.join(d, e), { recursive: true, force: true });
-        } else {
-          add('temp-leak', d + '/' + e, 'INFO', 'new entry from another process (name lacks run tag ' + RUN_TAG + '); not deleted');
-        }
+        leaked++;
+        add('temp-leak', RUN_TAG + '/' + e, 'FAIL', 'left behind by this run; deleted by the gate');
+        fs.rmSync(path.join(d, e), { recursive: true, force: true, maxRetries: 20, retryDelay: 500 });
       });
   });
-  if (!leaked) add('temp-leak', 'no entries tagged ' + RUN_TAG + ' left in ' + TMP_DIRS.join(', '), 'PASS', '');
+  if (!leaked) add('temp-leak', 'nothing left in the run folder ' + RUN_TAG, 'PASS', '');
+  try {
+    fs.rmdirSync(RUN_DIR);
+  } catch (e) {}
 
   // ---- repo leak ratchet (Matt, 2026-10-08): the repo must not tell a reader who the clients are, what data
   // sources it reads, or internal infrastructure. The patterns live OUTSIDE the repo (private file, one ERE per line,

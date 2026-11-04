@@ -10,7 +10,7 @@
  * Usage: node tools/test-report-pdf-text-digits.js   (env APP_ROOT=<checkout> to test another tree)
  */
 const fs = require('fs');
-const os = require('os');
+const TMP = require('./tmp-root.js');
 const path = require('path');
 const { execFileSync, spawnSync } = require('child_process');
 const { pathToFileURL } = require('url');
@@ -30,7 +30,7 @@ if (spawnSync('pdftotext', ['-v']).error) {
 
 (async () => {
   const ctx = await launchBrowser('report-pdf-digits');
-  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'rpt-pdf-digits-'));
+  const tmp = TMP.mkTmpDir('rpt-pdf-digits-');
   try {
     const page = await ctx.newPage();
     await page.route(/supabase|\.netlify|netlify\.app/, (r) => r.abort());
@@ -77,7 +77,7 @@ if (spawnSync('pdftotext', ['-v']).error) {
     for (const ch of '0123456789') ok(count(pdfText, ch) >= count(domText, ch), 'PDF text layer keeps every "' + ch + '" (' + count(pdfText, ch) + ' of ' + count(domText, ch) + ')');
   } finally {
     await ctx.close();
-    fs.rmSync(tmp, { recursive: true, force: true });
+    TMP.rmTmp(tmp);
   }
   console.log(fails ? 'FAILED ' + fails : 'ALL PASS');
   process.exit(fails ? 1 : 0);

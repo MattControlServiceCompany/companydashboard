@@ -8,7 +8,7 @@
  */
 const path = require('path');
 const fs = require('fs');
-const os = require('os');
+const TMP = require('./tmp-root.js');
 const http = require('http');
 const ROOT = process.env.APP_ROOT || path.join(__dirname, '..');
 const { launchBrowser } = require(path.join(ROOT, 'tools', 'launch-browser.js'));
@@ -154,7 +154,7 @@ const clickClear = (page, fn) => page.locator('button[onclick*="' + fn + '()"]:v
 (async () => {
   await new Promise((r) => srv.listen(0, r));
   const url = `http://localhost:${srv.address().port}/energy-department.html`;
-  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'pdfview-files-'));
+  const dir = TMP.mkTmpDir('pdfview-files-');
   const fA = path.join(dir, 'synthA.pdf');
   const fB = path.join(dir, 'synthB.pdf');
   fs.writeFileSync(fA, pdfA);
@@ -257,7 +257,7 @@ const clickClear = (page, fn) => page.locator('button[onclick*="' + fn + '()"]:v
     await ctx.close();
     srv.close();
     try {
-      fs.rmSync(dir, { recursive: true, force: true });
+      TMP.rmTmp(dir);
     } catch (e) {}
   }
   console.log(fails ? 'FAILED ' + fails : 'ALL PASS');

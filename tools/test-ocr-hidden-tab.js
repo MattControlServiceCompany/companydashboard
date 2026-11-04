@@ -11,7 +11,7 @@
  *     intent 'display' at scale 3.0 x 1.6 and at zoom 12 x 1.6 (the Client A crop zoom).
  *
  * The real functions are cut out of the app file and run in the page. pdf.js 3.11.174 (the version
- * energy-department.html loads) is read from the local cache C:\Temp\ocr-hidden-tab-cache (saved once from cdnjs; the test never downloads).
+ * energy-department.html loads) is read from the local cache folder named by the env var CH_PDFJS_CACHE (pdf.min.js and pdf.worker.min.js saved once from cdnjs; the test never downloads).
  *
  * Usage: node tools/test-ocr-hidden-tab.js [path-to-bill-analysis.js]
  * Exit code 1 on any failure.
@@ -19,9 +19,11 @@
 const fs = require('fs');
 const path = require('path');
 const { launchBrowser } = require('./launch-browser.js');
+const TMP = require('./tmp-root.js');
 
 const SRC = process.argv[2] || path.join(__dirname, '..', 'app', 'bill-analysis.js');
-const CACHE = path.join('C:', 'Temp', 'ocr-hidden-tab-cache');
+const CACHE = process.env.CH_PDFJS_CACHE;
+if (!CACHE) throw new Error('CH_PDFJS_CACHE is not set (folder with pdf.min.js and pdf.worker.min.js, pdf.js 3.11.174). See docs/OPERATIONS.md.');
 const PDFJS = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/';
 const CAP_MS = 20000; // a step that takes longer than this counts as stalled
 const HIDDEN_EXTRA_MS = 3000; // hidden may exceed visible by at most this
@@ -79,11 +81,12 @@ function appSlice() {
     }
   }
   const cacheUrl = 'file:///' + CACHE.replace(/\\/g, '/');
+  const pageDir = TMP.mkTmpDir('ocr-hidden-tab-page-');
   fs.writeFileSync(
-    path.join(CACHE, 'page.html'),
+    path.join(pageDir, 'page.html'),
     `<html><body><script src="${cacheUrl}/pdf.min.js"></script><script src="${cacheUrl}/pdf.worker.min.js"></script></body></html>`,
   );
-  const pageUrl = 'file:///' + CACHE.replace(/\\/g, '/') + '/page.html';
+  const pageUrl = 'file:///' + pageDir.replace(/\\/g, '/') + '/page.html';
   const code = appSlice();
   const letterPdf = makePdf(612, 792, 1500);
   const smallPdf = makePdf(100, 130, 60);
@@ -189,6 +192,7 @@ function appSlice() {
     await p.close();
   } finally {
     await ctx.close();
+    TMP.rmTmp(pageDir);
   }
 
   console.log(JSON.stringify(out, null, 1));

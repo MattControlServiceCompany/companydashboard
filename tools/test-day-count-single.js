@@ -222,7 +222,7 @@ const dayFns = ['_fixISO', '_parseISO', 'calcDays']
 {
   const res = cp.spawnSync(process.execPath, [path.join(REPO, 'tools/gate-single-day-count.js')], { encoding: 'utf8' });
   assert(res.status === 0, 'gate-single-day-count passes: ' + (res.stdout || '').slice(0, 300));
-  const tmp = path.join(require('os').tmpdir(), 'wp08-gate-' + Date.now());
+  const tmp = require('./tmp-root.js').tmpPath('wp08-gate-' + Date.now());
   fs.mkdirSync(path.join(tmp, 'app'), { recursive: true });
   fs.writeFileSync(path.join(tmp, 'app/utility-data.js'), 'function calcDays(a,b){return 0;}\n');
   fs.writeFileSync(path.join(tmp, 'app/bad.js'), 'const days = Math.round((e - s) / 86400000) + 1;\n');
@@ -233,7 +233,7 @@ const dayFns = ['_fixISO', '_parseISO', 'calcDays']
     bad.status === 1 && /app\/bad\.js:1 inline day math/.test(bad.stdout),
     'gate FAILS on inline /86400000 day math',
   );
-  fs.rmSync(tmp, { recursive: true, force: true });
+  require('./tmp-root.js').rmTmp(tmp);
 }
 
 console.log(passed + ' passed, ' + failed + ' failed');

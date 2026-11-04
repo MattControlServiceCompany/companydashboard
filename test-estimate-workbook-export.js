@@ -197,7 +197,7 @@ async function checkCached(label, input) {
   eq(tiedOwn.summary.total, t.calc.summary.total, 'own override on a tied role is ignored');
 
   // 6. Independent recalculation: LibreOffice if present, else python `formulas`.
-  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'est-export-'));
+  const tmp = require('./tools/tmp-root').mkTmpDir('est-export-');
   const files = { base: r.buf, full: f.buf, tied: t.buf };
   const inputs = { base: base, full: full, tied: tied };
   let recalcTool = null,

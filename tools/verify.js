@@ -14,7 +14,7 @@ const path = require('path');
 
 const args = process.argv.slice(2);
 const target = args[0] || require('url').pathToFileURL(path.join(__dirname, '..', 'index.html')).href;
-const outPath = args[1] || path.join(require('os').tmpdir(), 'verify-screenshot.png');
+const outPath = args[1] || require('./tmp-root.js').tmpPath('verify-screenshot.png');
 
 (async () => {
   const context = await launchBrowser('verify');

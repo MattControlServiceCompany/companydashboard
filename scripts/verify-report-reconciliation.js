@@ -90,7 +90,7 @@ const fs = require('fs');
 const REPO_ROOT = path.resolve(__dirname, '..');
 
 // `git worktree add` checkouts do not get their own node_modules install (confirmed: none of
-// the existing worktrees under C:/Temp have one). Try resolving playwright from the tree we're
+// the existing worktrees have one). Try resolving playwright from the tree we're
 // actually grading first (so a worktree WITH its own install is honored); fall back to the
 // primary checkout's shared install as a tooling dependency only. This fallback does NOT change
 // which tree's app files get loaded/graded -- that is governed solely by REPO_ROOT above.
@@ -729,7 +729,7 @@ function printReport(label, results, bundle) {
 
 // ── Main ─────────────────────────────────────────────────────────────────────────────────────
 (async () => {
-  const profileDir = 'C:/Temp/verify-report-reconciliation-profile-' + Date.now();
+  const profileDir = require('../tools/tmp-root.js').tmpPath('verify-report-reconciliation-profile-' + Date.now());
   const context = await chromium.launchPersistentContext(profileDir, {
     headless: true,
     viewport: { width: 1600, height: 1100 },
@@ -805,7 +805,7 @@ function printReport(label, results, bundle) {
     exitCode = 1;
   } finally {
     await context.close();
-    fs.rmSync(profileDir, { recursive: true, force: true, maxRetries: 5, retryDelay: 200 });
+    require('../tools/tmp-root.js').rmTmp(profileDir);
   }
   process.exit(exitCode);
 })();

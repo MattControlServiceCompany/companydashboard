@@ -16,7 +16,7 @@
  * Usage: node tools/test-cost-lines.js
  */
 const fs = require('fs');
-const os = require('os');
+const TMP = require('./tmp-root.js');
 const path = require('path');
 const vm = require('vm');
 
@@ -95,7 +95,7 @@ const CL = require(path.join(REPO, 'computations', 'cost-lines.js'));
     'gate-single-payback passes on the tree' + (real.length ? ': ' + real.slice(0, 3).join(' | ') : ''),
   );
 
-  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'cl-gate-'));
+  const tmp = TMP.mkTmpDir('cl-gate-');
   try {
     const mk = (extra) => {
       fs.rmSync(path.join(tmp, 'app'), { recursive: true, force: true });
@@ -124,7 +124,7 @@ const CL = require(path.join(REPO, 'computations', 'cost-lines.js'));
     );
     ok(mk({ 'x.js': '// payback = a / b\n/* payback */\n' }).length === 0, 'gate allows the word in a comment');
   } finally {
-    fs.rmSync(tmp, { recursive: true, force: true });
+    TMP.rmTmp(tmp);
   }
 }
 

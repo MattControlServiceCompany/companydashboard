@@ -11,7 +11,8 @@ const CTX_DIR = process.env.CH_CONTEXT_DIR || require('path').join(require('os')
 const { chromium } = require(require('path').join(process.env.CH_PLAYWRIGHT_NODE_MODULES || require('path').join(CTX_DIR, 'tools', 'playwright-runtime', 'node_modules'), 'playwright'));
 const fs = require('fs');
 
-const PROFILE = 'C:/Temp/verify-pricing-phases-profile-' + Date.now();
+const TMP = require('../tools/tmp-root.js');
+const PROFILE = TMP.tmpPath('verify-pricing-phases-profile-' + Date.now());
 // The tree this script runs FROM (primary checkout or worktree): scripts/ -> repo root.
 const REPO_ROOT = require('path').resolve(__dirname, '..');
 const PAGE_URL = 'file:///' + REPO_ROOT.replace(/\\/g, '/') + '/energy-department.html';
@@ -244,6 +245,7 @@ const SHOT_DATE = new Date().toISOString().slice(0, 10);
   console.log('Screenshot saved:', ceShotPath);
 
   await context.close();
+  TMP.rmTmp(PROFILE);
   console.log('DONE');
 })().catch((e) => {
   console.error('SCRIPT ERROR:', e.stack || e.message);
