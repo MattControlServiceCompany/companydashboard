@@ -13,7 +13,7 @@
  * Checks:
  *   1. CH_VERSION literal in site-ui.js (repo root) is well-formed.
  *   2. Every ?v= tag in energy-department.html, index.html, ems-leads.html
- *      carries the same integer patch as CH_VERSION.
+ *      is the content hash of the file it names (asks stamp-version.py).
  *   3. RELEASE_NOTES[0].v in app/site-functions.js equals CH_VERSION exactly.
  *
  * Exit 0 + "version OK vNNN" when all agree.
@@ -29,15 +29,6 @@ const REPO_ROOT = path.resolve(__dirname, '..');
 
 const SITE_UI_JS = path.join(REPO_ROOT, 'site-ui.js');
 const SITE_FUNCTIONS_JS = path.join(REPO_ROOT, 'app', 'site-functions.js');
-const HTML_FILES = [
-  path.join(REPO_ROOT, 'energy-department.html'),
-  path.join(REPO_ROOT, 'index.html'),
-  path.join(REPO_ROOT, 'ems-leads.html'),
-];
-
-// Matches both ?v=NNN and ?v=YYYY.MM.DD.NNN (the core.js anomaly) — same
-// pattern as stamp-version.py's VQ_PATTERN.
-const VQ_PATTERN = /(\?v=)(?:\d{4}\.\d{2}\.\d{2}\.)?(\d+)/g;
 
 const errors = [];
 
@@ -70,27 +61,21 @@ if (siteUiText !== null) {
   }
 }
 
-// --- Step 2: ?v= tags across the tracked HTML files ------------------------
+// --- Step 2: every ?v= is the content hash of its file ---------------------
+// The rule lives in scripts/stamp-version.py (ref_hash). This asks it; there is
+// no second copy of the rule here.
 
-if (chPatch !== null) {
-  for (const htmlFile of HTML_FILES) {
-    const text = readFile(htmlFile);
-    if (text === null) continue;
-    const lines = text.split('\n');
-    lines.forEach((line, idx) => {
-      let match;
-      VQ_PATTERN.lastIndex = 0;
-      while ((match = VQ_PATTERN.exec(line)) !== null) {
-        const foundPatch = parseInt(match[2], 10);
-        if (foundPatch !== chPatch) {
-          errors.push(
-            `${path.basename(htmlFile)}:${idx + 1}: stale ?v= tag ` +
-              `(found ${foundPatch}, expected ${chPatch}): ${line.trim()}`,
-          );
-        }
-      }
-    });
+{
+  let ran = false;
+  for (const py of ['python', 'python3', 'py']) {
+    const r = require('child_process').spawnSync(
+      py, [path.join(REPO_ROOT, 'scripts', 'stamp-version.py'), '--check-refs'], { encoding: 'utf8' });
+    if (r.error) continue;
+    ran = true;
+    if (r.status !== 0) errors.push('wrong ?v= hash(es): ' + (r.stderr || r.stdout));
+    break;
   }
+  if (!ran) errors.push('python not found: cannot check the ?v= hashes');
 }
 
 // --- Step 3: RELEASE_NOTES[0].v in app/site-functions.js -------------------

@@ -16,6 +16,15 @@ No secrets are in this file. Only env var NAMES are listed.
   (Source: Netlify account rules told by Matt. Not in the code.)
 - Netlify does not build on pushes to `main`. (scripts/stamp-version.py:46-52)
 - Build config: no build command, publish root `.`. (netlify.toml:4-6)
+- Release bump and the ?v= refs (2026-11-03, branch feat/2026-11-03-per-file-version): `python scripts/stamp-version.py` sets
+  the site version (CH_VERSION in site-ui.js and index.html) and rewrites EVERY `?v=` on the script and CSS refs in
+  energy-department.html, index.html and ems-leads.html. Each `?v=` is now the first 8 hex chars of the sha256 of THAT file
+  (`ref_hash`, scripts/stamp-version.py; line endings read as LF). An unchanged file keeps its URL, so the browser downloads again
+  only the files that changed. The old all-files number (`?v=217`) is gone. Runs by hand at release time, no schedule, no env var.
+  The hash step runs after the CH_VERSION rewrite, so site-ui.js and index.html refs change on every release by design.
+  How to check: `python scripts/stamp-version.py --check-refs` (exit 1 on any wrong hash; also run by `node scripts/ci-version-check.js`
+  in the Release Checks workflow) and `node test-per-file-version-refs.js` (twice with no change = zero ref changes; one changed file
+  = only the refs of that file change, one per page that loads it). `--refs-only` rewrites the hashes without a version change.
 
 ## 2. Netlify functions (netlify/functions)
 

@@ -2507,6 +2507,11 @@ async function siteResetAllMeterTableSettings() {
    site-ui.js delegates to this array and should NOT maintain its own copy.
 */
 var RELEASE_NOTES = [
+  { v: 'v2026.11.03.219', date: '2026-11-03', title: 'Faster updates',
+    items: [
+      { type: 'change', text: 'After an update, the site downloads only the files that changed.' }
+    ]
+  },
   { v: 'v2026.11.03.218', date: '2026-11-03', title: 'Internal test change, no change to the site',
     items: [
       { type: 'change', text: 'Internal test change only: automated tests now use the project temp folder. Nothing on the site looks or works differently.' }

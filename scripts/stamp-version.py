@@ -4,8 +4,9 @@ stamp-version.py — Deploy-time version stamper for CompanyHub.
 
 Fetches the live CH_VERSION from every deployed host, computes the next
 integer patch number from the PRODUCTION host's patch, rewrites site-ui.js
-CH_VERSION, and rewrites ALL ?v= tags in all four HTML files to the new
-integer.
+CH_VERSION, and rewrites ALL ?v= tags in the HTML files. Each ?v= is a short
+content hash of THAT file (see ref_hash), not the site version, so a release
+changes only the refs of the files that changed.
 
 By default this checks BOTH GitHub Pages and Netlify, since both currently
 deploy from origin/main and their CH_VERSION values should always match —
@@ -18,11 +19,15 @@ Usage:
     python scripts/stamp-version.py
     python scripts/stamp-version.py --force-version 524   # offline fallback
     python scripts/stamp-version.py --live-url <url>      # single-host override
+    python scripts/stamp-version.py --refs-only           # rewrite ?v= hashes only
+    python scripts/stamp-version.py --check-refs          # exit 1 if any ?v= is wrong
+    (add --root <dir> to work on a copy of the repo; used by the tests)
 
 Exit 0 on success. Exit 1 with details on any failure.
 """
 
 import argparse
+import hashlib
 import os
 import re
 import sys
@@ -35,6 +40,16 @@ from pathlib import Path
 # ---------------------------------------------------------------------------
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
+
+
+def set_root(root: Path) -> None:
+    """Point every path constant at another repo root (tests use a temp copy)."""
+    global REPO_ROOT, SITE_UI_JS, SITE_FUNCTIONS_JS, HTML_FILES, CH_VERSION_LITERAL_HTML_FILES
+    REPO_ROOT = root
+    SITE_UI_JS = root / "site-ui.js"
+    SITE_FUNCTIONS_JS = root / "app" / "site-functions.js"
+    HTML_FILES = [root / "energy-department.html", root / "index.html", root / "ems-leads.html"]
+    CH_VERSION_LITERAL_HTML_FILES = [root / "index.html"]
 
 # All hosts this script checks by default. Both deploy from origin/main today,
 # so their CH_VERSION should always agree; a mismatch is worth surfacing.
@@ -73,10 +88,10 @@ CH_VERSION_LITERAL_HTML_FILES = [
     REPO_ROOT / "index.html",
 ]
 
-# Matches both ?v=NNN and ?v=YYYY.MM.DD.NNN (the core.js anomaly)
-VQ_PATTERN = re.compile(
-    r"(\?v=)(?:\d{4}\.\d{2}\.\d{2}\.)?(\d+)"
-)
+# Matches `path/to/file.ext?v=VALUE`. VALUE is an 8-hex content hash; the old
+# forms (?v=NNN and ?v=YYYY.MM.DD.NNN) match too so they get rewritten.
+REF_PATTERN = re.compile(r"(?P<path>[A-Za-z0-9_./-]+)\?v=(?P<ver>[0-9A-Za-z.]+)")
+HASH_LEN = 8
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -180,30 +195,55 @@ def rewrite_ch_version_literal(path: Path, new_version: str) -> None:
     path.write_text(new_text, encoding="utf-8")
 
 
-def rewrite_html_tags(new_patch: int) -> dict:
-    """Rewrite all ?v= tags in all HTML files to new_patch integer.
+def ref_hash(path: Path) -> str:
+    """The ?v= value for a file: first 8 hex chars of sha256 of its content.
 
-    Returns a dict of {filename: count_replaced}.
+    Line endings are normalized to LF so a CRLF checkout gives the same hash.
+    This is the ONLY place that decides a ?v= value.
     """
-    replacement = rf"\g<1>{new_patch}"
+    data = path.read_bytes().replace(b"\r\n", b"\n")
+    return hashlib.sha256(data).hexdigest()[:HASH_LEN]
+
+
+def expected_ref(html_file: Path, ref_path: str) -> str:
+    target = html_file.parent / ref_path
+    if not target.is_file():
+        raise FileNotFoundError(f"{html_file.name}: ref {ref_path} has no file")
+    return ref_hash(target)
+
+
+def rewrite_html_tags() -> dict:
+    """Rewrite every ?v= in the HTML files to the hash of the file it names.
+
+    Returns a dict of {filename: count_of_refs}. Exits 1 if a ref names a
+    missing file.
+    """
     totals = {}
     for html_file in HTML_FILES:
         if not html_file.exists():
             print(f"WARNING: {html_file} not found — skipping.", file=sys.stderr)
             continue
         text = html_file.read_text(encoding="utf-8")
-        new_text, count = VQ_PATTERN.subn(replacement, text)
-        html_file.write_text(new_text, encoding="utf-8")
+        count = 0
+
+        def repl(m):
+            nonlocal count
+            count += 1
+            return f"{m.group('path')}?v={expected_ref(html_file, m.group('path'))}"
+
+        try:
+            new_text = REF_PATTERN.sub(repl, text)
+        except FileNotFoundError as exc:
+            print(f"ERROR: {exc}", file=sys.stderr)
+            sys.exit(1)
+        if new_text != text:
+            html_file.write_text(new_text, encoding="utf-8")
         totals[html_file.name] = count
     return totals
 
 
-def verify_tags(new_patch: int) -> list:
-    """Grep all HTML files for any ?v= tag NOT equal to new_patch.
-
-    Returns a list of (file, line_num, line_content) tuples for failures.
-    Raises SystemExit(1) if any mismatches remain.
-    """
+def verify_tags() -> list:
+    """Return (file, line_num, line) for every ?v= that is not its file's hash."""
     failures = []
     for html_file in HTML_FILES:
         if not html_file.exists():
@@ -211,9 +251,12 @@ def verify_tags(new_patch: int) -> list:
         for line_num, line in enumerate(
             html_file.read_text(encoding="utf-8").splitlines(), start=1
         ):
-            for m in VQ_PATTERN.finditer(line):
-                found_patch = int(m.group(2))
-                if found_patch != new_patch:
+            for m in REF_PATTERN.finditer(line):
+                try:
+                    want = expected_ref(html_file, m.group("path"))
+                except FileNotFoundError:
+                    want = None
+                if m.group("ver") != want:
                     failures.append((html_file.name, line_num, line.strip()))
     return failures
 
@@ -245,7 +288,30 @@ def main() -> None:
             f"HOSTS with {PRODUCTION_HOST!r} as production."
         ),
     )
+    parser.add_argument("--root", type=Path, help="Use this folder as the repo root.")
+    parser.add_argument("--refs-only", action="store_true",
+                        help="Only rewrite the ?v= hashes. No version change, no network.")
+    parser.add_argument("--check-refs", action="store_true",
+                        help="Only check the ?v= hashes. Exit 1 if any is wrong.")
     args = parser.parse_args()
+    if args.root:
+        set_root(args.root.resolve())
+
+    if args.check_refs:
+        failures = verify_tags()
+        for fname, line_num, line in failures:
+            print(f"  {fname}:{line_num}: wrong ?v=: {line}", file=sys.stderr)
+        if failures:
+            sys.exit(1)
+        print("[stamp-version] all ?v= hashes match their files")
+        return
+    if args.refs_only:
+        totals = rewrite_html_tags()
+        failures = verify_tags()
+        if failures:
+            sys.exit(1)
+        print(f"[stamp-version] refs rewritten: {totals}")
+        return
 
     # Step 1: Determine new patch number
     if args.force_version is not None:
@@ -373,19 +439,20 @@ def main() -> None:
         print(f"[stamp-version] Rewriting {html_file.name} CH_VERSION literal...")
         rewrite_ch_version_literal(html_file, new_version)
 
-    # Step 3: Rewrite all ?v= tags in HTML files
-    print(f"[stamp-version] Rewriting ?v= tags in HTML files...")
-    totals = rewrite_html_tags(new_patch)
+    # Step 3: Rewrite all ?v= tags in HTML files. This runs AFTER Step 2 so the
+    # hash of site-ui.js / index.html's inputs includes the new CH_VERSION.
+    print(f"[stamp-version] Rewriting ?v= tags in HTML files (per-file hash)...")
+    totals = rewrite_html_tags()
     total_tags = sum(totals.values())
     for fname, count in totals.items():
         print(f"  {fname}: {count} tags updated")
 
     # Step 4: Verify — grep for any non-matching tag
-    print(f"[stamp-version] Verifying zero stale ?v= tags...")
-    failures = verify_tags(new_patch)
+    print(f"[stamp-version] Verifying every ?v= tag...")
+    failures = verify_tags()
     if failures:
         print(
-            f"\nERROR: {len(failures)} stale ?v= tag(s) remain after rewrite:",
+            f"\nERROR: {len(failures)} wrong ?v= tag(s) remain after rewrite:",
             file=sys.stderr,
         )
         for fname, line_num, line in failures:
