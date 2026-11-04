@@ -2190,8 +2190,8 @@ function hvacLoadCalc(projId) {
             <div class="card-hdr"><span class="card-title">📊 Load Breakdown Results</span>
               <div style="margin-left:auto;display:flex;gap:6px">
                 <button class="btn btn-ghost btn-sm" onclick="hvacLoadExportXlsx(${projId})">⬇️ Excel</button>
-                <button class="btn btn-ghost btn-sm" onclick="hvacLoadExportWord(${projId})">⬇️ Word</button>
-                <button class="btn btn-ghost btn-sm" onclick="hvacLoadExportPdf(${projId})">⬇️ PDF</button>
+                <button class="btn btn-ghost btn-sm" onclick="hvacLoadExportWord(${projId})">Download Word</button>
+                <button class="btn btn-ghost btn-sm" onclick="hvacLoadExportPdf(${projId})">Download PDF</button>
               </div>
             </div>
             <div style="padding:16px">
@@ -2838,38 +2838,33 @@ const _HVL_EXPORT_CSS = `
   table.hvl-x-monthly th, table.hvl-x-monthly td{font-size:9px;padding:3px 4px;}
 `;
 
-/* ── Word export (.doc, mso-HTML wrapper — the site's existing Word export technique) ── */
-function hvacLoadExportWord(projId) {
+/* ── Word export (.docx, the shared docx path: _docxTranslatePages + _docxAssemble in app/docx-writer.js) ── */
+async function hvacLoadExportWord(projId) {
   const data = _hvlExportGuard(projId);
   if (!data) return;
-  const bodyHtml = _hvlExportBodyHtml(data);
-  const wordDocHtml =
-    '<html xmlns:o="urn:schemas-microsoft-com:office:office" ' +
-    'xmlns:w="urn:schemas-microsoft-com:office:word" ' +
-    'xmlns="http://www.w3.org/TR/REC-html40">' +
-    '<head><meta charset="utf-8">' +
-    '<!--[if gte mso 9]><xml><w:WordDocument><w:View>Print</w:View>' +
-    '<w:Zoom>100</w:Zoom><w:DoNotOptimizeForBrowser/></w:WordDocument></xml><![endif]-->' +
-    '<style>' +
-    _HVL_EXPORT_CSS +
-    ' @page Section1 {size:8.5in 11in; margin:0.75in;} div.Section1 {page:Section1;}' +
-    '</style>' +
-    '<title>HVAC Load Estimation — ' +
-    _escHtml(data.buildingName) +
-    '</title></head>' +
-    '<body><div class="Section1">' +
-    bodyHtml +
-    '</div></body></html>';
-  const blob = new Blob(['﻿', wordDocHtml], { type: 'application/msword' });
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement('a');
-  a.href = url;
-  a.download = 'HVAC Load Estimation - ' + data.buildingName.replace(/[\\/:*?"<>|]/g, '') + '.doc';
-  document.body.appendChild(a);
-  a.click();
-  document.body.removeChild(a);
-  setTimeout(() => URL.revokeObjectURL(url), 1000);
-  showToast('Exported to Word ✓');
+  if (typeof _docxTranslatePages !== 'function' || typeof _docxAssemble !== 'function') {
+    showToast('Word export is unavailable: docx-writer.js did not load', 'error');
+    return;
+  }
+  const holder = document.createElement('div');
+  holder.style.cssText = 'position:fixed;left:-10000px;top:0;width:816px;background:#fff;';
+  holder.innerHTML = `<div class="rpt-page">${_hvlExportBodyHtml(data)}</div>`;
+  document.body.appendChild(holder);
+  try {
+    showToast('Generating Word document...');
+    const translated = _docxTranslatePages([holder.firstChild]);
+    await _docxAssemble(translated.xml, {
+      filename: hvacFileName(data.buildingName, '.docx'),
+      images: translated.images,
+      numIds: translated.numIds,
+    });
+    showToast('Exported to Word ✓');
+  } catch (err) {
+    console.error('HVAC Load Est Word export failed:', err);
+    showToast('Word export failed: ' + (err && err.message ? err.message : err), 'error');
+  } finally {
+    document.body.removeChild(holder);
+  }
 }
 
 /* ── PDF export (print-to-PDF, 8.5x11 — html2canvas + jsPDF, already loaded site-wide) ── */
@@ -2905,7 +2900,7 @@ function hvacLoadExportPdf(projId) {
         doc.addImage(imgData, 'PNG', 0, position, imgW, imgH);
         heightLeft -= pageH;
       }
-      doc.save('HVAC Load Estimation - ' + data.buildingName.replace(/[\\/:*?"<>|]/g, '') + '.pdf');
+      doc.save(hvacFileName(data.buildingName, '.pdf'));
       showToast('Exported to PDF ✓');
     })
     .catch((err) => {

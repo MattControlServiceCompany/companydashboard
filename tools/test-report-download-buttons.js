@@ -1,7 +1,7 @@
 /**
  * test-report-download-buttons.js
  *
- * Every report has two one-click buttons, Download Word (.docx) and Download PDF, and never a print dialog.
+ * Every report and document export has two one-click buttons, Download Word (.docx) and Download PDF, and never a print dialog.
  * Opens a SYNTHETIC quarterly report in the preview (toolbar #rptPreviewToolbar) and in the overlay
  * (#reportOverlay toolbar), clicks both buttons in each, and asserts: a .docx download (zip) and a .pdf
  * download (%PDF), the toolbars have no Print button, window.print is never called, no dialog opens.
@@ -104,6 +104,115 @@ const ok = (c, m) => {
     ok((await page.locator(ob, { hasText: /Print/ }).count()) === 0, 'overlay: no Print button');
     await clickAndCheck('overlay', ob, 'Download Word', '.docx', 'PK');
     await clickAndCheck('overlay', ob, 'Download PDF', '.pdf', '%PDF');
+
+    // 3. Documents that are not reports: meeting agenda/minutes, scorecard, HVAC load. SYNTHETIC data.
+    async function download(clickFn, scope) {
+      const [dl] = await Promise.all([page.waitForEvent('download', { timeout: 90000 }), clickFn()]);
+      const f = path.join(tmp, scope + '-' + dl.suggestedFilename());
+      await dl.saveAs(f);
+      await page.waitForFunction(() => !window._scorecardBusy && !window._rptPdfBusy); // the next click is ignored while an export runs
+      return { name: dl.suggestedFilename(), file: f, head: fs.readFileSync(f).subarray(0, 4).toString('latin1') };
+    }
+    // Text inside the .docx (word/document.xml), read with the page's own JSZip.
+    async function docxInfo(f) {
+      const b64 = fs.readFileSync(f).toString('base64');
+      return page.evaluate(async (data) => {
+        const z = await JSZip.loadAsync(data, { base64: true });
+        const xml = await z.file('word/document.xml').async('string');
+        const names = Object.keys(z.files);
+        return {
+          text: xml.replace(/<\/w:p>/g, '\n').replace(/<[^>]+>/g, ''),
+          hasLetterhead: names.some((n) => /^word\/header\d*\.xml$/.test(n)) && names.some((n) => /^word\/media\//.test(n)),
+          gaugePictures: names.filter((n) => /^word\/media\/image1\d\d\.png$/.test(n)).length,
+        };
+      }, b64);
+    }
+    await page.evaluate(() => {
+      document.getElementById('reportOverlay').style.display = 'none';
+      const qs = document.getElementById('qsOverlay');
+      if (qs) qs.remove();
+      document.getElementById('app').classList.add('visible');
+      projects.push({
+        id: 9001,
+        client: 'Test District',
+        name: 'Test District',
+        contacts: [],
+        meetings: [
+          {
+            id: 77,
+            type: 'agenda',
+            date: '2026-03-03T10:00',
+            projectNickname: 'Test District',
+            sectionHeading: 'Energy Management Services Program',
+            contactTables: [{ label: 'Test Key Contacts', contacts: [{ name: 'Pat Example', phone: '555-0101', email: 'pat@example.test' }] }],
+            topics: [{ text: 'Review test bills', subItems: ['First sub item', 'Second sub item'] }, { text: 'Closing question', subItems: [] }],
+            history: [],
+          },
+        ],
+        recurringMeetings: [],
+      });
+      openMeetingEditor(9001, 77);
+    });
+    await page.waitForTimeout(500);
+    const mb = '#meetingModal button';
+    ok((await page.locator(mb, { hasText: /^\s*(📄 )?PDF\s*$/ }).count()) === 0, 'meeting modal: the old "PDF" button is gone');
+    const mw = await download(() => page.locator(mb, { hasText: 'Download Word' }).click(), 'meeting');
+    const mp = await download(() => page.locator(mb, { hasText: 'Download PDF' }).click(), 'meeting');
+    const mname = await page.evaluate(() => [meetingFileName(_editingMeeting, '.docx'), meetingFileName(_editingMeeting, '.pdf')]);
+    ok(mw.head.startsWith('PK') && mw.name === mname[0], 'meeting: Download Word saves ' + mw.name);
+    ok(mp.head.startsWith('%PDF') && mp.name === mname[1], 'meeting: Download PDF saves ' + mp.name + ' (same name, one helper)');
+    const mt = await docxInfo(mw.file);
+    ['Test District', 'Meeting Agenda', 'Meeting Date', 'Test Key Contacts', 'Pat Example', '555-0101', 'pat@example.test', 'Review test bills', 'First sub item', 'Second sub item', 'Closing question'].forEach((t) => {
+      ok(mt.text.includes(t), 'meeting .docx contains "' + t + '"');
+    });
+    ok(mt.hasLetterhead, 'meeting .docx has the CSC letterhead (header part + picture)');
+    await page.evaluate(() => closeMeetingModal());
+    // list-row icons: Word + PDF for meetings and for saved reports
+    const rows = await page.evaluate(() => {
+      DB.set('en_report_history', [{ id: 'r1', projectId: 9001, projectName: 'Test District', type: 'quarterly', period: 'Q1 2026', savedAt: '2026-01-02T10:00:00Z', html: '<div class="rpt-page">x</div>' }]);
+      const host = document.createElement('div');
+      document.body.appendChild(host);
+      _renderDocsMeetings(host, 9001);
+      renderMeetingsList(9001);
+      return [...host.querySelectorAll('.mtg-actions')].map((a) => [...a.querySelectorAll('button')].map((b) => b.title));
+    });
+    ok(rows.some((r) => r.includes('Download Word') && r.includes('Download PDF') && r.includes('Convert to Minutes')), 'meeting row: Word and PDF icons');
+    ok(rows.some((r) => r.includes('Open') && r.includes('Download Word') && r.includes('Download PDF')), 'saved-report row: Word and PDF icons');
+
+    // Scorecard
+    await page.evaluate(() => {
+      const host = document.createElement('div');
+      host.id = 'testScHost';
+      document.body.appendChild(host);
+      renderBuildingScorecardPane(host, { id: 'bx', name: 'Test Building', sqft: 50000, meters: [] }, 9001);
+    });
+    const sb = '#testScHost button';
+    ok((await page.locator(sb, { hasText: /Print/ }).count()) === 0, 'scorecard: no Print button');
+    const sw = await download(() => page.locator(sb, { hasText: 'Download Word' }).click(), 'scorecard');
+    const sp = await download(() => page.locator(sb, { hasText: 'Download PDF' }).click(), 'scorecard');
+    ok(sw.head.startsWith('PK') && /^Test Building - Building Scorecard .*\.docx$/.test(sw.name), 'scorecard: Download Word saves ' + sw.name);
+    ok(sp.head.startsWith('%PDF') && /^Test Building - Building Scorecard .*\.pdf$/.test(sp.name), 'scorecard: Download PDF saves ' + sp.name);
+    const st = await docxInfo(sw.file);
+    ok(st.text.includes('Test Building') && !st.text.includes('Download Word'), 'scorecard .docx has the building name and not the buttons');
+    ok(st.gaugePictures >= 4, 'scorecard .docx carries the gauges as pictures (' + st.gaugePictures + ')');
+    ok(await page.evaluate(() => !document.querySelector('#testScHost .sc-root').classList.contains('sc-export')), 'scorecard: export look removed after the download');
+
+    // HVAC load: Word is .docx now (data stubbed; the file goes through the shared docx path)
+    await page.evaluate(() => {
+      window._hvlExportGuard = () => ({ buildingName: 'Test Building' });
+      window._hvlExportBodyHtml = () =>
+        '<h1>HVAC Load Estimation</h1><table class="hvl-x-meta"><tr><td>Building</td><td>Test Building</td></tr></table><h2>Summary</h2><table class="hvl-x-tbl"><tr><th>Annual Total</th><th>Total</th></tr><tr><td>Electricity (kWh)</td><td>1,111</td></tr></table>';
+    });
+    const hw = await download(() => page.evaluate(() => hvacLoadExportWord(1)), 'hvac');
+    ok(hw.head.startsWith('PK') && hw.name === 'HVAC Load Estimation - Test Building.docx', 'hvac: Word saves ' + hw.name + ' (.docx, not .doc)');
+    const ht = await docxInfo(hw.file);
+    ['HVAC Load Estimation', 'Summary', 'Annual Total', 'Electricity (kWh)', '1,111'].forEach((t) => ok(ht.text.includes(t), 'hvac .docx contains "' + t + '"'));
+    ok(ht.hasLetterhead, 'hvac .docx has the CSC letterhead');
+    const hp = await download(() => page.evaluate(() => hvacLoadExportPdf(1)), 'hvac');
+    ok(hp.head.startsWith('%PDF') && hp.name === 'HVAC Load Estimation - Test Building.pdf', 'hvac: PDF saves ' + hp.name);
+
+    // The old .doc (mso HTML) report exporter is gone
+    ok(await page.evaluate(() => typeof exportReportToWord === 'undefined'), 'exportReportToWord (.doc) is deleted');
 
     ok(dialogs === 0, 'no dialog opened (' + dialogs + ')');
     const prints = await page.evaluate(() => window.__printCalls);

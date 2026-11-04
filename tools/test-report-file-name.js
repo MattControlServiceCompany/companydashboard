@@ -50,5 +50,21 @@ eq(
   'characters Windows rejects become a dash',
 );
 eq(rptReportFileName({ project: proj, _utilityAudit: true }, '.docx', NOW), 'Test District - Utility Audit 2026.11.03.docx', 'utility audit');
+eq(rptReportFileName({ project: proj, _scorecard: true }, '.pdf', NOW), 'Test District - Building Scorecard 2026.11.03.pdf', 'scorecard');
+const fnm = require('../lib/report-file-name.js');
+eq(
+  fnm.meetingFileName({ projectNickname: 'Test Site', sectionHeading: 'Energy Program', type: 'agenda', date: '2026-11-03T10:00' }, '.docx'),
+  'Test Site - Energy Meeting Agenda 2026.11.03.docx',
+  'meeting agenda',
+);
+eq(
+  fnm.meetingFileName({ projectNickname: '', sectionHeading: '', type: 'minutes', date: '2026-01-05' }, '.pdf'),
+  'Meeting - Meeting Minutes 2026.01.05.pdf',
+  'meeting minutes, empty fields',
+);
+eq(fnm.hvacFileName('Hall/A', '.docx'), 'HVAC Load Estimation - HallA.docx', 'hvac');
+eq(fnm.hvacFileName('Hall\\A:B*C?D"E<F>G|H', '.pdf'), 'HVAC Load Estimation - HallABCDEFGH.pdf', 'hvac strips backslash and all unsafe characters');
+eq(fnm.meetingFileName({ projectNickname: 'A\\B/C', sectionHeading: 'X:Y', type: 'agenda', date: '2026-11-03' }, '.docx'), 'A-B-C - X-Y Meeting Agenda 2026.11.03.docx', 'meeting strips backslash');
+eq(fnm.rptReportFileName({ project: { client: 'A\\B' }, _scorecard: {} }, '.pdf', new Date(2026, 10, 3)), 'A-B - Building Scorecard 2026.11.03.pdf', 'report strips backslash');
 console.log('=== report file name: ' + passed + ' passed, ' + failed + ' failed ===');
 process.exit(failed ? 1 : 0);

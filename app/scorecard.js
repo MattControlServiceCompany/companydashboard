@@ -520,10 +520,11 @@ function renderBuildingScorecardPane(pane, b, projId) {
     '<div class="sc-root" id="sc-root-' +
     b.id +
     '">' +
-    // Print button (not printed itself)
-    '<div class="sc-print-bar no-print">' +
-    '<span style="font-size:12px;color:var(--text3)">Building Scorecard &mdash; share or print</span>' +
-    '<button class="btn btn-ghost btn-sm" onclick="window.print()" style="margin-left:8px">🖨 Print</button>' +
+    // Download buttons (left out of the exported file: .sc-export-bar is hidden while exporting)
+    '<div class="sc-export-bar">' +
+    '<span style="font-size:12px;color:var(--text3)">Building Scorecard</span>' +
+    '<button class="btn btn-ghost btn-sm" onclick="scorecardDownload(this, &quot;word&quot;)" style="margin-left:8px">Download Word</button>' +
+    '<button class="btn btn-ghost btn-sm" onclick="scorecardDownload(this, &quot;pdf&quot;)">Download PDF</button>' +
     '</div>' +
     // ── Header row ──
     '<div class="sc-header">' +
@@ -615,10 +616,7 @@ function renderBuildingScorecardPane(pane, b, projId) {
     '</div>' +
     '</div>' + // sc-bottom-row
     // Footer
-    '<div class="sc-footer no-print">Control Service Company &mdash; CompanyHub Energy Report &mdash; ' +
-    dateStr +
-    '</div>' +
-    '<div class="sc-footer print-only">Control Service Company &mdash; CompanyHub Energy Report &mdash; ' +
+    '<div class="sc-footer">Control Service Company &mdash; CompanyHub Energy Report &mdash; ' +
     dateStr +
     '</div>' +
     '</div>'; // sc-root
@@ -628,3 +626,49 @@ function renderBuildingScorecardPane(pane, b, projId) {
     _scSparkline(sparkVals, sparkId);
   }
 }
+
+/**
+ * scorecardDownload - Download Word / Download PDF for the open scorecard, through the shared
+ * report path (exportReportToDocx / downloadReportPdf). _rptReportExportPages() returns the
+ * .sc-root element when the report data has _scorecard. The .sc-export class gives the
+ * white-page look and hides the button bar while the file is built.
+ * @param {Element} btn - the button that was clicked (inside .sc-root)
+ * @param {'word'|'pdf'} kind
+ */
+async function scorecardDownload(btn, kind) {
+  var root = btn && btn.closest('.sc-root');
+  if (!root) return;
+  if (window._scorecardBusy) return;
+  window._scorecardBusy = true;
+  var prevReportData = window._currentReportData;
+  var nameEl = root.querySelector('.sc-building-name');
+  window._currentReportData = {
+    project: { client: nameEl ? nameEl.textContent : 'Building' },
+    _scorecard: { rootId: root.id },
+  };
+  root.classList.add('sc-export');
+  // The screen theme is dark, so some text carries a light colour inline (var(--text*) or white).
+  // The Word path and the gauge pictures are built from a copy of the markup that does not see the
+  // .sc-export rules, so set those colours to black on the live elements while the file is built.
+  var lightInk = /^(var\(--text|rgb\(255, 255, 255\))/;
+  var fixes = [];
+  Array.prototype.forEach.call(root.querySelectorAll('[style]'), function (el) {
+    if (lightInk.test(el.style.color)) fixes.push([el, 'color', el.style.color]);
+    if (el.tagName.toLowerCase() === 'text' && lightInk.test(el.style.fill)) fixes.push([el, 'fill', el.style.fill]);
+  });
+  fixes.forEach(function (f) {
+    f[0].style[f[1]] = 'black';
+  });
+  try {
+    if (kind === 'word') await exportReportToDocx();
+    else await downloadReportPdf();
+  } finally {
+    window._currentReportData = prevReportData;
+    window._scorecardBusy = false;
+    fixes.forEach(function (f) {
+      f[0].style[f[1]] = f[2];
+    });
+    root.classList.remove('sc-export');
+  }
+}
+window.scorecardDownload = scorecardDownload;

@@ -105,6 +105,7 @@ function _docxRun(opts) {
   if (opts.underline) rPr += '<w:u w:val="single"/>';
   if (opts.color) rPr += '<w:color w:val="' + _docxEscapeXml(opts.color) + '"/>';
   rPr += '<w:sz w:val="' + sizeHalfPt + '"/><w:szCs w:val="' + sizeHalfPt + '"/>';
+  if (opts.superscript) rPr += '<w:vertAlign w:val="superscript"/>';
   rPr += '</w:rPr>';
 
   var text = opts.text != null ? String(opts.text) : '';
@@ -1233,7 +1234,7 @@ var _DOCX_GAUGE_PCT_SIZE = 28; // 14pt
 
 var _DOCX_HEADING_TAGS = { H1: 1, H2: 1, H3: 1, H4: 1, H5: 1, H6: 1 };
 var _DOCX_BLOCK_TAGS = Object.assign({ DIV: 1, P: 1, TABLE: 1, UL: 1, OL: 1 }, _DOCX_HEADING_TAGS);
-var _DOCX_INLINE_TAGS = { SPAN: 1, STRONG: 1, B: 1, EM: 1, I: 1, U: 1, BR: 1 };
+var _DOCX_INLINE_TAGS = { SPAN: 1, STRONG: 1, B: 1, EM: 1, I: 1, U: 1, SUP: 1, BR: 1 };
 
 /** px -> half-points: px * 0.75 = pt, pt * 2 = half-points, so px * 1.5. */
 function _docxPxToHalfPt(pxValue) {
@@ -1278,9 +1279,8 @@ function _docxPxToTwips(pxValue) {
  * existing, already-proven pattern elsewhere in this codebase for the identical class of problem
  * (app/report-engine.js `_rptGeometry()` reads page-geometry custom properties the same way;
  * app/bas-alarms.js and app/site-functions.js do the same for their own CSS tokens) rather than
- * inventing a new technique -- deliberately NOT the old exportReportToWord() approach
- * (`_buildReportCssVarResolver`, a regex-based resolver over the raw stylesheet TEXT), which
- * would require this file to know the `#report-styles` selector/element id -- something this file
+ * inventing a new technique -- deliberately NOT a regex-based resolver over the raw
+ * stylesheet TEXT, which would require this file to know the `#report-styles` selector/element id -- something this file
  * is explicitly documented (top-of-file comment) never to know about report content.
  *
  * Deliberately does NOT hardcode any resolved hex value -- a future edit to a --rpt-* token in
@@ -1511,6 +1511,7 @@ function _docxWalkInline(node, fmt, entries, ctx) {
   if (tag === 'STRONG' || tag === 'B') childFmt.bold = true;
   if (tag === 'EM' || tag === 'I') childFmt.italic = true;
   if (tag === 'U') childFmt.underline = true;
+  if (tag === 'SUP') childFmt.superscript = true;
   childFmt = _docxStyleFmtFromEl(node, childFmt, ctx);
   for (var i = 0; i < node.childNodes.length; i++) _docxWalkInline(node.childNodes[i], childFmt, entries, ctx);
 }

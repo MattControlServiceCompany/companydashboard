@@ -3767,7 +3767,8 @@ function renderMeetingsList(projId) {
             <span class="mtg-title">${reportHistoryLabel({ type: r.type, period: r.period || '' })} · ${ts}</span>
             <div class="mtg-actions" onclick="event.stopPropagation()">
               <button class="btn btn-ghost btn-sm" onclick="reopenReport('${r.id}')" title="Open">📊</button>
-              <button class="btn btn-ghost btn-sm" onclick="reexportReport('${r.id}')" title="Export PDF">📄</button>
+              <button class="btn btn-ghost btn-sm" onclick="reexportReport('${r.id}','word')" title="Download Word">W</button>
+              <button class="btn btn-ghost btn-sm" onclick="reexportReport('${r.id}','pdf')" title="Download PDF">📄</button>
               <button class="btn btn-ghost btn-sm" onclick="deleteReport('${r.id}');renderMeetingsList(${projId})" title="Delete" style="color:var(--warn)">🗑️</button>
             </div>
           </div>`;
@@ -3792,7 +3793,8 @@ function renderMeetingsList(projId) {
             <span class="mtg-badge ${badge}">${label}</span>
             <span class="mtg-title">${m.projectNickname || ''} — ${m.sectionHeading || ''}</span>
             <div class="mtg-actions" onclick="event.stopPropagation()">
-              <button class="btn btn-ghost btn-sm" onclick="generateMeetingPDFById(${projId},${m.id})" title="Download PDF">📄</button>
+              <button class="btn btn-ghost btn-sm" onclick="meetingFileById(${projId},${m.id},'word')" title="Download Word">W</button>
+              <button class="btn btn-ghost btn-sm" onclick="meetingFileById(${projId},${m.id},'pdf')" title="Download PDF">📄</button>
               ${m.type === 'agenda' ? `<button class="btn btn-ghost btn-sm" onclick="convertToMinutesById(${projId},${m.id})" title="Convert to Minutes">📝</button>` : ''}
               <button class="btn btn-ghost btn-sm" onclick="deleteMeeting(${projId},${m.id})" title="Delete" style="color:var(--warn)">🗑️</button>
             </div>
@@ -4523,26 +4525,6 @@ function saveMeetingTemplate() {
 }
 
 // ── PDF Generation Engine ──
-function generateMeetingPDFById(projId, meetingId) {
-  const p = projects.find((x) => x.id === projId);
-  if (!p) return;
-  const m = (p.meetings || []).find((mx) => mx.id === meetingId);
-  if (!m) return;
-  buildMeetingPDF(m);
-}
-
-function generateMeetingPDF() {
-  if (!_editingMeeting) return;
-  // Sync fields
-  const nick = document.getElementById('mtg-nickname');
-  if (nick) _editingMeeting.projectNickname = nick.value;
-  const dt = document.getElementById('mtg-date');
-  if (dt) _editingMeeting.date = dt.value;
-  const hd = document.getElementById('mtg-heading');
-  if (hd) _editingMeeting.sectionHeading = hd.value;
-  buildMeetingPDF(_editingMeeting);
-}
-
 function buildMeetingPDF(m, returnDoc) {
   const { jsPDF } = window.jspdf;
   const doc = new jsPDF({ unit: 'pt', format: 'letter' });
@@ -4584,63 +4566,26 @@ function buildMeetingPDF(m, returnDoc) {
   doc.setTextColor(0, 0, 0);
   const titleX = pw / 2;
 
-  // Project nickname
-  doc.text(m.projectNickname || '', titleX, y, { align: 'center' });
+  // Title lines (shared with the Word file: meetingTitleLines in app/meeting-export.js)
+  const titleLines = meetingTitleLines(m);
+  doc.text(titleLines[0], titleX, y, { align: 'center' });
+  y += 16;
+  doc.text(titleLines[1], titleX, y, { align: 'center' });
   y += 16;
 
-  // Document type
-  const typeLabel = m.type === 'agenda' ? 'Meeting Agenda' : 'Meeting Minutes';
-  doc.text((m.sectionHeading || 'Energy Management Services').replace(' Program', '') + ' ' + typeLabel, titleX, y, {
-    align: 'center',
-  });
-  y += 16;
-
-  // Meeting date
-  const md = new Date(m.date);
-  const dayNames = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
-  const monthNames = [
-    'January',
-    'February',
-    'March',
-    'April',
-    'May',
-    'June',
-    'July',
-    'August',
-    'September',
-    'October',
-    'November',
-    'December',
-  ];
-  const ordinal = (n) => {
-    const s = ['th', 'st', 'nd', 'rd'],
-      v = n % 100;
-    return n + (s[(v - 20) % 10] || s[v] || s[0]);
-  };
-  const dayName = dayNames[md.getDay()];
-  const monthName = monthNames[md.getMonth()];
-  const dateStr = ordinal(md.getDate());
-  const timeStr = md
-    .toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true })
-    .replace(':00', '');
-  const dateLineBase = `Meeting Date: ${dayName} ${monthName} `;
-  const dateLineSuffix = `, ${md.getFullYear()} ${timeStr}`;
-
-  // Render date with superscript ordinal
+  // Meeting date (parts shared with the Word file: meetingDateParts in app/meeting-export.js)
+  const dp = meetingDateParts(m);
   doc.setFontSize(11);
-  const baseW = doc.getTextWidth(dateLineBase);
-  const numPart = String(md.getDate());
-  const ordSuffix = ordinal(md.getDate()).replace(numPart, '');
-  const numW = doc.getTextWidth(numPart);
-  const fullDateLine = `Meeting Date: ${dayName} ${monthName} ${dateStr}, ${md.getFullYear()} ${timeStr}`;
-  const fullW = doc.getTextWidth(fullDateLine);
+  const baseW = doc.getTextWidth(dp.base);
+  const numW = doc.getTextWidth(dp.day);
+  const fullW = doc.getTextWidth(dp.base + dp.day + dp.ord + dp.suffix);
   const startX = titleX - fullW / 2;
-  doc.text(dateLineBase, startX, y);
-  doc.text(numPart, startX + baseW, y);
+  doc.text(dp.base, startX, y);
+  doc.text(dp.day, startX + baseW, y);
   doc.setFontSize(7);
-  doc.text(ordSuffix, startX + baseW + numW, y - 3);
+  doc.text(dp.ord, startX + baseW + numW, y - 3);
   doc.setFontSize(11);
-  doc.text(dateLineSuffix, startX + baseW + numW + doc.getTextWidth(ordSuffix) + 1, y);
+  doc.text(dp.suffix, startX + baseW + numW + doc.getTextWidth(dp.ord) + 1, y);
   y += 22;
 
   // Contact tables
@@ -4730,8 +4675,7 @@ function buildMeetingPDF(m, returnDoc) {
   addFooter();
 
   // Save
-  const dateFile = (m.date || '').split('T')[0].replace(/-/g, '.');
-  const filename = `${m.projectNickname || 'Meeting'} - ${(m.sectionHeading || '').replace(' Program', '')} ${m.type === 'agenda' ? 'Meeting Agenda' : 'Meeting Minutes'} ${dateFile}.pdf`;
+  const filename = meetingFileName(m, '.pdf');
   if (returnDoc) return doc;
   doc.save(filename);
   showToast('PDF generated ✓');

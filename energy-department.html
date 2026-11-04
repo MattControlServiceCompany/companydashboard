@@ -1,6 +1,6 @@
 <!doctype html>
 <html lang="en">
-  <script src="lib/theme.js?v=213"></script>
+  <script src="lib/theme.js?v=214"></script>
   <script>
     (function () {
       try {
@@ -24,7 +24,7 @@
       content="default-src 'self'; script-src 'self' 'unsafe-inline' 'unsafe-eval' blob: https://cdnjs.cloudflare.com https://cdn.jsdelivr.net; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com https://cdn.jsdelivr.net; font-src 'self' data: https://fonts.gstatic.com https://cdn.jsdelivr.net; img-src 'self' data: blob:; connect-src 'self' data: blob: https://cdnjs.cloudflare.com https://cdn.jsdelivr.net https://rrdugvwxtddjywqykphf.supabase.co https://api.weatherdatadepot.com; worker-src 'self' blob:; frame-src 'self' blob:; object-src 'none'; base-uri 'self'; form-action 'self';"
     />
     <title>CompanyHub — Energy Department</title>
-    <link rel="stylesheet" href="lib/theme.css?v=213" />
+    <link rel="stylesheet" href="lib/theme.css?v=214" />
     <link
       rel="icon"
       href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><rect width='100' height='100' rx='15' fill='%23238636'/><text x='50' y='72' font-size='60' font-weight='bold' text-anchor='middle' fill='white'>C</text></svg>"
@@ -33,9 +33,9 @@
       href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap"
       rel="stylesheet"
     />
-    <link href="lib/quill.snow.css?v=213" rel="stylesheet" />
+    <link href="lib/quill.snow.css?v=214" rel="stylesheet" />
     <script src="app/ch-auth.js"></script>
-    <script src="sidebar-mode.js?v=213"></script>
+    <script src="sidebar-mode.js?v=214"></script>
 
     <style id="site-ui-styles">
       /* ---------------------------------------------------
@@ -3100,7 +3100,7 @@
       produces a genuinely text-based PDF straight from the live DOM/SVG — every heading,
       table cell, and paragraph is a real selectable/copyable/searchable text object, and the
       inline-SVG bar charts (buildBarChart() etc. in report-engine.js — no <canvas> elements
-      anywhere in report pages, confirmed in the exportReportToWord() doc comment above) come
+      anywhere in report pages) come
       out as real vector paths instead of a bitmap.
       .rpt-page is already authored at exactly 816x1056px — 8.5in x 11in at the CSS-spec-fixed
       96px/inch ratio — so it maps onto a Letter @page with zero rescaling needed; this
@@ -3111,14 +3111,6 @@
       rewrite. This covers every report type #reportPages renders (Audit Report, Service
       Proposal, quarterly/annual Savings Report) since they all share the same .rpt-page/
       .rpt-pl/.report-pages markup produced by rptPage() in app/report-engine.js.
-
-      2026-07-30 (fix/word-export-indentation, backlog 4c946ba2): this block's id is also read
-      directly by exportReportToWord() in app/report-engine.js, which extracts the
-      `.rpt-int-hdr`/`.rpt-small-hdr`/`.rpt-body` `position:static` rules below (they undo the
-      2026-07-28 layer-isolation `position:absolute` furniture, which was measured to silently
-      block Word from applying any child element's margin-left indentation). Word export shares
-      this canonical block instead of a hand-authored second copy — do not fork these two rules,
-      keep them here and let exportReportToWord() keep reading them from this one place.
 
       2026-09-25 (fix/quarterly-text-pdf): the live Quarterly/Annual report preview (report-
       preview.js's v2 config-based UI, #reportPreviewContainer/#rptPreviewPages) never actually
@@ -9149,7 +9141,7 @@
         margin: 0 auto;
         font-family: var(--font);
       }
-      .sc-print-bar {
+      .sc-export-bar {
         display: flex;
         align-items: center;
         justify-content: flex-end;
@@ -9354,80 +9346,62 @@
         border-top: 1px solid var(--border);
         letter-spacing: 0.3px;
       }
-      .print-only {
+      /* -- Export look (white page; set by scorecardDownload while the file is built) -- */
+      .sc-root.sc-export {
+        background: #fff !important;
+        border: none !important;
+        border-radius: 0 !important;
+        padding: 12px !important;
+        width: 816px !important;
+        max-width: 816px !important;
+        box-sizing: border-box !important;
+        margin: 0 !important;
+        box-shadow: none !important;
+      }
+      .sc-export .sc-export-bar {
         display: none !important;
       }
-
-      /* -- Print styles -- */
-      @media print {
-        body {
-          background: #fff !important;
-          color: #000000 !important;
-        }
-        .sc-root {
-          background: #fff !important;
-          border: none !important;
-          border-radius: 0 !important;
-          padding: 12px !important;
-          max-width: 100% !important;
-          margin: 0 !important;
-          box-shadow: none !important;
-        }
-        .no-print {
-          display: none !important;
-        }
-        .print-only {
-          display: block !important;
-        }
-        .sc-header {
-          border-bottom-color: #ccc !important;
-        }
-        .sc-building-name {
-          color: #000000 !important;
-          font-size: 20px !important;
-        }
-        .sc-building-addr,
-        .sc-building-meta,
-        .sc-generated,
-        .sc-section-label,
-        .sc-card-title,
-        .sc-gauge-sublabel,
-        .sc-spark-labels,
-        .sc-env-text span,
-        .sc-footer {
-          color: #000000 !important;
-        }
-        .sc-gauge-wrap,
-        .sc-spark-card,
-        .sc-env-card {
-          background: #f8f8f8 !important;
-          border-color: #ddd !important;
-        }
-        .sc-photo-placeholder {
-          background: #eee !important;
-          border-color: #ccc !important;
-        }
-        .sc-grade-badge {
-          background: #f8f8f8 !important;
-        }
-        .sc-env-text strong {
-          color: #0a7a5a !important;
-        }
-        .sc-footer {
-          border-top-color: #ccc !important;
-          color: #000000 !important;
-        }
-        @page scorecard {
-          margin: 0.5in;
-          size: letter landscape;
-        }
-        .sc-root {
-          page: scorecard;
-        }
+      .sc-export .sc-header {
+        border-bottom-color: #ccc !important;
+      }
+      .sc-export .sc-building-name {
+        color: #000000 !important;
+        font-size: 20px !important;
+      }
+      .sc-export .sc-building-addr,
+      .sc-export .sc-building-meta,
+      .sc-export .sc-generated,
+      .sc-export .sc-section-label,
+      .sc-export .sc-card-title,
+      .sc-export .sc-gauge-sublabel,
+      .sc-export .sc-spark-labels,
+      .sc-export .sc-env-text span,
+      .sc-export .sc-footer {
+        color: #000000 !important;
+        fill: #000000 !important;
+      }
+      .sc-export .sc-gauge-wrap,
+      .sc-export .sc-spark-card,
+      .sc-export .sc-env-card {
+        background: #f8f8f8 !important;
+        border-color: #ddd !important;
+      }
+      .sc-export .sc-photo-placeholder {
+        background: #eee !important;
+        border-color: #ccc !important;
+      }
+      .sc-export .sc-grade-badge {
+        background: #f8f8f8 !important;
+      }
+      .sc-export .sc-env-text strong {
+        color: #0a7a5a !important;
+      }
+      .sc-export .sc-footer {
+        border-top-color: #ccc !important;
       }
     </style>
-    <link rel="stylesheet" href="feedback-widget.css?v=213" />
-    <link rel="stylesheet" href="sidebar-rail.css?v=213" />
+    <link rel="stylesheet" href="feedback-widget.css?v=214" />
+    <link rel="stylesheet" href="sidebar-rail.css?v=214" />
     <style>
       /* -- Quill rich text editor — dark theme overrides -- */
       .ql-toolbar.ql-snow {
@@ -16249,7 +16223,8 @@
             <button class="btn btn-ghost" id="mtgConvertBtn" style="display: none" onclick="convertToMinutes()">
               📝 Convert to Minutes
             </button>
-            <button class="btn btn-em" onclick="generateMeetingPDF()">📄 PDF</button>
+            <button class="btn btn-em" onclick="meetingFileFromEditor('word')">Download Word</button>
+            <button class="btn btn-em" onclick="meetingFileFromEditor('pdf')">Download PDF</button>
             <button class="btn btn-em" onclick="saveMeeting()">Save</button>
           </div>
         </div>
@@ -16690,65 +16665,65 @@
       crossorigin="anonymous"
     ></script>
     <!-- CompanyHub computation modules -->
-    <script src="lib/date-helpers.js?v=213"></script>
-    <script src="lib/formatting.js?v=213"></script>
-    <script src="lib/report-file-name.js?v=213"></script>
-    <script src="lib/unit-conversion.js?v=213"></script>
-    <script src="lib/csv-parser.js?v=213"></script>
-    <script src="computations/physics.js?v=213"></script>
-    <script src="computations/fan-savings.js?v=213"></script>
-    <script src="computations/cost-lines.js?v=213"></script>
-    <script src="computations/rates.js?v=213"></script>
-    <script src="computations/regression.js?v=213"></script>
-    <script src="computations/normalization.js?v=213"></script>
-    <script src="computations/weather-refresh.js?v=213"></script>
-    <script src="computations/eui.js?v=213"></script>
-    <script src="computations/hvac-enduse.js?v=213"></script>
-    <script src="computations/energy-analysis.js?v=213"></script>
-    <script src="computations/end-use.js?v=213"></script>
-    <script src="computations/pollution.js?v=213"></script>
-    <script src="computations/csc.js?v=213"></script>
-    <script src="computations/savings.js?v=213"></script>
-    <script src="computations/audit-rules.js?v=213"></script>
-    <script src="computations/audit-coverage.js?v=213"></script>
-    <script src="computations/audit-import.js?v=213"></script>
-    <script src="computations/bill-flags.js?v=213"></script>
-    <script src="computations/bill-layout.js?v=213"></script>
-    <script src="computations/bill-repair.js?v=213"></script>
-    <script src="computations/anomaly-detection.js?v=213"></script>
-    <script src="lib/perf-table.js?v=213"></script>
-    <script src="lib/shared-charts.js?v=213"></script>
-    <script src="computations/report-data.js?v=213"></script>
-    <script src="computations/data-quality.js?v=213"></script>
-    <script src="extraction/pdf-engine.js?v=213"></script>
-    <script src="app/sync-classification.js?v=213"></script>
-    <script src="app/db.js?v=213"></script>
-    <script src="app/sync-ui.js?v=213"></script>
-    <script src="app/ems-leads-store.js?v=213"></script>
-    <script src="app/core.js?v=213"></script>
-    <script src="app/energy-savings.js?v=213"></script>
-    <script src="app/bill-analysis.js?v=213"></script>
-    <script src="extraction/bill-validation.js?v=213"></script>
-    <script src="app/district-calendar.js?v=213"></script>
-    <script src="app/calendar-diff.js?v=213"></script>
-    <script src="app/project-calendar.js?v=213"></script>
-    <script src="app/bas-diff.js?v=213"></script>
-    <script src="app/bas-audit-log.js?v=213"></script>
-    <script src="app/bas-baseline.js?v=213"></script>
-    <script src="app/bas-schedules.js?v=213"></script>
-    <script src="computations/bas-coverage.js?v=213"></script>
-    <script src="app/space-map.js?v=213"></script>
-    <script src="computations/sched-actions.js?v=213"></script>
-    <script src="app/sched-actions.js?v=213"></script>
-    <script src="app/scope-tree.js?v=213"></script>
-    <script src="app/utility-data.js?v=213"></script>
-    <script src="app/savings-methods.js?v=213"></script>
-    <script src="app/pipeline-diagram.js?v=213"></script>
-    <script src="app/csv-import.js?v=213"></script>
-    <script src="app/bill-pdf-attach.js?v=213"></script>
-    <script src="app/meter-autocreate.js?v=213"></script>
-    <script src="app/bill-corrections-review.js?v=213"></script>
-    <script src="app/auto-repair.js?v=213"></script>
+    <script src="lib/date-helpers.js?v=214"></script>
+    <script src="lib/formatting.js?v=214"></script>
+    <script src="lib/report-file-name.js?v=214"></script>
+    <script src="lib/unit-conversion.js?v=214"></script>
+    <script src="lib/csv-parser.js?v=214"></script>
+    <script src="computations/physics.js?v=214"></script>
+    <script src="computations/fan-savings.js?v=214"></script>
+    <script src="computations/cost-lines.js?v=214"></script>
+    <script src="computations/rates.js?v=214"></script>
+    <script src="computations/regression.js?v=214"></script>
+    <script src="computations/normalization.js?v=214"></script>
+    <script src="computations/weather-refresh.js?v=214"></script>
+    <script src="computations/eui.js?v=214"></script>
+    <script src="computations/hvac-enduse.js?v=214"></script>
+    <script src="computations/energy-analysis.js?v=214"></script>
+    <script src="computations/end-use.js?v=214"></script>
+    <script src="computations/pollution.js?v=214"></script>
+    <script src="computations/csc.js?v=214"></script>
+    <script src="computations/savings.js?v=214"></script>
+    <script src="computations/audit-rules.js?v=214"></script>
+    <script src="computations/audit-coverage.js?v=214"></script>
+    <script src="computations/audit-import.js?v=214"></script>
+    <script src="computations/bill-flags.js?v=214"></script>
+    <script src="computations/bill-layout.js?v=214"></script>
+    <script src="computations/bill-repair.js?v=214"></script>
+    <script src="computations/anomaly-detection.js?v=214"></script>
+    <script src="lib/perf-table.js?v=214"></script>
+    <script src="lib/shared-charts.js?v=214"></script>
+    <script src="computations/report-data.js?v=214"></script>
+    <script src="computations/data-quality.js?v=214"></script>
+    <script src="extraction/pdf-engine.js?v=214"></script>
+    <script src="app/sync-classification.js?v=214"></script>
+    <script src="app/db.js?v=214"></script>
+    <script src="app/sync-ui.js?v=214"></script>
+    <script src="app/ems-leads-store.js?v=214"></script>
+    <script src="app/core.js?v=214"></script>
+    <script src="app/energy-savings.js?v=214"></script>
+    <script src="app/bill-analysis.js?v=214"></script>
+    <script src="extraction/bill-validation.js?v=214"></script>
+    <script src="app/district-calendar.js?v=214"></script>
+    <script src="app/calendar-diff.js?v=214"></script>
+    <script src="app/project-calendar.js?v=214"></script>
+    <script src="app/bas-diff.js?v=214"></script>
+    <script src="app/bas-audit-log.js?v=214"></script>
+    <script src="app/bas-baseline.js?v=214"></script>
+    <script src="app/bas-schedules.js?v=214"></script>
+    <script src="computations/bas-coverage.js?v=214"></script>
+    <script src="app/space-map.js?v=214"></script>
+    <script src="computations/sched-actions.js?v=214"></script>
+    <script src="app/sched-actions.js?v=214"></script>
+    <script src="app/scope-tree.js?v=214"></script>
+    <script src="app/utility-data.js?v=214"></script>
+    <script src="app/savings-methods.js?v=214"></script>
+    <script src="app/pipeline-diagram.js?v=214"></script>
+    <script src="app/csv-import.js?v=214"></script>
+    <script src="app/bill-pdf-attach.js?v=214"></script>
+    <script src="app/meter-autocreate.js?v=214"></script>
+    <script src="app/bill-corrections-review.js?v=214"></script>
+    <script src="app/auto-repair.js?v=214"></script>
     <!-- Word Export Rebuild plan Steps 1/3 (app/docx-skeleton.js, app/docx-writer.js) were never
          wired into this page's script list -- exportReportToDocx() (report-engine.js) calls
          _docxTranslatePages()/_docxAssemble() (docx-writer.js) and CSC_DOCX_SKELETON_B64
@@ -16758,42 +16733,43 @@
          the gap was never exercised end-to-end). Formal button wiring is plan Step 11; these two
          tags are the load-order prerequisite that step (and every step since 6) actually needs
          to function through the live app at all, not new report content. -->
-    <script src="app/docx-skeleton.js?v=213"></script>
-    <script src="app/docx-writer.js?v=213"></script>
-    <script src="app/report-engine.js?v=213"></script>
-    <script src="app/report-printed.js?v=213"></script>
-    <script src="app/report-engine-woodland.js?v=213"></script>
-    <script src="app/report-preview.js?v=213"></script>
-    <script src="app/report-pdf.js?v=213"></script>
-    <script src="app/presented-savings.js?v=213"></script>
-    <script src="app/data/bas-weather-bins.js?v=213"></script>
-    <script src="app/calc-autofill.js?v=213"></script>
-    <script src="app/calculators.js?v=213"></script>
-    <script src="app/ecm-calculators.js?v=213"></script>
-    <script src="app/equipment-matrix.js?v=213"></script>
+    <script src="app/docx-skeleton.js?v=214"></script>
+    <script src="app/docx-writer.js?v=214"></script>
+    <script src="app/meeting-export.js?v=214"></script>
+    <script src="app/report-engine.js?v=214"></script>
+    <script src="app/report-printed.js?v=214"></script>
+    <script src="app/report-engine-woodland.js?v=214"></script>
+    <script src="app/report-preview.js?v=214"></script>
+    <script src="app/report-pdf.js?v=214"></script>
+    <script src="app/presented-savings.js?v=214"></script>
+    <script src="app/data/bas-weather-bins.js?v=214"></script>
+    <script src="app/calc-autofill.js?v=214"></script>
+    <script src="app/calculators.js?v=214"></script>
+    <script src="app/ecm-calculators.js?v=214"></script>
+    <script src="app/equipment-matrix.js?v=214"></script>
     <!-- soo-generator.js (SOO Phase 1, item 3f1415af): reads points/config flags via the
          EXISTING emGetNormalizedPoints/emComputeCompliance/emLoadEquipConfigFlags (equipment-
          matrix.js, loaded above). Format-correction pass (2026-09-13): renders the MASTER
          SEQUENCES OF OPERATION document's own Word format directly (Heading 1/Normal/bold-label
          runs), NOT the report-engine .rpt-page shell — soo-docx-skeleton.js supplies the
          master-doc-derived skeleton its own Word export splices into. -->
-    <script src="app/soo-docx-skeleton.js?v=213"></script>
-    <script src="app/soo-generator.js?v=213"></script>
-    <script src="app/graphics-setpoints.js?v=213"></script>
-    <script src="app/budget.js?v=213"></script>
-    <script src="app/hours.js?v=213"></script>
-    <script src="app/scorecard.js?v=213"></script>
-    <script src="app/bas-trends.js?v=213"></script>
-    <script src="app/bas-alarms.js?v=213"></script>
-    <script src="app/facility-audit.js?v=213"></script>
-    <script src="app/pricing-estimator.js?v=213"></script>
-    <script src="app/estimate-workbook.js?v=213"></script>
-    <script src="app/estimate-workbook-export.js?v=213"></script>
-    <script src="app/audit-estimate.js?v=213"></script>
-    <script src="app/agreement-engine.js?v=213"></script>
+    <script src="app/soo-docx-skeleton.js?v=214"></script>
+    <script src="app/soo-generator.js?v=214"></script>
+    <script src="app/graphics-setpoints.js?v=214"></script>
+    <script src="app/budget.js?v=214"></script>
+    <script src="app/hours.js?v=214"></script>
+    <script src="app/scorecard.js?v=214"></script>
+    <script src="app/bas-trends.js?v=214"></script>
+    <script src="app/bas-alarms.js?v=214"></script>
+    <script src="app/facility-audit.js?v=214"></script>
+    <script src="app/pricing-estimator.js?v=214"></script>
+    <script src="app/estimate-workbook.js?v=214"></script>
+    <script src="app/estimate-workbook-export.js?v=214"></script>
+    <script src="app/audit-estimate.js?v=214"></script>
+    <script src="app/agreement-engine.js?v=214"></script>
 
-    <script src="app/restore-merge.js?v=213"></script>
-    <script src="app/site-functions.js?v=213"></script>
+    <script src="app/restore-merge.js?v=214"></script>
+    <script src="app/site-functions.js?v=214"></script>
     <script>
       /* -- DRAG-TO-RESIZE PANELS -- */
       (function () {
@@ -16964,14 +16940,14 @@
       </div>
     </div>
 
-    <script src="app/tooltips-help.js?v=213"></script>
-    <script src="feedback-widget.js?v=213"></script>
+    <script src="app/tooltips-help.js?v=214"></script>
+    <script src="feedback-widget.js?v=214"></script>
     <script
       src="https://cdn.jsdelivr.net/npm/quill@2.0.3/dist/quill.min.js"
       integrity="sha384-reiVBUvj2HgLgCZalqLFSMBVD9LdtiwGyybRGCq2AfP8Rgebz5DxEnwKp4FpagKV"
       crossorigin="anonymous"
     ></script>
-    <script src="lib/rich-text.js?v=213"></script>
+    <script src="lib/rich-text.js?v=214"></script>
     <script>
       /* Handle ?openProject=... URL params — opened by _rptV2GoEdit() popup window */
       (function _handleEditRedirect() {

@@ -2507,6 +2507,14 @@ async function siteResetAllMeterTableSettings() {
    site-ui.js delegates to this array and should NOT maintain its own copy.
 */
 var RELEASE_NOTES = [
+  { v: 'v2026.11.03.214', date: '2026-11-03', title: 'Word and PDF downloads for Meetings, Scorecard and HVAC Load Estimate',
+    items: [
+      { type: 'feature', text: 'Meetings: meeting agendas and meeting minutes now download as Word and PDF in one click.' },
+      { type: 'feature', text: 'Scorecard: the Building Scorecard now downloads as Word and PDF in one click.' },
+      { type: 'feature', text: 'HVAC Load Estimate: the HVAC report now downloads as Word and PDF in one click.' },
+      { type: 'change', text: 'The old .doc download for these documents is gone; use the Word or PDF buttons instead.' }
+    ]
+  },
   { v: 'v2026.11.03.213', date: '2026-11-03', title: 'Report History button is back',
     items: [
       { type: 'fix', text: 'Meetings > Report History: the Report History button is back next to Generate Report.' },
