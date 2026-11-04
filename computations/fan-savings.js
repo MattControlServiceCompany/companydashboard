@@ -32,6 +32,15 @@ var FAN_DEFAULT_VOLTS = 208; // line voltage when the matrix has amps and no vol
 var FAN_DEFAULT_PHASE = 3; // phase when the matrix has amps and no phase
 var FAN_HP_MOTOR_EFF = 0.9; // motor efficiency for a nameplate HP
 var FAN_HP_LOAD_FACTOR = 0.8; // share of nameplate HP the fan draws
+// Estimated motor size (Equipment Matrix > Counts). Standard NEMA motor sizes: an estimate is rounded UP to the next one.
+var FAN_STANDARD_HP_SIZES = [0.5, 0.75, 1, 1.5, 2, 3, 5, 7.5, 10, 15, 20, 25, 30, 40, 50, 60, 75, 100, 125, 150, 200, 250, 300];
+// Assumed supply for a motor size read from amps (the matrix holds no voltage or phase): 460 V, three phase, power factor
+// MOTOR_DEFAULT_POWER_FACTOR (physics.js). Drives that read 640 to 680 V on the DC bus are on a 460 V supply.
+// fanUnitModel keeps FAN_DEFAULT_VOLTS for its savings math; the two do not share this value.
+var FAN_HP_AMPS_VOLTS = 460;
+var FAN_HP_AMPS_PHASE = 3;
+var FAN_HP_MIN_SPEED = 0.35; // a speed reading below 35 percent is too low to scale airflow or power up to full speed
+var FAN_HP_MIN_AMPS = 0.5; // a current below 0.5 A is a fan that is off or idle, not a size
 // Default saving of adding a drive to a constant-speed fan when no fan speed trend exists: a published range, counted at its mid.
 // Source: "25-45% reduction compared to constant-volume belt-drive systems": ASHRAE Handbook HVAC Systems and Equipment (fan chapter);
 // PNNL "Energy Savings Potential of Plug Fans in Commercial HVAC Systems"; ENERGY STAR fan guidance (CSC research file missing-ecm-research-2026-05-16).
@@ -246,16 +255,66 @@ function _fanRowHasFanPoint(row, pts) {
  * @param {string} [equipName] - the equipment name; a VRF or condenser unit has no supply fan drive
  * @returns {string|null}
  */
-function fanDrivePointName(names, equipName) {
+function fanDrivePointName(names, equipName, kind) {
   if (/\b(vrf|vrv|condenser|condensing)\b/i.test(String(equipName || ''))) return null;
+  // kind 'motor' = any fan, pump or wheel motor of the row (Equipment Matrix > Counts); default = the supply fan only
+  var motor = kind === 'motor';
   // a camelCase key (supplyFanSpeed) or an underscore key (auto_sf_vfd) is read as words
   var drive = /\b(vfd|vsd|drive|inverter|hz|frequency|speed)\b/i;
-  var notDrive = /\b(wind|air\s*speed|exhaust|return|relief|condenser|compressors?|comp|pump|chiller|boiler|tower|wheel|diagnostic)\b|\b(high|hi|low|lo)\s*(fan\s*)?speed\b|\bspeed\s*(high|hi|low|lo)\b|\bconstant\s*speed\b|\bspeed\s*enable\b|\bbox\s*drive\b/i;
+  var driveWeak = /\b(signal|percent)\b/i; // motor kind only, and only beside a fan, pump or wheel word
+  var notDrive = motor
+    ? /\b(wind|air\s*speed|condenser|compressors?|comp|chiller|boiler|diagnostic)\b|\b(high|hi|low|lo)\s*(fan\s*)?speed\b|\bspeed\s*(high|hi|low|lo)\b|\bconstant\s*speed\b|\bspeed\s*enable\b|\bbox\s*drive\b|\brotation\s+frequency\b|\btemperature\b|\bmanual\b|\bmsv\b|\bcircuit\b|^fan\s+speed\b/i
+    : /\b(wind|air\s*speed|exhaust|return|relief|condenser|compressors?|comp|pump|chiller|boiler|tower|wheel|diagnostic)\b|\b(high|hi|low|lo)\s*(fan\s*)?speed\b|\bspeed\s*(high|hi|low|lo)\b|\bconstant\s*speed\b|\bspeed\s*enable\b|\bbox\s*drive\b/i;
   for (var i = 0; i < names.length; i++) {
     var words = String(names[i]).replace(/([a-z])([A-Z])/g, '$1 $2').replace(/_/g, ' ');
     // an inverter with no fan word is a compressor inverter
     if (/\binverter\b/i.test(words) && !/\bfan\b/i.test(words)) continue;
-    if (drive.test(words) && !notDrive.test(words)) return names[i];
+    if (notDrive.test(words)) continue;
+    if (drive.test(words)) return names[i];
+    if (motor && driveWeak.test(words) && /\b(fan|pump|wheel)\b/i.test(words)) return names[i];
+  }
+  return null;
+}
+
+/** Fan or pump motor kW to nameplate HP: the inverse of fanKwFromHp, rounded UP to the next standard motor size. */
+function fanHpFromKw(kw) {
+  if (!(kw > 0)) return null;
+  var hp = kw / fanKwFromHp(1);
+  for (var i = 0; i < FAN_STANDARD_HP_SIZES.length; i++) if (FAN_STANDARD_HP_SIZES[i] >= hp - 1e-9) return FAN_STANDARD_HP_SIZES[i];
+  return Math.ceil(hp / 50) * 50; // above the table: next 50 HP
+}
+
+/** Nameplate HP from full-speed airflow: the inverse of fanKwFromCfm (same watts per cfm), rounded up to a standard size. */
+function fanHpFromCfm(cfm) {
+  return fanHpFromKw(fanKwFromCfm(cfm));
+}
+
+/**
+ * Estimated motor HP of one fan unit: the first source that applies. An estimate, never a nameplate value.
+ *   1. airflow: supply fan cfm / speed fraction (a speed of 35 percent or more; no speed point on a fixed-speed fan = full speed)
+ *   2. drive kW point, scaled to full speed by the same fan power curve when a speed reading exists
+ *   3. amps through motorKwFromAmps at FAN_HP_AMPS_VOLTS, three phase - single-speed motors only (VFD amps are not power)
+ * A reading of 0 (or amps below FAN_HP_MIN_AMPS) is a fan that is off: not a size.
+ * @param {{cfm:?number, speedPct:?number, driveKw:?number, amps:?number, drive:string}} f - drive: 'variable'|'single'|'unknown'
+ * @returns {?{hp:number, source:string, how:string}} null when no source applies
+ */
+function fanEstimateHp(f) {
+  var frac = f.speedPct != null && f.speedPct > 0 ? Math.min(f.speedPct / 100, 1) : null;
+  var speedOk = frac === null ? f.drive !== 'variable' : frac >= FAN_HP_MIN_SPEED;
+  var hp;
+  if (f.cfm > 0 && speedOk) {
+    var full = frac === null ? f.cfm : f.cfm / frac;
+    hp = fanHpFromCfm(full);
+    return { hp: hp, source: 'airflow', how: 'supply fan airflow ' + Math.round(f.cfm) + ' cfm' + (frac === null ? '' : ' at ' + Math.round(frac * 100) + ' percent speed') + ', ' + FAN_W_PER_CFM.mid + ' W per cfm' };
+  }
+  if (f.driveKw > 0 && speedOk) {
+    var fullKw = frac === null ? f.driveKw : f.driveKw / fanPowerFraction(frac, _fanAffinityOpts());
+    hp = fanHpFromKw(fullKw);
+    return { hp: hp, source: 'drive power', how: 'drive power ' + f.driveKw + ' kW' + (frac === null ? ' (one reading; may be below full load)' : ' at ' + Math.round(frac * 100) + ' percent speed') };
+  }
+  if (f.drive === 'single' && f.amps >= FAN_HP_MIN_AMPS) {
+    hp = fanHpFromKw(motorKwFromAmps(f.amps, FAN_HP_AMPS_VOLTS, FAN_HP_AMPS_PHASE));
+    return { hp: hp, source: 'amps', how: 'motor current ' + f.amps + ' A, ' + FAN_HP_AMPS_VOLTS + ' V, ' + FAN_HP_AMPS_PHASE + ' phase, power factor ' + MOTOR_DEFAULT_POWER_FACTOR + ' (one reading; may be below full load)' };
   }
   return null;
 }

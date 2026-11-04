@@ -9,6 +9,7 @@ function make(rows) {
     emGetNormalizedPoints: (r) => r.pts || {}, _pricingGetConfig: () => ({ hourlyRate: 100 }),
   };
   vm.createContext(ctx);
+  ['fan-savings.js', 'equipment-features.js'].forEach((f) => vm.runInContext(fs.readFileSync(__dirname + '/computations/' + f, 'utf8'), ctx)); // the drive rule and emRowFeatures used by auditEstPointSetSignature
   vm.runInContext(src, ctx);
   return ctx;
 }

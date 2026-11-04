@@ -79,6 +79,7 @@ function makeSandbox(store, srcs, extra) {
   vm.createContext(sb);
   vm.runInContext(read('lib/formatting.js'), sb);
   vm.runInContext(read('computations/fan-savings.js'), sb); // the one drive-name rule the Audit Estimate calls
+  vm.runInContext(read('computations/equipment-features.js'), sb); // emRowFeatures: what the Audit Estimate groups call
   srcs.forEach((s) => vm.runInContext(s, sb));
   return sb;
 }

@@ -74,6 +74,8 @@ function make(store, tiers) {
   vm.runInContext(read('lib/formatting.js'), sb);
   vm.runInContext(read('app/pricing-estimator.js'), sb);
   vm.runInContext(read('app/estimate-workbook.js'), sb);
+  vm.runInContext(read('computations/fan-savings.js'), sb); // the drive rule and emRowFeatures the Audit Estimate groups call
+  vm.runInContext(read('computations/equipment-features.js'), sb);
   vm.runInContext(read('app/audit-estimate.js'), sb);
   sb.buildComplianceRows = () => tiers.compliance;
   sb.buildRecommendedRows = () => tiers.recommended;

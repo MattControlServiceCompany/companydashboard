@@ -29,6 +29,7 @@ function make(src, rows, store, rate) {
   };
   vm.createContext(ctx);
   vm.runInContext(fs.readFileSync(__dirname + '/computations/fan-savings.js', 'utf8'), ctx); // the one drive-name rule used by auditEstPointSetSignature
+  vm.runInContext(fs.readFileSync(__dirname + '/computations/equipment-features.js', 'utf8'), ctx); // emRowFeatures + the concept list used by auditEstPointSetSignature
   vm.runInContext(fs.readFileSync(__dirname + '/lib/formatting.js', 'utf8'), ctx);
   vm.runInContext(src, ctx);
   return ctx;

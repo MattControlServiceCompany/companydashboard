@@ -252,6 +252,15 @@ var FLOWS = [
     ]
   },
   {
+    id: 'em-counts', name: 'Equipment Matrix Counts view', desc: 'How many of each type of equipment, with motor speed, carbon dioxide and humidity sensors, and an estimated motor size (HP)',
+    path: ['user','energy','store'],
+    steps: [
+      { from:'user', to:'energy', label:'User clicks Counts beside Summary on the Equipment Matrix tab', detail:'emSetCountsView sets the view mode; emRenderCountsView draws two tables (by type, by building).' },
+      { from:'energy', to:'store', label:'Reads the matrix rows (en_eqmatrix_{id}), phantom rows left out', detail:'emRowFeatures (computations/equipment-features.js) answers per row: motor speed, CO2, humidity, estimated HP. The Audit Estimate groups use the same function.' },
+      { from:'energy', to:'user', label:'Counts add up the per-row answers; a click opens the list with the point behind each answer', detail:'Estimated HP: airflow at full speed, else drive kW, else single speed amps (460 V, 3 phase, power factor 0.85); rounded up to a standard motor size. Units with no usable reading show a dash.' },
+    ]
+  },
+  {
     id: 'baseline', name: 'Baseline and savings calculation', desc: 'Compute energy savings: (Baseline - Actual) x Rate',
     path: ['user','energy','ls','store'],
     steps: [

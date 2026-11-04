@@ -495,6 +495,7 @@ function emSyncViewModeControls() {
   var auditBtn = document.getElementById('em-audit-btn');
   var rawBtn = document.getElementById('em-raw-btn');
   var sequenceBtn = document.getElementById('em-sequence-btn');
+  var countsBtn = document.getElementById('em-counts-btn');
 
   // Helper: set active accent style on a button
   function setActive(btn) {
@@ -511,7 +512,19 @@ function emSyncViewModeControls() {
     btn.style.borderColor = 'var(--border2)';
   }
 
-  if (_emViewMode === 'audit') {
+  // The Counts button is active only in the Counts view (item 6715c224); the branches below set the other four.
+  if (_emViewMode === 'counts') setActive(countsBtn);
+  else setInactive(countsBtn);
+
+  if (_emViewMode === 'counts') {
+    if (rawToggles) rawToggles.style.display = 'none';
+    if (dynControls) dynControls.style.display = 'none';
+    if (auditInfo) auditInfo.style.display = 'none';
+    setInactive(auditBtn);
+    setInactive(rawBtn);
+    setInactive(summaryBtn);
+    setInactive(sequenceBtn);
+  } else if (_emViewMode === 'audit') {
     if (rawToggles) rawToggles.style.display = 'none';
     if (dynControls) dynControls.style.display = 'none';
     if (auditInfo) auditInfo.style.display = 'inline-flex';
@@ -4221,7 +4234,7 @@ var _emDrillBuilding = null; // null = summary table; string = per-building deta
 var _emHiddenGroups = {};
 var _emShowAllDynCols = false; // when false, limit dynamic point columns to top 20 by frequency
 var EM_DYN_COL_LIMIT = 20; // max dynamic point columns shown by default
-var _emViewMode = 'audit'; // 'audit' = ASHRAE 36 compliance columns; 'raw' = raw point columns; 'summary' = aggregated card view; 'sequence' = Sequence of Operations generator (SOO Phase 3, item 3f1415af)
+var _emViewMode = 'audit'; // 'audit' = ASHRAE 36 compliance columns; 'raw' = raw point columns; 'summary' = aggregated card view; 'counts' = equipment counts by type and building (6715c224); 'sequence' = Sequence of Operations generator (SOO Phase 3, item 3f1415af)
 // Sequence view (Phase 3) state — module-level so it survives re-renders within the view, reset when the building/equipment-type scope changes (see emRenderSequenceView).
 var _emSeqUnchecked = new Set(); // rowIds explicitly excluded from the current building/type scope's default "all checked" selection
 var _emSeqLastKey = ''; // building+'|'+category, used to detect a scope change and reset _emSeqUnchecked
@@ -4966,7 +4979,10 @@ function emRenderToolbar(data, pid, projBadge) {
     typeOpts +
     '</select>' +
     '<input data-ch-filter id="em-filter-search" type="text" placeholder="Search..." oninput="emDebouncedSearch()" style="font-size:11px;padding:4px 8px;background:var(--s2);border:1px solid var(--border);color:var(--text);border-radius:4px;height:28px;width:140px">' +
-    '<span id="em-row-count" style="font-size:11px;color:var(--text3);margin-left:4px"></span>' +
+    // Stable control placement (ui-standards.md): the text slot always starts the second row and has the width of the longest
+    // text (the Audit View points text), so View, Edit, Save Edits and Clear All Data sit in the same place in every view.
+    '<div style="flex-basis:100%;height:0"></div>' +
+    '<span id="em-row-count" style="font-size:11px;color:var(--text3);margin-left:4px;min-width:700px"></span>' +
     '<div style="flex:1"></div>' +
     (projBadge || '') +
     '<span style="display:inline-flex;align-items:center;gap:8px;white-space:nowrap">' +
@@ -4974,6 +4990,7 @@ function emRenderToolbar(data, pid, projBadge) {
     '<button id="em-audit-btn" class="btn btn-sm" onclick="emSetAuditView()" style="height:28px;font-size:11px;background:var(--accent);color:#fff;border-color:transparent">Audit View</button>' +
     '<button id="em-raw-btn" class="btn btn-ghost btn-sm" onclick="emSetRawView()" style="height:28px;font-size:11px">Raw View</button>' +
     '<button id="em-summary-btn" class="btn btn-ghost btn-sm" onclick="emSetSummaryView()" title="Aggregated stats grouped by building and equipment type" style="height:28px;font-size:11px;background:var(--s2);color:var(--text2);border-color:var(--border)">Summary</button>' +
+    '<button id="em-counts-btn" class="btn btn-ghost btn-sm" onclick="emSetCountsView()" title="How many of each type of equipment there are, with motor speed, carbon dioxide and humidity sensors, and estimated motor size" style="height:28px;font-size:11px;background:var(--s2);color:var(--text2);border-color:var(--border)">Counts</button>' +
     '<button id="em-sequence-btn" class="btn btn-ghost btn-sm" onclick="emSetSequenceView()" title="Generate a Sequence of Operations document for selected equipment" style="height:28px;font-size:11px;background:var(--s2);color:var(--text2);border-color:var(--border)">Sequence</button>' +
     '</span>' +
     '<button id="em-edit-mode-btn" class="btn btn-ghost btn-sm" onclick="emToggleEditMode(this)" style="height:28px;font-size:11px">Edit</button>' +
@@ -7287,6 +7304,36 @@ function _emAttachNavDelegatedListeners() {
       emExitDrillBuilding(exitEl.dataset.pid);
       return;
     }
+    var cntEl = e.target && e.target.closest ? e.target.closest('[data-em-counts-list]') : null;
+    if (cntEl) {
+      e.preventDefault();
+      var same = _emCountsList && _emCountsList.scope === cntEl.dataset.scope && _emCountsList.key === cntEl.dataset.key && _emCountsList.col === cntEl.dataset.col;
+      _emCountsList = same ? null : { scope: cntEl.dataset.scope, key: cntEl.dataset.key, col: cntEl.dataset.col };
+      emRenderTable(emLoadMatrix(window._emActivePid), _emFilters);
+      return;
+    }
+    if (e.target && e.target.closest && e.target.closest('[data-em-counts-close]')) {
+      e.preventDefault();
+      _emCountsList = null;
+      emRenderTable(emLoadMatrix(window._emActivePid), _emFilters);
+      return;
+    }
+    var cBldgEl = e.target && e.target.closest ? e.target.closest('[data-em-counts-bldg]') : null;
+    if (cBldgEl) {
+      e.preventDefault();
+      _emFilters.building = cBldgEl.getAttribute('data-em-counts-bldg');
+      var bSel = document.getElementById('em-filter-bldg');
+      if (bSel) bSel.value = _emFilters.building;
+      _emCountsList = null;
+      emRenderTable(emLoadMatrix(window._emActivePid), _emFilters);
+      return;
+    }
+    var rowEl = e.target && e.target.closest ? e.target.closest('[data-em-detail-row]') : null;
+    if (rowEl) {
+      e.preventDefault();
+      emShowComplianceDetail(rowEl.getAttribute('data-em-detail-row'));
+      return;
+    }
     var ptsEl = e.target && e.target.closest ? e.target.closest('[data-em-pts-toggle]') : null;
     if (ptsEl) {
       emTogglePointDrawer(ptsEl.getAttribute('data-em-pts-toggle'));
@@ -7317,6 +7364,11 @@ function emRenderTable(data, filters) {
   // Route to summary renderer when in summary view mode
   if (_emViewMode === 'summary') {
     emRenderSummaryView(data, filters);
+    return;
+  }
+  // Route to the Counts view (item 6715c224)
+  if (_emViewMode === 'counts') {
+    emRenderCountsView(data, filters);
     return;
   }
   // Route to the Sequence of Operations generator when in sequence view mode (SOO Phase 3, item 3f1415af)
@@ -8816,6 +8868,304 @@ function emRenderSummaryView(data, filters) {
 
   html += '</table>';
   html += '</div>'; // end outer padding div
+  wrap.innerHTML = html;
+}
+
+/* ── Counts view (item 6715c224) ─────────────────────────────────────────────
+   Equipment Matrix > Counts. How many of each type of equipment there are, and what each has: motor speed (variable,
+   single, not known), a carbon dioxide sensor, a humidity sensor, and an estimated motor size (HP).
+   Every per-row answer comes from emRowFeatures (computations/equipment-features.js), the same function the Audit
+   Estimate sample groups use. This view only adds up the answers. It counts EQUIPMENT (Equipment Matrix rows), not motors.
+   Rows: emIsPhantomRow rows are left out, the same rows the Audit and Summary views leave out. */
+var _emCountsList = null; // the open inline list: { scope: 'type'|'building', key, col }
+
+function emSetCountsView() {
+  _emDrillBuilding = null;
+  _emCountsList = null;
+  _emViewMode = _emViewMode === 'counts' ? 'audit' : 'counts';
+  emSyncViewModeControls();
+  emRefreshBldgFilterOptions(); // keep dropdown counts in sync with the view mode — see emGetBldgCounts
+  var data = emLoadMatrix(window._emActivePid);
+  if (!data) return; // DB not ready yet — user will re-click after load
+  emRenderTable(data, _emFilters);
+}
+
+// One count column: the test that picks the rows it counts and the words that explain it.
+var EM_COUNT_COLS = {
+  all: { label: 'all equipment', test: function () { return true; } },
+  variable: { label: 'with variable speed motors', test: function (f) { return f.drive === 'variable'; } },
+  single: { label: 'with single speed motors', test: function (f) { return f.drive === 'single'; } },
+  unknown: { label: 'with motor speed not known', test: function (f) { return f.drive === 'unknown'; } },
+  co2: { label: 'with a carbon dioxide sensor', test: function (f) { return f.co2 === true; } },
+  noCo2: { label: 'without a carbon dioxide sensor', test: function (f) { return f.co2 === false; } },
+  hum: { label: 'with a humidity sensor', test: function (f) { return f.humidity === true; } },
+  noHum: { label: 'without a humidity sensor', test: function (f) { return f.humidity === false; } },
+  hp: { label: 'with estimated horsepower', test: function (f) { return !!f.hp; } },
+  noHp: { label: 'with estimated horsepower not known (no usable reading)', test: function (f) { return f.hpApplies && !f.hp; } },
+};
+
+// What proves the answer for one row (shown in the inline list).
+function emCountsEvidence(f, col) {
+  if (col === 'variable' || col === 'single' || col === 'unknown') return f.drivePoint || 'No motor point found';
+  if (col === 'co2') return f.co2Point || '';
+  if (col === 'hum') return f.humidityPoint || '';
+  if (col === 'noCo2') return 'No carbon dioxide point';
+  if (col === 'noHum') return 'No humidity point';
+  if (col === 'hp') return '~' + f.hp.hp + ' horsepower from ' + f.hp.how;
+  if (col === 'noHp') return 'No supply fan airflow, drive power, or single speed motor current above zero';
+  return '';
+}
+
+function emCountsTally(items) {
+  var t = { n: items.length, hpSum: 0, hpSources: {} };
+  Object.keys(EM_COUNT_COLS).forEach(function (c) {
+    t[c] = 0;
+  });
+  t.motorN = 0;
+  t.sensorN = 0;
+  t.hpN = 0;
+  items.forEach(function (it) {
+    var f = it.f;
+    Object.keys(EM_COUNT_COLS).forEach(function (c) {
+      if (c !== 'all' && EM_COUNT_COLS[c].test(f)) t[c]++;
+    });
+    if (f.drive !== null) t.motorN++;
+    if (f.co2 !== null) t.sensorN++;
+    if (f.hpApplies) t.hpN++;
+    if (f.hp) {
+      t.hpSum += f.hp.hp;
+      t.hpSources[f.hp.source] = (t.hpSources[f.hp.source] || 0) + 1;
+    }
+  });
+  return t;
+}
+
+function emRenderCountsView(data, filters) {
+  _emAttachNavDelegatedListeners();
+  emSyncViewModeControls();
+  var wrap = document.getElementById('em-table-wrap');
+  if (!wrap) return;
+  var pid = window._emActivePid || '';
+  var edits = data.edits || {};
+  var fmt = function (n) {
+    return Number(n).toLocaleString('en-US');
+  };
+  var bldgFilter = (filters && filters.building) || '';
+
+  var items = (data.rows || [])
+    .filter(function (r) {
+      return !emIsPhantomRow(r);
+    })
+    .map(function (r) {
+      return { row: r, f: emRowFeatures(r, pid, edits) };
+    });
+
+  var countEl = document.getElementById('em-row-count');
+  if (countEl) countEl.textContent = fmt(items.length) + ' equipment';
+  emUpdateStatsPillsForSummary(
+    items.map(function (it) {
+      return it.row;
+    }),
+    data.rows || [],
+  );
+
+  var typeItems = bldgFilter
+    ? items.filter(function (it) {
+        return it.row.building === bldgFilter;
+      })
+    : items;
+
+  // ── group rows ──
+  function groupBy(list, keyFn) {
+    var g = {};
+    var order = [];
+    list.forEach(function (it) {
+      var k = keyFn(it);
+      if (!g[k]) {
+        g[k] = [];
+        order.push(k);
+      }
+      g[k].push(it);
+    });
+    return { map: g, keys: order };
+  }
+  var byType = groupBy(typeItems, function (it) {
+    return it.row.category || 'other';
+  });
+  var typeKeys = byType.keys.slice().sort(function (a, b) {
+    var ia = EM_TYPE_FILTER_ORDER.indexOf(a);
+    var ib = EM_TYPE_FILTER_ORDER.indexOf(b);
+    if (ia < 0) ia = 999;
+    if (ib < 0) ib = 999;
+    return ia - ib || (a < b ? -1 : 1);
+  });
+  var byBldg = groupBy(items, function (it) {
+    return it.row.building || '(no building)';
+  });
+  var bldgKeys = byBldg.keys.slice().sort(function (a, b) {
+    return a.toLowerCase() < b.toLowerCase() ? -1 : 1;
+  });
+
+  // ── cells ──
+  var tdBase = 'padding:7px 6px;border-bottom:1px solid var(--border);border-right:1px solid var(--border);vertical-align:middle;';
+  var tdNum = tdBase + 'text-align:right;';
+  var dash = function (why) {
+    return '<td style="' + tdBase + 'text-align:center;color:var(--text3)" title="' + why + '">&#8212;</td>';
+  };
+  function cnt(value, applicable, scope, key, col, tdExtra, bold) {
+    if (!applicable) return dash('This does not apply to this type of equipment');
+    if (!value) return '<td style="' + tdNum + 'color:var(--text3)">0</td>';
+    return (
+      '<td style="' + tdNum + (tdExtra || '') + '"><a href="#" data-em-counts-list="1" data-scope="' + scope + '" data-key="' + _escHtml(key) +
+      '" data-col="' + col + '" title="Show the ' + fmt(value) + ' ' + EM_COUNT_COLS[col].label + '" style="color:var(--accent);text-decoration:none;font-weight:' +
+      (bold ? '700' : '600') + '">' + fmt(value) + '</a></td>'
+    );
+  }
+  function hpCell(t, scope, key, isTotal) {
+    if (!t.hpN) return dash('Estimated horsepower is sized for fans (air handling, rooftop, outdoor air and exhaust). This type has none');
+    var srcWords = Object.keys(t.hpSources)
+      .map(function (s) {
+        return fmt(t.hpSources[s]) + ' from ' + s;
+      })
+      .join(', ');
+    var notKnown = t.hpN - t.hp;
+    if (!t.hp) {
+      return (
+        '<td style="' + tdNum + 'text-align:center" title="No reading to size from: ' + fmt(t.hpN) + ' of ' + fmt(t.hpN) +
+        ' fan units have no usable airflow, drive power or single speed motor current. Click to list them.">' +
+        '<a href="#" data-em-counts-list="1" data-scope="' + scope + '" data-key="' + _escHtml(key) + '" data-col="noHp" style="color:var(--text3);text-decoration:none">&#8212;</a></td>'
+      );
+    }
+    return (
+      '<td style="' + tdNum + 'font-style:italic' + (isTotal ? ';font-weight:700' : '') + '" title="ESTIMATE, not a nameplate value. Sized from ' + fmt(t.hp) +
+      ' of ' + fmt(t.hpN) + ' fan units (' + srcWords + '). ' + fmt(notKnown) + ' have no usable reading and are not counted. ' +
+      'Each unit is rounded up to the next standard motor size and added together.">' +
+      '<a href="#" data-em-counts-list="1" data-scope="' + scope + '" data-key="' + _escHtml(key) + '" data-col="hp" style="color:var(--text);text-decoration:none">~' + fmt(Math.round(t.hpSum)) + '</a></td>'
+    );
+  }
+  function rowCells(t, scope, key, isTotal) {
+    var b = isTotal;
+    var motor = t.motorN > 0;
+    var sens = t.sensorN > 0;
+    return (
+      cnt(t.n, true, scope, key, 'all', '', b) +
+      cnt(t.variable, motor, scope, key, 'variable', '', b) +
+      cnt(t.single, motor, scope, key, 'single', '', b) +
+      cnt(t.unknown, motor, scope, key, 'unknown', '', b) +
+      cnt(t.co2, sens, scope, key, 'co2', '', b) +
+      cnt(t.noCo2, sens, scope, key, 'noCo2', '', b) +
+      cnt(t.hum, sens, scope, key, 'hum', '', b) +
+      cnt(t.noHum, sens, scope, key, 'noHum', '', b) +
+      hpCell(t, scope, key, isTotal)
+    );
+  }
+
+  // ── headers (hover text on every one) ──
+  var th = 'background:var(--s1);border:1px solid var(--border);padding:7px 4px;font-size:11px;font-weight:600;color:var(--text);text-align:center;cursor:help;';
+  var thL = th + 'text-align:left;min-width:140px;padding-left:6px;';
+  function head(firstLabel, firstTitle, countTitle) {
+    return (
+      '<thead><tr>' +
+      '<th rowspan="2" style="' + thL + '" title="' + firstTitle + '">' + firstLabel + '</th>' +
+      '<th rowspan="2" style="' + th + '" title="' + countTitle + '">Equipment</th>' +
+      '<th colspan="3" style="' + th + '" title="Fan and pump motors, read from the point names in the building automation system. This table counts EQUIPMENT, not motors: variable speed means at least one fan or pump of that equipment has a variable speed drive.">Motor speed</th>' +
+      '<th colspan="2" style="' + th + '" title="Does the equipment have a carbon dioxide sensor point? Counts equipment, not sensors.">Carbon dioxide sensor</th>' +
+      '<th colspan="2" style="' + th + '" title="Does the equipment have a humidity sensor point? Outside air humidity is not counted. Counts equipment, not sensors.">Humidity sensor</th>' +
+      '<th rowspan="2" style="' + th + '" title="ESTIMATE, not a nameplate value. Total fan motor horsepower. Each fan unit is sized from, in this order: supply fan airflow (at full speed, from the speed reading), the drive power reading, or the motor current of a single speed motor (460 volts, 3 phase, power factor 0.85). It is rounded up to the next standard motor size. Units with no usable reading are left out; a dash means none could be sized.">Estimated horsepower</th>' +
+      '</tr><tr>' +
+      '<th style="' + th + '" title="Equipment with at least one fan or pump on a variable speed drive (a speed, frequency, drive or inverter point), or marked as variable speed by a person.">Variable speed</th>' +
+      '<th style="' + th + '" title="Equipment with a fan or pump point and no drive point. Not confirmed from a nameplate.">Single speed</th>' +
+      '<th style="' + th + '" title="Cannot tell from the points: no fan or pump point found, or a refrigerant-flow unit.">Not known</th>' +
+      '<th style="' + th + '" title="Has a carbon dioxide sensor point">Yes</th>' +
+      '<th style="' + th + '" title="No carbon dioxide sensor point found">No</th>' +
+      '<th style="' + th + '" title="Has a humidity sensor point">Yes</th>' +
+      '<th style="' + th + '" title="No humidity sensor point found">No</th>' +
+      '</tr></thead>'
+    );
+  }
+  function rowStyle(i) {
+    return i % 2 ? 'background:var(--s3)' : '';
+  }
+
+  // ── table 1: by type ──
+  var typeTotal = emCountsTally(typeItems);
+  var t1 = '<tbody>';
+  typeKeys.forEach(function (k, i) {
+    var label = _escHtml(EM_CATEGORY_LABELS[k] || k);
+    t1 += '<tr style="' + rowStyle(i) + '"><td style="' + tdBase + 'font-weight:600">' + label + '</td>' + rowCells(emCountsTally(byType.map[k]), 'type', k, false) + '</tr>';
+  });
+  if (!typeKeys.length) t1 += '<tr><td colspan="10" style="padding:24px;text-align:center;color:var(--text2)">No equipment for this selection.</td></tr>';
+  t1 += '</tbody><tfoot><tr style="background:var(--s1)"><td style="' + tdBase + 'font-weight:700;border-top:2px solid var(--border)">Total (' + fmt(typeKeys.length) + ' types)</td>' +
+    rowCells(typeTotal, 'type', '*', true) + '</tr></tfoot>';
+
+  // ── table 2: by building ──
+  var bldgTotal = emCountsTally(items);
+  var t2 = '<tbody>';
+  bldgKeys.forEach(function (k, i) {
+    var link =
+      '<a href="#" data-em-counts-bldg="' + _escHtml(k) + '" title="Show the equipment types of ' + _escHtml(k) + '" style="color:var(--accent);text-decoration:none;font-weight:600">' + _escHtml(k) + '</a>';
+    t2 += '<tr style="' + rowStyle(i) + '"><td style="' + tdBase + '">' + link + '</td>' + rowCells(emCountsTally(byBldg.map[k]), 'building', k, false) + '</tr>';
+  });
+  t2 += '</tbody><tfoot><tr style="background:var(--s1)"><td style="' + tdBase + 'font-weight:700;border-top:2px solid var(--border)">Total (' + fmt(bldgKeys.length) + ' buildings)</td>' +
+    rowCells(bldgTotal, 'building', '*', true) + '</tr></tfoot>';
+
+  // ── inline list ──
+  function listHtml(scope) {
+    if (!_emCountsList || _emCountsList.scope !== scope) return '';
+    var spec = EM_COUNT_COLS[_emCountsList.col];
+    if (!spec) return '';
+    var pool = scope === 'type' ? typeItems : items;
+    var key = _emCountsList.key;
+    var picked = pool.filter(function (it) {
+      if (key !== '*' && (scope === 'type' ? (it.row.category || 'other') : (it.row.building || '(no building)')) !== key) return false;
+      return spec.test(it.f);
+    });
+    var title = key === '*' ? (scope === 'type' ? 'All types' : 'All buildings') : scope === 'type' ? EM_CATEGORY_LABELS[key] || key : key;
+    var rowsHtml = picked
+      .map(function (it, i) {
+        return (
+          '<tr style="' + rowStyle(i) + '"><td style="' + tdBase + '">' + _escHtml(it.row.building || '') + '</td>' +
+          '<td style="' + tdBase + '"><a href="#" data-em-detail-row="' + _escHtml(it.row.id) + '" title="Open the equipment details" style="color:var(--accent);text-decoration:none;font-weight:600">' + _escHtml(it.row.equipName || it.row.id) + '</a></td>' +
+          '<td style="' + tdBase + '">' + _escHtml(EM_CATEGORY_LABELS[it.row.category] || it.row.category || '') + '</td>' +
+          '<td style="' + tdBase + 'color:var(--text2)">' + _escHtml(emCountsEvidence(it.f, _emCountsList.col)) + '</td></tr>'
+        );
+      })
+      .join('');
+    return (
+      '<div data-em-counts-listbox="1" style="background:var(--s1);border:1px solid var(--accent);border-radius:6px;margin:0 0 20px 0">' +
+      '<div style="display:flex;align-items:center;gap:12px;padding:8px 12px"><span style="font-weight:600;color:var(--text)">' + _escHtml(title) + ': ' + fmt(picked.length) + ' ' + spec.label + '</span>' +
+      '<span style="flex:1"></span><a href="#" data-em-counts-close="1" style="color:var(--accent);text-decoration:none;font-weight:600">Close</a></div>' +
+      '<div style="max-height:320px;overflow-y:auto"><table style="width:100%;border-collapse:collapse;font-size:12px"><thead><tr>' +
+      '<th style="' + th + 'text-align:left" title="Building the equipment is in">Building</th>' +
+      '<th style="' + th + 'text-align:left" title="Click a name to open the equipment details">Equipment</th>' +
+      '<th style="' + th + 'text-align:left" title="Type of equipment">Type</th>' +
+      '<th style="' + th + 'text-align:left" title="The point or reading that gives this answer">Point or reading</th>' +
+      '</tr></thead><tbody>' + rowsHtml + '</tbody></table></div></div>'
+    );
+  }
+
+  var tblStyle = 'width:100%;min-width:600px;border-collapse:collapse;font-size:12px;background:var(--s2)';
+  var outer = 'overflow-x:auto;border:1px solid var(--border);border-radius:6px;margin-bottom:12px';
+  var h2 = 'font-size:13px;margin:0 0 8px 0;color:var(--text2);font-weight:600;text-transform:uppercase;letter-spacing:0.04em';
+  var typeTitle = bldgFilter
+    ? 'Equipment by type: ' + _escHtml(bldgFilter) + ' <a href="#" data-em-counts-bldg="" style="color:var(--accent);text-decoration:none;text-transform:none;letter-spacing:0;margin-left:8px">Show all buildings</a>'
+    : 'Equipment by type: all buildings';
+  var notKnown = typeTotal.hpN - typeTotal.hp;
+  var html =
+    '<div style="padding:16px 24px">' +
+    '<h2 style="' + h2 + '">' + typeTitle + '</h2>' +
+    '<div style="' + outer + '"><table id="em-counts-type" style="' + tblStyle + '">' + head('Equipment type', 'Type of equipment. Click a number to list the equipment behind it.', 'Number of pieces of equipment (Equipment Matrix rows). Not a count of motors.') + t1 + '</table></div>' +
+    listHtml('type') +
+    '<div style="font-size:11px;color:var(--text3);margin:0 0 20px 0"><b style="color:var(--text2)">Estimated horsepower is an estimate, not a nameplate value.</b> ' +
+    (typeTotal.hpN
+      ? 'Horsepower not known: ' + (notKnown ? '<a href="#" data-em-counts-list="1" data-scope="type" data-key="*" data-col="noHp" style="color:var(--accent);text-decoration:none;font-weight:600">' + fmt(notKnown) + '</a>' : '0') + ' of ' + fmt(typeTotal.hpN) +
+        ' fan units (air handling, rooftop, outdoor air, exhaust) have no usable airflow, drive power or single speed motor current reading, so they are left out of the total. Other types show a dash.'
+      : 'No fan units in this selection.') +
+    '</div>' +
+    '<h2 style="' + h2 + '">Equipment by building</h2>' +
+    '<div style="' + outer + '"><table id="em-counts-bldg" style="' + tblStyle + '">' + head('Building', 'Building. Click a name to show its equipment types above.', 'Number of pieces of equipment (Equipment Matrix rows) in the building. Not a count of motors.') + t2 + '</table></div>' +
+    listHtml('building') +
+    '</div>';
   wrap.innerHTML = html;
 }
 

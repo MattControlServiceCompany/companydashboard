@@ -76,6 +76,7 @@ const ctx = makeCtx(store);
 load(ctx, 'app/pricing-estimator.js');
 load(ctx, 'app/estimate-workbook.js');
 load(ctx, 'computations/fan-savings.js');
+load(ctx, 'computations/equipment-features.js');
 load(ctx, 'app/audit-estimate.js');
 const pSrc = fs.readFileSync(path.join(ROOT, 'app/pricing-estimator.js'), 'utf8');
 const aSrc = fs.readFileSync(path.join(ROOT, 'app/audit-estimate.js'), 'utf8');

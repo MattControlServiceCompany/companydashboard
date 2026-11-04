@@ -40,6 +40,9 @@ const FAN_OWNED_FUNCS = [
   'fanMonthWeights',
   'fanResetSavingsFraction',
   'fanKwFromHp',
+  'fanHpFromKw',
+  'fanHpFromCfm',
+  'fanEstimateHp',
   'fanDefaultRunHours',
   '_fanEndUse',
 ];

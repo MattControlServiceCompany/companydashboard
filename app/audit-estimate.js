@@ -275,20 +275,9 @@ function auditEstClearHourOverrides(projId) {
    equipment. Reuses emLoadMatrix()/emIsPhantomRow() (app/equipment-matrix.js) — the SAME
    equipment rows the Equipment Matrix tab and the ASHRAE 36 Audit Report read, so counts here
    always agree with what the Equipment Matrix tab shows. */
-// Control concepts: units of a type that have the same SET of these concepts are one group (one
-// unit of the group is sampled). Each concept is found from the Equipment Matrix normalized point
-// keys (emGetNormalizedPoints): curated column keys plus a few vendor "auto_" name patterns
-// (scr, circuit, baseboard, vfd). Validated on real BAS data 2026-10-01 for air-side equipment.
-var AUDIT_EST_CONCEPTS = [
-  ['Economizer', /econom|^oaDamperPosition$|returnAirDamper|reliefDamper|mixedAirTemp|returnAirEnthalpy|exhaustAirDamper/i],
-  ['Fan speed/VFD', { test: function (k) { return fanDrivePointName([k]) !== null; } }], // the one drive-name rule (computations/fan-savings.js)
-  ['Electric heat', /(?<!de)scr|baseboard|electricHeat|unitHeater/i],
-  ['Hot-water heat', /^heatingValve$|^reheatValve$|heatingCoil|heatSourceSupplyTemp|hotDeck|preheat/i],
-  ['DX cooling', /circuit|condensing|compressor|cuStage|cuEnable/i],
-  ['Chilled-water cooling', /^coolingValve$|coolingCoil|coolSourceSupplyTemp|chw/i],
-  ['CO2', /co2|carbonDioxide/i],
-  ['Zone temp', /^zoneAirTemp$|^zoneTemp$/i],
-];
+// Control concepts: units of a type that have the same SET of the audit concepts are one group (one unit of the group is
+// sampled). The concept list and the rule that finds them live in computations/equipment-features.js (EM_FEATURE_CONCEPTS,
+// emRowFeatures), the same rule the Equipment Matrix > Counts view uses. Validated on real BAS data 2026-10-01 for air-side equipment.
 // Types the concept list was NOT validated for (plants, zones): the group is the exact set of
 // mapped keys (auto_ keys left out).
 var AUDIT_EST_MAPPED_KEY_TYPES = ['hwp', 'chwp', 'ct', 'zone'];
@@ -297,35 +286,22 @@ var AUDIT_EST_MAPPED_KEY_TYPES = ['hwp', 'chwp', 'ct', 'zone'];
 // emGetNormalizedPoints reads the project's custom aliases through window._emActivePid, so set it
 // to this project for the call and restore it after.
 function auditEstPointSetSignature(row, projId, cat) {
-  var prev = window._emActivePid;
-  window._emActivePid = projId;
-  var keys;
-  try {
-    keys = Object.keys(emGetNormalizedPoints(row));
-  } finally {
-    window._emActivePid = prev;
-  }
+  var features = emRowFeatures(row, projId);
   if (AUDIT_EST_MAPPED_KEY_TYPES.indexOf(cat) !== -1) {
-    var mapped = keys
+    var mapped = features.keys
       .filter(function (k) {
         return k.indexOf('auto_') !== 0;
       })
       .sort();
     return { sig: mapped.join('|'), concepts: [] };
   }
-  var found = {};
-  keys.forEach(function (k) {
-    for (var i = 0; i < AUDIT_EST_CONCEPTS.length; i++) {
-      if (AUDIT_EST_CONCEPTS[i][1].test(k)) {
-        found[AUDIT_EST_CONCEPTS[i][0]] = true;
-        return; // a key counts toward the first matching concept only
-      }
-    }
+  var auditNames = EM_FEATURE_CONCEPTS.filter(function (c) {
+    return c.audit;
+  }).map(function (c) {
+    return c.name;
   });
-  var names = AUDIT_EST_CONCEPTS.map(function (c) {
-    return c[0];
-  }).filter(function (n) {
-    return found[n];
+  var names = features.concepts.filter(function (n) {
+    return auditNames.indexOf(n) >= 0;
   });
   return { sig: names.join('|'), concepts: names };
 }
@@ -372,7 +348,7 @@ function auditEstGetEquipmentSummary(projId) {
       byCat[cat].count++;
       byCat[cat].byBuilding[bName] = (byCat[cat].byBuilding[bName] || 0) + 1;
       byCat[cat].totalPoints += pts;
-      // Group = units with the same control concepts (see AUDIT_EST_CONCEPTS). The first unit of
+      // Group = units with the same control concepts (see EM_FEATURE_CONCEPTS). The first unit of
       // a group in matrix order is its representative: one per group is sampled.
       var g = auditEstPointSetSignature(r, projId, cat);
       if (!byCat[cat].groups[g.sig]) {

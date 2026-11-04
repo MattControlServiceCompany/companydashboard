@@ -2507,6 +2507,11 @@ async function siteResetAllMeterTableSettings() {
    site-ui.js delegates to this array and should NOT maintain its own copy.
 */
 var RELEASE_NOTES = [
+  { v: 'v2026.11.05.226', date: '2026-11-05', title: 'Equipment Matrix: Counts view',
+    items: [
+      { type: 'feature', text: 'The Equipment Matrix now has a Counts view. It counts equipment by type and by building: single speed, variable speed and unknown speed motors, carbon dioxide and humidity sensors, and estimated horsepower. Click a count to see the equipment in it.' }
+    ]
+  },
   { v: 'v2026.11.04.225', date: '2026-11-04', title: 'Department name shows once, in the sidebar',
     items: [
       { type: 'fix', text: 'The department name no longer shows twice. It now appears once, at the top of the sidebar, and no longer in the header.' }
