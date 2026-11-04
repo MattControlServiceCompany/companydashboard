@@ -64,7 +64,6 @@ function check(name, ok, extra) {
         icons: bar.querySelectorAll('.pdt-ico, img, svg').length,
         arrows: document.querySelectorAll('.pd-tabs-arrow, .pd-tabs-fade, .pd-tabs-wrap, .dept-nav').length,
         scrolls: bar.scrollWidth > bar.clientWidth + 1,
-        deptHidden: getComputedStyle(document.getElementById('hdrDeptTab')).display === 'none',
       };
     });
     check('tabs are in the header row', h.inHeader && h.n >= 8);
@@ -95,7 +94,6 @@ function check(name, ok, extra) {
     check('active tab background equals the page background it joins', hexRgb(tl.panelBg) === tl.actBg, JSON.stringify(tl));
     check('inactive tab is a different background than the active tab', tl.idleBg !== tl.actBg, JSON.stringify(tl));
     check('tab has rounded top corners, a top border and no bottom border', parseFloat(tl.radius) >= 6 && parseFloat(tl.topW) >= 1 && tl.actBB === '0px' && tl.idleBB === '0px', JSON.stringify(tl));
-    check('department tab hidden while a project is open', h.deptHidden);
     const rows = await page.evaluate(() => {
       const info = document.getElementById('hdrProjBar').getBoundingClientRect();
       const tabs = document.getElementById('hdrTabs').getBoundingClientRect();
@@ -156,10 +154,10 @@ function check(name, ok, extra) {
     await page.evaluate(() => backToList());
     await page.waitForTimeout(200);
     const b = await page.evaluate(() => ({
-      dept: getComputedStyle(document.getElementById('hdrDeptTab')).display !== 'none',
+      dept: !document.getElementById('hdrDeptTab'),
       bar: getComputedStyle(document.getElementById('hdrTabs')).display !== 'none',
     }));
-    check('Back shows the department tab and hides the project tabs', b.dept && !b.bar, JSON.stringify(b));
+    check('Back hides the project tabs; no department tab in the header', b.dept && !b.bar, JSON.stringify(b));
   } finally {
     await ctx.close();
     srv.close();

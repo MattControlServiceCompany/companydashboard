@@ -1,5 +1,5 @@
-// Real-browser test (synthetic data, headless Chromium, file://): the sidebar must not repeat the department name
-// (no "ENERGY" header text); the pin button stays; the top bar #hdrDeptTab shows "Energy Department".
+// Real-browser test (synthetic data, headless Chromium, file://): the sidebar shows the department label ("Energy");
+// the header has no #hdrDeptTab; the department name shows once across sidebar + header; the pin button stays.
 // Run: node test-sidebar-no-duplicate-dept-label.js
 const { launchBrowser } = require('./tools/launch-browser.js');
 const path = require('path');
@@ -30,19 +30,20 @@ function eq(a, b, l) {
     const r = await page.evaluate(() => {
       const sb = document.querySelector('.sidebar');
       const pin = document.querySelector('.sidebar .sb-pin-btn, .sb-pin-btn');
-      const hdr = document.getElementById('hdrDeptTab');
+      const hdr = document.querySelector('.topbar');
       const vis = (e) => !!e && e.getBoundingClientRect().width > 0;
+      const leaf = (root, re) => [...root.querySelectorAll('*')].filter((e) => e.children.length === 0 && re.test(e.textContent.trim()));
       return {
-        sidebarHasEnergyHeader: [...sb.querySelectorAll('*')].some(
-          (e) => e.children.length === 0 && e.textContent.trim().toLowerCase() === 'energy',
-        ),
+        sidebarLabels: leaf(sb, /^energy$/i).filter(vis).length,
+        hdrDeptTab: !!document.getElementById('hdrDeptTab'),
+        hdrNameCount: leaf(hdr, /^energy( department)?$/i).length,
         pinVisible: vis(pin),
-        hdr: hdr ? hdr.textContent.trim() : null,
       };
     });
-    eq(r.sidebarHasEnergyHeader, false, 'sidebar has no ENERGY header text');
+    eq(r.sidebarLabels, 1, 'sidebar shows the department label once');
+    eq(r.hdrDeptTab, false, '#hdrDeptTab does not exist');
+    eq(r.hdrNameCount, 0, 'header has no department name');
     eq(r.pinVisible, true, 'pin button visible');
-    eq(r.hdr, 'Energy Department', '#hdrDeptTab text');
   } finally {
     await ctx.close();
   }

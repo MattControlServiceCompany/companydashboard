@@ -2507,6 +2507,11 @@ async function siteResetAllMeterTableSettings() {
    site-ui.js delegates to this array and should NOT maintain its own copy.
 */
 var RELEASE_NOTES = [
+  { v: 'v2026.11.04.225', date: '2026-11-04', title: 'Department name shows once, in the sidebar',
+    items: [
+      { type: 'fix', text: 'The department name no longer shows twice. It now appears once, at the top of the sidebar, and no longer in the header.' }
+    ]
+  },
   { v: 'v2026.11.04.224', date: '2026-11-04', title: 'Savings Methods comparison on Project > Performance',
     items: [
       { type: 'feature', text: 'Project > Performance now shows the contract savings (as billed) beside the same savings with post-baseline bills normalized for weather and dates, by quarter and year. This is for internal comparison only. Billed savings do not change.' },

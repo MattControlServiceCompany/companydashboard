@@ -3242,14 +3242,12 @@ function _tabArrowsInit() {
 function _syncHeaderTabs() {
   const bar = document.getElementById('hdrTabs');
   const info = document.getElementById('hdrProjBar');
-  const dept = document.getElementById('hdrDeptTab');
-  if (!bar || !info || !dept) return;
+  if (!bar || !info) return;
   const detail = document.getElementById('projDetailView');
   const view = document.getElementById('view-projects');
   const open = !!(window._activeProjId && detail && detail.style.display !== 'none' && view && view.classList.contains('active'));
   bar.style.display = open ? 'flex' : 'none';
   info.style.display = open ? 'flex' : 'none';
-  dept.style.display = open ? 'none' : '';
   const top = bar.closest('.topbar');
   if (top) top.classList.toggle('has-tabs', open);
   _tabArrowsInit();

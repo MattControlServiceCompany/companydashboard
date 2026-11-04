@@ -128,11 +128,6 @@ html[data-sb-mode='collapsed'] .app-wrap > .sidebar:has(.sb-pin-btn[aria-expande
   visibility: visible;
 }
 
-/* Room for the pin button above the first item (the removed section label used to fill it) */
-html:not([data-sb-mode='slim']) .sidebar-top {
-  padding-top: 20px;
-}
-
 /* Slim */
 html[data-sb-mode='slim'] .sb-pin-btn {
   left: 15px;
@@ -145,6 +140,7 @@ html[data-sb-mode='slim'] .app-wrap > .sidebar {
   padding-top: 38px;
   overflow-x: hidden;
 }
+html[data-sb-mode='slim'] .sidebar .s-lbl,
 html[data-sb-mode='slim'] .sidebar .s-txt,
 html[data-sb-mode='slim'] .sidebar .s-badge,
 html[data-sb-mode='slim'] .sidebar .s-proj-collapse,
