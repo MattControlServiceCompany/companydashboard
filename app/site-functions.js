@@ -2507,6 +2507,11 @@ async function siteResetAllMeterTableSettings() {
    site-ui.js delegates to this array and should NOT maintain its own copy.
 */
 var RELEASE_NOTES = [
+  { v: 'v2026.11.04.223', date: '2026-11-04', title: 'Sidebar no longer repeats the department name',
+    items: [
+      { type: 'fix', text: 'The Energy Department sidebar no longer shows the department name twice. The name now appears once, at the top of the page.' }
+    ]
+  },
   { v: 'v2026.11.04.222', date: '2026-11-04', title: 'Contract status follows the contract type',
     items: [
       { type: 'fix', text: 'A building now counts as under contract based on its contract type. The service agreement number no longer decides it, so savings and contract figures no longer change when that number is blank or different.' }
