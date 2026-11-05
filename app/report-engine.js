@@ -12725,6 +12725,7 @@ async function exportReportToDocx() {
       images: translated.images,
       numIds: translated.numIds,
       compactLetterhead: translated.isReport,
+      pageCount: pages.length, // the footer's cached "of M": one Word page for each report page
     });
 
     showToast('Word document generated ✓');

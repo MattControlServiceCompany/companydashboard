@@ -2507,6 +2507,13 @@ async function siteResetAllMeterTableSettings() {
    site-ui.js delegates to this array and should NOT maintain its own copy.
 */
 var RELEASE_NOTES = [
+  { v: 'v2026.11.05.230', date: '2026-11-05', title: 'Quarterly report Word export',
+    items: [
+      { type: 'fix', text: 'Energy Department > quarterly report Word export: negative numbers now show a normal minus sign.' },
+      { type: 'fix', text: 'Energy Department > quarterly report Word export: the footer shows the true page total instead of "of 1".' },
+      { type: 'fix', text: 'Energy Department > quarterly report Word export: tables and charts now stay inside the page margins, and table rows no longer split across pages.' }
+    ]
+  },
   { v: 'v2026.11.05.229', date: '2026-11-05', title: 'Meeting agenda export table',
     items: [
       { type: 'fix', text: 'Meeting agenda/minutes export: the contact table header has one continuous line under it, plain header words, and the E-mail column fits long addresses (Word and PDF).' }

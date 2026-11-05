@@ -7,6 +7,10 @@
 //   5. Page number footer: Arial 10pt, right, a spacer under it that lifts it above the wave.
 //   6. "Year to Date" has one heading (the section's own page body has no second h2).
 //   7. The Word export gives a report a compact letterhead spacer.
+//   8. A minus sign is Word's own no-break hyphen (never the U+2011 character, which Word draws as a raised bar).
+//   9. The footer's NUMPAGES field keeps the page count the export gives it.
+//  10. A table or a picture never runs past the text width (10080 twips).
+//  11. Every table row cannot split across a page; the first row of each table repeats as the header.
 'use strict';
 
 const fs = require('fs');
@@ -27,7 +31,7 @@ function assert(cond, msg) {
 }
 
 const src = fs.readFileSync(path.join(REPO, 'app', 'docx-writer.js'), 'utf8');
-const sb = {};
+const sb = { atob: (t) => Buffer.from(t, 'base64').toString('binary') };
 vm.createContext(sb);
 vm.runInContext(src, sb);
 
@@ -104,7 +108,14 @@ console.log('\n--- 5. page number footer ---');
     assert(/<w:jc w:val="right"\/>/.test(out), 'footer text is on the right');
     const lift = /w:line="(\d+)" w:lineRule="exact"\/><\/w:pPr><\/w:p><\/w:ftr>/.exec(out);
     assert(lift && Number(lift[1]) >= 1500, 'a spacer under the number lifts it above the wave: ' + (lift && lift[1]));
-    rest();
+    const zip22 = { files: { 'word/footer1.xml': 1 }, file: (n, v) => (v ? ((out22 = v), 0) : { async: async () => footer }) };
+    let out22 = '';
+    sb._docxApplyPageNumberFooters(zip22, 22).then(() => {
+      const cached = (xml) => /NUMPAGES[\s\S]*?separate"\/><\/w:r><w:r>[\s\S]*?<w:t>(\d+)<\/w:t>/.exec(xml);
+      assert(cached(out22) && cached(out22)[1] === '22', 'NUMPAGES keeps the page count the export gives it (22): ' + (cached(out22) && cached(out22)[1]));
+      assert(cached(out) && cached(out)[1] === '1', 'NUMPAGES cached result is 1 when the export gives no count');
+      rest();
+    });
   });
 }
 
@@ -118,6 +129,52 @@ function rest() {
   assert(sb._DOCX_LETTERHEAD_SPACER_COMPACT_TWIPS < sb._DOCX_LETTERHEAD_SPACER_TWIPS, 'compact spacer is shorter than the standard one');
   assert(sb._DOCX_LETTERHEAD_SPACER_COMPACT_TWIPS / 20 + 31.95 >= 150, 'compact spacer still clears the letterhead lockup (ink bottom 145pt)');
   assert(/compactLetterhead: translated\.isReport/.test(eng), 'the quarterly Word export passes the compact spacer flag');
+
+  console.log('\n--- 8. minus sign in a Word run ---');
+  {
+    const run = sb._docxRun({ text: 'Savings were \u2011$6,496 and \u20115 units' });
+    assert(!/\u2011/.test(run), 'no U+2011 character in a Word run');
+    assert((run.match(/<w:noBreakHyphen\/>/g) || []).length === 2, 'each U+2011 becomes a <w:noBreakHyphen/>');
+    assert(/<w:t xml:space="preserve">\$6,496 and <\/w:t>/.test(run), 'the digits after the minus stay in the run text');
+    const plain = sb._docxRun({ text: 'a - b \u2212 c' });
+    assert(!/noBreakHyphen/.test(plain) && /\u2212/.test(plain), 'a plain hyphen and a real minus (U+2212) are not changed');
+  }
+
+  console.log('\n--- 10. table and picture widths ---');
+  {
+    const W = sb._DOCX_CONTENT_WIDTH_TWIPS;
+    const sum = (a) => a.reduce((x, y) => x + y, 0);
+    const wide = sb._docxHoldTableWidth([3024, 1310, 1310, 1109, 1210, 1210, 1109], 10282);
+    assert(sum(wide) === W, 'a table 202 twips too wide is cut to the text width: ' + sum(wide));
+    assert(wide.every((w) => w >= 400), 'no column is cut below 400 twips: ' + wide.join(','));
+    assert(sum(sb._docxHoldTableWidth([3125, 1008, 1109, 1210, 1008, 2621], 10081)) === W, 'a rounding step over is cut to the text width');
+    assert(sum(sb._docxHoldTableWidth([3427, 1663, 1663, 1663, 1663], 10079)) === W, 'a rounding step under is raised to the text width');
+    assert(sum(sb._docxHoldTableWidth([2000, 3000], 5000)) === 5000, 'a table narrower than the text area keeps its width');
+    const png = 'data:image/png;base64,iVBORw0KGgo=';
+    const img = { getAttribute: (n) => (n === 'src' ? png : n === 'alt' ? 'Chart' : null), style: { width: '720px', height: '150px' } };
+    const ctx = { images: [], imageCounter: 100 };
+    let runXml = null;
+    try {
+      runXml = sb._docxRegisterImage(img, ctx);
+    } catch (e) {
+      console.log('    (error: ' + e.message + ')');
+    }
+    const cx = runXml && /<wp:extent cx="(\d+)" cy="(\d+)"/.exec(runXml);
+    assert(cx && Number(cx[1]) <= W * 635, 'a picture 720 px wide is no wider than the text area: ' + (cx && cx[1] + ' <= ' + W * 635));
+    assert(cx && Math.abs(Number(cx[1]) / Number(cx[2]) - 720 / 150) < 0.01, 'the picture keeps its proportions');
+  }
+
+  console.log('\n--- 11. rows stay whole, header repeats ---');
+  {
+    const body = sb._docxTableRow(['<w:tc/>'], {});
+    const head = sb._docxTableRow(['<w:tc/>'], { header: true });
+    assert(/^<w:tr><w:trPr><w:cantSplit\/><\/w:trPr>/.test(body) && !/tblHeader/.test(body), 'a body row has cantSplit and no tblHeader');
+    assert(/<w:trPr><w:cantSplit\/><w:tblHeader\/><\/w:trPr>/.test(head), 'a header row has cantSplit and tblHeader');
+    const bare = src.split('\n').filter((l) => /['"]<w:tr>['"]/.test(l) && !/^\s*(\/\/|\*)/.test(l));
+    assert(bare.length === 1 && bare[0].indexOf('trPr') >= 0, 'only _docxTableRow writes a <w:tr> (' + bare.length + ' place)');
+    const flex = src.slice(src.indexOf('function _docxTranslateFlexRowTable'), src.indexOf('function _docxTranslateBlock('));
+    assert(/_docxTableRow\(cellsXml, \{ header: true \}\)/.test(flex), 'the one-row flex table writes its row with _docxTableRow, as a header row');
+  }
 
   console.log('\n' + passed + ' passed, ' + failed + ' failed');
   process.exit(failed ? 1 : 0);

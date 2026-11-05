@@ -119,7 +119,15 @@ function _docxRun(opts) {
   var lines = text.split('\n');
   var body = lines
     .map(function (line, i) {
-      var t = '<w:t xml:space="preserve">' + _docxEscapeXml(line) + '</w:t>';
+      // U+2011 (no-break hyphen) is the report's marker for a minus sign that must stay with its number (_rptQNoBreakMinus,
+      // app/report-engine.js). Word draws the U+2011 character as a raised bar in Arial. Word's own <w:noBreakHyphen/>
+      // element draws a normal hyphen that never breaks from its number.
+      var t = line
+        .split('‑')
+        .map(function (part) {
+          return '<w:t xml:space="preserve">' + _docxEscapeXml(part) + '</w:t>';
+        })
+        .join('<w:noBreakHyphen/>');
       return (i > 0 ? '<w:br/>' : '') + t;
     })
     .join('');
@@ -535,7 +543,7 @@ async function _docxSpliceNumbering(zip, allocations) {
  *   literal "Page " -> PAGE field -> literal " of " -> NUMPAGES field
  * Each field is the full three-part construct Word requires: a `begin` fldChar,
  * an `instrText` carrying the field code, a `separate` fldChar, the cached result
- * text, then an `end` fldChar. The cached "1" is only what a reader shows before
+ * text, then an `end` fldChar. The cached result (the page count the export passes, else 1) is only what a reader shows before
  * Word recalculates; the numbers stay live because they are fields, so a client
  * who edits the .docx and repaginates gets correct numbers instead of a stale
  * count baked in at export time. Do NOT replace these with static numbers.
@@ -545,7 +553,12 @@ async function _docxSpliceNumbering(zip, allocations) {
  * comfortably above the 10pt client-document floor).
  */
 var _DOCX_FOOTER_RPR = '<w:rPr><w:rFonts w:ascii="Arial" w:hAnsi="Arial" w:eastAsia="Arial" w:cs="Arial"/><w:sz w:val="20"/><w:szCs w:val="20"/></w:rPr>';
-var _DOCX_PAGE_N_OF_M_RUNS =
+/* The cached NUMPAGES result is the report's own page count (one Word page for each report page). Word recomputes the
+   field when it lays the pages out. A viewer that does not (a preview pane, Protected View, a phone) shows the cached
+   number, so a cached "1" would read "Page 1 of 1" there. */
+function _docxPageNOfMRuns(pageCount) {
+  var total = pageCount > 0 ? String(Math.round(pageCount)) : '1';
+  return (
   '<w:r>' + _DOCX_FOOTER_RPR + '<w:t xml:space="preserve">Page </w:t></w:r>' +
   '<w:r>' + _DOCX_FOOTER_RPR + '<w:fldChar w:fldCharType="begin"/></w:r>' +
   '<w:r>' + _DOCX_FOOTER_RPR + '<w:instrText xml:space="preserve"> PAGE   \\* MERGEFORMAT </w:instrText></w:r>' +
@@ -556,8 +569,10 @@ var _DOCX_PAGE_N_OF_M_RUNS =
   '<w:r>' + _DOCX_FOOTER_RPR + '<w:fldChar w:fldCharType="begin"/></w:r>' +
   '<w:r>' + _DOCX_FOOTER_RPR + '<w:instrText xml:space="preserve"> NUMPAGES   \\* MERGEFORMAT </w:instrText></w:r>' +
   '<w:r>' + _DOCX_FOOTER_RPR + '<w:fldChar w:fldCharType="separate"/></w:r>' +
-  '<w:r>' + _DOCX_FOOTER_RPR.replace('<w:rPr>', '<w:rPr><w:noProof/>') + '<w:t>1</w:t></w:r>' +
-  '<w:r>' + _DOCX_FOOTER_RPR.replace('<w:rPr>', '<w:rPr><w:noProof/>') + '<w:fldChar w:fldCharType="end"/></w:r>';
+  '<w:r>' + _DOCX_FOOTER_RPR.replace('<w:rPr>', '<w:rPr><w:noProof/>') + '<w:t>' + total + '</w:t></w:r>' +
+  '<w:r>' + _DOCX_FOOTER_RPR.replace('<w:rPr>', '<w:rPr><w:noProof/>') + '<w:fldChar w:fldCharType="end"/></w:r>'
+  );
+}
 /* Footer geometry (2026-11-05): the letterhead wave starts about 714pt from the top, so "Page N of M" is a 10pt Arial
    line (exact 10pt) at the right with an empty exact-height paragraph under it that lifts the number above the wave. */
 var _DOCX_FOOTER_NUM_LINE_TWIPS = 200;
@@ -589,7 +604,7 @@ var _DOCX_FOOTER_LIFT_TWIPS = 1780;
  * Called from _docxAssemble() -- the single choke point every .docx export goes
  * through -- so no export path can miss it.
  */
-async function _docxApplyPageNumberFooters(zip) {
+async function _docxApplyPageNumberFooters(zip, pageCount) {
   var names = Object.keys(zip.files).filter(function (n) {
     return /^word\/footer\d*\.xml$/.test(n);
   });
@@ -605,7 +620,7 @@ async function _docxApplyPageNumberFooters(zip) {
       /(<w:sdtContent><w:p\b[^>]*>(?:<w:pPr>.*?<\/w:pPr>)?)(.*?)(<\/w:p><\/w:sdtContent>)/,
       function (m, head, runs, tail) {
         if (runs.indexOf('PAGE') === -1) return m; // not the page-number paragraph
-        return head.replace(/<w:pPr>(.*?)<w:jc /, '<w:pPr>$1<w:spacing w:before="0" w:after="0" w:line="' + _DOCX_FOOTER_NUM_LINE_TWIPS + '" w:lineRule="exact"/><w:jc ') + _DOCX_PAGE_N_OF_M_RUNS + tail;
+        return head.replace(/<w:pPr>(.*?)<w:jc /, '<w:pPr>$1<w:spacing w:before="0" w:after="0" w:line="' + _DOCX_FOOTER_NUM_LINE_TWIPS + '" w:lineRule="exact"/><w:jc ') + _docxPageNOfMRuns(pageCount) + tail;
       },
     );
     // The empty paragraph after the page-number control: an exact-height spacer that lifts the number above the wave.
@@ -1088,7 +1103,7 @@ async function _docxAssemble(documentXml, opts) {
   // applied here rather than in the skeleton asset so the skeleton stays a
   // verbatim record of its two source templates. See the function's comment for
   // why this deliberately diverges from the Client A footer.
-  await _docxApplyPageNumberFooters(zip);
+  await _docxApplyPageNumberFooters(zip, opts.pageCount);
 
   // The skeleton has Heading 1 and Heading 3 but no Heading 2: add it (Arial, keep with next, outline level 2).
   var stylesXml = await zip.file('word/styles.xml').async('string');
@@ -1421,6 +1436,11 @@ function _docxRegisterImage(el, ctx) {
     parseFloat(el.style && el.style.height) || parseFloat(el.getAttribute('height')) || el.naturalHeight || 96;
   var widthTwips = _docxPxToTwips(widthPx) || 1440;
   var heightTwips = _docxPxToTwips(heightPx) || 1440;
+  // A picture never runs past the right margin: wider than the text area, it shrinks with its proportions kept.
+  if (widthTwips > _DOCX_CONTENT_WIDTH_TWIPS) {
+    heightTwips = Math.round((heightTwips * _DOCX_CONTENT_WIDTH_TWIPS) / widthTwips);
+    widthTwips = _DOCX_CONTENT_WIDTH_TWIPS;
+  }
 
   // docPrId MUST be unique per drawing object in the document. _docxImageRun defaults it to 1,
   // which was harmless while no document embedded more than one body image — the Audit cover's
@@ -1897,6 +1917,40 @@ function _docxFitColumnWidths(widths, mins) {
 }
 
 /**
+ * Keep a fitted table inside its width. The word-whole minimums can add up to more than the table width: then the
+ * columns give back the excess in proportion to their width above a small floor (a long word may then wrap). A total
+ * wider than the text area, or only a rounding step off it, becomes exactly the text width. Returns new widths that add up to
+ * the wanted total.
+ */
+function _docxHoldTableWidth(widths, total) {
+  var w = widths.slice();
+  var sum = w.reduce(function (a, b) {
+    return a + b;
+  }, 0);
+  if (total > _DOCX_CONTENT_WIDTH_TWIPS || Math.abs(total - _DOCX_CONTENT_WIDTH_TWIPS) <= 5) total = _DOCX_CONTENT_WIDTH_TWIPS;
+  var FLOOR = 400;
+  var excess = sum - total;
+  if (excess > 5) {
+    var room = 0;
+    w.forEach(function (x) {
+      if (x > FLOOR) room += x - FLOOR;
+    });
+    if (room > 0) {
+      var take = Math.min(excess, room);
+      w = w.map(function (x) {
+        return x > FLOOR ? x - Math.floor((take * (x - FLOOR)) / room) : x;
+      });
+    }
+  }
+  sum = w.reduce(function (a, b) {
+    return a + b;
+  }, 0);
+  var widest = w.indexOf(Math.max.apply(null, w));
+  w[widest] += total - sum;
+  return w;
+}
+
+/**
  * Determine a table's TRUE structural column count from each row's
  * colspan-sum, using the MODAL (most common) sum rather than the max.
  *
@@ -1988,6 +2042,7 @@ function _docxTranslateTable(tableEl, ctx) {
       if (sum <= _total || level === 0) _mins = m;
     });
     colWidths = _docxFitColumnWidths(colWidths, _mins);
+    colWidths = _docxHoldTableWidth(colWidths, _total);
   }
 
   // vMergeState[col] = number of REMAINING rows (after this one) a prior row's
@@ -2431,7 +2486,7 @@ function _docxTranslateFlexRowTable(el, ctx) {
     '<w:tblLook w:val="0000" w:firstRow="0" w:lastRow="0" w:firstColumn="0" w:lastColumn="0" w:noHBand="1" w:noVBand="1"/>' +
     '</w:tblPr>';
 
-  return '<w:tbl>' + tblPr + grid + '<w:tr>' + cellsXml.join('') + '</w:tr>' + '</w:tbl>';
+  return '<w:tbl>' + tblPr + grid + _docxTableRow(cellsXml, { header: true }) + '</w:tbl>';
 }
 
 /**
