@@ -3952,7 +3952,7 @@ function _rptQAppendixDPages(n, d, f, letter) {
   if (none.length) {
     if (used + 28 + 40 + ROW * none.length > BUDGET) newPage();
     cur +=
-      '<h2 style="font-size:15px;margin:8px 0 3px">Meters with no bill in ' + f.qLabel + '</h2>' +
+      '<h2 style="font-size:15px;margin:8px 0 3px">Meters with No Bill in ' + f.qLabel + '</h2>' +
       _rptQTable(
         [34, 36, 15, 15],
         ['Building', 'Meter', 'Bills (count)', 'Cost'],
@@ -8627,7 +8627,7 @@ function _rptQBuildingSummaryPage(n, d, b, f, extraHtml) {
     return '<h2 style="font-size:16px;margin:12px 0 4px">' + t + '</h2>';
   };
   var body = (info ? _rptQPara(info) : '') + h2('Savings, ' + qLbl) + (fuels.length ? t1 + _rptQNote(_rptQChangeRule() + ' ' + _rptQSavingsRule()) : '') + h2('Monthly Use, ' + qLbl) + t2 + (t3 ? (euiNote ? _rptQNote(euiNote) : '') + t3 : '') + (extraHtml || '');
-  return rptPage(n, _escHtml(b.name || 'Building') + ' - Building Summary', body, {
+  return rptPage(n, _escHtml(b.name || 'Building') + ' &ndash; Building Summary', body, {
     data: d,
     letterhead: false,
     label: 'Page ' + n + ' - ' + (b.name || 'Building'),

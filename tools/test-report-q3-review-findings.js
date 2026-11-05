@@ -310,7 +310,7 @@ const meterPageText = textOf(sectionHtml('meterPerformance'));
 const propDetail = textOf(sectionHtml('propaneDetail'));
 assert(/Beta Building/.test(propDetail), 'propane detail table lists the propane building');
 const apxD = textOf(sectionHtml('appendixD'));
-assert(/Meters with no bill in Q2 2025/.test(apxD) && /A-mB2/.test(apxD), 'Appendix D lists the meter with no bill in the quarter');
+assert(/Meters with No Bill in Q2 2025/.test(apxD) && /A-mB2/.test(apxD), 'Appendix D lists the meter with no bill in the quarter');
 // Appendix D bill rows add to the stated total
 const money = (t) => Number(t.replace(/[$,]/g, ''));
 const dRows = (sectionHtml('appendixD').match(/<tr><td>[\s\S]*?<\/tr>/g) || []).map((r) => (r.match(/\$[\d,]+/g) || []).map(money)).filter((a) => a.length === 1);
