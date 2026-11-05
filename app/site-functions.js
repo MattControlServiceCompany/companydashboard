@@ -2507,6 +2507,14 @@ async function siteResetAllMeterTableSettings() {
    site-ui.js delegates to this array and should NOT maintain its own copy.
 */
 var RELEASE_NOTES = [
+  { v: 'v2026.11.05.227', date: '2026-11-05', title: 'Updated emission factors',
+    items: [
+      { type: 'fix', text: 'The Environmental Impact page in reports and the emissions box on the Energy Graphics page now use the EPA eGRID2023 electricity factors for every state and the EPA GHG Emission Factors Hub for fuels.' },
+      { type: 'fix', text: 'The propane emission factor now uses the correct unit.' },
+      { type: 'change', text: 'The PM10, PM2.5, VOC, CO and mercury rows are removed from the Environmental Impact page and the emissions box.' },
+      { type: 'change', text: 'One sign rule now applies: a plus sign means more emissions than the baseline.' }
+    ]
+  },
   { v: 'v2026.11.05.226', date: '2026-11-05', title: 'Equipment Matrix: Counts view',
     items: [
       { type: 'feature', text: 'The Equipment Matrix now has a Counts view. It counts equipment by type and by building: single speed, variable speed and unknown speed motors, carbon dioxide and humidity sensors, and estimated horsepower. Click a count to see the equipment in it.' }

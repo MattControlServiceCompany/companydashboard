@@ -85,7 +85,7 @@ function rptApplyPrintedToData(d) {
   c.annualTarget = printedNum('quarterly targets', 'projected', '', '', 'annual', c.annualTarget);
   c.escalation = printedNum('contract projection', 'Portfolio', '', '', 'escalation_pct', c.escalation);
   var pol = d.pollution;
-  var POL = ['co2', 'ch4', 'n2o', 'so2', 'nox', 'hg_oz', 'pm10_oz', 'voc_oz', 'co_oz'];
+  var POL = ['co2', 'ch4', 'n2o', 'so2', 'nox'];
   var EQ = [
     'carsRemoved',
     'gallonsGasoline',

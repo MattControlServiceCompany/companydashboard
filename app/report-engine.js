@@ -785,14 +785,9 @@ function collectReportData(projId, buildingIds, reportDateStr, reportType, selec
     inputs: { kwhSaved: 0, thermsSaved: 0, propaneGalSaved: 0 },
   };
   try {
-    // Clamp to zero: negative savings (usage increase) produce zero pollution credits,
-    // not negative ones. Dashboard (graphics-setpoints.js) must match this behavior.
-    pollution = calculatePollutionCredits(
-      Math.max(0, totKwhSaved),
-      Math.max(0, totThermsSaved),
-      Math.max(0, totPropaneSaved),
-      stateCode,
-    );
+    // Signed net: a commodity whose use rose subtracts from the avoided emissions. The Energy Graphics
+    // box (graphics-setpoints.js) calls the same function with the same signed inputs.
+    pollution = calculatePollutionCredits(totKwhSaved, totThermsSaved, totPropaneSaved, stateCode);
   } catch (e) {
     /* pollution calc not critical */
   }
@@ -5841,7 +5836,7 @@ function rptPageEnvironmentalImpact(n, d) {
     return (
       '<div style="font-size:13px;color:var(--rpt-page-text);padding:2px 0;line-height:1.5;text-align:center">' +
       '<strong style="color:var(--rpt-blue);font-size:16px">' +
-      $n(val) +
+      emissionsChangeText(val) +
       '</strong>' +
       ' total ' +
       unit +
@@ -5871,11 +5866,7 @@ function rptPageEnvironmentalImpact(n, d) {
     polLine(pol.ch4, 'pounds', 'CH₄ (methane)') +
     polLine(pol.n2o, 'pounds', 'N₂O (nitrous oxide)') +
     polLine(pol.so2, 'pounds', 'SO2 (sulfur dioxide)') +
-    polLine(pol.nox, 'pounds', 'NOX (nitrogen oxide)') +
-    polLine(pol.hg_oz, 'ounces', 'HG (mercury)') +
-    polLine(pol.pm10_oz, 'ounces', 'PM10 (fine particles)') +
-    polLine(pol.voc_oz, 'ounces', 'VOC (volatile organic compounds)') +
-    polLine(pol.co_oz, 'ounces', 'CO (carbon monoxide)');
+    polLine(pol.nox, 'pounds', 'NOX (nitrogen oxide)');
 
   // F11 continued (2026-09-10, Q2 report fix item 4c): reconcile these suffixes with the basis
   // statement rendered just above them (bodyHTML below). Matt, 2026-09-10 live review: when that
@@ -5909,7 +5900,7 @@ function rptPageEnvironmentalImpact(n, d) {
 
   const bodyHTML =
     '<div contenteditable="true">' +
-    '<div style="font-size:16px;font-weight:700;color:var(--rpt-blue);margin:0 0 6px;text-transform:uppercase;letter-spacing:0.5px;text-align:center">Environmental Impact — Pollution Reduction Credits</div>' +
+    '<div style="font-size:16px;font-weight:700;color:var(--rpt-blue);margin:0 0 6px;text-transform:uppercase;letter-spacing:0.5px;text-align:center">Environmental Impact — Change in Emissions</div>' +
     // F11 fix (2026-09-09): state the basis explicitly — the pollutant/equivalent figures
     // below are computed from this period's ACTUAL energy savings (kwhSaved/thermsSaved/
     // propaneGalSaved, quarter-scoped via collectReportData's inPeriod accumulation — see
@@ -5926,7 +5917,10 @@ function rptPageEnvironmentalImpact(n, d) {
     '</div>' +
     '<div style="display:flex;flex-direction:column;gap:10px">' +
     '<div style="padding:4px 0;text-align:center">' +
-    '<div style="font-size:13px;font-weight:700;color:var(--rpt-blue);text-transform:uppercase;letter-spacing:0.04em;margin-bottom:8px">Pollutants Avoided</div>' +
+    '<div style="font-size:13px;font-weight:700;color:var(--rpt-blue);text-transform:uppercase;letter-spacing:0.04em;margin-bottom:8px">Change in Emissions Compared With Baseline</div>' +
+    '<div style="font-size:11px;color:var(--rpt-page-text);margin-bottom:6px;text-align:center">' +
+    EMISSIONS_SIGN_NOTE +
+    '</div>' +
     polLines +
     '</div>' +
     '<div style="padding:4px 0;text-align:center">' +
@@ -5935,15 +5929,10 @@ function rptPageEnvironmentalImpact(n, d) {
     '</div>' +
     '</div>' +
     '<div style="margin-top:24px;font-size:10px;color:var(--rpt-page-text);padding-top:6px;text-align:center">' +
-    'Source: EPA eGRID2023 Version 1.0 Rev 1 — https://www.epa.gov/egrid | State: ' +
-    st +
-    ' | Inputs: ' +
-    $n(inp.kwhSaved) +
-    ' kWh + ' +
-    $n(inp.thermsSaved) +
-    ' Therms + ' +
-    $n(inp.propaneGalSaved) +
-    ' Gal Propane' +
+    'Source: ' +
+    emissionsSourceLine(st) +
+    ' | ' +
+    energyUseChangeLine(inp.kwhSaved, inp.thermsSaved, inp.propaneGalSaved) +
     '</div>' +
     '</div>';
 

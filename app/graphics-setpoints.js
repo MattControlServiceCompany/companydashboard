@@ -1425,48 +1425,35 @@ function egfxRefresh(projId) {
         const _stateMatch = _addrStr.match(/\b([A-Z]{2})\b(?=\s*\d{5}|\s*$|,|\s*$)/);
         const _stateCode = (_stateMatch ? _stateMatch[1] : null) || 'KS';
         const _pc = calculatePollutionCredits(
-          Math.max(0, kwhSaved),
-          Math.max(0, gasSaved),
-          Math.max(0, propSaved),
+          kwhSaved,
+          gasSaved,
+          propSaved,
           _stateCode,
         );
         const _pol = _pc.pollutants;
         const _eq = _pc.equivalents;
         const _fmt = (n) => Math.ceil(Math.abs(n)).toLocaleString();
+        const _net = emissionsChangeText;
         _pcEl.innerHTML =
-          '<div style="font-weight:800;font-size:14px;letter-spacing:.8px;margin-bottom:12px;color:var(--text)">DETAILED POLLUTION CREDIT CALCULATIONS</div>' +
-          '<div style="margin-bottom:14px;color:var(--text2)">The emission reductions produced from implementing this project are equivalent to saving:</div>' +
+          '<div style="font-weight:800;font-size:14px;letter-spacing:.8px;margin-bottom:12px;color:var(--text)">CHANGE IN EMISSIONS COMPARED WITH BASELINE</div>' +
+          '<div style="margin-bottom:14px;color:var(--text2)">' + EMISSIONS_SIGN_NOTE + '</div>' +
           '<div style="margin-bottom:4px"><strong>' +
-          _fmt(_pol.co2) +
-          '</strong> total pounds of CO2 reduction (carbon dioxide)</div>' +
+          _net(_pol.co2) +
+          '</strong> pounds of CO2 (carbon dioxide)</div>' +
           '<div style="margin-bottom:4px"><strong>' +
-          _fmt(_pol.ch4) +
-          '</strong> total pounds of CH4 reduction (methane)</div>' +
+          _net(_pol.ch4) +
+          '</strong> pounds of CH4 (methane)</div>' +
           '<div style="margin-bottom:4px"><strong>' +
-          _fmt(_pol.n2o) +
-          '</strong> total pounds of N2O reduction (nitrous oxide)</div>' +
+          _net(_pol.n2o) +
+          '</strong> pounds of N2O (nitrous oxide)</div>' +
           '<div style="margin-bottom:4px"><strong>' +
-          _fmt(_pol.so2) +
-          '</strong> total pounds of SO2 reduction (sulfur dioxide)</div>' +
-          '<div style="margin-bottom:4px"><strong>' +
-          _fmt(_pol.nox) +
-          '</strong> total pounds of NOX reduction (nitrogen oxide)</div>' +
-          '<div style="margin-bottom:4px"><strong>' +
-          _fmt(_pol.hg_oz) +
-          '</strong> total ounces of HG reduction (mercury)</div>' +
-          '<div style="margin-bottom:4px"><strong>' +
-          _fmt(_pol.pm10_oz) +
-          '</strong> total ounces of PM10 reduction (particles of 10 micrometers or less)</div>' +
-          '<div style="margin-bottom:4px"><strong>' +
-          _fmt(_pol.pm_filt_oz) +
-          '</strong> total ounces of PM2.5 reduction (fine particulate matter)</div>' +
-          '<div style="margin-bottom:4px"><strong>' +
-          _fmt(_pol.voc_oz) +
-          '</strong> total ounces of VOC reduction (volatile organic compounds)</div>' +
+          _net(_pol.so2) +
+          '</strong> pounds of SO2 (sulfur dioxide)</div>' +
           '<div style="margin-bottom:18px"><strong>' +
-          _fmt(_pol.co_oz) +
-          '</strong> total ounces of CO reduction (carbon monoxide)</div>' +
-          '<div style="margin-bottom:14px;color:var(--text2)">This is equivalent to:</div>' +
+          _net(_pol.nox) +
+          '</strong> pounds of NOX (nitrogen oxide)</div>' +
+          (_pc.co2eMT > 0
+            ? '<div style="margin-bottom:14px;color:var(--text2)">The decrease in emissions is equivalent to:</div>' +
           '<div style="margin-bottom:4px">Removing <strong>' +
           _fmt(_eq.carsRemoved) +
           '</strong> cars from the road each year</div>' +
@@ -1499,18 +1486,16 @@ function egfxRefresh(projId) {
           '</strong> propane cylinders used for home barbeques each year</div>' +
           '<div style="margin-bottom:18px"><strong>' +
           _fmt(_eq.coalPlants) +
-          '</strong> coal-fired power plant emissions each year</div>' +
+          '</strong> coal-fired power plant emissions each year</div>'
+            : '') +
           '<div style="font-size:11px;color:var(--text3);line-height:1.6">' +
-          'Data from eGRID (First edition with year 2023 data (eGRID2023 Version 1.0 Rev 1) https://www.epa.gov/egrid)<br>' +
+          'Source: ' +
+          emissionsSourceLine(_stateCode) +
+          '<br>' +
           'State: <strong>' +
           _stateCode +
-          '</strong> • Inputs: <strong>' +
-          Math.round(Math.max(0, kwhSaved)).toLocaleString() +
-          '</strong> kWh + <strong>' +
-          Math.round(Math.max(0, gasSaved)).toLocaleString() +
-          '</strong> Therms + <strong>' +
-          Math.round(Math.max(0, propSaved)).toLocaleString() +
-          '</strong> Gal Propane' +
+          '</strong><br>' +
+          energyUseChangeLine(kwhSaved, gasSaved, propSaved) +
           '</div>';
       } else {
         _pcEl.innerHTML =

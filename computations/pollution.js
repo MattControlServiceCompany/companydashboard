@@ -1,90 +1,98 @@
 // computations/pollution.js — Pollution credits (canonical source)
 
-// Unit conversion constants (from Excel Reference Data sheet)
-var GAS_THERM_TO_MMBTU = 0.1; // Row 10: 1 Therm = 0.1 MMBtu
-var PROPANE_GAL_TO_MMBTU = 0.0900054; // Row 4: 1 gallon propane = 0.0900054 MMBtu
+// Unit conversion constants
+var GAS_THERM_TO_MMBTU = 0.1; // 1 therm = 0.1 MMBtu
+var PROPANE_GAL_TO_MMBTU = 0.091452; // 1 gallon propane = 0.091452 MMBtu (EPA GHG Emission Factors Hub heat content)
+var KG_TO_LB = 2.20462;
 var LBS_PER_METRIC_TON = 2204.6; // Excel uses this constant throughout
 
-// Natural gas emission factors: lbs per MMBtu (Excel Reference Data column K, rows 14-22)
+// On-site fuel emission factors: lbs per MMBtu.
+// CO2, CH4, N2O: U.S. EPA GHG Emission Factors Hub (stationary combustion, Table 1):
+//   natural gas 53.06 kg CO2/MMBtu, 1.0 g CH4/MMBtu, 0.10 g N2O/MMBtu;
+//   propane (LPG) 61.71 kg CO2/MMBtu, 3.0 g CH4/MMBtu, 0.60 g N2O/MMBtu.
+// SO2, NOx: EPA AP-42 section 1.4 (natural gas, per MMBtu) and section 1.5 (propane, per 1000 gal,
+//   converted to per MMBtu with PROPANE_GAL_TO_MMBTU).
+// PM10, VOC, CO and Hg are not computed: eGRID has no electricity factor for them, so a mixed total would mislead.
 var GAS_FACTORS = {
-  co2: 117.6,
-  ch4: 0.0225,
-  n2o: 0.0022,
+  co2: 53.06 * KG_TO_LB,
+  ch4: 0.001 * KG_TO_LB,
+  n2o: 0.0001 * KG_TO_LB,
   so2: 0.0006,
   nox: 0.098,
-  co: 0.0824,
-  pm10: 0.00186,
-  voc: 0.0054,
-  hg: 0.00000025,
 };
 
-// Propane emission factors: lbs per MMBtu (Excel Reference Data column O, rows 14-22)
 var PROPANE_FACTORS = {
-  co2: 12.5,
-  ch4: 0.0002,
-  n2o: 0.0009,
-  nox: 0.013,
-  so2: 0.00001,
-  pm_filt: 0.0002,
-  voc: 0.001,
-  co: 0.0075,
-  hg: 0,
+  co2: 61.71 * KG_TO_LB,
+  ch4: 0.003 * KG_TO_LB,
+  n2o: 0.0006 * KG_TO_LB,
+  so2: 0.00001 / PROPANE_GAL_TO_MMBTU,
+  nox: 0.013 / PROPANE_GAL_TO_MMBTU,
 };
 
-// Electric emission factors: lbs per kWh (Excel Reference Data columns C-H)
-// Only CO2, CH4, N2O, SO2, NOx, Hg — no PM10/VOC/CO for electric
+// Electric emission factors: lbs per kWh.
+// Source: U.S. EPA eGRID2023 (rev 2), "eGRID Summary Tables 2023", Table 3 "State Output Emission Rates",
+// total output emission rates in lb/MWh (CO2, CH4, N2O, SO2, annual NOx), divided by 1000 here to give lb/kWh.
+// eGRID publishes no state electricity rate for Hg, PM10, VOC or CO, so those are not computed for electricity.
+var EGRID_SOURCE_LABEL = 'EPA eGRID2023 (rev 2)';
+var ONSITE_FUEL_SOURCE_LABEL = 'EPA GHG Emission Factors Hub';
+
+// The one source line printed with emission figures (report and site).
+function emissionsSourceLine(stateCode) {
+  return EGRID_SOURCE_LABEL + ', state ' + stateCode + ' (electricity); ' + ONSITE_FUEL_SOURCE_LABEL + ' (natural gas, propane)';
+}
 var EGRID_FACTORS = {
-  AL: { co2: 1.242198, ch4: 0.000071, n2o: 0.00001, so2: 0.000155, nox: 0.000443, hg: 0 },
-  AK: { co2: 1.146032, ch4: 0.000109, n2o: 0.000015, so2: 0.000704, nox: 0.008993, hg: 0 },
-  AZ: { co2: 1.353181, ch4: 0.000074, n2o: 0.00001, so2: 0.000256, nox: 0.000595, hg: 0 },
-  AR: { co2: 1.648502, ch4: 0.000142, n2o: 0.000021, so2: 0.002018, nox: 0.001009, hg: 0 },
-  CA: { co2: 0.958329, ch4: 0.000041, n2o: 0.000005, so2: 0.000024, nox: 0.000564, hg: 0 },
-  CO: { co2: 1.620707, ch4: 0.000125, n2o: 0.000018, so2: 0.00047, nox: 0.000917, hg: 0 },
-  CT: { co2: 0.848815, ch4: 0.000036, n2o: 0.000004, so2: 0.000087, nox: 0.000356, hg: 0 },
-  DC: { co2: 0.191681, ch4: 0.000018, n2o: 0.000002, so2: 0.000028, nox: 0.003112, hg: 0 },
-  DE: { co2: 0.835159, ch4: 0.000018, n2o: 0.000002, so2: 0.00002, nox: 0.000265, hg: 0 },
-  FL: { co2: 1.040142, ch4: 0.000045, n2o: 0.000006, so2: 0.000158, nox: 0.000341, hg: 0 },
-  GA: { co2: 1.657639, ch4: 0.000152, n2o: 0.000022, so2: 0.00058, nox: 0.000924, hg: 0 },
-  HI: { co2: 1.71065, ch4: 0.000162, n2o: 0.000026, so2: 0.005348, nox: 0.006458, hg: 0 },
-  ID: { co2: 0.940554, ch4: 0.000033, n2o: 0.000005, so2: 0.000228, nox: 0.000419, hg: 0 },
-  IL: { co2: 1.404328, ch4: 0.000111, n2o: 0.000016, so2: 0.000635, nox: 0.00057, hg: 0 },
-  IN: { co2: 2.021343, ch4: 0.000203, n2o: 0.000029, so2: 0.000945, nox: 0.001205, hg: 0 },
-  IA: { co2: 1.683026, ch4: 0.000167, n2o: 0.000024, so2: 0.001509, nox: 0.001165, hg: 0 },
-  KS: { co2: 2.036756, ch4: 0.00021, n2o: 0.00003, so2: 0.000285, nox: 0.001524, hg: 0 },
-  KY: { co2: 1.926359, ch4: 0.000201, n2o: 0.000029, so2: 0.001286, nox: 0.001049, hg: 0 },
-  LA: { co2: 1.054598, ch4: 0.000042, n2o: 0.000006, so2: 0.000392, nox: 0.001112, hg: 0 },
-  ME: { co2: 0.739169, ch4: 0.000119, n2o: 0.000017, so2: 0.000322, nox: 0.000501, hg: 0 },
-  MD: { co2: 1.215971, ch4: 0.000089, n2o: 0.000012, so2: 0.000348, nox: 0.000514, hg: 0 },
-  MA: { co2: 0.933641, ch4: 0.000068, n2o: 0.000008, so2: 0.000134, nox: 0.000429, hg: 0 },
-  MI: { co2: 1.460093, ch4: 0.000139, n2o: 0.00002, so2: 0.000979, nox: 0.001236, hg: 0 },
-  MN: { co2: 1.522568, ch4: 0.000135, n2o: 0.000019, so2: 0.000381, nox: 0.001099, hg: 0 },
-  MS: { co2: 1.04226, ch4: 0.000038, n2o: 0.000005, so2: 0.000129, nox: 0.000581, hg: 0 },
-  MO: { co2: 1.855762, ch4: 0.00019, n2o: 0.000027, so2: 0.001834, nox: 0.001514, hg: 0 },
-  MT: { co2: 1.822761, ch4: 0.000163, n2o: 0.000023, so2: 0.000655, nox: 0.002403, hg: 0 },
-  NE: { co2: 2.039632, ch4: 0.000225, n2o: 0.000033, so2: 0.003921, nox: 0.002039, hg: 0 },
-  NV: { co2: 1.035114, ch4: 0.000043, n2o: 0.000006, so2: 0.000335, nox: 0.000765, hg: 0 },
-  NH: { co2: 0.935261, ch4: 0.000074, n2o: 0.00001, so2: 0.000174, nox: 0.00038, hg: 0 },
-  NJ: { co2: 0.895495, ch4: 0.00003, n2o: 0.000003, so2: 0.000041, nox: 0.000254, hg: 0 },
-  NM: { co2: 1.489153, ch4: 0.000098, n2o: 0.000014, so2: 0.000217, nox: 0.001078, hg: 0 },
-  NY: { co2: 1.038038, ch4: 0.000035, n2o: 0.000004, so2: 0.000073, nox: 0.000475, hg: 0 },
-  NC: { co2: 1.278075, ch4: 0.000083, n2o: 0.000012, so2: 0.00038, nox: 0.000836, hg: 0 },
-  ND: { co2: 2.036713, ch4: 0.000216, n2o: 0.000031, so2: 0.002504, nox: 0.00193, hg: 0 },
-  OH: { co2: 1.544105, ch4: 0.000115, n2o: 0.000016, so2: 0.001066, nox: 0.000732, hg: 0 },
-  OK: { co2: 1.281877, ch4: 0.000059, n2o: 0.000008, so2: 0.000555, nox: 0.001145, hg: 0 },
-  OR: { co2: 0.931028, ch4: 0.000056, n2o: 0.000007, so2: 0.000097, nox: 0.002237, hg: 0 },
-  PA: { co2: 1.338253, ch4: 0.000096, n2o: 0.000013, so2: 0.000942, nox: 0.00078, hg: 0 },
-  RI: { co2: 0.942327, ch4: 0.000018, n2o: 0.000002, so2: 0.000009, nox: 0.000187, hg: 0 },
-  SC: { co2: 1.575453, ch4: 0.000148, n2o: 0.000021, so2: 0.00054, nox: 0.000742, hg: 0 },
-  SD: { co2: 1.522399, ch4: 0.0001, n2o: 0.000014, so2: 0.000322, nox: 0.001349, hg: 0 },
-  TN: { co2: 1.73321, ch4: 0.000158, n2o: 0.000023, so2: 0.000564, nox: 0.000559, hg: 0 },
-  TX: { co2: 1.299256, ch4: 0.000078, n2o: 0.000011, so2: 0.00082, nox: 0.00096, hg: 0 },
-  UT: { co2: 1.934773, ch4: 0.000183, n2o: 0.000026, so2: 0.00045, nox: 0.001887, hg: 0 },
-  VT: { co2: 0.539254, ch4: 0.000949, n2o: 0.000125, so2: 0.000114, nox: 0.001221, hg: 0 },
-  VA: { co2: 0.956321, ch4: 0.000071, n2o: 0.000009, so2: 0.000118, nox: 0.000405, hg: 0 },
-  WA: { co2: 1.046356, ch4: 0.000101, n2o: 0.000014, so2: 0.00023, nox: 0.00102, hg: 0 },
-  WV: { co2: 2.149051, ch4: 0.000243, n2o: 0.000035, so2: 0.001432, nox: 0.001194, hg: 0 },
-  WI: { co2: 1.819192, ch4: 0.000189, n2o: 0.000027, so2: 0.000274, nox: 0.000837, hg: 0 },
-  WY: { co2: 2.356978, ch4: 0.000252, n2o: 0.000037, so2: 0.001587, nox: 0.001612, hg: 0 },
+  AK: { co2: 0.8098, ch4: 0.000072, n2o: 0.00001, so2: 0.000404, nox: 0.0062 },
+  AL: { co2: 0.711, ch4: 0.000045, n2o: 0.000007, so2: 0.000093, nox: 0.0002 },
+  AR: { co2: 0.9934, ch4: 0.000076, n2o: 0.000011, so2: 0.000857, nox: 0.0005 },
+  AZ: { co2: 0.6867, ch4: 0.000038, n2o: 0.000005, so2: 0.000126, nox: 0.0003 },
+  CA: { co2: 0.3935, ch4: 0.000021, n2o: 0.000003, so2: 0.000013, nox: 0.0003 },
+  CO: { co2: 1.085, ch4: 0.000092, n2o: 0.000013, so2: 0.000351, nox: 0.0005 },
+  CT: { co2: 0.5383, ch4: 0.00004, n2o: 0.000005, so2: 0.000072, nox: 0.0002 },
+  DC: { co2: 0.3941, ch4: 0.000017, n2o: 0.000002, so2: 0.000027, nox: 0.0028 },
+  DE: { co2: 0.7032, ch4: 0.000017, n2o: 0.000002, so2: 0.000074, nox: 0.0002 },
+  FL: { co2: 0.7866, ch4: 0.00004, n2o: 0.000005, so2: 0.000126, nox: 0.0003 },
+  GA: { co2: 0.7138, ch4: 0.000055, n2o: 0.000008, so2: 0.0002, nox: 0.0003 },
+  HI: { co2: 1.3851, ch4: 0.000137, n2o: 0.000022, so2: 0.004339, nox: 0.005 },
+  IA: { co2: 0.6302, ch4: 0.00006, n2o: 0.000009, so2: 0.00052, nox: 0.0004 },
+  ID: { co2: 0.3133, ch4: 0.000009, n2o: 0.000001, so2: 0.000049, nox: 0.0001 },
+  IL: { co2: 0.4717, ch4: 0.000042, n2o: 0.000006, so2: 0.00027, nox: 0.0002 },
+  IN: { co2: 1.4572, ch4: 0.000126, n2o: 0.000018, so2: 0.000547, nox: 0.0008 },
+  KS: { co2: 0.7282, ch4: 0.000077, n2o: 0.000011, so2: 0.000113, nox: 0.0005 },
+  KY: { co2: 1.735, ch4: 0.000181, n2o: 0.000026, so2: 0.001116, nox: 0.001 },
+  LA: { co2: 0.7614, ch4: 0.000026, n2o: 0.000004, so2: 0.000192, nox: 0.0007 },
+  MA: { co2: 0.8224, ch4: 0.000124, n2o: 0.000016, so2: 0.000278, nox: 0.0006 },
+  MD: { co2: 0.52, ch4: 0.000035, n2o: 0.000005, so2: 0.000116, nox: 0.0002 },
+  ME: { co2: 0.3118, ch4: 0.000076, n2o: 0.000011, so2: 0.000188, nox: 0.0003 },
+  MI: { co2: 0.7932, ch4: 0.000065, n2o: 0.000009, so2: 0.000439, nox: 0.0006 },
+  MN: { co2: 0.7475, ch4: 0.000073, n2o: 0.00001, so2: 0.000187, nox: 0.0005 },
+  MO: { co2: 1.4441, ch4: 0.000158, n2o: 0.000023, so2: 0.00218, nox: 0.0011 },
+  MS: { co2: 0.8263, ch4: 0.00003, n2o: 0.000004, so2: 0.000123, nox: 0.0004 },
+  MT: { co2: 1.0562, ch4: 0.000116, n2o: 0.000017, so2: 0.000809, nox: 0.0009 },
+  NC: { co2: 0.624, ch4: 0.000038, n2o: 0.000005, so2: 0.000166, nox: 0.0004 },
+  ND: { co2: 1.2884, ch4: 0.000143, n2o: 0.000021, so2: 0.001603, nox: 0.0013 },
+  NE: { co2: 1.0182, ch4: 0.000115, n2o: 0.000017, so2: 0.002119, nox: 0.001 },
+  NH: { co2: 0.2729, ch4: 0.000054, n2o: 0.000007, so2: 0.000053, nox: 0.0001 },
+  NJ: { co2: 0.4683, ch4: 0.000031, n2o: 0.000004, so2: 0.000059, nox: 0.0002 },
+  NM: { co2: 0.7702, ch4: 0.000053, n2o: 0.000007, so2: 0.000105, nox: 0.0004 },
+  NV: { co2: 0.6424, ch4: 0.000024, n2o: 0.000003, so2: 0.000137, nox: 0.0005 },
+  NY: { co2: 0.4651, ch4: 0.000025, n2o: 0.000003, so2: 0.000051, nox: 0.0002 },
+  OH: { co2: 1.0638, ch4: 0.000068, n2o: 0.00001, so2: 0.00061, nox: 0.0003 },
+  OK: { co2: 0.6472, ch4: 0.000026, n2o: 0.000003, so2: 0.000221, nox: 0.0005 },
+  OR: { co2: 0.3642, ch4: 0.000013, n2o: 0.000002, so2: 0.00002, nox: 0.0006 },
+  PA: { co2: 0.6458, ch4: 0.000034, n2o: 0.000004, so2: 0.000229, nox: 0.0002 },
+  PR: { co2: 1.5431, ch4: 0.000077, n2o: 0.000012, so2: 0.003695, nox: 0.0039 },
+  RI: { co2: 0.8391, ch4: 0.000016, n2o: 0.000002, so2: 0.000013, nox: 0.0004 },
+  SC: { co2: 0.5572, ch4: 0.000048, n2o: 0.000007, so2: 0.000171, nox: 0.0002 },
+  SD: { co2: 0.334, ch4: 0.000024, n2o: 0.000003, so2: 0.000076, nox: 0.0003 },
+  TN: { co2: 0.6573, ch4: 0.000059, n2o: 0.000008, so2: 0.000213, nox: 0.0002 },
+  TX: { co2: 0.7683, ch4: 0.000044, n2o: 0.000006, so2: 0.000389, nox: 0.0005 },
+  UT: { co2: 1.413, ch4: 0.000125, n2o: 0.000018, so2: 0.000275, nox: 0.0013 },
+  VA: { co2: 0.5369, ch4: 0.000044, n2o: 0.000006, so2: 0.000071, nox: 0.0002 },
+  VT: { co2: 0.043, ch4: 0.000147, n2o: 0.000019, so2: 0.000039, nox: 0.0002 },
+  WA: { co2: 0.2651, ch4: 0.000023, n2o: 0.000003, so2: 0.000044, nox: 0.0002 },
+  WI: { co2: 1.157, ch4: 0.0001, n2o: 0.000014, so2: 0.000144, nox: 0.0005 },
+  WV: { co2: 1.9544, ch4: 0.000218, n2o: 0.000032, so2: 0.001498, nox: 0.0011 },
+  WY: { co2: 1.8203, ch4: 0.000195, n2o: 0.000028, so2: 0.001113, nox: 0.0012 },
 };
 
 // Equivalency factors: per metric ton CO2-equivalent
@@ -104,20 +112,28 @@ var EQUIV_PER_MT_CO2E = {
   coalPlants: 1 / 3850479,
 };
 
-// GWP (Global Warming Potential) multipliers for CO2-equivalent (Excel row 19)
-var GWP_CH4 = 21;
-var GWP_N2O = 310;
+// GWP (Global Warming Potential, 100-year) multipliers for CO2-equivalent.
+// Source: IPCC Fifth Assessment Report (AR5), the values the EPA GHG Emission Factors Hub uses: CH4 = 28, N2O = 265.
+var GWP_CH4 = 28;
+var GWP_N2O = 265;
 
-// Metric ton equivalents — used by PDF export (mirrors EQUIV_PER_MT_CO2E above)
-var POLLUTION_EQUIV_MT = {
-  co2PerKwh: 0.000404, // retained for backward compat (PDF export section uses its own constants)
-  co2PerTherm: 0.005302, // retained for backward compat
-  co2PerPropGal: 0.00574, // retained for backward compat
-  treesPerTon: 17, // EPA 2023: ~17 trees/MT (was 23)
-  carsPerTon: 1 / 4.65, // EPA 2023: 4.65 MT CO2e/vehicle/year (was 1/5.23)
-  homesPerTon: 1 / 7.46, // EPA 2023: 7.46 MT CO2e/household (was 1/7.7)
-  acresForestPerTon: 1.099, // EPA current: 1.099 acres/MT (was 0.0074, erroneous)
-};
+// Display text for a change compared with baseline. Input: the AVOIDED amount from calculatePollutionCredits
+// (or an energy saving), positive = less than baseline. Output: "+1,234" = MORE than baseline, "-1,234" = LESS.
+// Empty when it rounds to zero. This is the only place that flips the sign for display.
+function emissionsChangeText(avoided) {
+  var v = Math.round(-(avoided || 0));
+  if (!v) return '0';
+  return (v > 0 ? '+' : '-') + Math.abs(v).toLocaleString('en-US');
+}
+// "Energy use compared with baseline: electricity +107,310 kWh, natural gas -222 therms, propane -24 gal".
+// Inputs are the SAVED amounts (positive = less use), so the shown sign is the use change.
+function energyUseChangeLine(kwhSaved, thermsSaved, galSaved) {
+  return (
+    'Energy use compared with baseline: electricity ' + emissionsChangeText(kwhSaved) + ' kWh, natural gas ' +
+    emissionsChangeText(thermsSaved) + ' therms, propane ' + emissionsChangeText(galSaved) + ' gal'
+  );
+}
+var EMISSIONS_SIGN_NOTE = 'A plus sign means more emissions than baseline.';
 
 function calculatePollutionCredits(kwhSaved, thermsSaved, propaneGalSaved, stateCode, unit) {
   unit = unit || 'lbs';
@@ -175,27 +191,15 @@ function calculatePollutionCredits(kwhSaved, thermsSaved, propaneGalSaved, state
     n2o: kwhSaved * elec.n2o + gasMMBtu * GAS_FACTORS.n2o + propMMBtu * PROPANE_FACTORS.n2o,
     so2: kwhSaved * elec.so2 + gasMMBtu * GAS_FACTORS.so2 + propMMBtu * PROPANE_FACTORS.so2,
     nox: kwhSaved * elec.nox + gasMMBtu * GAS_FACTORS.nox + propMMBtu * PROPANE_FACTORS.nox,
-    hg: kwhSaved * elec.hg + gasMMBtu * GAS_FACTORS.hg + propMMBtu * PROPANE_FACTORS.hg,
-    pm10: gasMMBtu * GAS_FACTORS.pm10,
-    pm_filt: propMMBtu * PROPANE_FACTORS.pm_filt,
-    voc: gasMMBtu * GAS_FACTORS.voc + propMMBtu * PROPANE_FACTORS.voc,
-    co: gasMMBtu * GAS_FACTORS.co + propMMBtu * PROPANE_FACTORS.co,
   };
 
-  // Convert small-quantity pollutants to ounces (lbs * 16) for display
-  // Preserving _oz suffix keys for backward compatibility with report-engine.js and graphics-setpoints.js
-  pollutants.hg_oz = pollutants.hg * 16;
-  pollutants.pm10_oz = pollutants.pm10 * 16;
-  pollutants.pm_filt_oz = pollutants.pm_filt * 16;
-  pollutants.voc_oz = pollutants.voc * 16;
-  pollutants.co_oz = pollutants.co * 16;
-
-  // CO2-equivalent in metric tons (Excel formula: CO2 + 21*CH4 + 310*N2O, all in MT)
+  // CO2-equivalent in metric tons (CO2 + GWP_CH4*CH4 + GWP_N2O*N2O, all in MT)
   var co2eMT = (pollutants.co2 + GWP_CH4 * pollutants.ch4 + GWP_N2O * pollutants.n2o) / LBS_PER_METRIC_TON;
 
   // Equivalencies based on CO2e metric tons (Excel Calculations rows 34-44)
   var eq = EQUIV_PER_MT_CO2E;
-  var absCo2eMT = Math.abs(co2eMT);
+  // Equivalents describe avoided emissions only; a net increase has none.
+  var absCo2eMT = Math.max(0, co2eMT);
   var equivalents = {
     carsRemoved: Math.ceil(absCo2eMT * eq.carsRemoved),
     gallonsGasoline: Math.ceil(absCo2eMT * eq.gallonsGasoline),

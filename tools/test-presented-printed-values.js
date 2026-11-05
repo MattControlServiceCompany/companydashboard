@@ -65,6 +65,7 @@ const files = [
   'computations/physics.js', 'computations/rates.js',
   'computations/normalization.js',
   'computations/csc.js',
+  'computations/pollution.js',
   'computations/eui.js',
   'computations/savings.js',
   'lib/perf-table.js',
@@ -207,8 +208,6 @@ P(B, 'annual summary', '', 'current', 'site_eui_change_pct', 37.5);
   ['n2o', 32],
   ['so2', 43],
   ['nox', 654],
-  ['voc_oz', 76],
-  ['co_oz', 1098],
   ['carsRemoved', 87],
   ['gallonsGasoline', 76543],
   ['tankerTrucks', 9],
@@ -449,7 +448,7 @@ function mkD() {
       euiCurrent: 9,
     },
     pollution: {
-      pollutants: { co2: 10, ch4: 1, pm10_oz: 4242 },
+      pollutants: { co2: 10, ch4: 1, unprintedKey: 4242 },
       equivalents: { carsRemoved: 2 },
       stateCode: 'KS',
       inputs: { kwhSaved: 1, thermsSaved: 1, propaneGalSaved: 1 },
@@ -494,7 +493,7 @@ assert(
   '3: printed quarterly targets',
 );
 assert(
-  dA.pollution.pollutants.co2 === 987654 && dA.pollution.pollutants.pm10_oz === 4242,
+  dA.pollution.pollutants.co2 === 987654 && dA.pollution.pollutants.unprintedKey === 4242,
   '3: printed pollutants replace; a pollutant the document did not print keeps the current value',
 );
 assert(dA.pollution.inputs.kwhSaved === 845123, '3: printed environmental inputs');
