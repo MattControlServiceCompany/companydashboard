@@ -2307,10 +2307,19 @@ function _rptQUnitSavTd(v) {
 var _RPT_Q_W_FUEL_ELEC = [19, 10, 10, 9, 9, 9, 12, 12, 10];
 var _RPT_Q_W_FUEL = [26, 14, 14, 12, 12, 12, 10];
 var _RPT_Q_W_BILLS = [19, 12, 15, 14, 8, 9, 23];
-function _rptQTable(widths, heads, rows, textCols) {
+// The Word export has its own widths for the same three tables: a building name stays on one line in Word.
+// The .docx writer reads them from data-dx-widths. tools/test-report-word-table-widths.js pins them.
+var _RPT_Q_WDX_FUEL_ELEC = [28, 10, 9, 8, 8, 8, 10, 10, 9];
+var _RPT_Q_WDX_FUEL = [30, 13, 13, 11, 12, 12, 11];
+var _RPT_Q_WDX_BILLS = [23, 11, 17, 15, 8, 9, 17];
+function _rptQTable(widths, heads, rows, textCols, docxWidths) {
   textCols = textCols || [];
+  // Word only: a building name never wraps (the .docx writer reads data-dx-nw). The PDF wraps the name inside its cell.
+  if (heads[0] === 'Building') rows = rows.replace(/(<tr[^>]*>)<td(?: style="([^"]*)")?>/g, function (m, tr, st) {
+      return tr + '<td' + (st ? ' style="' + st + '"' : '') + ' data-dx-nw="1">';
+    });
   return (
-    '<table class="rpt-table rpt-table-wrap rpt-q-dense" style="width:100%;table-layout:fixed">' +
+    '<table class="rpt-table rpt-table-wrap rpt-q-dense" style="width:100%;table-layout:fixed"' + (docxWidths ? ' data-dx-widths="' + docxWidths.join(',') + '"' : '') + '>' +
     '<colgroup>' +
     widths
       .map(function (w) {
@@ -3788,7 +3797,7 @@ function _rptQFuelDetailPage(n, d, f, kind) {
       ? _rptQNote(_escHtml(_rptQListPlain(names)) + (names.length === 1 ? ' is the only building with a propane meter.' : ' have propane meters.'))
       : '';
   var body =
-    _rptQPara(intro) + chart + '<h2>' + K.head + ', ' + ql + '</h2>' + _rptQTable(widths, heads, rows) +
+    _rptQPara(intro) + chart + '<h2>' + K.head + ', ' + ql + '</h2>' + _rptQTable(widths, heads, rows, null, kind === 'electric' ? _RPT_Q_WDX_FUEL_ELEC : _RPT_Q_WDX_FUEL) +
     (kind === 'propane' && _rptQHasCom(d, 'gas')
       ? ''
       : _rptQNote('Change percent = (actual use − baseline use) ÷ baseline use; a plus sign means more use than baseline. ' + _rptQSavingsRule() + ' Baseline cost is the actual cost plus savings.')) +
@@ -3828,7 +3837,7 @@ function _rptQAppendixDPages(n, d, f, letter) {
   var open = null;
   var flush = function () {
     if (!open) return;
-    cur += '<h2 style="font-size:15px;margin:8px 0 3px">' + open.label + '</h2>' + _rptQTable(widths, heads, open.rows, textCols);
+    cur += '<h2 style="font-size:15px;margin:8px 0 3px">' + open.label + '</h2>' + _rptQTable(widths, heads, open.rows, textCols, _RPT_Q_WDX_BILLS);
     open = null;
   };
   var newPage = function () {

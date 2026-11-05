@@ -1690,7 +1690,8 @@ function _docxStampLiveStyles(liveRoot, cloneRoot) {
       if (opaque(cs.backgroundColor)) t.setAttribute('data-dx-bg', _docxCssColorToHex(cs.backgroundColor));
       var fsPx = parseFloat(cs.fontSize);
       if (fsPx > 0) t.setAttribute('data-dx-fs', String(Math.round(fsPx * 10) / 10));
-      if (cs.whiteSpace === 'nowrap') t.setAttribute('data-dx-nw', '1');
+      // A number in a dense quarterly table does not wrap in the PDF (CSS); Word fits it by its own rules.
+      if (cs.whiteSpace === 'nowrap' && !live[i].matches('.rpt-q-dense td.rpt-n')) t.setAttribute('data-dx-nw', '1');
       var w = live[i].getBoundingClientRect().width;
       if (w > 0) t.setAttribute('data-dx-w', String(Math.round(w * 10) / 10));
     } else if (/^H[1-4]$/.test(tag)) {
@@ -1734,6 +1735,13 @@ function _docxClosestTable(el) {
  */
 function _docxDeriveColWidths(tableEl, colCount, contentWidthTwips) {
   contentWidthTwips = contentWidthTwips || 10080;
+  // Widths the report sets for Word only (the PDF uses its own colgroup widths).
+  var dxw = (tableEl.getAttribute('data-dx-widths') || '').split(',').map(parseFloat);
+  if (dxw.length === colCount && dxw.every(function (p) { return p > 0; })) {
+    return dxw.map(function (p) {
+      return Math.round((contentWidthTwips * p) / 100);
+    });
+  }
   var colgroup = tableEl.querySelector(':scope > colgroup');
   if (colgroup) {
     var cols = Array.prototype.slice.call(colgroup.querySelectorAll('col'));
