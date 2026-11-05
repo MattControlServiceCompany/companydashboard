@@ -50,7 +50,7 @@ const ok = (c, m) => {
         weather: { monthly: [], totals: { cddBl: 0, cddCur: 0 } },
         rawBills: [{ ym: '2026-07', building: 'Building A', commodity: 'Electric', account: 'A1', amount: 5 }],
       };
-      const html = _rptQuarterReportHTML(d, { appendixD: false, environmentalImpact: false, approvedChanges: false });
+      const html = _rptQuarterReportHTML(d, { appendixD: false, environmentalImpact: false, approvedChanges: false, buildingSummaries: false, electricDetail: false, gasDetail: false, propaneDetail: false, yearToDate: false, appendixB: false, appendixC: false });
       const text = html.replace(/<[^>]+>/g, ' ');
       window.__html = html;
       const wd = rptPageSavingsOptionsCharts(7, {

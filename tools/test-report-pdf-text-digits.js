@@ -56,7 +56,7 @@ if (spawnSync('pdftotext', ['-v']).error) {
         weather: { monthly: [], totals: { cddBl: 0, cddCur: 0 } },
         rawBills: [],
       };
-      const html = _rptQuarterReportHTML(d, { appendixD: false, environmentalImpact: false, approvedChanges: false });
+      const html = _rptQuarterReportHTML(d, { appendixD: false, environmentalImpact: false, approvedChanges: false, buildingSummaries: false, electricDetail: false, gasDetail: false, propaneDetail: false, yearToDate: false, appendixB: false, appendixC: false });
       Array.from(document.body.children).forEach((el) => (el.style.display = 'none'));
       document.documentElement.style.cssText = 'height:auto;overflow:visible';
       document.body.style.cssText = 'height:auto;overflow:visible;display:block';

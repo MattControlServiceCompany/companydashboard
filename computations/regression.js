@@ -250,8 +250,8 @@ function regressionBaseline(row, reg, commodity, normBasis) {
 // bills: the meter's bills array
 // incl: the inclusion setting for billMonth
 // Returns: {ym: predictedKW} for all months in allRows, or {} if there are fewer than 3 usable points.
-function computeKwCddRegression(blRows, allRows, bills, incl) {
-  var result = {};
+// fitKwCdd(blRows, bills): the OLS fit of billed kW on CDD over the baseline rows; null with fewer than 3 usable points.
+function fitKwCdd(blRows, bills) {
   var pts = blRows
     .map(function (r) {
       var bfr = bills.filter(function (b) {
@@ -268,31 +268,38 @@ function computeKwCddRegression(blRows, allRows, bills, incl) {
       // a baseline month with no weather is left out of the fit, never read as CDD 0
       return p.y > 0 && p.x != null && isFinite(p.x);
     });
-  if (pts.length >= 3) {
-    var n = pts.length;
-    var mx =
-      pts.reduce(function (s, p) {
-        return s + p.x;
-      }, 0) / n;
-    var my =
-      pts.reduce(function (s, p) {
-        return s + p.y;
-      }, 0) / n;
-    var ssxx = pts.reduce(function (s, p) {
-      return s + (p.x - mx) * (p.x - mx);
-    }, 0);
-    var ssxy = pts.reduce(function (s, p) {
-      return s + (p.x - mx) * (p.y - my);
-    }, 0);
-    if (ssxx > 0) {
-      var slope = ssxy / ssxx;
-      var intercept = my - slope * mx;
-      allRows.forEach(function (r) {
-        // no weather for the month = no kW baseline for it (never CDD 0)
-        if (r.cdd == null || !isFinite(r.cdd)) return;
-        result[r.ym] = Math.max(0, intercept + slope * r.cdd);
-      });
-    }
+  if (pts.length < 3) return null;
+  var n = pts.length;
+  var mx =
+    pts.reduce(function (s, p) {
+      return s + p.x;
+    }, 0) / n;
+  var my =
+    pts.reduce(function (s, p) {
+      return s + p.y;
+    }, 0) / n;
+  var ssxx = pts.reduce(function (s, p) {
+    return s + (p.x - mx) * (p.x - mx);
+  }, 0);
+  var ssxy = pts.reduce(function (s, p) {
+    return s + (p.x - mx) * (p.y - my);
+  }, 0);
+  if (!(ssxx > 0)) return null;
+  var slope = ssxy / ssxx;
+  return { intercept: my - slope * mx, slope: slope, n: n };
+}
+
+// fitKwCdd above is the fit alone ({intercept, slope, n} or null); getMeterSavings returns it as blKwFit so the
+// quarterly report prints the formula the kW dollars use (one fit, no second copy).
+function computeKwCddRegression(blRows, allRows, bills, incl) {
+  var result = {};
+  var fit = fitKwCdd(blRows, bills);
+  if (fit) {
+    allRows.forEach(function (r) {
+      // no weather for the month = no kW baseline for it (never CDD 0)
+      if (r.cdd == null || !isFinite(r.cdd)) return;
+      result[r.ym] = Math.max(0, fit.intercept + fit.slope * r.cdd);
+    });
   }
   return result;
 }

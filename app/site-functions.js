@@ -2507,6 +2507,14 @@ async function siteResetAllMeterTableSettings() {
    site-ui.js delegates to this array and should NOT maintain its own copy.
 */
 var RELEASE_NOTES = [
+  { v: 'v2026.11.05.228', date: '2026-11-05', title: 'Quarterly savings report overhaul',
+    items: [
+      { type: 'change', text: 'Reports page: the quarterly savings report (Word and PDF downloads) has a clearer first page that shows the result at a glance.' },
+      { type: 'change', text: 'Reports page: the quarterly savings report now defines its terms, uses one sign rule throughout, and shows the billing period for each bill.' },
+      { type: 'fix', text: 'Reports page: tables in the quarterly savings report now add up to their totals, and the method text matches the numbers shown.' },
+      { type: 'fix', text: 'Reports page: the Word download of the quarterly savings report now has the same layout as the PDF.' }
+    ]
+  },
   { v: 'v2026.11.05.227', date: '2026-11-05', title: 'Updated emission factors',
     items: [
       { type: 'fix', text: 'The Environmental Impact page in reports and the emissions box on the Energy Graphics page now use the EPA eGRID2023 electricity factors for every state and the EPA GHG Emission Factors Hub for fuels.' },

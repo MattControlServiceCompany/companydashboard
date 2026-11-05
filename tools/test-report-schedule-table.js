@@ -85,14 +85,14 @@ const ok = (c, m) => {
           ] },
                   ],
       };
-      const opts = { appendixD: false, environmentalImpact: false, approvedChanges: false };
+      const opts = { appendixD: false, environmentalImpact: false, approvedChanges: false, buildingSummaries: false, electricDetail: false, gasDetail: false, propaneDetail: false, yearToDate: false, appendixB: false, appendixC: false };
       const withHtml = _rptQuarterReportHTML(mk(hist), opts);
       const noHist = _rptQuarterReportHTML(mk(null), opts);
       const emptyHist = _rptQuarterReportHTML(mk({ version: 1, buildings: [{ building: 'Nobody Else', baselineWeekday: [{ text: 'x' }] }] }), opts);
       const pageOf = (html) => {
         const div = document.createElement('div');
         div.innerHTML = html;
-        return [...div.querySelectorAll('.rpt-page')].find((p) => p.getAttribute('data-section') === 'basSchedule');
+        return [...div.querySelectorAll('.rpt-page')].find((p) => p.getAttribute('data-section') === 'setpoints' && p.querySelector('table'));
       };
       const pg = pageOf(withHtml);
       const rows = pg ? [...pg.querySelectorAll('tbody tr')].map((tr) => [...tr.children].map((td) => [...td.querySelectorAll('div')].map((v) => v.textContent).join('\n') || td.textContent)) : [];
@@ -111,26 +111,25 @@ const ok = (c, m) => {
       };
     });
     ok(out.hasPage, '1 table page renders when the project has a BAS schedule history');
-    ok(out.heads.length === 5 && /Building/.test(out.heads[0]) && /Baseline weekday/i.test(out.heads[1]) && /Q3 2026 weekday/i.test(out.heads[2]) && /Weekend/i.test(out.heads[3]) && /set point/i.test(out.heads[4]), '1 five column headers: ' + JSON.stringify(out.heads));
+    ok(out.heads.length === 5 && /Building/.test(out.heads[0]) && /^Baseline$/i.test(out.heads[1]) && /Q3 2026 weekday/i.test(out.heads[2]) && /weekend/i.test(out.heads[3]) && /set point/i.test(out.heads[4]), '1 five column headers (the baseline once, in its own column): ' + JSON.stringify(out.heads));
     ok(out.rows.length === 3 && /Alpha School/.test(out.rows[0][0]) && /Beta Hall/.test(out.rows[1][0]) && /Gamma Annex/.test(out.rows[2][0]), '1 one row per building that has a record, report order, no row for Delta Wing: ' + out.rows.length + ' rows');
     if (out.rows.length) {
       const r = out.rows[0];
-      ok(/6:00 to 16:00/.test(r[1]) && !/July/.test(r[1]), '1 baseline weekday hours, no dates: ' + JSON.stringify(r[1]));
-      ok(/7:00 to 16:00, July 1 to July 26/.test(r[2]) && /6:00 to 18:00, July 27 to September 30/.test(r[2]), '1 quarter weekday hours clipped to the quarter: ' + JSON.stringify(r[2]));
-      ok(/Baseline: No weekend hours/.test(r[3]) && /\n6:00 to 16:00, July 27 to September 4/.test(r[3]) && !/Q3 2026:/.test(r[3]), '1 weekend baseline and quarter with dates: ' + JSON.stringify(r[3]));
-      ok(/Baseline: heating 68, cooling 72/.test(r[4]) && /heating 70, cooling 74, July 1 to August 11/.test(r[4]) && !/66/.test(r[4]), '1 set points baseline and quarter, out-of-quarter entry dropped: ' + JSON.stringify(r[4]));
+      ok(/Weekday 6:00–16:00/.test(r[1]) && /No weekend hours/.test(r[1]) && /Set points: heating 68, cooling 72/.test(r[1]) && !/July/.test(r[1]), '1 baseline column: weekday hours, weekend hours and set points, no dates: ' + JSON.stringify(r[1]));
+      ok(/7:00–16:00, Jul 1–26/.test(r[2]) && /6:00–18:00, Jul 27–Sep 30/.test(r[2]), '1 quarter weekday hours clipped to the quarter: ' + JSON.stringify(r[2]));
+      ok(!/Baseline/.test(r[3]) && /6:00–16:00, Jul 27–Sep 4/.test(r[3]) && !/Q3 2026:/.test(r[3]), '1 weekend quarter entries with dates, no baseline text: ' + JSON.stringify(r[3]));
+      ok(!/Baseline/.test(r[4]) && /heating 70, cooling 74, Jul 1–Aug 11/.test(r[4]) && !/66/.test(r[4]), '1 set points quarter entries, out-of-quarter entry dropped: ' + JSON.stringify(r[4]));
     }
     ok(/°F/.test(out.heads[4]) && !/degrees Fahrenheit/i.test(out.heads[4]), '5 set point header uses °F: ' + out.heads[4]);
     ok(!/zones/i.test(out.rows.map((r) => r.join(' ')).join(' ')), '5 no zone text in any cell');
     if (out.rows.length === 3) {
-      ok(out.rows[2][4] === 'Baseline: Unit heaters: heating 45, cooling 90\nUnit heaters: heating 45, cooling 90, July 1 to September 30\nAlso: shared set points above the table', '5 unchanged set points show baseline and quarter, shared line moved to the paragraph: ' + JSON.stringify(out.rows[2][4]));
-      ok(/Also: shared set points above the table/.test(out.rows[1][4]) && out.sharedBeforeTable, '6 cell text says "above the table" and the paragraph prints above the table');
-      ok(out.sharedP.length === 1 && /Beta Hall and Gamma Annex/.test(out.sharedP[0]) && /heating 71, cooling 75/.test(out.sharedP[0]), '6 one shared paragraph for the two buildings: ' + JSON.stringify(out.sharedP));
-      ok(!/Alpha/.test(out.sharedP.join(' ')) && /heating 69, cooling 73/.test(out.rows[0][4]) && !/Also: shared/.test(out.rows[0][4]), '6 a line listed twice by one building is not shared: ' + JSON.stringify(out.rows[0][4]));
+      ok(/Set points: Unit heaters: heating 45, cooling 90/.test(out.rows[2][1]) && out.rows[2][4] === 'Unit heaters: heating 45, cooling 90, Jul 1–Sep 30\nheating 71, cooling 75, Jul 1–Sep 30', '5 baseline set points in the baseline column, quarter set points in the quarter column: ' + JSON.stringify(out.rows[2][4]));
+      ok(/heating 71, cooling 75/.test(out.rows[1][4]) && /heating 71, cooling 75/.test(out.rows[2][4]) && /heating 69, cooling 73/.test(out.rows[0][4]), '6 each building cell holds its own quarter set points: ' + JSON.stringify(out.rows.map((r) => r[4])));
+      ok(out.sharedP.length === 0 && !out.rows.some((r) => /listed above|Also: shared/.test(r[4])), '6 no shared paragraph above the table and no pointer text in a cell');
     }
     ok(!out.noHistPage, '2 no record -> no table page');
     ok(!out.emptyPage, '2 record with no matching building -> no table page');
-    ok(out.pageCountNo === out.pageCountWith - 1, '2 omitted section leaves no placeholder page (' + out.pageCountNo + ' vs ' + out.pageCountWith + ')');
+    ok(out.pageCountNo === out.pageCountWith, '2 a checked section with no record prints its empty-state page, not a table (' + out.pageCountNo + ' vs ' + out.pageCountWith + ')');
     ok(!out.generic[0] && !out.generic[1], '3 generic recommendation text does not appear');
     ok(out.loadedOk && out.otherNull, '4 record loads from en_bas_schedhistory_<projectId>; another project gets none');
     ok(errs.length === 0, 'no page errors ' + errs.join('|'));

@@ -89,7 +89,8 @@ function _docxRun(opts) {
   // ..." sub-text or the Service Proposal's Future Work detail text) is the one place that can
   // never be bypassed by a new caller later. Body default (21 = 10.5pt) and every heading/gauge
   // size already sit above this floor and are unaffected.
-  if (sizeHalfPt < _DOCX_MIN_SIZE_HALFPT) sizeHalfPt = _DOCX_MIN_SIZE_HALFPT;
+  var _floorHalfPt = opts.floorHalfPt != null ? opts.floorHalfPt : _DOCX_MIN_SIZE_HALFPT;
+  if (sizeHalfPt < _floorHalfPt) sizeHalfPt = _floorHalfPt;
 
   var rPr = '<w:rPr>';
   rPr +=
@@ -264,6 +265,7 @@ function _docxTableCell(opts) {
   tcPr += '<w:tcW w:w="' + opts.widthTwips + '" w:type="dxa"/>';
   if (opts.gridSpan) tcPr += '<w:gridSpan w:val="' + opts.gridSpan + '"/>';
   if (opts.vMerge) tcPr += '<w:vMerge w:val="' + opts.vMerge + '"/>';
+  if (opts.shade) tcPr += '<w:shd w:val="clear" w:color="auto" w:fill="' + _docxEscapeXml(opts.shade) + '"/>';
   tcPr += '<w:vAlign w:val="' + (opts.vAlign || 'center') + '"/>';
   tcPr += '</w:tcPr>';
 
@@ -542,19 +544,24 @@ async function _docxSpliceNumbering(zip, allocations) {
  * inherit the same Footer/Normal formatting (Cambria 12pt in this skeleton --
  * comfortably above the 10pt client-document floor).
  */
+var _DOCX_FOOTER_RPR = '<w:rPr><w:rFonts w:ascii="Arial" w:hAnsi="Arial" w:eastAsia="Arial" w:cs="Arial"/><w:sz w:val="20"/><w:szCs w:val="20"/></w:rPr>';
 var _DOCX_PAGE_N_OF_M_RUNS =
-  '<w:r><w:t xml:space="preserve">Page </w:t></w:r>' +
-  '<w:r><w:fldChar w:fldCharType="begin"/></w:r>' +
-  '<w:r><w:instrText xml:space="preserve"> PAGE   \\* MERGEFORMAT </w:instrText></w:r>' +
-  '<w:r><w:fldChar w:fldCharType="separate"/></w:r>' +
-  '<w:r><w:rPr><w:noProof/></w:rPr><w:t>1</w:t></w:r>' +
-  '<w:r><w:rPr><w:noProof/></w:rPr><w:fldChar w:fldCharType="end"/></w:r>' +
-  '<w:r><w:t xml:space="preserve"> of </w:t></w:r>' +
-  '<w:r><w:fldChar w:fldCharType="begin"/></w:r>' +
-  '<w:r><w:instrText xml:space="preserve"> NUMPAGES   \\* MERGEFORMAT </w:instrText></w:r>' +
-  '<w:r><w:fldChar w:fldCharType="separate"/></w:r>' +
-  '<w:r><w:rPr><w:noProof/></w:rPr><w:t>1</w:t></w:r>' +
-  '<w:r><w:rPr><w:noProof/></w:rPr><w:fldChar w:fldCharType="end"/></w:r>';
+  '<w:r>' + _DOCX_FOOTER_RPR + '<w:t xml:space="preserve">Page </w:t></w:r>' +
+  '<w:r>' + _DOCX_FOOTER_RPR + '<w:fldChar w:fldCharType="begin"/></w:r>' +
+  '<w:r>' + _DOCX_FOOTER_RPR + '<w:instrText xml:space="preserve"> PAGE   \\* MERGEFORMAT </w:instrText></w:r>' +
+  '<w:r>' + _DOCX_FOOTER_RPR + '<w:fldChar w:fldCharType="separate"/></w:r>' +
+  '<w:r>' + _DOCX_FOOTER_RPR.replace('<w:rPr>', '<w:rPr><w:noProof/>') + '<w:t>1</w:t></w:r>' +
+  '<w:r>' + _DOCX_FOOTER_RPR.replace('<w:rPr>', '<w:rPr><w:noProof/>') + '<w:fldChar w:fldCharType="end"/></w:r>' +
+  '<w:r>' + _DOCX_FOOTER_RPR + '<w:t xml:space="preserve"> of </w:t></w:r>' +
+  '<w:r>' + _DOCX_FOOTER_RPR + '<w:fldChar w:fldCharType="begin"/></w:r>' +
+  '<w:r>' + _DOCX_FOOTER_RPR + '<w:instrText xml:space="preserve"> NUMPAGES   \\* MERGEFORMAT </w:instrText></w:r>' +
+  '<w:r>' + _DOCX_FOOTER_RPR + '<w:fldChar w:fldCharType="separate"/></w:r>' +
+  '<w:r>' + _DOCX_FOOTER_RPR.replace('<w:rPr>', '<w:rPr><w:noProof/>') + '<w:t>1</w:t></w:r>' +
+  '<w:r>' + _DOCX_FOOTER_RPR.replace('<w:rPr>', '<w:rPr><w:noProof/>') + '<w:fldChar w:fldCharType="end"/></w:r>';
+/* Footer geometry (2026-11-05): the letterhead wave starts about 714pt from the top, so "Page N of M" is a 10pt Arial
+   line (exact 10pt) at the right with an empty exact-height paragraph under it that lifts the number above the wave. */
+var _DOCX_FOOTER_NUM_LINE_TWIPS = 200;
+var _DOCX_FOOTER_LIFT_TWIPS = 1780;
 
 /**
  * _docxApplyPageNumberFooters -- rewrite every word/footer*.xml page-number
@@ -598,8 +605,13 @@ async function _docxApplyPageNumberFooters(zip) {
       /(<w:sdtContent><w:p\b[^>]*>(?:<w:pPr>.*?<\/w:pPr>)?)(.*?)(<\/w:p><\/w:sdtContent>)/,
       function (m, head, runs, tail) {
         if (runs.indexOf('PAGE') === -1) return m; // not the page-number paragraph
-        return head + _DOCX_PAGE_N_OF_M_RUNS + tail;
+        return head.replace(/<w:pPr>(.*?)<w:jc /, '<w:pPr>$1<w:spacing w:before="0" w:after="0" w:line="' + _DOCX_FOOTER_NUM_LINE_TWIPS + '" w:lineRule="exact"/><w:jc ') + _DOCX_PAGE_N_OF_M_RUNS + tail;
       },
+    );
+    // The empty paragraph after the page-number control: an exact-height spacer that lifts the number above the wave.
+    next = next.replace(
+      /(<\/w:sdt>)<w:p([^>]*)>(?:<w:pPr>.*?<\/w:pPr>)?<\/w:p>/,
+      '$1<w:p$2><w:pPr><w:pStyle w:val="Footer"/><w:spacing w:before="0" w:after="0" w:line="' + _DOCX_FOOTER_LIFT_TWIPS + '" w:lineRule="exact"/></w:pPr></w:p>',
     );
     if (next !== xml) {
       zip.file(names[i], next);
@@ -648,6 +660,8 @@ var _DOCX_LETTERHEAD_INK_BOTTOM_PT = 145; // measured, CSC Letterhead.pdf @72dpi
 var _DOCX_FIRST_CONTENT_TOP_PT = 180; // Client A-measured title y0 179.93, rounded up
 /* Height of the single page-1 spacer paragraph, in twips. */
 var _DOCX_LETTERHEAD_SPACER_TWIPS = Math.round((_DOCX_FIRST_CONTENT_TOP_PT - _DOCX_TOP_MARGIN_PT) * 20); // 2961
+/* A report (stamped tables) starts 152pt from the top: 7pt clear of the lockup, so the cover holds its charts. */
+var _DOCX_LETTERHEAD_SPACER_COMPACT_TWIPS = Math.round((152 - _DOCX_TOP_MARGIN_PT) * 20);
 
 /* Line-height factor -- CALIBRATED against the only Word-rendered ground truth
    available (Word itself must never be launched from here), NOT taken from
@@ -683,6 +697,10 @@ var _DOCX_CELL_MARGIN_TWIPS = 108;
 /* Skeleton numbering.xml list indent (abstractNum 2 and 5 both use
    ind left=720/hanging=360, spec §6) -- narrows a list item's text column. */
 var _DOCX_LIST_INDENT_TWIPS = 720;
+/* Report tables (the quarterly report): 9pt text (the page size, never smaller), 50 twip side margins, 10 twip top and bottom. */
+var _DOCX_REPORT_TABLE_HALFPT = 18;
+var _DOCX_REPORT_CELL_SIDE_TWIPS = 50;
+var _DOCX_REPORT_CELL_VERT_TWIPS = 10;
 
 /**
  * Split a body-XML string into its TOP-LEVEL blocks (<w:p> and <w:tbl>),
@@ -1035,7 +1053,7 @@ async function _docxAssemble(documentXml, opts) {
   // 180 - 31.95 = 148.05pt = 2961 twips. See the page-budget block above.
   var leadingParasXml =
     '<w:p><w:pPr><w:spacing w:before="0" w:after="0" w:line="' +
-    _DOCX_LETTERHEAD_SPACER_TWIPS +
+    (opts.compactLetterhead ? _DOCX_LETTERHEAD_SPACER_COMPACT_TWIPS : _DOCX_LETTERHEAD_SPACER_TWIPS) +
     '" w:lineRule="exact"/><w:rPr><w:rFonts w:ascii="Arial" w:hAnsi="Arial" w:cs="Arial"/>' +
     '<w:sz w:val="21"/><w:szCs w:val="21"/></w:rPr></w:pPr></w:p>';
 
@@ -1071,6 +1089,17 @@ async function _docxAssemble(documentXml, opts) {
   // verbatim record of its two source templates. See the function's comment for
   // why this deliberately diverges from the Client A footer.
   await _docxApplyPageNumberFooters(zip);
+
+  // The skeleton has Heading 1 and Heading 3 but no Heading 2: add it (Arial, keep with next, outline level 2).
+  var stylesXml = await zip.file('word/styles.xml').async('string');
+  if (stylesXml.indexOf('w:styleId="Heading2"') === -1) {
+    var h2Style =
+      '<w:style w:type="paragraph" w:styleId="Heading2"><w:name w:val="heading 2"/><w:basedOn w:val="Normal"/><w:next w:val="Normal"/>' +
+      '<w:uiPriority w:val="9"/><w:unhideWhenUsed/><w:qFormat/><w:pPr><w:keepNext/><w:keepLines/>' +
+      '<w:spacing w:before="240" w:after="120" w:line="276" w:lineRule="auto"/><w:outlineLvl w:val="1"/></w:pPr>' +
+      '<w:rPr><w:rFonts w:ascii="Arial" w:eastAsia="Arial" w:hAnsi="Arial" w:cs="Arial"/><w:sz w:val="26"/><w:szCs w:val="26"/><w:lang w:val="en"/></w:rPr></w:style>';
+    zip.file('word/styles.xml', stylesXml.replace('</w:styles>', h2Style + '</w:styles>'));
+  }
 
   var blob = await zip.generateAsync({
     type: 'blob',
@@ -1608,6 +1637,62 @@ function _docxCollectRuns(el, inheritedFmt, ctx) {
 /** True ancestor <table> of a <tr>/<td>, stopping correctly at the nearest
  * enclosing table (so a table nested inside a cell doesn't get its rows
  * double-counted into the outer table). */
+/**
+ * Copy what the browser shows (alignment, weight, colours, widths) from the LIVE report page onto the
+ * detached clone, as data-dx-* attributes. The clone has no CSS cascade (getComputedStyle on a detached node
+ * returns nothing), but report tables take their alignment, header fill and totals weight from classes
+ * (.rpt-n, .rpt-tot, th). The translator reads these attributes, so Word shows what the PDF shows.
+ * liveRoot and cloneRoot must have the same structure (the clone is made with cloneNode(true)).
+ */
+function _docxStampLiveStyles(liveRoot, cloneRoot) {
+  if (!liveRoot || !cloneRoot || typeof getComputedStyle !== 'function') return;
+  var sel = 'table,td,th,.rpt-pg-title,.rpt-info,h1,h2,h3,h4';
+  var live = liveRoot.querySelectorAll(sel);
+  var clone = cloneRoot.querySelectorAll(sel);
+  if (live.length !== clone.length) return;
+  var opaque = function (c) {
+    var m = /^rgba?\(\s*\d+\s*,\s*\d+\s*,\s*\d+\s*(?:,\s*([\d.]+))?/.exec(c || '');
+    return m && (m[1] == null || parseFloat(m[1]) > 0.05);
+  };
+  for (var i = 0; i < live.length; i++) {
+    var cs = getComputedStyle(live[i]);
+    var tag = live[i].tagName;
+    var t = clone[i];
+    var col = _docxCssColorToHex(cs.color);
+    if (col) t.setAttribute('data-dx-color', col);
+    if (parseInt(cs.fontWeight, 10) >= 600) t.setAttribute('data-dx-bold', '1');
+    if (tag === 'TD' || tag === 'TH') {
+      var ta = cs.textAlign;
+      t.setAttribute('data-dx-align', ta === 'right' || ta === 'end' ? 'right' : ta === 'center' ? 'center' : 'left');
+      if (opaque(cs.backgroundColor)) t.setAttribute('data-dx-bg', _docxCssColorToHex(cs.backgroundColor));
+      var fsPx = parseFloat(cs.fontSize);
+      if (fsPx > 0) t.setAttribute('data-dx-fs', String(Math.round(fsPx * 10) / 10));
+      if (cs.whiteSpace === 'nowrap') t.setAttribute('data-dx-nw', '1');
+      var w = live[i].getBoundingClientRect().width;
+      if (w > 0) t.setAttribute('data-dx-w', String(Math.round(w * 10) / 10));
+    } else if (/^H[1-4]$/.test(tag)) {
+      var hPx = parseFloat(cs.fontSize);
+      if (hPx > 0) t.setAttribute('data-dx-fs', String(Math.round(hPx * 10) / 10));
+      var hta = cs.textAlign;
+      t.setAttribute('data-dx-align', hta === 'right' || hta === 'end' ? 'right' : hta === 'center' ? 'center' : 'left');
+    } else if (tag === 'TABLE') {
+      var first = live[i].querySelector('td');
+      if (first) {
+        var bc = _docxCssColorToHex(getComputedStyle(first).borderTopColor);
+        if (bc) t.setAttribute('data-dx-border', bc);
+      }
+    }
+  }
+}
+
+/** Alignment of a table cell: its own inline text-align, else the one stamped from the live page, else ''. */
+function _docxCellAlign(cell) {
+  var a = (cell.style && cell.style.textAlign) || cell.getAttribute('data-dx-align') || '';
+  if (a === 'start' || a === 'justify') return 'left';
+  if (a === 'end') return 'right';
+  return a;
+}
+
 function _docxClosestTable(el) {
   var p = el.parentElement;
   while (p) {
@@ -1689,11 +1774,126 @@ function _docxDeriveColWidths(tableEl, colCount, contentWidthTwips) {
     }
   }
 
+  if (firstRow) {
+    var wCells = Array.prototype.slice.call(firstRow.children).filter(function (c) {
+      return c.tagName === 'TD' || c.tagName === 'TH';
+    });
+    var px = wCells.map(function (c) {
+      return parseFloat(c.getAttribute('data-dx-w')) || 0;
+    });
+    if (
+      wCells.length === colCount &&
+      px.every(function (v) {
+        return v > 0;
+      })
+    ) {
+      var pxSum = px.reduce(function (a, b) {
+        return a + b;
+      }, 0);
+      var pw = px.map(function (v) {
+        return Math.round((contentWidthTwips * v) / pxSum);
+      });
+      pw[pw.length - 1] +=
+        contentWidthTwips -
+        pw.reduce(function (a, b) {
+          return a + b;
+        }, 0);
+      return pw;
+    }
+  }
   var each = Math.floor(contentWidthTwips / colCount);
   var widths = [];
   for (var i = 0; i < colCount; i++) widths.push(each);
   widths[colCount - 1] += contentWidthTwips - each * colCount;
   return widths;
+}
+
+/**
+ * Width in twips of a text at 10pt Arial (regular or bold). Real glyph widths from a canvas when a browser is
+ * present, else the Arial average advance (0.5 em, 0.53 em bold). Used to keep every word of a report table cell
+ * on one line (no mid-word breaks in Word).
+ */
+function _docxTextWidthTwips(text, bold, sizeHalfPt) {
+  var pt = (sizeHalfPt || 20) / 2;
+  if (typeof document !== 'undefined' && document.createElement) {
+    try {
+      if (!_docxTextWidthTwips._ctx) _docxTextWidthTwips._ctx = document.createElement('canvas').getContext('2d');
+      var ctx2 = _docxTextWidthTwips._ctx;
+      if (ctx2) {
+        ctx2.font = (bold ? 'bold ' : '') + '100px Arial';
+        return Math.ceil((ctx2.measureText(text).width / 100) * pt * 20);
+      }
+    } catch (e) {
+      /* fall through to the estimate */
+    }
+  }
+  return Math.ceil(text.length * (bold ? _DOCX_AVG_CHAR_EM_BOLD : _DOCX_AVG_CHAR_EM) * pt * 20);
+}
+
+/**
+ * Smallest width (twips) a column can have without breaking a word: the widest unbreakable piece of text in the
+ * column (a piece = text between spaces; a number is one piece) plus the cell side margins. Cells that span
+ * several columns are ignored.
+ */
+function _docxColumnMinWidths(rowCells, colCount, cellMarginTwips, sizeHalfPt, strict) {
+  var mins = [];
+  for (var c = 0; c < colCount; c++) mins.push(0);
+  rowCells.forEach(function (cells) {
+    var ci = 0;
+    cells.forEach(function (cell) {
+      var span = parseInt(cell.getAttribute('colspan'), 10) || 1;
+      if (span === 1 && ci < colCount) {
+        var bold = cell.tagName === 'TH' || cell.getAttribute('data-dx-bold') === '1';
+        var whole = (cell.textContent || '').replace(/\s+/g, ' ').trim();
+        var pieces = (cell.textContent || '').split(/\s+/);
+        // A cell that does not wrap in the PDF, or a short one (a number with its unit, a name), is one piece when asked.
+        // strict 2: every short cell is one piece; strict 1: only cells that do not wrap in the PDF, and numbers with a unit.
+        if (strict && whole && (cell.getAttribute('data-dx-nw') === '1' || (strict >= 2 ? whole.length <= 24 : /\d/.test(whole) && whole.length <= 24))) pieces = [whole];
+        pieces.forEach(function (piece) {
+          if (!piece) return;
+          var cellHp = Math.max(sizeHalfPt, Math.round((parseFloat(cell.getAttribute('data-dx-fs')) || 0) * 1.5));
+          var w = _docxTextWidthTwips(piece, bold, cellHp) + 2 * cellMarginTwips + 20;
+          if (w > mins[ci]) mins[ci] = w;
+        });
+      }
+      ci += span;
+    });
+  });
+  return mins;
+}
+
+/**
+ * Give every column at least its minimum width. A column below its minimum is raised to it; the twips come from the
+ * columns that have room beyond their own minimum, in proportion to that room. The total stays the same.
+ */
+function _docxFitColumnWidths(widths, mins) {
+  var w = widths.slice();
+  var need = 0;
+  for (var i = 0; i < w.length; i++) {
+    if (w[i] < mins[i]) {
+      need += mins[i] - w[i];
+      w[i] = mins[i];
+    }
+  }
+  if (!need) return w;
+  var room = 0;
+  for (var j = 0; j < w.length; j++) {
+    if (w[j] > mins[j] && widths[j] >= mins[j]) room += w[j] - mins[j];
+  }
+  if (room <= 0) return w;
+  var take = Math.min(need, room);
+  var used = 0;
+  var last = -1;
+  for (var k = 0; k < w.length; k++) {
+    if (w[k] > mins[k] && widths[k] >= mins[k]) {
+      var cut = Math.floor((take * (w[k] - mins[k])) / room);
+      w[k] -= cut;
+      used += cut;
+      last = k;
+    }
+  }
+  if (last >= 0) w[last] -= take - used;
+  return w;
 }
 
 /**
@@ -1766,6 +1966,29 @@ function _docxTranslateTable(tableEl, ctx) {
   if (!colCount) return '';
 
   var colWidths = _docxDeriveColWidths(tableEl, colCount);
+  // Report tables (stamped from the live page): fixed widths that keep every word whole.
+  var _isReportTable = !!tableEl.getAttribute('data-dx-border');
+  if (_isReportTable) {
+    var _cellsByRow = trEls.map(function (tr) {
+      return Array.prototype.slice.call(tr.children).filter(function (c) {
+        return c.tagName === 'TD' || c.tagName === 'TH';
+      });
+    });
+    var _total = colWidths.reduce(function (a, b) {
+      return a + b;
+    }, 0);
+    // The strictest rule the table has room for: short cells whole, then numbers and no-wrap cells whole, then only whole words.
+    var _mins = null;
+    [2, 1, 0].forEach(function (level) {
+      if (_mins) return;
+      var m = _docxColumnMinWidths(_cellsByRow, colCount, _DOCX_REPORT_CELL_SIDE_TWIPS, _DOCX_REPORT_TABLE_HALFPT, level);
+      var sum = m.reduce(function (a, b) {
+        return a + b;
+      }, 0);
+      if (sum <= _total || level === 0) _mins = m;
+    });
+    colWidths = _docxFitColumnWidths(colWidths, _mins);
+  }
 
   // vMergeState[col] = number of REMAINING rows (after this one) a prior row's
   // rowspan="N" cell still covers at that grid column. Populated only when an
@@ -1781,7 +2004,23 @@ function _docxTranslateTable(tableEl, ctx) {
   // rendering, which still relies on real HTML rowspan/CSS, is untouched.
   var vMergeState = new Array(colCount).fill(0);
 
-  var rowsXml = trEls
+  // Column alignment from the body rows (first body cell of each column that states one). A header cell takes
+  // its column's alignment, so a number column has a right-aligned header and a text column a left-aligned one.
+  var colAlign = {};
+  trEls.forEach(function (tr, rIdx) {
+    if (rIdx === 0) return;
+    var ci = 0;
+    Array.prototype.forEach.call(tr.children, function (c) {
+      if (c.tagName !== 'TD' && c.tagName !== 'TH') return;
+      var sp = parseInt(c.getAttribute('colspan'), 10) || 1;
+      var al = _docxCellAlign(c);
+      if (sp === 1 && al && colAlign[ci] == null && (c.textContent || '').trim()) colAlign[ci] = al;
+      ci += sp;
+    });
+  });
+  var _hasStamp = !!tableEl.getAttribute('data-dx-border');
+
+  var rowList = trEls
     .map(function (tr, rIdx) {
       var cells = Array.prototype.slice.call(tr.children).filter(function (c) {
         return c.tagName === 'TD' || c.tagName === 'TH';
@@ -1859,7 +2098,19 @@ function _docxTranslateTable(tableEl, ctx) {
         // but its own inline style, e.g. the Audit Report's 27-building compliance table, does
         // not fall back to plain 10.5pt body text either).
         var cellBaseFmt = _docxStyleFmtFromEl(cell, isHeaderCell ? { bold: true } : {}, ctx);
-        var align = (cell.style && cell.style.textAlign) || 'center';
+        if (cell.getAttribute('data-dx-bold') === '1') cellBaseFmt.bold = true;
+        if (_hasStamp) {
+          // Report table text is the size the PDF shows (the live page's size), never below the report table floor.
+          var _fsPx = parseFloat(cell.getAttribute('data-dx-fs')) || 0;
+          cellBaseFmt.sizeHalfPt = Math.max(_DOCX_REPORT_TABLE_HALFPT, Math.round(_fsPx * 1.5));
+          cellBaseFmt.floorHalfPt = _DOCX_REPORT_TABLE_HALFPT;
+        }
+        var cellShade = cell.getAttribute('data-dx-bg') || '';
+        var isHeaderRow = rIdx === 0;
+        if (isHeaderRow && cellShade && cell.getAttribute('data-dx-color')) cellBaseFmt.color = cell.getAttribute('data-dx-color');
+        if (isHeaderRow && _hasStamp) cellBaseFmt.bold = true;
+        var align = _docxCellAlign(cell) || 'center';
+        if (_hasStamp && span === 1 && colAlign[colIdx] && (isHeaderRow || !_docxCellAlign(cell))) align = colAlign[colIdx];
         var cellParagraphs;
         if (_docxHasBlockChild(cell)) {
           // Cell contains block-level content (e.g. a <ul> improvement list -- the Service
@@ -1946,6 +2197,7 @@ function _docxTranslateTable(tableEl, ctx) {
             gridSpan: span > 1 ? span : undefined,
             vAlign: 'center',
             vMerge: rowSpanAttr > 1 ? 'restart' : undefined,
+            shade: cellShade || undefined,
           }),
         );
         if (rowSpanAttr > 1) {
@@ -1969,7 +2221,19 @@ function _docxTranslateTable(tableEl, ctx) {
       }
       return _docxTableRow(cellsXml, { header: rIdx === 0 });
     })
-    .join('');
+    .filter(function (r) {
+      return r;
+    });
+  // A short table stays on one page (every row keeps with the next); a long table keeps its last row with the
+  // one above it, so a lone Total row never starts a page.
+  // A table with a lot of text (taller than a page) cannot be kept whole: it starts under its heading and splits at a row.
+  var _bigTable = (tableEl.textContent || '').length > 1500;
+  var _keepFrom = rowList.length <= 25 && !_bigTable ? 0 : rowList.length - 2;
+  rowList = rowList.map(function (r, ri) {
+    if (ri < _keepFrom || ri >= rowList.length - 1) return r;
+    return r.replace(/<w:pPr>(<w:pStyle w:val="[^"]*"\/>)?(?!<w:keepNext\/>)/g, '<w:pPr>$1<w:keepNext/>');
+  });
+  var rowsXml = rowList.join('');
 
   var grid =
     '<w:tblGrid>' +
@@ -1979,11 +2243,32 @@ function _docxTranslateTable(tableEl, ctx) {
       })
       .join('') +
     '</w:tblGrid>';
-  var tblPr =
-    '<w:tblPr><w:tblStyle w:val="TableGrid"/>' +
-    '<w:tblW w:w="0" w:type="auto"/>' +
-    '<w:tblLook w:val="04A0" w:firstRow="1" w:lastRow="0" w:firstColumn="1" w:lastColumn="0" w:noHBand="0" w:noVBand="1"/>' +
-    '</w:tblPr>';
+  var tblPr;
+  if (_hasStamp) {
+    // Report tables: fixed column widths (the widths the PDF shows), light borders, cell padding.
+    var bcol = _docxEscapeXml(tableEl.getAttribute('data-dx-border'));
+    var edge = function (n) {
+      return '<w:' + n + ' w:val="single" w:sz="4" w:space="0" w:color="' + bcol + '"/>';
+    };
+    tblPr =
+      '<w:tblPr><w:tblStyle w:val="TableGrid"/>' +
+      '<w:tblW w:w="' +
+      colWidths.reduce(function (a, b) {
+        return a + b;
+      }, 0) +
+      '" w:type="dxa"/>' +
+      '<w:tblBorders>' + edge('top') + edge('left') + edge('bottom') + edge('right') + edge('insideH') + edge('insideV') + '</w:tblBorders>' +
+      '<w:tblLayout w:type="fixed"/>' +
+      '<w:tblCellMar><w:top w:w="' + _DOCX_REPORT_CELL_VERT_TWIPS + '" w:type="dxa"/><w:left w:w="' + _DOCX_REPORT_CELL_SIDE_TWIPS + '" w:type="dxa"/><w:bottom w:w="' + _DOCX_REPORT_CELL_VERT_TWIPS + '" w:type="dxa"/><w:right w:w="' + _DOCX_REPORT_CELL_SIDE_TWIPS + '" w:type="dxa"/></w:tblCellMar>' +
+      '<w:tblLook w:val="04A0" w:firstRow="1" w:lastRow="0" w:firstColumn="1" w:lastColumn="0" w:noHBand="0" w:noVBand="1"/>' +
+      '</w:tblPr>';
+  } else {
+    tblPr =
+      '<w:tblPr><w:tblStyle w:val="TableGrid"/>' +
+      '<w:tblW w:w="0" w:type="auto"/>' +
+      '<w:tblLook w:val="04A0" w:firstRow="1" w:lastRow="0" w:firstColumn="1" w:lastColumn="0" w:noHBand="0" w:noVBand="1"/>' +
+      '</w:tblPr>';
+  }
 
   return '<w:tbl>' + tblPr + grid + rowsXml + '</w:tbl>';
 }
@@ -2175,7 +2460,12 @@ function _docxTranslateBlock(el, ctx, inheritedFmt) {
 
   if (tag === 'TABLE') {
     var tblXml = _docxTranslateTable(el, ctx);
-    return tblXml ? [tblXml] : [];
+    if (!tblXml) return [];
+    // Space after a top-level report table, so the note or heading under it does not touch the grid.
+    var nested = el.parentElement && el.parentElement.closest && el.parentElement.closest('table');
+    return nested || !el.getAttribute('data-dx-border')
+      ? [tblXml]
+      : [tblXml, '<w:p><w:pPr><w:spacing w:before="0" w:after="0" w:line="120" w:lineRule="exact"/></w:pPr></w:p>'];
   }
 
   if (tag === 'UL' || tag === 'OL') {
@@ -2194,12 +2484,19 @@ function _docxTranslateBlock(el, ctx, inheritedFmt) {
     // OWN fixed size always wins over any inherited size (headings are
     // never smaller because of where they happen to sit).
     var headingSizeHalfPt = tag === 'H1' ? _DOCX_HEADING_SIZE_H1 : _DOCX_HEADING_SIZE_SECTION;
-    var hRuns = _docxCollectRuns(el, Object.assign({}, baseFmt, { sizeHalfPt: headingSizeHalfPt }), ctx);
+    // A heading stamped from the live report page keeps the PDF's size and alignment.
+    var _hStampPx = parseFloat(el.getAttribute('data-dx-fs')) || 0;
+    if (_hStampPx) headingSizeHalfPt = Math.max(_DOCX_MIN_SIZE_HALFPT, Math.round(_hStampPx * 1.5));
+    var hFmt = Object.assign({}, baseFmt, { sizeHalfPt: headingSizeHalfPt });
+    if (el.getAttribute('data-dx-color')) hFmt.color = el.getAttribute('data-dx-color');
+    if (el.getAttribute('data-dx-bold') === '1') hFmt.bold = true;
+    var hRuns = _docxCollectRuns(el, hFmt, ctx);
     if (!hRuns.length) return [];
     return [
       _docxParagraph({
+        pStyle: tag === 'H1' ? 'Heading1' : tag === 'H2' ? 'Heading2' : 'Heading3',
         runs: hRuns,
-        align: el.style && el.style.textAlign,
+        align: (el.style && el.style.textAlign) || el.getAttribute('data-dx-align') || undefined,
         spacingBefore: 240,
         spacingAfter: 120,
         // U5, 2026-08-02: keep the heading with the block it introduces. With
@@ -2250,6 +2547,26 @@ function _docxTranslateBlock(el, ctx, inheritedFmt) {
     return [_docxTranslateFlexRowTable(el, ctx)];
   }
 
+  // Report page title and the client / period line under it: real Word heading styles (Heading 1 and 2).
+  var _elCls = (el.getAttribute && el.getAttribute('class')) || '';
+  if (tag === 'DIV' && /(^|\s)(rpt-pg-title|rpt-info)(\s|$)/.test(_elCls)) {
+    var isTitle = /(^|\s)rpt-pg-title(\s|$)/.test(_elCls);
+    var tFmt = Object.assign({}, baseFmt, { sizeHalfPt: isTitle ? _DOCX_HEADING_SIZE_H1 : 22, bold: isTitle });
+    if (el.getAttribute('data-dx-color') && isTitle) tFmt.color = el.getAttribute('data-dx-color');
+    var tRuns = _docxCollectRuns(el, tFmt, ctx);
+    if (!tRuns.length) return [];
+    return [
+      _docxParagraph({
+        pStyle: isTitle ? 'Heading1' : 'Heading2',
+        runs: tRuns,
+        align: 'left',
+        spacingBefore: 0,
+        spacingAfter: isTitle ? 40 : 160,
+        keepNext: true,
+      }),
+    ];
+  }
+
   if (tag === 'P' || (tag === 'DIV' && !_docxHasBlockChild(el))) {
     // Seed the base run fmt from the inherited context, THEN this element's own inline style
     // (font-size/weight/color) on top -- see _docxStyleFmtFromEl's header comment for the defect
@@ -2286,6 +2603,39 @@ function _docxTranslateBlock(el, ctx, inheritedFmt) {
   // text, via _docxTranslateBlockChildren) defensively so content is never silently dropped, but
   // the unknown tag itself emits no XML. baseFmt threaded through for the same reason as above.
   return _docxTranslateBlockChildren(el, ctx, baseFmt);
+}
+
+/**
+ * Report line spacing. Word sizes a line from every font in it, and the skeleton's default East Asian font makes a
+ * line 1.30 em tall; the PDF has about 1.15 em. For a report (a page with stamped report tables) every paragraph
+ * that holds text gets an exact line of 1.15 times its largest font, body paragraphs get 6pt after instead of 12pt,
+ * and headings get less space around them. Paragraphs with a picture keep automatic height so the picture is never clipped.
+ */
+function _docxTightenReportXml(xml) {
+  return xml.replace(/<w:p>(<w:pPr>.*?<\/w:pPr>)?(.*?)<\/w:p>/g, function (whole, pPr, rest) {
+    if (!pPr || /<w:drawing/.test(rest) || /w:lineRule=/.test(pPr)) return whole;
+    var sizes = [];
+    rest.replace(/<w:sz w:val="(\d+)"/g, function (m, v) {
+      sizes.push(parseInt(v, 10));
+      return m;
+    });
+    if (!sizes.length) return whole;
+    // Body text in a report is 10pt, as in the PDF.
+    rest = rest.replace(/<w:sz w:val="21"\/><w:szCs w:val="21"\/>/g, '<w:sz w:val="20"/><w:szCs w:val="20"/>');
+    sizes = sizes.map(function (v) {
+      return v === 21 ? 20 : v;
+    });
+    var line = Math.round(Math.max.apply(null, sizes) * 11.5);
+    var isHeading = /<w:pStyle w:val="Heading/.test(pPr);
+    var out = pPr.replace(/<w:spacing ([^>]*?)\/>/, function (m, attrs) {
+      if (isHeading) attrs = attrs.replace('w:before="240"', 'w:before="120"').replace('w:after="120"', 'w:after="60"');
+      else attrs = attrs.replace('w:after="240"', 'w:after="80"');
+      return '<w:spacing ' + attrs + ' w:line="' + line + '" w:lineRule="exact"/>';
+    });
+    // Heading 3 in the skeleton is indented 1 inch; a report heading starts at the margin.
+    if (/<w:pStyle w:val="Heading3"/.test(out) && !/<w:ind /.test(out)) out = out.replace(/<w:jc /, '<w:ind w:left="0" w:firstLine="0"/><w:jc ');
+    return '<w:p>' + out + rest + '</w:p>';
+  });
 }
 
 /**
@@ -2368,7 +2718,6 @@ function _docxTranslatePages(pageEls) {
     nextNumId: _DOCX_NUMID_ALLOC_START,
     _cssVarCache: {}, // memoizes _docxResolveCssVarColor()'s --rpt-* lookups for this translation run
   };
-  var pageBreakRun = '<w:r><w:br w:type="page"/></w:r>';
 
   // Walk ALL childNodes (elements AND loose text) via
   // _docxTranslateBlockChildren -- NOT pageEls[p].children, which the DOM
@@ -2382,35 +2731,34 @@ function _docxTranslatePages(pageEls) {
   }
 
   var budget = [];
-  var remainingPt = _DOCX_USABLE_HEIGHT_PT - _DOCX_LETTERHEAD_SPACER_TWIPS / 20; // page 1 starts partly spent
+  var _isReportDoc = pageEls.some(function (pe) {
+    return pe.querySelector && pe.querySelector('[data-dx-border]');
+  });
+  var remainingPt = _DOCX_USABLE_HEIGHT_PT - (_isReportDoc ? _DOCX_LETTERHEAD_SPACER_COMPACT_TWIPS : _DOCX_LETTERHEAD_SPACER_TWIPS) / 20; // page 1 starts partly spent
   for (var i = 0; i < perPage.length; i++) {
     var blocks = perPage[i];
     var heightPt = _docxEstimateBodyHeightPt(blocks.join(''), _DOCX_CONTENT_WIDTH_TWIPS);
     var fits = heightPt <= remainingPt;
     var breakMode = 'none';
 
-    if (i < perPage.length - 1 && fits) {
-      var lastIdx = blocks.length - 1;
-      if (lastIdx >= 0 && typeof blocks[lastIdx] === 'string' && /<\/w:p>\s*$/.test(blocks[lastIdx])) {
-        blocks[lastIdx] = blocks[lastIdx].replace(/<\/w:p>\s*$/, pageBreakRun + '</w:p>');
-        breakMode = 'run';
+    // Every source page (a report section) starts on a new Word page, whether or not the estimate fits.
+    if (i < perPage.length - 1) {
+      // pageBreakBefore on the next page's first block (a paragraph, or the first paragraph of a table's first
+      // cell). Never a break run in the last paragraph: that paragraph can itself land on a fresh sheet and
+      // leave a blank page.
+      var next = perPage[i + 1];
+      var target = -1;
+      for (var n = 0; n < next.length; n++) {
+        if (typeof next[n] === 'string' && next[n]) {
+          target = n;
+          break;
+        }
+      }
+      if (target >= 0) {
+        next[target] = _docxApplyPageBreakBefore(next[target]);
+        breakMode = 'pageBreakBefore';
       } else {
-        // Page ended in a table (or produced nothing): mark the NEXT page's
-        // first block instead. Never a break-only paragraph -- see above.
-        var next = perPage[i + 1];
-        var target = -1;
-        for (var n = 0; n < next.length; n++) {
-          if (typeof next[n] === 'string' && next[n]) {
-            target = n;
-            break;
-          }
-        }
-        if (target >= 0) {
-          next[target] = _docxApplyPageBreakBefore(next[target]);
-          breakMode = 'pageBreakBefore';
-        } else {
-          breakMode = 'dropped'; // next page is empty -- nothing to break to
-        }
+        breakMode = 'dropped'; // next page is empty -- nothing to break to
       }
     }
 
@@ -2424,7 +2772,7 @@ function _docxTranslatePages(pageEls) {
 
     // 'dropped' means the next page produced no blocks at all, so no break was
     // actually emitted -- it must NOT reset the fill like a real break would.
-    if (fits && (breakMode === 'run' || breakMode === 'pageBreakBefore')) {
+    if (breakMode === 'pageBreakBefore') {
       remainingPt = _DOCX_USABLE_HEIGHT_PT;
     } else if (fits) {
       remainingPt = remainingPt - heightPt; // no break emitted: same sheet keeps filling
@@ -2438,7 +2786,19 @@ function _docxTranslatePages(pageEls) {
 
   var allBlocks = [];
   for (var q = 0; q < perPage.length; q++) allBlocks = allBlocks.concat(perPage[q]);
-  return { xml: allBlocks.join(''), images: ctx.images, numIds: ctx.numAllocations, pageBudget: budget };
+  var isReport = _isReportDoc;
+  if (isReport) {
+    allBlocks = allBlocks.map(_docxTightenReportXml);
+    // A paragraph right above a table (a note under a heading) stays with the table.
+    allBlocks = allBlocks.map(function (b, bi) {
+      var nextB = allBlocks[bi + 1];
+      if (typeof b === 'string' && /^<w:p><w:pPr>/.test(b) && !/<w:keepNext\/>/.test(b) && typeof nextB === 'string' && /^<w:tbl>/.test(nextB)) {
+        return b.replace(/^<w:p><w:pPr>(<w:pStyle w:val="[^"]*"\/>)?/, '<w:p><w:pPr>$1<w:keepNext/>');
+      }
+      return b;
+    });
+  }
+  return { xml: allBlocks.join(''), images: ctx.images, numIds: ctx.numAllocations, pageBudget: budget, isReport: isReport };
 }
 
 /** Single-page convenience wrapper around _docxTranslatePages(). */

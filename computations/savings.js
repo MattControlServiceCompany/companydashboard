@@ -435,6 +435,8 @@ function getMeterSavings(m, bills, incl, projId, bldgId, opts) {
     isElec && hasRegrP
       ? computeKwCddRegression(blRowsActual, allRows, bills, incl)
       : {};
+  // The fit behind those kW values (null: no fit, the kW baseline is the billed kW of the same calendar month of the baseline year).
+  const _kwFit = isElec && hasRegrP ? fitKwCdd(blRowsActual, bills) : null;
 
   const rawUsageByYm = {};
   if (isPropane) {
@@ -755,6 +757,7 @@ function getMeterSavings(m, bills, incl, projId, bldgId, opts) {
     unitsByCalMo,
     incompleteYM,
     rows: rowsOut,
+    blKwFit: _kwFit,
   };
   if (!opts.effectiveRows && !opts.normalizedBills) {
     m._savingsCache = result;

@@ -78,7 +78,7 @@ ok(!('pm10' in e.pollutants) && !('voc_oz' in e.pollutants) && !('co_oz' in e.po
 
 // source line
 const line = vm.runInContext('emissionsSourceLine', sb)('KS');
-ok(/eGRID2023 \(rev 2\), state KS/.test(line) && /GHG Emission Factors Hub/.test(line), 'source line names eGRID2023 rev 2 and the GHG Hub: ' + line);
+ok(/eGRID2023 \(rev 2\), Kansas \(electricity\)/.test(line) && /GHG Emission Factors Hub/.test(line), 'source line names eGRID2023 rev 2, the state name Kansas and the GHG Hub: ' + line);
 
 console.log(fails ? fails + ' FAILED' : 'ALL PASS');
 process.exit(fails ? 1 : 0);

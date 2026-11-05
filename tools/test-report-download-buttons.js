@@ -63,7 +63,7 @@ const ok = (c, m) => {
         weather: { monthly: [], totals: { cddBl: 0, cddCur: 0 } },
         rawBills: [],
       };
-      const html = _rptQuarterReportHTML(d, { appendixD: false, environmentalImpact: false, approvedChanges: false });
+      const html = _rptQuarterReportHTML(d, { appendixD: false, environmentalImpact: false, approvedChanges: false, buildingSummaries: false, electricDetail: false, gasDetail: false, propaneDetail: false, yearToDate: false, appendixB: false, appendixC: false });
       window._currentReportData = d;
       window.__testHtml = html;
       window.__testD = d;

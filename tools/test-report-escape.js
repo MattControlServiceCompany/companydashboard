@@ -52,7 +52,7 @@ const PLAIN = 'Acme & Sons #416';
           weather: { monthly: [], totals: { cddBl: 0, cddCur: 0 } },
           rawBills: [{ ym: '2026-07', building: P, commodity: P, account: P, amount: 5 }],
         };
-        const html = _rptQuarterReportHTML(d, { appendixD: false, environmentalImpact: false, approvedChanges: false });
+        const html = _rptQuarterReportHTML(d, { appendixD: false, environmentalImpact: false, approvedChanges: false, buildingSummaries: false, electricDetail: false, gasDetail: false, propaneDetail: false, yearToDate: false, appendixB: false, appendixC: false });
         return { html, rawImg: html.indexOf('<img src=x onerror') };
       },
       [P, PLAIN],
