@@ -2507,6 +2507,11 @@ async function siteResetAllMeterTableSettings() {
    site-ui.js delegates to this array and should NOT maintain its own copy.
 */
 var RELEASE_NOTES = [
+  { v: 'v2026.11.05.232', date: '2026-11-05', title: 'Quarterly report Contract to Date',
+    items: [
+      { type: 'change', text: 'Energy Department > quarterly report: the Contract to Date table no longer has the "Billed minus target" column. It now shows Savings target and Savings billed.' }
+    ]
+  },
   { v: 'v2026.11.05.231', date: '2026-11-05', title: 'Page number placement',
     items: [
       { type: 'fix', text: 'Meeting agenda/minutes export and Energy Department quarterly report: "Page N of M" now sits below the letterhead wave, at the bottom right, in both Word and PDF.' }

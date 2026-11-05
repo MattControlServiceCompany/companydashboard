@@ -548,7 +548,12 @@ console.log('\n--- 12. controlled rounding, billing period, state name, sign rul
   const appB = run(ctx, '(function(d,f){ return _rptQAppendixBPages(8,d,f,"B"); })')(d, f).html;
   assert(!/Saved (kWh|therms)|Savings (kWh|therms)/.test(appB) || appB.indexOf('Change kWh') >= 0, 'Appendix B: use columns are "Change", never "Saved kWh" or "Savings kWh"');
   const contractTxt = run(ctx, '(function(d,f){ return _rptQContractPage(5,d,f); })')(d, f).replace(/<[^>]+>/g, ' ');
-  assert(!/\+\$/.test(contractTxt) && /Billed minus target/.test(contractTxt), 'contract page: no plus sign on dollars, column named "Billed minus target"');
+  assert(!/\+\$/.test(contractTxt) && !/Billed minus target/.test(contractTxt), 'contract page: no plus sign on dollars, no "Billed minus target" column');
+  const ctHtml = run(ctx, '(function(d,f){ return _rptQContractPage(5,d,f); })')(d, f);
+  const ctTable = (ctHtml.match(/<table[\s\S]*?<\/table>/) || [''])[0];
+  const ctHead = (ctTable.match(/<th[\s\S]*?<\/th>/g) || []).map((h) => h.replace(/<[^>]+>/g, '').trim());
+  assert(ctHead.length === 3 && /^Contract year/.test(ctHead[0]) && ctHead[1] === 'Savings target' && ctHead[2] === 'Savings billed', 'Contract to Date table has three columns: year, Savings target, Savings billed: ' + JSON.stringify(ctHead));
+  assert((ctTable.match(/<tr/g) || []).length === 6 && (ctTable.match(/<tr[^>]*>(?:(?!<\/tr>)[\s\S])*?<\/tr>/g) || []).every((tr) => (tr.match(/<t[dh]/g) || []).length === 3), 'Contract to Date table keeps header, Q1 to Q4 and the Through row, every row has 3 cells');
   const fl2 = flat.replace(/\s+/g, ' ');
   assert(!/Actual minus baseline/.test(fl2) && /Change = actual use minus baseline use; plus means more use than baseline/.test(fl2), 'building pages: "Change" with the rule in a note (no "Actual minus baseline" column)');
   // K. Year to Date: Q1, Q2, Q3 in order, then Total; no blank cell

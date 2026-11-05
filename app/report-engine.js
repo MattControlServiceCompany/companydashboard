@@ -3244,13 +3244,11 @@ function _rptQContractBody(d, f) {
     if (done) tT += qT[i] || 0;
     qRows +=
       '<tr><td>' + _rptQuarterLabel(i + 1, f.year) + '</td><td class="rpt-n">' + _fmtUSD(qT[i] || 0, '$0') + '</td>' +
-      '<td class="rpt-n">' + (done ? _fmtUSD(billed, '$0') : '') + '</td>' +
-      '<td class="rpt-n ' + (done ? _rptQSavCls(billed - (qT[i] || 0)) : '') + '">' + (done ? _fmtUSD(billed - (qT[i] || 0), '$0') : '') + '</td></tr>';
+      '<td class="rpt-n">' + (done ? _fmtUSD(billed, '$0') : '') + '</td></tr>';
   }
   qRows +=
-    '<tr class="rpt-tot"><td>Through ' + _rptQuarterLabel(f.q, f.year) + '</td><td class="rpt-n">' + _fmtUSD(tT, '$0') + '</td><td class="rpt-n">' + _fmtUSD(tB, '$0') +
-    '</td><td class="rpt-n ' + _rptQSavCls(tB - tT) + '">' + _fmtUSD(tB - tT, '$0') + '</td></tr>';
-  var t1 = _rptQTable([46, 18, 18, 18], ['Contract year ' + d.contract.currentYear, 'Savings target', 'Savings billed', 'Billed minus target'], qRows);
+    '<tr class="rpt-tot"><td>Through ' + _rptQuarterLabel(f.q, f.year) + '</td><td class="rpt-n">' + _fmtUSD(tT, '$0') + '</td><td class="rpt-n">' + _fmtUSD(tB, '$0') + '</td></tr>';
+  var t1 = _rptQTable([58, 21, 21], ['Contract year ' + d.contract.currentYear, 'Savings target', 'Savings billed'], qRows);
 
   // Projection - the one shared projection
   var proj = _rptContractProjection(d);
