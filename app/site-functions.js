@@ -2507,6 +2507,11 @@ async function siteResetAllMeterTableSettings() {
    site-ui.js delegates to this array and should NOT maintain its own copy.
 */
 var RELEASE_NOTES = [
+  { v: 'v2026.11.05.233', date: '2026-11-05', title: 'Quarterly report PDF table widths',
+    items: [
+      { type: 'fix', text: 'Energy Department > quarterly report PDF: in Appendix D Utility Bills and Electricity by Building, long names now wrap inside their cell, and dates and numbers stay inside the table.' }
+    ]
+  },
   { v: 'v2026.11.05.232', date: '2026-11-05', title: 'Quarterly report Contract to Date',
     items: [
       { type: 'change', text: 'Energy Department > quarterly report: the Contract to Date table no longer has the "Billed minus target" column. It now shows Savings target and Savings billed.' }

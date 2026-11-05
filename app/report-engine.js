@@ -2302,12 +2302,13 @@ function _rptQChangeTd(v) {
 function _rptQUnitSavTd(v) {
   return '<td class="rpt-n ' + _rptQSavCls(v) + '">' + _rptQN(v) + '</td>';
 }
+// Column widths (percent) of the quarterly tables whose cells hold long dates and numbers. A number or a date never
+// wraps (see .rpt-q-dense td.rpt-n); a building name wraps inside its own cell. tools/test-report-table-fit.js checks them.
+var _RPT_Q_W_FUEL_ELEC = [19, 10, 10, 9, 9, 9, 12, 12, 10];
+var _RPT_Q_W_FUEL = [26, 14, 14, 12, 12, 12, 10];
+var _RPT_Q_W_BILLS = [19, 12, 15, 14, 8, 9, 23];
 function _rptQTable(widths, heads, rows, textCols) {
   textCols = textCols || [];
-  // A building name never wraps: the first cell of each row of a Building table does not break.
-  if (heads[0] === 'Building') rows = rows.replace(/(<tr[^>]*>)<td(?: style="([^"]*)")?>/g, function (m, tr, st) {
-      return tr + '<td class="rpt-q-nm" style="' + (st ? st + ';' : '') + 'white-space:nowrap">';
-    });
   return (
     '<table class="rpt-table rpt-table-wrap rpt-q-dense" style="width:100%;table-layout:fixed">' +
     '<colgroup>' +
@@ -3772,7 +3773,7 @@ function _rptQFuelDetailPage(n, d, f, kind) {
     (kind === 'electric' ? '<td class="rpt-n">' + _rptQN(t.kwBl) + '</td><td class="rpt-n">' + _rptQN(t.kwCur) + '</td>' : '') +
     '<td class="rpt-n">' + _fmtUSD(t.cBl, '$0') + '</td><td class="rpt-n">' + _fmtUSD(t.cCur, '$0') + '</td>' + _rptQSavTd(t.sav) + '</tr>';
   var heads = ['Building', 'Baseline ' + K.unit, 'Actual ' + K.unit, 'Change percent'].concat(kind === 'electric' ? ['Baseline billed kW', 'Actual billed kW'] : [], ['Baseline cost', 'Actual cost', 'Savings']);
-  var widths = kind === 'electric' ? [28, 10, 9, 8, 8, 8, 10, 10, 9] : [30, 13, 13, 11, 12, 12, 11];
+  var widths = kind === 'electric' ? _RPT_Q_W_FUEL_ELEC : _RPT_Q_W_FUEL;
   var intro =
     kind === 'electric'
       ? 'The charts compare the baseline with actual electricity use by month; kWh bar labels are in thousands (k). The table gives kWh, billed kW and cost by building. Billed kW is the sum of the billed kW of the 3 months of ' + ql + '.'
@@ -3816,7 +3817,7 @@ function _rptQAppendixDPages(n, d, f, letter) {
     return 'Not recorded';
   };
   var byMonth = _rptBillsByPeriodMonth(d.rawBills || [], f.yms);
-  var widths = [23, 11, 17, 15, 8, 9, 17];
+  var widths = _RPT_Q_W_BILLS;
   var heads = ['Building', 'Utility', 'Provider', 'Use', 'Billed kW', 'Cost', 'Billing period'];
   var textCols = [1, 2, 6];
   var pages = [];

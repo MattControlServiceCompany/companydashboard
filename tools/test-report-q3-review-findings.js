@@ -456,14 +456,12 @@ try {
 } catch (e) {
   assert(false, 'appendix D kW sum test ran: ' + String(e.stack).split(String.fromCharCode(10)).slice(0, 2).join(' / '));
 }
-// 9. a building name never wraps: every Building table (header cell "Building") has no-wrap first cells
-console.log('\n--- 9. Building column does not wrap ---');
+// 9. a building name wraps inside its own cell: no Building table first cell is forced to one line (Matt 2026-11-05)
+console.log('\n--- 9. Building column wraps inside its cell ---');
 {
   const tables = (allHtml.match(/<table[\s\S]*?<\/table>/g) || []).filter((t) => /<th[^>]*>Building<\/th>/.test(t) && /rpt-q-dense/.test(t));
   assert(tables.length > 0, 'quarterly report has Building tables to check: ' + tables.length);
-  const bad = tables.filter((t) => /<tr[^>]*><td(?: style="[^"]*")?>/.test(t));
-  assert(bad.length === 0, 'no Building table has a first cell that can wrap: ' + bad.length);
-  assert(tables.every((t) => /class="rpt-q-nm" style="[^"]*white-space:nowrap"/.test(t)), 'every Building table marks its first cells nowrap');
+  assert(tables.every((t) => !/rpt-q-nm/.test(t)), 'no Building table marks a name cell as one line');
 }
 // 10. the cover table and the Appendix C degree day table each print once (Matt 2026-11-05)
 console.log('\n--- 10. repeated tables removed ---');
