@@ -2507,6 +2507,11 @@ async function siteResetAllMeterTableSettings() {
    site-ui.js delegates to this array and should NOT maintain its own copy.
 */
 var RELEASE_NOTES = [
+  { v: 'v2026.11.05.234', date: '2026-11-05', title: 'Quarterly report wording',
+    items: [
+      { type: 'fix', text: 'Energy Department > quarterly report: the baseline now reads "weather normalized using January 2025 through December 2025", and billed kW is described as "the demand, in kW, that the utility bills for the month" on page 1, page 3 and Appendix A.' }
+    ]
+  },
   { v: 'v2026.11.05.233', date: '2026-11-05', title: 'Quarterly report PDF table widths',
     items: [
       { type: 'fix', text: 'Energy Department > quarterly report PDF: in Appendix D Utility Bills and Electricity by Building, long names now wrap inside their cell, and dates and numbers stay inside the table.' }

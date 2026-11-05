@@ -484,6 +484,8 @@ console.log('\n--- 11. Manager decisions 1-7 ---');
   assert(/The billed kW baseline of a month is the meter's model of billed kW on cooling degree days, evaluated at the cooling degree days of the month reported/.test(sp), 'Appendix A states the kW method (cooling degree days of the month reported)');
   assert(!/that month's weather/.test(sp), 'the wrong "that month\'s weather" wording is gone');
   assert(/Baseline is the use a meter would have had with no savings measures/.test(sp) && /Savings billed is the amount invoiced under the contract/.test(sp), 'page 1 defines baseline and savings billed in plain words');
+  assert(/It comes from the use of the meter, weather normalized using [A-Za-z]+ \d{4} through [A-Za-z]+ \d{4}\./.test(sp) && !/adjusted for weather/.test(sp), 'baseline term: "weather normalized using <start> through <end>", no "adjusted for weather" (one source feeds screen, Word and PDF)');
+  assert(/Billed kW is the demand, in kW, that the utility bills for the month\./.test(sp) && !/highest power draw/.test(sp), 'billed kW term: "the demand, in kW, that the utility bills for the month"');
   assert(!/(Baseline|Actual) kW|peak demand/i.test(sp), 'no "Baseline kW", "Actual kW" or "peak demand" label');
   assert(/billed kW, sum of 3 months/.test(sp), 'kW chart legend says "billed kW, sum of 3 months"');
   assert(!/rounded once from the unrounded value|differ from a total by/.test(sp), 'page 2 carries no rounding note (controlled rounding)');

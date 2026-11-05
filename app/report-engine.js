@@ -2511,13 +2511,13 @@ function _rptQFlatText(b) {
 function _rptQTerms(d) {
   return {
     baseline:
-      'Baseline is the use a meter would have had with no savings measures. It comes from the use of the meter from ' +
-      _escHtml(d.project.blStart) + ' through ' + _escHtml(d.project.blEnd) + ', adjusted for weather.',
+      'Baseline is the use a meter would have had with no savings measures. It comes from the use of the meter, weather normalized using ' +
+      _escHtml(d.project.blStart) + ' through ' + _escHtml(d.project.blEnd) + '.',
     measured: 'Savings measured is the baseline cost minus the actual cost.',
     billed: 'Savings billed is the amount invoiced under the contract.',
     target: 'Savings target is the savings the contract sets for the quarter.',
     degreeDays: 'Degree days measure the weather: cooling degree days how hot and heating degree days how cold, each day against ' + WX_DD_BASE_F + '&deg;F.',
-    billedKw: 'Billed kW is the highest power draw of the month, in kW, that the utility bills.',
+    billedKw: 'Billed kW is the demand, in kW, that the utility bills for the month.',
     eui: 'Energy use intensity (EUI) is the energy use per square foot, in kBtu per square foot per year.',
   };
 }
