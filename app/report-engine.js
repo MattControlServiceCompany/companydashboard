@@ -1635,7 +1635,7 @@ function _rptPaginateWithTail(tokens, firstBudget, contBudget, tailH) {
 // _updateOverlayPageNumbers() after the DOM exists — the second overwrites the first, so BOTH
 // must emit the same "Page N of M" string.
 var RPT_PAGENUM_DIV =
-  '<div class="rpt-pg-footer-pagenum" style="position:absolute;bottom:16px;right:20px;font-size:16px;color:var(--rpt-page-text)"></div>';
+  '<div class="rpt-pg-footer-pagenum" style="position:absolute;bottom:10px;right:24px;font-size:16px;color:var(--rpt-page-text)"></div>';
 
 /**
  * rptPage — wraps a single report page with header, body, and footer.

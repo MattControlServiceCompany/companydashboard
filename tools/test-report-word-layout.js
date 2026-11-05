@@ -4,7 +4,7 @@
 //   2. A number with its unit stays on one line when the table has room (strictest rule that fits).
 //   3. Report table cells use small side margins and no fixed tiny widths (no <w:tcW> below 300 twips from the fitter).
 //   4. Report line spacing: exact lines, 6pt after body text, Heading 3 not indented.
-//   5. Page number footer: Arial 10pt, right, a spacer under it that lifts it above the wave.
+//   5. Page number footer: Arial 10pt, right, no lift; it sits in the white area below the wave (footer distance 10pt).
 //   6. "Year to Date" has one heading (the section's own page body has no second h2).
 //   7. The Word export gives a report a compact letterhead spacer.
 //   8. A minus sign is Word's own no-break hyphen (never the U+2011 character, which Word draws as a raised bar).
@@ -106,8 +106,17 @@ console.log('\n--- 5. page number footer ---');
     assert(/Page <|>Page </.test(out) && /NUMPAGES/.test(out), 'footer reads Page N of M with live fields');
     assert(/w:ascii="Arial"/.test(out) && !/Cambria/.test(out), 'footer text is Arial');
     assert(/<w:jc w:val="right"\/>/.test(out), 'footer text is on the right');
-    const lift = /w:line="(\d+)" w:lineRule="exact"\/><\/w:pPr><\/w:p><\/w:ftr>/.exec(out);
-    assert(lift && Number(lift[1]) >= 1500, 'a spacer under the number lifts it above the wave: ' + (lift && lift[1]));
+    const tailP = /w:line="(\d+)" w:lineRule="exact"\/><\/w:pPr><\/w:p><\/w:ftr>/.exec(out);
+    assert(tailP && Number(tailP[1]) <= 40, 'the paragraph under the number is 1pt high, so no spacer lifts the number above the wave: ' + (tailP && tailP[1]));
+    assert(!/_DOCX_FOOTER_LIFT_TWIPS/.test(src), 'no lift spacer constant remains in docx-writer.js');
+    assert(/<w:ind w:right="-360"\/><w:jc w:val="right"\/>/.test(out), 'the number ends 0.25in past the right margin (w:ind right -360)');
+    assert(sb._DOCX_FOOTER_DISTANCE_TWIPS === 200, 'footer distance is 200 twips (10pt) from the page bottom: ' + sb._DOCX_FOOTER_DISTANCE_TWIPS);
+    assert(src.indexOf("'$1' + _DOCX_FOOTER_DISTANCE_TWIPS") !== -1, 'the section margin footer distance is set in _docxAssemble');
+    const pgMar = '<w:pgMar w:top="639" w:right="1170" w:bottom="1872" w:left="990" w:header="720" w:footer="0" w:gutter="0"/>';
+    assert(/w:footer="200"/.test(pgMar.replace(/(<w:pgMar[^>]*?w:footer=")\d+"/, '$1' + sb._DOCX_FOOTER_DISTANCE_TWIPS + '"')), 'skeleton pgMar footer="0" becomes footer="200"');
+    // Position: number line is 10pt (200 twips) exact, tail paragraph 1pt (20 twips), distance 10pt: text bottom = 792 - 10 - 1 = 781pt, top = 771pt.
+    const bottomPt = 792 - sb._DOCX_FOOTER_DISTANCE_TWIPS / 20 - Number(tailP[1]) / 20;
+    assert(bottomPt === 781 && bottomPt <= 792, 'number line bottom is ' + bottomPt + 'pt from the page top (inside the page, below the wave)');
     const zip22 = { files: { 'word/footer1.xml': 1 }, file: (n, v) => (v ? ((out22 = v), 0) : { async: async () => footer }) };
     let out22 = '';
     sb._docxApplyPageNumberFooters(zip22, 22).then(() => {

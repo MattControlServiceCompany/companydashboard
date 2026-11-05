@@ -573,10 +573,13 @@ function _docxPageNOfMRuns(pageCount) {
   '<w:r>' + _DOCX_FOOTER_RPR.replace('<w:rPr>', '<w:rPr><w:noProof/>') + '<w:fldChar w:fldCharType="end"/></w:r>'
   );
 }
-/* Footer geometry (2026-11-05): the letterhead wave starts about 714pt from the top, so "Page N of M" is a 10pt Arial
-   line (exact 10pt) at the right with an empty exact-height paragraph under it that lifts the number above the wave. */
+/* Footer geometry (2026-11-05): "Page N of M" is a 10pt Arial line (exact 10pt) at the right, in the white area BELOW the
+   letterhead wave. Word puts the footer's last line FooterDistance from the page bottom: 10pt (200 twips) clears the green
+   band (measured in Word; 14pt touches it). The paragraph under the number is 1pt high so it does not push the number up. */
 var _DOCX_FOOTER_NUM_LINE_TWIPS = 200;
-var _DOCX_FOOTER_LIFT_TWIPS = 1780;
+var _DOCX_FOOTER_DISTANCE_TWIPS = 200;
+var _DOCX_FOOTER_RIGHT_OUTDENT_TWIPS = 360; // the number ends 0.25in (18pt) past the right margin
+var _DOCX_FOOTER_TAIL_PARA_TWIPS = 20;
 
 /**
  * _docxApplyPageNumberFooters -- rewrite every word/footer*.xml page-number
@@ -620,13 +623,13 @@ async function _docxApplyPageNumberFooters(zip, pageCount) {
       /(<w:sdtContent><w:p\b[^>]*>(?:<w:pPr>.*?<\/w:pPr>)?)(.*?)(<\/w:p><\/w:sdtContent>)/,
       function (m, head, runs, tail) {
         if (runs.indexOf('PAGE') === -1) return m; // not the page-number paragraph
-        return head.replace(/<w:pPr>(.*?)<w:jc /, '<w:pPr>$1<w:spacing w:before="0" w:after="0" w:line="' + _DOCX_FOOTER_NUM_LINE_TWIPS + '" w:lineRule="exact"/><w:jc ') + _docxPageNOfMRuns(pageCount) + tail;
+        return head.replace(/<w:pPr>(.*?)<w:jc /, '<w:pPr>$1<w:spacing w:before="0" w:after="0" w:line="' + _DOCX_FOOTER_NUM_LINE_TWIPS + '" w:lineRule="exact"/><w:ind w:right="' + (-_DOCX_FOOTER_RIGHT_OUTDENT_TWIPS) + '"/><w:jc ') + _docxPageNOfMRuns(pageCount) + tail;
       },
     );
-    // The empty paragraph after the page-number control: an exact-height spacer that lifts the number above the wave.
+    // The empty paragraph after the page-number control: 1pt high, so the number stays at the bottom of the footer.
     next = next.replace(
       /(<\/w:sdt>)<w:p([^>]*)>(?:<w:pPr>.*?<\/w:pPr>)?<\/w:p>/,
-      '$1<w:p$2><w:pPr><w:pStyle w:val="Footer"/><w:spacing w:before="0" w:after="0" w:line="' + _DOCX_FOOTER_LIFT_TWIPS + '" w:lineRule="exact"/></w:pPr></w:p>',
+      '$1<w:p$2><w:pPr><w:pStyle w:val="Footer"/><w:spacing w:before="0" w:after="0" w:line="' + _DOCX_FOOTER_TAIL_PARA_TWIPS + '" w:lineRule="exact"/></w:pPr></w:p>',
     );
     if (next !== xml) {
       zip.file(names[i], next);
@@ -1035,7 +1038,7 @@ async function _docxAssemble(documentXml, opts) {
   }
 
   var head = skeletonDocXml.slice(0, bodyOpenIdx + bodyOpenTag.length); // ...<w:document ...><w:body>
-  var tail = skeletonDocXml.slice(sectPrIdx); // <w:sectPr ...>...</w:sectPr></w:body></w:document>  -- VERBATIM, unmodified
+  var tail = skeletonDocXml.slice(sectPrIdx).replace(/(<w:pgMar[^>]*?w:footer=")\d+"/, '$1' + _DOCX_FOOTER_DISTANCE_TWIPS + '"'); // <w:sectPr ...>...</w:sectPr></w:body></w:document>  -- the skeleton section, footer distance set
 
   // Page-1 letterhead clearance (spec §1 / plan Part A).
   //

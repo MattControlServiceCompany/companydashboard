@@ -4544,6 +4544,7 @@ function buildMeetingPDF(m, returnDoc) {
     mt = 36;
   const contentW = pw - ml - mr;
   const footerH = 55;
+  const PDF_PAGE_NUM_BASELINE_FROM_BOTTOM_PT = 9; // baseline of "Page N of M", below the wave; ends 18pt past the right margin
   const headerH = 145;
   let y = mt;
   let pageNum = 1;
@@ -4692,14 +4693,14 @@ function buildMeetingPDF(m, returnDoc) {
   // Add footer to last page
   addFooter();
 
-  // "Page N of M" on every page, above the wave (same wording as the Word file's footer fields)
+  // "Page N of M" on every page, bottom right, in the white area below the wave (same wording and place as the Word file's footer)
   const pageTotal = doc.getNumberOfPages();
   doc.setFont('helvetica', 'normal');
   doc.setFontSize(9);
   doc.setTextColor(0, 0, 0);
   for (let pg = 1; pg <= pageTotal; pg++) {
     doc.setPage(pg);
-    doc.text(`Page ${pg} of ${pageTotal}`, pw - mr, ph - footerH - 8, { align: 'right' });
+    doc.text(`Page ${pg} of ${pageTotal}`, pw - mr + 18, ph - PDF_PAGE_NUM_BASELINE_FROM_BOTTOM_PT, { align: 'right' });
   }
 
   // Save

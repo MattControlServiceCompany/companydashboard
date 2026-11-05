@@ -2507,6 +2507,11 @@ async function siteResetAllMeterTableSettings() {
    site-ui.js delegates to this array and should NOT maintain its own copy.
 */
 var RELEASE_NOTES = [
+  { v: 'v2026.11.05.231', date: '2026-11-05', title: 'Page number placement',
+    items: [
+      { type: 'fix', text: 'Meeting agenda/minutes export and Energy Department quarterly report: "Page N of M" now sits below the letterhead wave, at the bottom right, in both Word and PDF.' }
+    ]
+  },
   { v: 'v2026.11.05.230', date: '2026-11-05', title: 'Quarterly report Word export',
     items: [
       { type: 'fix', text: 'Energy Department > quarterly report Word export: negative numbers now show a normal minus sign.' },
