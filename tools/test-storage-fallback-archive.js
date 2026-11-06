@@ -120,6 +120,13 @@ function browser(srv, store, opts) {
       this.type = t;
     },
     navigator: {},
+    Date: opts.clock
+      ? class extends Date {
+          static now() {
+            return opts.clock.t;
+          }
+        }
+      : Date,
     indexedDB: opts.failIdb
       ? {
           open() {
@@ -202,59 +209,81 @@ const offline = (srv) => ({
     assert.ok(B2.toasts.filter((m) => /Save failed/.test(m)).length <= 1, 'save-failed toast at most once');
   });
 
-  await t('B: 409 on a large non-list key adds a small archive entry that rebuilds the losing value', async () => {
-    const KEY = 'en_eqmatrix_conflict';
-    const base = { rows: bigRows(4000, 'm'), cols: ['a', 'b'] };
-    const size = JSON.stringify(base).length;
-    assert.ok(size > 3000000, 'about 3 MB: ' + size);
-    const srv = makeServer({ [KEY]: base });
-    const B = browser(srv);
+  await t('C: a failed queue persist shows the save-failed toast again after 30 s, not on every write', async () => {
+    const srv = makeServer({ en_budget_small: { note: 'base' } });
+    const store = {};
+    const B = browser(offline(srv), store, { failIdb: true, quota: 5200000, clock: { t: 0 } });
     await B.DB.warmCache();
     await B.DB.__t._hydrate();
-    const theirs = clone(base);
-    theirs.rows[10].notes = 'THEIRS';
-    theirs.rows[3999].name = 'THEIRS name';
-    srv.rows[KEY] = { value: theirs, version: 2, hash: 'h2' };
-    const mine = B.DB.get(KEY);
-    mine.rows[10].notes = 'MINE';
-    mine.rows[3999].name = 'MINE name';
-    await B.DB.set(KEY, mine);
-    await tick(300);
-    assert.strictEqual(B.dialogCalls.length, 0);
-    assert.strictEqual(srv.rows[KEY].value.rows[10].notes, 'MINE', 'later save is on the server');
-    const arch = B.DB.getConflictArchive().filter((e) => e.key === KEY);
-    assert.strictEqual(arch.length, 1);
-    const archBytes = JSON.stringify(arch[0]).length;
-    assert.ok(archBytes < 5000, 'archive entry is small: ' + archBytes + ' chars (value was ' + size + ')');
-    assert.strictEqual(arch[0].losingValue, undefined, 'whole value is not copied');
-    assert.ok(!('winningValue' in arch[0]), 'winning value is not stored');
-    const rebuilt = B.DB.recoverArchivedValue(arch[0], srv.rows[KEY].value);
-    assert.deepStrictEqual(clone(rebuilt), clone(theirs), 'the losing (their) value is rebuilt exactly');
+    let used = 0;
+    Object.keys(store).forEach((x) => (used += x.length + String(store[x]).length));
+    store['filler'] = 'x'.repeat(5200000 - used - 20); // fill the quota: the queue cannot be stored
+    B.opts.clock.t = Date.now();
+    try {
+      await B.DB.set('en_budget_small', { note: 'e1' });
+      await tick(30);
+      const n1 = B.toasts.filter((m) => /Save failed/.test(m)).length;
+      assert.strictEqual(n1, 1, 'first failure shows the toast');
+      await B.DB.set('en_budget_small', { note: 'e2' });
+      await tick(30);
+      assert.strictEqual(B.toasts.filter((m) => /Save failed/.test(m)).length, 1, 'no spam inside 30 s');
+      B.opts.clock.t += 31000;
+      await B.DB.set('en_budget_small', { note: 'e3' });
+      await tick(30);
+      assert.strictEqual(B.toasts.filter((m) => /Save failed/.test(m)).length, 2, 'shows again after 30 s');
+    } finally {
+      /* clock is per browser */
+    }
   });
 
-  await t('B2: diff rebuilds a losing value with added, removed and shortened items', async () => {
-    const KEY = 'en_eqmatrix_shape';
-    const base = { rows: bigRows(3000, 'm'), extra: { a: 1 }, tail: [1, 2, 3, 4] };
+  await t('D: en_conflict_archive that cannot be stored shows the save-failed toast (not dropped silently)', async () => {
+    const srv = makeServer({ en_budget_small: { note: 'base' } });
+    const store = {};
+    const B = browser(srv, store, { failIdb: true, quota: 5200000 });
+    await B.DB.warmCache();
+    await B.DB.__t._hydrate();
+    store['filler'] = 'x'.repeat(5200000 - 400);
+    const big = { rows: bigRows(300, 'z') }; // about 250000 chars: over the memory-only cap, still tried
+    await B.DB.set('en_conflict_archive', [{ key: 'k', reason: 'r', losingValue: big }]).catch(() => {});
+    assert.ok(B.toasts.some((m) => /Save failed/.test(m)), 'toast shown: ' + JSON.stringify(B.toasts));
+    assert.strictEqual(B.DB.getConflictArchive().length >= 0, true);
+  });
+
+  await t('E: a key that grows past the cap loses its old small localStorage copy and stamp', async () => {
+    const srv = makeServer({ en_budget_grow: { rows: [1] } });
+    const store = {};
+    const B = browser(srv, store, { failIdb: true, quota: 5200000 });
+    await B.DB.warmCache();
+    await B.DB.__t._hydrate();
+    assert.ok(store['en_budget_grow'], 'small copy is in localStorage');
+    assert.ok(store['ch_rv::en_budget_grow'], 'stamp is in localStorage');
+    await B.DB.set('en_budget_grow', { rows: bigRows(400, 'g') }); // over 200000 chars
+    await tick(60);
+    assert.ok(!('en_budget_grow' in store), 'old small copy removed');
+    assert.ok(!('ch_rv::en_budget_grow' in store), 'old stamp removed');
+    assert.strictEqual(B.DB.get('en_budget_grow').rows.length, 400, 'current value stays in memory');
+  });
+
+  await t('F: conflict history stores the full losing value (no diff form)', async () => {
+    const KEY = 'en_eqmatrix_conflict';
+    const base = { rows: bigRows(1000, 'm') };
     const srv = makeServer({ [KEY]: base });
     const B = browser(srv);
     await B.DB.warmCache();
     await B.DB.__t._hydrate();
-    const theirs = clone(base);
-    theirs.rows.push({ id: 'new', name: 'added by them' });
-    theirs.rows.splice(5, 1, { id: 'r5', name: 'changed' });
-    delete theirs.extra;
-    theirs.tail = [1, 2];
+    const theirs = JSON.parse('{"rows":[],"__proto__":{"polluted":"yes"}}');
+    theirs.rows = clone(base.rows);
+    theirs.rows[1].notes = 'THEIRS';
     srv.rows[KEY] = { value: theirs, version: 2, hash: 'h2' };
     const mine = B.DB.get(KEY);
-    mine.rows[0].name = 'MINE';
-    mine.tail = [1, 2, 3, 4, 5];
-    mine.fresh = true;
+    mine.rows[1].notes = 'MINE';
     await B.DB.set(KEY, mine);
     await tick(300);
     const arch = B.DB.getConflictArchive().filter((e) => e.key === KEY);
     assert.strictEqual(arch.length, 1);
-    assert.ok(arch[0].losingDiff, 'diff form used');
-    assert.deepStrictEqual(clone(B.DB.recoverArchivedValue(arch[0], srv.rows[KEY].value)), clone(theirs));
+    assert.strictEqual(arch[0].losingValue.rows[1].notes, 'THEIRS', 'full losing value kept');
+    assert.strictEqual(arch[0].losingDiff, undefined);
+    assert.strictEqual(({}).polluted, undefined, 'Object.prototype not polluted');
   });
 
   console.log('\n' + pass + ' passed, ' + failed.length + ' failed');

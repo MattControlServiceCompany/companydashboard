@@ -763,7 +763,7 @@
       dl.className = 'ch-conflict-btn';
       dl.textContent = desc.button;
       dl.addEventListener('click', function () {
-        downloadJSON(entry.key, entry.losingValue !== undefined ? entry.losingValue : entry.losingDiff ? { changedFields: entry.losingDiff } : null);
+        downloadJSON(entry.key, entry.losingValue !== undefined ? entry.losingValue : null);
       });
       row.appendChild(meta);
       row.appendChild(dl);
