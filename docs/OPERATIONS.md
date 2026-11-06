@@ -1165,3 +1165,9 @@ No timer, env var or host change. Runs in the browser when a quarterly report pr
 - Layout: board summary is part of page 1 (no separate page); Appendix D column "Billing period" (start to end from the bill record); Appendix B uses "Change" = actual minus baseline; propane chart removed; Operating Hours and Set Points prints compact on one page.
 - `emissionsSourceLine` (computations/pollution.js) prints the state name (Kansas), not the code.
 - Check: `node tools/test-report-q3-review-findings.js`, `node tools/test-pollution-factors.js`, `node tools/test-report-schedule-table.js`.
+
+## Storage fallback (2026-11-06)
+
+- IndexedDB open (app/db.js `_open`, `_openOnce`): if the first open fails, it waits 300 ms (`IDB_OPEN_RETRY_MS`) and tries once more. A browser with no `indexedDB` object is not retried. Two failures run `warmCache` fallback mode (`_usingFallback`), and the page shows the existing one-time toast "Couldn't load saved data from storage".
+- Fallback mode (app/db.js `_fallbackSave`, called from `_rawSet` and `set`): all data stays in memory (`_cache`); the server holds it on the synced site. A key whose JSON is over `FALLBACK_LS_MAX_CHARS` (200000) is not written to localStorage; its older localStorage copy and its `ch_rv::` stamp are removed (the current value is in memory and on the server), so the next load pulls it from the server. `ch_sync_queue` and `en_conflict_archive` are always tried, whatever their size. A failed localStorage write shows the existing `TOAST_SAVE_FAILED`, at most once per 30 s (`FALLBACK_TOAST_GAP_MS`). No banner. The conflict history always stores the full losing value.
+- Check: `node tools/test-storage-fallback-archive.js` (IndexedDB forced to fail with 12 MB of data and a 5.2M-char localStorage quota). Also `node test-sync-golive-blockers.js` and `node tools/test-conflict-auto-resolve.js`.

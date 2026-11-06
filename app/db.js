@@ -339,6 +339,52 @@ const DB = (() => {
   // used only for db.js's own local-only bookkeeping keys (ch_replica_state,
   // ch_sync_queue) and for applying already-verified server values during
   // hydration (which update _replicaVersions separately, not through set()).
+  // Fallback mode (IndexedDB failed to open twice): data stays in memory (_cache) and the server holds it.
+  // Only small keys go to localStorage. A key over the limit is never mirrored, because a large
+  // setItem throws QuotaExceededError and fills the 5 MB origin quota that the small unsent-write queue
+  // (ch_sync_queue) needs. The queue always gets a try. If a write cannot be kept locally, the existing
+  // save-failed toast shows once per page load. Returns true when the value is kept in localStorage.
+  const FALLBACK_LS_MAX_CHARS = 200000;
+  const FALLBACK_TOAST_GAP_MS = 30000; // the save-failed toast shows at most once per 30 s
+  let _fallbackToastAt = 0;
+  const _fallbackMemoryOnly = new Set(); // keys too large for localStorage in fallback mode
+  function _fallbackSave(key, value) {
+    let json;
+    try {
+      json = JSON.stringify(value);
+    } catch (e) {
+      json = undefined;
+    }
+    if (json === undefined) return true; // nothing to store (undefined value)
+    // The queue and the conflict history may hold the only copy of an edit: they are always tried.
+    const mustTry = key === SYNC_QUEUE_KEY || key === 'en_conflict_archive';
+    if (!mustTry && json.length > FALLBACK_LS_MAX_CHARS) {
+      // Memory only; the current value is in memory and on the server. Only an OLDER copy of this same
+      // key (and its version stamp) leaves localStorage, so a reload cannot load a stale value.
+      _fallbackMemoryOnly.add(key);
+      try {
+        localStorage.removeItem(key);
+        if (typeof RV_PREFIX === 'string') localStorage.removeItem(RV_PREFIX + key);
+      } catch (e) {
+        /* ignore */
+      }
+      return false;
+    }
+    // The version stamp of a key whose data was not kept here is not kept either. After a reload the
+    // key then counts as new to this browser and the pull fetches it, instead of the page starting empty.
+    if (typeof RV_PREFIX === 'string' && key.indexOf(RV_PREFIX) === 0 && _fallbackMemoryOnly.has(key.slice(RV_PREFIX.length))) return false;
+    try {
+      localStorage.setItem(key, json);
+      return true;
+    } catch (e) {
+      console.warn('[DB] fallback localStorage write failed:', key, e);
+      if (Date.now() - _fallbackToastAt >= FALLBACK_TOAST_GAP_MS && typeof showToast === 'function') {
+        _fallbackToastAt = Date.now();
+        showToast(TOAST_SAVE_FAILED, 'error');
+      }
+      return false;
+    }
+  }
   function _rawSet(key, value) {
     // A collection merged by the engine is adopted IN PLACE: page globals hold
     // the cache reference (core.js init `projects = sget(...)`) and must see it.
@@ -348,13 +394,7 @@ const DB = (() => {
     }
     _cache[key] = value;
     if (_usingFallback) {
-      try {
-        localStorage.setItem(key, JSON.stringify(value));
-      } catch (e) {
-        console.warn('[DB] _rawSet localStorage failed:', key, e);
-        // The retry queue could not be stored: the edit is not safe across a reload. Same message as a failed save.
-        if (key === SYNC_QUEUE_KEY && typeof showToast === 'function') showToast(TOAST_SAVE_FAILED, 'error');
-      }
+      _fallbackSave(key, value);
       return Promise.resolve();
     }
     return _open()
@@ -3113,7 +3153,17 @@ const DB = (() => {
     _drainQueueOnce();
   }
 
+  // One retry after a short wait: a transient open error ("Internal error") often clears. A browser
+  // without indexedDB at all is not retried.
+  const IDB_OPEN_RETRY_MS = 300;
   function _open() {
+    if (_db) return Promise.resolve(_db);
+    return _openOnce().catch((e) => {
+      if (typeof indexedDB === 'undefined' || !indexedDB) throw e;
+      return new Promise((r) => setTimeout(r, IDB_OPEN_RETRY_MS)).then(_openOnce);
+    });
+  }
+  function _openOnce() {
     return new Promise((resolve, reject) => {
       if (_db) return resolve(_db);
       const req = indexedDB.open(DB_NAME, DB_VERSION);
@@ -3390,15 +3440,8 @@ const DB = (() => {
     // --- end replication tail ---
 
     if (_usingFallback) {
-      return new Promise((resolve, reject) => {
-        try {
-          localStorage.setItem(key, JSON.stringify(value));
-          resolve();
-        } catch (e) {
-          console.warn('[DB] localStorage write failed:', key, e);
-          reject(e);
-        }
-      });
+      _fallbackSave(key, value);
+      return Promise.resolve();
     }
     // Return a Promise that resolves only on tx.oncomplete — the real IDB commit.
     // Callers that care about durability (e.g. bulk import) can await this.
