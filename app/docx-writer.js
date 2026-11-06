@@ -103,6 +103,7 @@ function _docxRun(opts) {
     '"/>';
   if (opts.bold) rPr += '<w:b/>';
   if (opts.italic) rPr += '<w:i/>';
+  if (opts.caps) rPr += '<w:caps/>';
   if (opts.underline) rPr += '<w:u w:val="single"/>';
   if (opts.color) rPr += '<w:color w:val="' + _docxEscapeXml(opts.color) + '"/>';
   rPr += '<w:sz w:val="' + sizeHalfPt + '"/><w:szCs w:val="' + sizeHalfPt + '"/>';
@@ -1423,7 +1424,7 @@ function _docxHasBlockChild(el) {
  * scoping to inline style keeps this rule exact instead of overreaching. */
 function _docxIsFlexRow(el) {
   var style = (el.getAttribute && el.getAttribute('style')) || '';
-  return /display\s*:\s*flex/i.test(style);
+  return /display\s*:\s*flex/i.test(style) && !/flex-direction\s*:\s*column/i.test(style);
 }
 
 /**
@@ -1481,8 +1482,13 @@ function _docxRegisterImage(el, ctx) {
 function _docxTranslateImage(el, ctx) {
   var runXml = _docxRegisterImage(el, ctx);
   if (!runXml) return null;
+  var isVisual = el.getAttribute('data-dx-visual') === '1'; // a picture of a layout block: centered, tight spacing
   return {
-    xml: _docxParagraph({ runs: [runXml], spacingAfter: 240, align: (ctx && ctx._flexCellAlign) || undefined }),
+    xml: _docxParagraph({
+      runs: [runXml],
+      spacingAfter: isVisual ? 120 : 240,
+      align: (ctx && ctx._flexCellAlign) || (isVisual ? 'center' : undefined),
+    }),
   };
 }
 
@@ -1690,7 +1696,8 @@ function _docxCollectRuns(el, inheritedFmt, ctx) {
  */
 function _docxStampLiveStyles(liveRoot, cloneRoot) {
   if (!liveRoot || !cloneRoot || typeof getComputedStyle !== 'function') return;
-  var sel = 'table,td,th,.rpt-pg-title,.rpt-info,h1,h2,h3,h4,.rpt-g,.rpt-r,.rpt-o';
+  _docxStampTextBlocks(liveRoot, cloneRoot);
+  var sel = 'table,td,th,.rpt-pg-title,.rpt-info,h1,h2,h3,h4,.rpt-g,.rpt-r,.rpt-o,.rpt-finding-icon';
   var live = liveRoot.querySelectorAll(sel);
   var clone = cloneRoot.querySelectorAll(sel);
   if (live.length !== clone.length) return;
@@ -1709,6 +1716,7 @@ function _docxStampLiveStyles(liveRoot, cloneRoot) {
       var ta = cs.textAlign;
       t.setAttribute('data-dx-align', ta === 'right' || ta === 'end' ? 'right' : ta === 'center' ? 'center' : 'left');
       if (opaque(cs.backgroundColor)) t.setAttribute('data-dx-bg', _docxCssColorToHex(cs.backgroundColor));
+      if (cs.textTransform === 'uppercase') t.setAttribute('data-dx-caps', '1'); // the PDF shows the header in capitals
       var fsPx = parseFloat(cs.fontSize);
       if (fsPx > 0) t.setAttribute('data-dx-fs', String(Math.round(fsPx * 10) / 10));
       // A number in a dense quarterly table does not wrap in the PDF (CSS); Word fits it by its own rules.
@@ -1727,6 +1735,23 @@ function _docxStampLiveStyles(liveRoot, cloneRoot) {
         if (bc) t.setAttribute('data-dx-border', bc);
       }
     }
+  }
+}
+
+/**
+ * Text alignment and capitals of a plain text block (div, p) as the live page shows them. The alignment is often
+ * inherited from a parent (a centered list), which the detached clone cannot compute.
+ */
+function _docxStampTextBlocks(liveRoot, cloneRoot) {
+  if (!liveRoot || !cloneRoot || typeof getComputedStyle !== 'function') return;
+  var live = liveRoot.querySelectorAll('div,p');
+  var clone = cloneRoot.querySelectorAll('div,p');
+  if (live.length !== clone.length) return;
+  for (var i = 0; i < live.length; i++) {
+    var cs = getComputedStyle(live[i]);
+    var ta = cs.textAlign;
+    if (ta === 'center' || ta === 'right' || ta === 'end') clone[i].setAttribute('data-dx-align', ta === 'end' ? 'right' : ta);
+    if (cs.textTransform === 'uppercase') clone[i].setAttribute('data-dx-caps', '1');
   }
 }
 
@@ -1757,6 +1782,22 @@ function _docxClosestTable(el) {
 function _docxDeriveColWidths(tableEl, colCount, contentWidthTwips) {
   contentWidthTwips = contentWidthTwips || 10080;
   // Widths the report sets for Word only (the PDF uses its own colgroup widths).
+  // Quarterly report: the widths the PDF shows (measured on the live page, stamped as data-dx-w on the first row).
+  var liveRow = tableEl.closest && tableEl.closest('[data-dx-live-widths]') ? tableEl.querySelector('tr') : null;
+  if (liveRow) {
+    var liveCells = Array.prototype.slice.call(liveRow.children).filter(function (c) {
+      return c.tagName === 'TD' || c.tagName === 'TH';
+    });
+    var livePx = liveCells.map(function (c) {
+      return parseFloat(c.getAttribute('data-dx-w')) || 0;
+    });
+    if (liveCells.length === colCount && livePx.every(function (v) { return v > 0; })) {
+      var liveSum = livePx.reduce(function (a, b) { return a + b; }, 0);
+      var liveW = livePx.map(function (v) { return Math.round((contentWidthTwips * v) / liveSum); });
+      liveW[liveW.length - 1] += contentWidthTwips - liveW.reduce(function (a, b) { return a + b; }, 0);
+      return liveW;
+    }
+  }
   var dxw = (tableEl.getAttribute('data-dx-widths') || '').split(',').map(parseFloat);
   if (dxw.length === colCount && dxw.every(function (p) { return p > 0; })) {
     return dxw.map(function (p) {
@@ -1887,6 +1928,34 @@ function _docxTextWidthTwips(text, bold, sizeHalfPt) {
  * column (a piece = text between spaces; a number is one piece) plus the cell side margins. Cells that span
  * several columns are ignored.
  */
+/**
+ * Half-point size of a report table cell. The PDF page is 8.5 in wide with 0.5 in margins narrower than Word's text area
+ * is wide (7 in against 7.5 in of table), so a quarterly report table is drawn at 14/15 of the PDF size (floor 7 pt):
+ * the same columns then hold the same words. Other reports keep the PDF size with the 9 pt report-table floor.
+ */
+function _docxReportCellHalfPt(cell) {
+  var fsPx = parseFloat(cell.getAttribute('data-dx-fs')) || 0;
+  if (cell.closest && cell.closest('[data-dx-live-widths]')) {
+    // A table whose whole words do not fit its columns is set a little smaller (data-dx-fscale, see _docxTranslateTable).
+    var tbl = cell.closest('table');
+    var k = (tbl && parseFloat(tbl.getAttribute('data-dx-fscale'))) || 1;
+    return Math.max(13, Math.round(fsPx * 1.5 * k));
+  }
+  return Math.max(_DOCX_REPORT_TABLE_HALFPT, Math.round(fsPx * 1.5));
+}
+
+/** Text of an element with each <br> read as a space ("Baseline<br>Therms" is two words). */
+function _docxTextWithBreaks(el) {
+  if (!el.childNodes) return el.textContent || '';
+  var out = '';
+  for (var i = 0; i < el.childNodes.length; i++) {
+    var n = el.childNodes[i];
+    if (n.nodeType === 3) out += n.nodeValue || '';
+    else if (n.nodeType === 1) out += n.tagName === 'BR' ? ' ' : _docxTextWithBreaks(n);
+  }
+  return out;
+}
+
 function _docxColumnMinWidths(rowCells, colCount, cellMarginTwips, sizeHalfPt, strict) {
   var mins = [];
   for (var c = 0; c < colCount; c++) mins.push(0);
@@ -1896,14 +1965,16 @@ function _docxColumnMinWidths(rowCells, colCount, cellMarginTwips, sizeHalfPt, s
       var span = parseInt(cell.getAttribute('colspan'), 10) || 1;
       if (span === 1 && ci < colCount) {
         var bold = cell.tagName === 'TH' || cell.getAttribute('data-dx-bold') === '1';
-        var whole = (cell.textContent || '').replace(/\s+/g, ' ').trim();
-        var pieces = (cell.textContent || '').split(/\s+/);
+        // A <br> separates words ("Baseline<br>Therms"): textContent alone would join them into one long word.
+        var cellText = cell.getAttribute('data-dx-caps') === '1' ? _docxTextWithBreaks(cell).toUpperCase() : _docxTextWithBreaks(cell);
+        var whole = cellText.replace(/\s+/g, ' ').trim();
+        var pieces = cellText.split(/\s+/);
         // A cell that does not wrap in the PDF, or a short one (a number with its unit, a name), is one piece when asked.
         // strict 2: every short cell is one piece; strict 1: only cells that do not wrap in the PDF, and numbers with a unit.
-        if (strict && whole && (cell.getAttribute('data-dx-nw') === '1' || (strict >= 2 ? whole.length <= 24 : /\d/.test(whole) && whole.length <= 24))) pieces = [whole];
+        if (strict && whole && (cell.getAttribute('data-dx-nw') === '1' || (cell.tagName !== 'TH' || !(cell.closest && cell.closest('[data-dx-live-widths]'))) && (strict >= 2 ? whole.length <= 24 : /\d/.test(whole) && whole.length <= 24))) pieces = [whole];
         pieces.forEach(function (piece) {
           if (!piece) return;
-          var cellHp = Math.max(sizeHalfPt, Math.round((parseFloat(cell.getAttribute('data-dx-fs')) || 0) * 1.5));
+          var cellHp = _docxReportCellHalfPt(cell);
           var w = _docxTextWidthTwips(piece, bold, cellHp) + 2 * cellMarginTwips + 20;
           if (w > mins[ci]) mins[ci] = w;
         });
@@ -2065,14 +2136,25 @@ function _docxTranslateTable(tableEl, ctx) {
     }, 0);
     // The strictest rule the table has room for: short cells whole, then numbers and no-wrap cells whole, then only whole words.
     var _mins = null;
+    var _sumOf = function (m) {
+      return m.reduce(function (a, b) {
+        return a + b;
+      }, 0);
+    };
     [2, 1, 0].forEach(function (level) {
       if (_mins) return;
       var m = _docxColumnMinWidths(_cellsByRow, colCount, _DOCX_REPORT_CELL_SIDE_TWIPS, _DOCX_REPORT_TABLE_HALFPT, level);
-      var sum = m.reduce(function (a, b) {
-        return a + b;
-      }, 0);
-      if (sum <= _total || level === 0) _mins = m;
+      if (_sumOf(m) <= _total || level === 0) _mins = m;
     });
+    // Quarterly report: whole words still too wide for the table: set the table text smaller, in steps, until they fit.
+    if (_sumOf(_mins) > _total && tableEl.closest('[data-dx-live-widths]')) {
+      for (var _sc = 0.95; _sc >= 0.69; _sc -= 0.05) {
+        tableEl.setAttribute('data-dx-fscale', String(_sc));
+        var _m2 = _docxColumnMinWidths(_cellsByRow, colCount, _DOCX_REPORT_CELL_SIDE_TWIPS, _DOCX_REPORT_TABLE_HALFPT, 0);
+        _mins = _m2;
+        if (_sumOf(_m2) <= _total) break;
+      }
+    }
     colWidths = _docxFitColumnWidths(colWidths, _mins);
     colWidths = _docxHoldTableWidth(colWidths, _total);
   }
@@ -2186,11 +2268,11 @@ function _docxTranslateTable(tableEl, ctx) {
         // not fall back to plain 10.5pt body text either).
         var cellBaseFmt = _docxStyleFmtFromEl(cell, isHeaderCell ? { bold: true } : {}, ctx);
         if (cell.getAttribute('data-dx-bold') === '1') cellBaseFmt.bold = true;
+        if (cell.getAttribute('data-dx-caps') === '1') cellBaseFmt.caps = true;
         if (_hasStamp) {
           // Report table text is the size the PDF shows (the live page's size), never below the report table floor.
-          var _fsPx = parseFloat(cell.getAttribute('data-dx-fs')) || 0;
-          cellBaseFmt.sizeHalfPt = Math.max(_DOCX_REPORT_TABLE_HALFPT, Math.round(_fsPx * 1.5));
-          cellBaseFmt.floorHalfPt = _DOCX_REPORT_TABLE_HALFPT;
+          cellBaseFmt.sizeHalfPt = _docxReportCellHalfPt(cell);
+          cellBaseFmt.floorHalfPt = cell.closest && cell.closest('[data-dx-live-widths]') ? 14 : _DOCX_REPORT_TABLE_HALFPT;
         }
         var cellShade = cell.getAttribute('data-dx-bg') || '';
         var isHeaderRow = rIdx === 0;
@@ -2634,6 +2716,17 @@ function _docxTranslateBlock(el, ctx, inheritedFmt) {
     return [_docxTranslateFlexRowTable(el, ctx)];
   }
 
+  // Key Findings row: a coloured bullet and its text sit on ONE line (the PDF lays them side by side with flex).
+  if (tag === 'DIV' && /(^|\s)rpt-finding(\s|$)/.test((el.getAttribute && el.getAttribute('class')) || '') && el.children.length === 2) {
+    var fIcon = el.children[0];
+    var fText = el.children[1];
+    var fRuns = _docxCollectRuns(fIcon, _docxStyleFmtFromEl(fIcon, baseFmt, ctx), ctx).concat(
+      [_docxRun(Object.assign({ text: '	' }, baseFmt))],
+      _docxCollectRuns(fText, _docxStyleFmtFromEl(fText, baseFmt, ctx), ctx),
+    );
+    return [_docxParagraph({ runs: fRuns, spacingAfter: 80, indLeft: 360, indHanging: 360 })];
+  }
+
   // Report page title and the client / period line under it: real Word heading styles (Heading 1 and 2).
   var _elCls = (el.getAttribute && el.getAttribute('class')) || '';
   if (tag === 'DIV' && /(^|\s)(rpt-pg-title|rpt-info)(\s|$)/.test(_elCls)) {
@@ -2660,6 +2753,7 @@ function _docxTranslateBlock(el, ctx, inheritedFmt) {
     // this closes (report markup's title/eyebrow/amount divs carry their own font-size with no
     // nested <span>) and this function's own header comment for why inheritedFmt matters too.
     var pBaseFmt = _docxStyleFmtFromEl(el, baseFmt, ctx);
+    if (el.getAttribute('data-dx-caps') === '1') pBaseFmt.caps = true;
     var pRuns = _docxCollectRuns(el, pBaseFmt, ctx);
     if (!pRuns.length) return []; // empty layout-only leaf -- no stray blank paragraph
     var indOpts = _docxResolveIndentHint(el.getAttribute && el.getAttribute('data-word-indent'));
@@ -2668,7 +2762,7 @@ function _docxTranslateBlock(el, ctx, inheritedFmt) {
         Object.assign(
           {
             runs: pRuns,
-            align: (ctx && ctx._flexCellAlign) || (el.style && el.style.textAlign),
+            align: (ctx && ctx._flexCellAlign) || (el.style && el.style.textAlign) || el.getAttribute('data-dx-align') || undefined,
             spacingAfter: 240, // body-paragraph policy (Part E); indentation-only override below
           },
           indOpts,
@@ -2723,6 +2817,62 @@ function _docxTightenReportXml(xml) {
     if (/<w:pStyle w:val="Heading3"/.test(out) && !/<w:ind /.test(out)) out = out.replace(/<w:jc /, '<w:ind w:left="0" w:firstLine="0"/><w:jc ');
     return '<w:p>' + out + rest + '</w:p>';
   });
+}
+
+/**
+ * Layout blocks Word cannot lay out (the page-1 hero, the target bar, the metric rings, the building status
+ * cards, the bar charts, every flex or grid row of several children). Each one is drawn from the LIVE page with
+ * html2canvas at 2.5x (the same scale as the PDF, RPT_PDF_RASTER_SCALE) and put into the detached clone as one
+ * picture, so Word shows what the PDF shows. Text paragraphs, headings and data tables are NOT in this list:
+ * they stay real Word text. A flex column of plain text and the Key Findings rows (.rpt-finding) also stay text.
+ * livePages and clonePages must have the same structure (the clone is made with cloneNode(true) and not yet changed).
+ */
+var _DOCX_VISUAL_SELECTORS = '.rpt-hero,.rpt-vs-box,.rpt-progress-bar,.rpt-gauge-row,.rpt-chart-box';
+var _DOCX_VISUAL_SCALE = 2.5;
+async function _docxRasterizeVisualBlocks(livePages, clonePages) {
+  if (typeof html2canvas === 'undefined') return;
+  for (var pi = 0; pi < livePages.length; pi++) {
+    var live = livePages[pi];
+    var all = live.querySelectorAll('*');
+    var cloneAll = clonePages[pi].querySelectorAll('*');
+    if (all.length !== cloneAll.length) continue;
+    var picked = [];
+    for (var i = 0; i < all.length; i++) {
+      var e = all[i];
+      if (e.closest('table,.rpt-footer,.rpt-footer-label,.rpt-pg-footer-pagenum,.rpt-int-hdr,.csc-header-img,.sc-export-bar')) continue;
+      var cs = getComputedStyle(e);
+      var isLayout =
+        /flex|grid/.test(cs.display) && e.children.length >= 2 && !e.matches('.rpt-finding') && cs.flexDirection !== 'column';
+      if (!isLayout && !e.matches(_DOCX_VISUAL_SELECTORS)) continue;
+      var r = e.getBoundingClientRect();
+      if (r.width < 4 || r.height < 4) continue;
+      // outermost only: a block inside an already picked block is part of its picture
+      var inside = false;
+      for (var k = picked.length - 1; k >= 0; k--) {
+        if (picked[k].el.contains(e)) {
+          inside = true;
+          break;
+        }
+      }
+      if (!inside) picked.push({ el: e, idx: i, w: r.width, h: r.height });
+    }
+    for (var j = 0; j < picked.length; j++) {
+      var canvas = await html2canvas(picked[j].el, {
+        scale: _DOCX_VISUAL_SCALE,
+        backgroundColor: '#ffffff',
+        logging: false,
+        useCORS: true,
+      });
+      var img = document.createElement('img');
+      img.setAttribute('src', canvas.toDataURL('image/png'));
+      img.setAttribute('alt', '');
+      img.setAttribute('data-dx-visual', '1');
+      img.setAttribute('style', 'display:block;width:' + picked[j].w + 'px;height:' + picked[j].h + 'px');
+      var target = cloneAll[picked[j].idx];
+      if (target.parentNode) target.parentNode.replaceChild(img, target);
+      canvas.width = canvas.height = 0;
+    }
+  }
 }
 
 /**

@@ -2,16 +2,16 @@
 // Run: CH_TMP_ROOT=<scratch> node tools/test-report-word-table-widths.js
 // Builds the quarterly report from SYNTHETIC data in headless bundled Chromium, translates its pages to Word XML with the
 // export's own functions, and compares each Building table's <w:tblGrid> with the pinned values. The PDF widths
-// (tools/test-report-table-fit.js) are separate: the Word widths come from data-dx-widths and data-dx-nw.
+// (tools/test-report-table-fit.js) are separate. The export sets data-dx-live-widths on every page, so the Word widths follow the widths the live page shows (data-dx-w), raised to the whole-word minimums.
 'use strict';
 const EXPECTED = {
- "Building|Square|||Feet|Baseline|||Cost|Projected|||Cost|Actual|||Cost|Q2 2025|||Savings Measured|Percent of|||Baseline Cost|Status": "1570,1101,1261,1341,1101,1211,1093,1402",
- "Quarter|Baseline|||kWh|Actual|||kWh|Baseline|||Therms|Actual|||Therms|Baseline|||Gallons|Actual|||Gallons|Baseline|||Cost|Actual|||Cost|Savings|||Measured": "659,986,854,1174,1042,1181,1049,1000,868,1267",
- "Period|kWh|kW|Therms|Propane|||Gallons|Cost|Site EUI|||kBtu/ft\u00b2 (Q2 2025)|Savings vs|||Baseline": "1343,896,534,820,1501,894,2291,1801",
- "Building|Year|kWh|kW|Therms|Propane Gallons|Cost|Site EUI|||kBtu/ft\u00b2 (Q2 2025)": "2432,1065,671,571,919,1882,756,1784",
- "Month|Days|BL Therms|Act Therms|Therms Saved|%|$/Therm|Therm Sav $": "1248,1234,1253,1255,1351,1241,1244,1254",
+ "Building|Square|||Feet|Baseline|||Cost|Projected|||Cost|Actual|||Cost|Q2 2025|||Savings Measured|Percent of|||Baseline Cost|Status": "1713,1008,1109,1311,1109,1210,1109,1511",
+ "Quarter|Baseline|||kWh|Actual|||kWh|Baseline|||Therms|Actual|||Therms|Baseline|||Gallons|Actual|||Gallons|Baseline|||Cost|Actual|||Cost|Savings|||Measured": "1010,1031,927,1031,938,1031,1004,1031,926,1151",
+ "Period|kWh|kW|Therms|Propane|||Gallons|Cost|Site EUI|||kBtu/ft\u00b2 (Q2 2025)|Savings vs|||Baseline": "1311,1210,1008,1109,1210,1210,1814,1208",
+ "Building|Year|kWh|kW|Therms|Propane Gallons|Cost|Site EUI|||kBtu/ft\u00b2 (Q2 2025)": "2506,1078,635,496,927,1940,674,1824",
+ "Month|Days|BL Therms|Act Therms|Therms Saved|%|$/Therm|Therm Sav $": "1260,1260,1260,1260,1260,1260,1260,1260",
  "Month|Days|BL Gal|Act Gal|Gal Saved|%|$/Gallon|Gallon Sav $": "1260,1260,1260,1260,1260,1260,1260,1260",
- "Month|Cooling degree days (2025)|Baseline billed kW|Actual billed kW|Change kW": "2420,2218,1814,1814,1814"
+ "Month|Cooling degree days (2025)|Baseline billed kW|Actual billed kW|Change kW": "2418,2218,1814,1814,1816"
 };
 const path = require('path');
 const { pathToFileURL } = require('url');
@@ -49,7 +49,7 @@ const fixture = { en_projects: [{ id: PROJ, name: 'Synthetic District', client: 
       if (html && html.html) html = html.html;
       const host = document.createElement('div'); host.id = 'reportPages'; host.innerHTML = html; document.body.appendChild(host);
       const pages = [...host.querySelectorAll('.rpt-page')];
-      const clones = pages.map((p) => { const c = p.cloneNode(true); _docxStampLiveStyles(p, c); ['.rpt-footer','.rpt-footer-label','.rpt-pg-footer-pagenum','.rpt-small-hdr','.csc-header-img','.sc-export-bar'].forEach((s) => c.querySelectorAll(s).forEach((e) => e.remove())); c.querySelectorAll('canvas,svg').forEach((e) => e.remove()); return c; });
+      const clones = pages.map((p) => { const c = p.cloneNode(true); _docxStampLiveStyles(p, c); c.setAttribute('data-dx-live-widths', '1'); ['.rpt-footer','.rpt-footer-label','.rpt-pg-footer-pagenum','.rpt-small-hdr','.csc-header-img','.sc-export-bar'].forEach((s) => c.querySelectorAll(s).forEach((e) => e.remove())); c.querySelectorAll('canvas,svg').forEach((e) => e.remove()); return c; });
       const tr = _docxTranslatePages(clones);
       const xml = tr.xml;
       const tables = [];
