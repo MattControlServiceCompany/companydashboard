@@ -40,15 +40,15 @@ const ok = (c, m) => {
       });
       const bld = (name) => ({
         id: name, name, sqft: 10000, status: 'ok', savings: 40, savingsPct: 1.3, blCost: 3000,
-        electric: com(), gas: com(), propane: null,
-        eui: { baseline: 50, current: 48, cbecs: 60 },
+        electric: com(), gas: com(), propane: com(),
+        eui: { baseline: 50, current: 48, cbecs: 60 }, euiQ: { baseline: 10, current: 11 },
         meterDetails: [],
       });
       const mk = (hist) => ({
         period: { type: 'quarterly', quarter: 3, year: 2026, label: 'Q3 2026', yearMonths: ['2026-07', '2026-08', '2026-09'] },
         project: { id: 'synthetic-1', client: 'Test Client', name: 'Test Project', sqft: 20000, blStart: '2025-01', blEnd: '2025-12' },
         contract: { quarterlyTargets: [100, 100, 100, 100], quarterlyActuals: [100, 100, 100], currentYear: 1, years: 3, hasCsc: true, cscPct: 50, clientPct: 50, escalation: 3 },
-        totals: { savings: 80, blCost: 6000, kwhBl: 600, kwhCur: 540, thermsBl: 600, thermsCur: 540, peakKwBl: 60, peakKwCur: 54, euiBaseline: 50, euiCurrent: 48, euiPeriodLabel: 'x', cumulativeSavings: 300, weatherWaiting: [] },
+        totals: { euiBaselineQ: 10, euiCurrentQ: 11, savings: 80, blCost: 6000, kwhBl: 600, kwhCur: 540, thermsBl: 600, thermsCur: 540, peakKwBl: 60, peakKwCur: 54, euiBaseline: 50, euiCurrent: 48, euiPeriodLabel: 'x', cumulativeSavings: 300, weatherWaiting: [] },
         buildings: [bld('Alpha School'), bld('Beta Hall'), bld('Gamma Annex'), bld('Delta Wing')],
         weather: { monthly: [], totals: { cddBl: 0, cddCur: 0 } },
         rawBills: [],
@@ -111,25 +111,21 @@ const ok = (c, m) => {
       };
     });
     ok(out.hasPage, '1 table page renders when the project has a BAS schedule history');
-    ok(out.heads.length === 5 && /Building/.test(out.heads[0]) && /^Baseline$/i.test(out.heads[1]) && /Q3 2026 weekday/i.test(out.heads[2]) && /weekend/i.test(out.heads[3]) && /set point/i.test(out.heads[4]), '1 five column headers (the baseline once, in its own column): ' + JSON.stringify(out.heads));
-    ok(out.rows.length === 3 && /Alpha School/.test(out.rows[0][0]) && /Beta Hall/.test(out.rows[1][0]) && /Gamma Annex/.test(out.rows[2][0]), '1 one row per building that has a record, report order, no row for Delta Wing: ' + out.rows.length + ' rows');
+    ok(out.heads.length === 5 && /Building/.test(out.heads[0]) && /^Baseline occupied/i.test(out.heads[1]) && /^Q3 2026 occupied/i.test(out.heads[2]) && /^Baseline set points/i.test(out.heads[3]) && /^Q3 2026 set points/i.test(out.heads[4]), '1 five column headers: ' + JSON.stringify(out.heads));
+    ok(out.rows.length === 1 && /Alpha School/.test(out.rows[0][0]), '1 one row per building with weekday hours in the baseline and the quarter; no row for Beta, Gamma or Delta: ' + out.rows.length + ' rows');
     if (out.rows.length) {
       const r = out.rows[0];
-      ok(/Weekday 6:00–16:00/.test(r[1]) && /No weekend hours/.test(r[1]) && /Set points: heating 68, cooling 72/.test(r[1]) && !/July/.test(r[1]), '1 baseline column: weekday hours, weekend hours and set points, no dates: ' + JSON.stringify(r[1]));
-      ok(/7:00–16:00, Jul 1–26/.test(r[2]) && /6:00–18:00, Jul 27–Sep 30/.test(r[2]), '1 quarter weekday hours clipped to the quarter: ' + JSON.stringify(r[2]));
-      ok(!/Baseline/.test(r[3]) && /6:00–16:00, Jul 27–Sep 4/.test(r[3]) && !/Q3 2026:/.test(r[3]), '1 weekend quarter entries with dates, no baseline text: ' + JSON.stringify(r[3]));
-      ok(!/Baseline/.test(r[4]) && /heating 70, cooling 74, Jul 1–Aug 11/.test(r[4]) && !/66/.test(r[4]), '1 set points quarter entries, out-of-quarter entry dropped: ' + JSON.stringify(r[4]));
+      ok(r[1] === '50', '1 baseline hours per week (5 days x 10 hours): ' + r[1]);
+      ok(r[2] === '56', '1 quarter hours per week weighted by days in force (45 h for 26 days, 60 h for 66 days; open end clipped to the quarter end): ' + r[2]);
+      ok(r[3] === '68 / 72', '1 baseline set points heating / cooling: ' + r[3]);
+      ok(r[4] === '69 to 70 / 73 to 74', '1 quarter set point range, out-of-quarter entry dropped: ' + r[4]);
     }
     ok(/°F/.test(out.heads[4]) && !/degrees Fahrenheit/i.test(out.heads[4]), '5 set point header uses °F: ' + out.heads[4]);
     ok(!/zones/i.test(out.rows.map((r) => r.join(' ')).join(' ')), '5 no zone text in any cell');
-    if (out.rows.length === 3) {
-      ok(/Set points: Unit heaters: heating 45, cooling 90/.test(out.rows[2][1]) && out.rows[2][4] === 'Unit heaters: heating 45, cooling 90, Jul 1–Sep 30\nheating 71, cooling 75, Jul 1–Sep 30', '5 baseline set points in the baseline column, quarter set points in the quarter column: ' + JSON.stringify(out.rows[2][4]));
-      ok(/heating 71, cooling 75/.test(out.rows[1][4]) && /heating 71, cooling 75/.test(out.rows[2][4]) && /heating 69, cooling 73/.test(out.rows[0][4]), '6 each building cell holds its own quarter set points: ' + JSON.stringify(out.rows.map((r) => r[4])));
-      ok(out.sharedP.length === 0 && !out.rows.some((r) => /listed above|Also: shared/.test(r[4])), '6 no shared paragraph above the table and no pointer text in a cell');
-    }
+    ok(out.sharedP.length === 0, '6 no shared paragraph above the table');
     ok(!out.noHistPage, '2 no record -> no table page');
     ok(!out.emptyPage, '2 record with no matching building -> no table page');
-    ok(out.pageCountNo === out.pageCountWith, '2 a checked section with no record prints its empty-state page, not a table (' + out.pageCountNo + ' vs ' + out.pageCountWith + ')');
+    ok(out.pageCountNo === out.pageCountWith - 1, '2 no record: the hours page is dropped and no other page changes (' + out.pageCountNo + ' vs ' + out.pageCountWith + ')');
     ok(!out.generic[0] && !out.generic[1], '3 generic recommendation text does not appear');
     ok(out.loadedOk && out.otherNull, '4 record loads from en_bas_schedhistory_<projectId>; another project gets none');
     ok(errs.length === 0, 'no page errors ' + errs.join('|'));

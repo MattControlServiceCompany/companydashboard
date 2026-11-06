@@ -86,9 +86,11 @@ function computePeriodEUI(kBtu, monthCount, sqft) {
   return ((kBtu / monthCount) * 12) / sqft;
 }
 
+// EUI of the report quarter itself: the kBtu of the quarter over the square feet. NOT annualized (unit kBtu/ft2 of the
+// quarter), so it is only compared with another quarter EUI, never with an annual figure or a CBECS median.
 function computeQuarterlyEUI(qKBtu, sqft) {
   if (!sqft || sqft <= 0) return 0;
-  return ((qKBtu / 3) * 12) / sqft;
+  return qKBtu / sqft;
 }
 
 function computeMonthlyEUI(moKBtu, sqft) {

@@ -582,6 +582,22 @@ var _DOCX_FOOTER_RIGHT_OUTDENT_TWIPS = 360; // the number ends 0.25in (18pt) pas
 var _DOCX_FOOTER_TAIL_PARA_TWIPS = 20;
 
 /**
+ * _docxApplyHeaderText -- put a line of text in the top right corner of the default page header (every page after
+ * the first). The paragraph is a frame, so it does not push the page body down. Rewrites word/header2.xml (the
+ * skeleton's default header, relationship rId9 in the sectPr).
+ */
+async function _docxApplyHeaderText(zip, text) {
+  var f = zip.file('word/header2.xml');
+  if (!f) return;
+  var xml = await f.async('string');
+  var para =
+    '<w:p><w:pPr><w:pStyle w:val="Header"/><w:framePr w:w="6480" w:hSpace="0" w:wrap="around" w:vAnchor="page" w:hAnchor="margin" w:xAlign="right" w:y="360"/>' +
+    '<w:jc w:val="right"/></w:pPr><w:r><w:rPr><w:rFonts w:ascii="Arial" w:hAnsi="Arial" w:cs="Arial"/><w:sz w:val="18"/><w:szCs w:val="18"/></w:rPr>' +
+    '<w:t xml:space="preserve">' + _docxEscapeXml(text) + '</w:t></w:r></w:p>';
+  zip.file('word/header2.xml', xml.replace('</w:hdr>', para + '</w:hdr>'));
+}
+
+/**
  * _docxApplyPageNumberFooters -- rewrite every word/footer*.xml page-number
  * paragraph to read "Page N of M".
  *
@@ -1107,6 +1123,7 @@ async function _docxAssemble(documentXml, opts) {
   // verbatim record of its two source templates. See the function's comment for
   // why this deliberately diverges from the Client A footer.
   await _docxApplyPageNumberFooters(zip, opts.pageCount);
+  if (opts.headerText) await _docxApplyHeaderText(zip, opts.headerText);
 
   // The skeleton has Heading 1 and Heading 3 but no Heading 2: add it (Arial, keep with next, outline level 2).
   var stylesXml = await zip.file('word/styles.xml').async('string');
@@ -1614,6 +1631,10 @@ function _docxStyleFmtFromEl(el, baseFmt, ctx) {
   if (col) {
     var hex = _docxCssColorToHex(_docxResolveCssVarColor(col, ctx));
     if (hex) fmt.color = hex;
+  } else if (el.getAttribute && el.getAttribute('data-dx-color')) {
+    // A colour that comes from a CSS class (.rpt-g green, .rpt-r red), copied from the live page by
+    // _docxStampLiveStyles. The detached clone has no cascade, so the class alone gives Word no colour.
+    fmt.color = el.getAttribute('data-dx-color');
   }
   return fmt;
 }
@@ -1669,7 +1690,7 @@ function _docxCollectRuns(el, inheritedFmt, ctx) {
  */
 function _docxStampLiveStyles(liveRoot, cloneRoot) {
   if (!liveRoot || !cloneRoot || typeof getComputedStyle !== 'function') return;
-  var sel = 'table,td,th,.rpt-pg-title,.rpt-info,h1,h2,h3,h4';
+  var sel = 'table,td,th,.rpt-pg-title,.rpt-info,h1,h2,h3,h4,.rpt-g,.rpt-r,.rpt-o';
   var live = liveRoot.querySelectorAll(sel);
   var clone = cloneRoot.querySelectorAll(sel);
   if (live.length !== clone.length) return;

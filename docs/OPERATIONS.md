@@ -646,6 +646,22 @@ No timer, env var, host or server change. Runs in the browser on click. No netwo
   - Deleted: `exportReportToWord` (.doc, mso HTML) and `_buildReportCssVarResolver`; they had no caller.
   - Check: `node tools/test-report-download-buttons.js` also covers meeting, scorecard and HVAC; `node tools/test-report-file-name.js` covers the names.
 
+## Q3 2026 quarterly report in the Q1 and Q2 layout (2026-11-06, branch 2026-11-06-q3-expert-fixes)
+
+No timer, env var, host or server change. Runs in the browser when a report renders or downloads.
+- Layout: an unpresented quarter (`_rptUnpresentedQuarter(d)`, app/report-engine.js:2151: quarterly and no `d.printed`) renders through `_rptQuarterReportHTML` (:4165) with the same page list as the presented Q1 and Q2: cover, financial, savings performance, environmental impact, observations, operating hours and set points, meter performance with one Building Baseline Data page per building, appendix A and B. Each section starts a new page. Presented Q1 and Q2 keep their own code path.
+- Quarter EUI: `computeQuarterlyEUI(qKBtu, sqft)` (computations/eui.js:91) is the quarter kBtu divided by square feet, not annualized. `collectReportData` sets `euiQ` per building and `euiBaselineQ` and `euiCurrentQ` in the totals. Every building page, the hero ring and the usage tables read them; the unit text is "kBtu/ft2 (Q3 2026)". kBtu comes from `computeKBtu` (computations/eui.js). Hand check: kWh x 3.412 + therms x 100 + propane gal x 91.452, divided by square feet.
+- Meter name: `_rptMeterLabel(commodity, account)` (:2330) returns "Electricity-Acct#123", "Natural Gas-Acct#123" or "Propane-Acct#123". Every report place that names a meter calls it.
+- Hours page: `_rptQHoursRows(d)` (:2184) reads `en_bas_schedhistory_<pid>`; an entry with no end date runs to the quarter end. The page is left out when the project has no record.
+- Baseline Data page: `rptBuildSiteBaselineData(b, d)` (:4253) takes the table of the site (`_buildBaselineDataHtml`, app/calculators.js) and restyles it for the report; there is no second builder.
+- Letterhead and footer: `rptPage` draws the wave footer and the "<period> Quarterly Report / Page N of M" label on every report page (`_waveAll`, :1732). The letterhead is on page 1. The cause of the loss: the wave and label were drawn only for pages with `letterhead:true`, and the quarterly pages passed `letterhead:false`. The same pages feed the screen, the PDF and Word.
+- PDF sharpness: `downloadReportPdf()` (app/report-pdf.js) draws each page at `RPT_PDF_RASTER_SCALE` 2.5 (about 240 dpi), JPEG quality 0.75, with invisible selectable text on top. A 27 page report is about 7.6 MB. The old 1.25 scale looked out of focus at 100 percent zoom.
+- Word colors: `_docxStampLiveStyles` stamps `data-dx-color` on the clone; `_docxStyleFmtFromEl` (app/docx-writer.js:1619) uses it when there is no inline color, so the red and green of the class rules (`.rpt-g`, `.rpt-r`) reach the .docx. Before, the detached clone had no cascade and the runs were black.
+- Word corner text: `exportReportToDocx()` takes the "<client> / <period>" text of the first page and `_docxApplyHeaderText(zip, text)` (app/docx-writer.js:589) writes it, right aligned, into `word/header2.xml` (the default header). It is no longer in the page body.
+- Environmental page: `increaseEquivalents` and `_equivalentsOf` (computations/pollution.js) give the same equivalents for an increase as `calculatePollutionCredits` gives for a decrease. A quarter with more pollution is titled "Pollution Added".
+- Check: `node tools/test-report-pdf-letterhead-footer.js` clicks the real Download PDF button, renders the saved file with pdftoppm and fails when the letterhead (page 1) or the wave footer (page 1, page 2, last page) is missing or when pdftotext returns no footer text. Also `node tools/test-docx-class-colors.js`, `node tools/test-report-q3-review-findings.js`, `node tools/test-report-schedule-table.js`, `node tools/test-report-word-table-widths.js`, `node tools/test-report-escape.js`.
+- Not yet removed: the v235 page functions (`_rptQCoverPage`, `_rptQResultsPage` and the other `_rptQ...Page` functions) and the `qRender` fields of `REPORT_SECTIONS` have no caller in the report; some tests still read them.
+
 ## 7. How to keep this file current
 
 Any commit that changes these facts must update this file in the same commit.

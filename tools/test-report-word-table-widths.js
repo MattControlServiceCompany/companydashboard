@@ -1,20 +1,17 @@
-// tools/test-report-word-table-widths.js: the Word (.docx) column widths of the quarterly report tables stay as in v2026.11.05.232, except the Results table: its column "Savings target" is now "Allocated target" (2026-11-06), so its pinned widths are the new grid.
+// tools/test-report-word-table-widths.js: the Word (.docx) column widths of the quarterly report tables are pinned for the Q2-structure quarterly report (rebuilt 2026-11-06): the results table, the quarterly usage summary, the annual summary by building and the Appendix B detail tables. The old meter, EUI and monthly-quarter tables are gone from the report.
 // Run: CH_TMP_ROOT=<scratch> node tools/test-report-word-table-widths.js
 // Builds the quarterly report from SYNTHETIC data in headless bundled Chromium, translates its pages to Word XML with the
 // export's own functions, and compares each Building table's <w:tblGrid> with the pinned values. The PDF widths
 // (tools/test-report-table-fit.js) are separate: the Word widths come from data-dx-widths and data-dx-nw.
 'use strict';
 const EXPECTED = {
- "Building|Area (ft\u00b2)|Allocated target|Savings measured|Percent|Result": "3132,938,1481,1711,893,1925",
- "Building|Meter (account number)|Bills (count)|Use|Cost": "3133,2811,1160,1651,1325",
- "Building|Baseline kWh|Actual kWh|Change percent|Baseline billed kW|Actual billed kW|Baseline cost|Actual cost|Savings": "3135,939,877,795,861,743,939,931,860",
- "Building|Baseline therms|Actual therms|Change percent|Baseline cost|Actual cost|Savings": "3056,1267,1262,1078,1174,1168,1075",
- "Building|Baseline gal|Actual gal|Change percent|Baseline cost|Actual cost|Savings": "3057,1202,1086,1452,1258,1117,908",
- "Building|Area (ft\u00b2)|Baseline (kBtu/ft\u00b2/yr)|Actual (kBtu/ft\u00b2/yr)|Change percent": "3572,1348,1881,1798,1481",
- "Building|Utility|Provider|Use|Billed kW|Cost|Billing period": "3133,1143,921,1307,931,745,1900",
- "Building|Meter|Bills (count)|Cost": "3427,3629,1512,1512",
- "Building|Electricity|Natural gas|Propane|Total": "3426,1714,1714,1613,1613",
- "Building|April|May|June|Quarter": "3428,1663,1663,1663,1663"
+ "Building|Square|||Feet|Baseline|||Cost|Projected|||Cost|Actual|||Cost|Q2 2025|||Savings Measured|Percent of|||Baseline Cost|Status": "1570,1101,1261,1341,1101,1211,1093,1402",
+ "Quarter|Baseline|||kWh|Actual|||kWh|Baseline|||Therms|Actual|||Therms|Baseline|||Gallons|Actual|||Gallons|Baseline|||Cost|Actual|||Cost|Savings|||Measured": "659,986,854,1174,1042,1181,1049,1000,868,1267",
+ "Period|kWh|kW|Therms|Propane|||Gallons|Cost|Site EUI|||kBtu/ft\u00b2 (Q2 2025)|Savings vs|||Baseline": "1343,896,534,820,1501,894,2291,1801",
+ "Building|Year|kWh|kW|Therms|Propane Gallons|Cost|Site EUI|||kBtu/ft\u00b2 (Q2 2025)": "2432,1065,671,571,919,1882,756,1784",
+ "Month|Days|BL Therms|Act Therms|Therms Saved|%|$/Therm|Therm Sav $": "1248,1234,1253,1255,1351,1241,1244,1254",
+ "Month|Days|BL Gal|Act Gal|Gal Saved|%|$/Gallon|Gallon Sav $": "1260,1260,1260,1260,1260,1260,1260,1260",
+ "Month|Cooling degree days (2025)|Baseline billed kW|Actual billed kW|Change kW": "2420,2218,1814,1814,1814"
 };
 const path = require('path');
 const { pathToFileURL } = require('url');

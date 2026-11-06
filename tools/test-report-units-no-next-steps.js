@@ -37,15 +37,15 @@ const ok = (c, m) => {
       });
       const bld = (name) => ({
         id: name, name, sqft: 10000, status: 'ok', savings: -200, savingsPct: -6, blCost: 3000,
-        electric: com(), gas: com(), propane: null,
-        eui: { baseline: 50, current: 48, cbecs: 60 },
+        electric: com(), gas: com(), propane: com(),
+        eui: { baseline: 50, current: 48, cbecs: 60 }, euiQ: { baseline: 10, current: 11 },
         meterDetails: [{ commodity: 'Electric', account: 'A1', usagePerYear: 1000, r2: 0.9, regrCoeffs: { slopeHDD: 1, slopeCDD: 2 } }],
       });
       const d = {
         period: { type: 'quarterly', quarter: 3, year: 2026, label: 'Q3 2026', yearMonths: ['2026-07', '2026-08', '2026-09'] },
         project: { client: 'Test Client', name: 'Test Project', sqft: 20000, blStart: '2024-01', blEnd: '2024-12' },
         contract: { quarterlyTargets: [100, 100, 100, 100], quarterlyActuals: [100, 100, 100], currentYear: 1, years: 3, hasCsc: true, cscPct: 60, clientPct: 40, escalation: 3 },
-        totals: { savings: -400, blCost: 6000, kwhBl: 600, kwhCur: 660, thermsBl: 600, thermsCur: 800, peakKwBl: 60, peakKwCur: 66, euiBaseline: 50, euiCurrent: 48, euiPeriodLabel: 'Q3 2026', cumulativeSavings: 300, weatherWaiting: [] },
+        totals: { euiBaselineQ: 10, euiCurrentQ: 11, savings: -400, blCost: 6000, kwhBl: 600, kwhCur: 660, thermsBl: 600, thermsCur: 800, peakKwBl: 60, peakKwCur: 66, euiBaseline: 50, euiCurrent: 48, euiPeriodLabel: 'Q3 2026', cumulativeSavings: 300, weatherWaiting: [] },
         buildings: [bld('Building A'), bld('Building B')],
         weather: { monthly: [], totals: { cddBl: 0, cddCur: 0 } },
         rawBills: [{ ym: '2026-07', building: 'Building A', commodity: 'Electric', account: 'A1', amount: 5 }],

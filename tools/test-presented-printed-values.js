@@ -82,6 +82,9 @@ const fns = [
   '_rptBilledToDate',
   '_rptBuildingTarget',
   '_rptResultKind',
+  '_rptUnpresentedQuarter',
+  '_rptMeasuredTotal',
+  '_rptMeasuredPct',
   
   '_rptResultOf',
   '_rptResultVar',

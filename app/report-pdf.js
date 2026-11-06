@@ -22,10 +22,10 @@
 var RPT_PDF_PAGE_W_PX = 816;
 var RPT_PDF_PAGE_H_PX = 1056;
 var RPT_PDF_PT_PER_PX = 0.75;
-// 1.25x = 120 dpi, JPEG 0.6: measured on a 57-page report (5.7 MB, 21 s; at 2x / 0.8 it was
-// 13.6 MB). Small table text stays readable. Higher scale or quality grows the file fast.
-var RPT_PDF_RASTER_SCALE = 1.25;
-var RPT_PDF_JPEG_QUALITY = 0.6;
+// 2.5x = 240 dpi, JPEG 0.75: the page text is a picture, so it must be sharp at 200% zoom on screen (Matt, 2026-11-06:
+// "text is out of focus on the PDF download"; at 1.25x / 0.6 = 120 dpi it was). File size is in docs/OPERATIONS.md.
+var RPT_PDF_RASTER_SCALE = 2.5;
+var RPT_PDF_JPEG_QUALITY = 0.75;
 
 // jsPDF standard fonts write Windows-1252 text. Map other characters to plain text.
 var _RPT_PDF_CHAR_MAP = {

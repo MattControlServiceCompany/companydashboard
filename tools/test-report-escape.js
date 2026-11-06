@@ -39,21 +39,21 @@ const PLAIN = 'Acme & Sons #416';
         });
         const bld = (name) => ({
           id: name, name, sqft: 10000, status: 'ok', savings: 40, savingsPct: 1.3, blCost: 3000,
-          electric: com(), gas: com(), propane: null,
-          eui: { baseline: 50, current: 48, cbecs: 60 },
+          electric: com(), gas: com(), propane: com(),
+          eui: { baseline: 50, current: 48, cbecs: 60 }, euiQ: { baseline: 10, current: 11 },
           meterDetails: [{ commodity: P, account: P, usagePerYear: 1000, r2: 0.9, regrCoeffs: { slopeHDD: 1, slopeCDD: 2 } }],
         });
         const d = {
           period: { type: 'quarterly', quarter: 3, year: 2026, label: 'Q3 ' + P, yearMonths: ['2026-07', '2026-08', '2026-09'] },
           project: { client: P, name: P, sqft: 20000, blStart: P, blEnd: P },
           contract: { quarterlyTargets: [100, 100, 100, 100], quarterlyActuals: [100, 100, 100], currentYear: 1, years: 3, hasCsc: true, cscPct: P, clientPct: 40, escalation: 3 },
-          totals: { savings: 80, blCost: 6000, kwhBl: 600, kwhCur: 540, thermsBl: 600, thermsCur: 540, peakKwBl: 60, peakKwCur: 54, euiBaseline: 50, euiCurrent: 48, euiPeriodLabel: P, cumulativeSavings: 300, weatherWaiting: [] },
+          totals: { euiBaselineQ: 10, euiCurrentQ: 11, savings: 80, blCost: 6000, kwhBl: 600, kwhCur: 540, thermsBl: 600, thermsCur: 540, peakKwBl: 60, peakKwCur: 54, euiBaseline: 50, euiCurrent: 48, euiPeriodLabel: P, cumulativeSavings: 300, weatherWaiting: [] },
           buildings: [bld(P), bld(PLAIN)],
           weather: { monthly: [], totals: { cddBl: 0, cddCur: 0 } },
           rawBills: [{ ym: '2026-07', building: P, commodity: P, account: P, amount: 5 }],
         };
         const html = _rptQuarterReportHTML(d, { appendixD: false, environmentalImpact: false, approvedChanges: false, buildingSummaries: false, electricDetail: false, gasDetail: false, propaneDetail: false, yearToDate: false, appendixB: false, appendixC: false });
-        return { html, rawImg: html.indexOf('<img src=x onerror') };
+        return { html, rawImg: html.indexOf("<img src=x onerror") };
       },
       [P, PLAIN],
     );

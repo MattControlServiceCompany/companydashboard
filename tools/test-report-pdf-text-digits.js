@@ -45,13 +45,13 @@ if (spawnSync('pdftotext', ['-v']).error) {
       });
       const bld = (name) => ({
         id: name, name, sqft: 110000, status: 'ok', savings: 1111, savingsPct: 11.1, blCost: 11111,
-        electric: com(), gas: com(), propane: null, eui: { baseline: 41.1, current: 31.1, cbecs: 51.1 }, meterDetails: [],
+        electric: com(), gas: com(), propane: com(), eui: { baseline: 41.1, current: 31.1, cbecs: 51.1 }, euiQ: { baseline: 10, current: 11 }, meterDetails: [],
       });
       const d = {
         period: { type: 'quarterly', quarter: 3, year: 2026, label: 'Q3 2026', yearMonths: ['2026-07', '2026-08', '2026-09'] },
         project: { client: 'Test Client', name: 'Test Project', sqft: 220000, blStart: '2024-01', blEnd: '2024-12' },
         contract: { quarterlyTargets: [1111, 1111, 1111, 1111], quarterlyActuals: [1111, 1111, 1111], currentYear: 1, years: 3, hasCsc: true, cscPct: 60, clientPct: 40, escalation: 3, actualsThroughQuarter: 3 },
-        totals: { savings: 2222, blCost: 22222, kwhBl: 2222, kwhCur: 2422, thermsBl: 2022, thermsCur: 2202, peakKwBl: 222, peakKwCur: 242, euiBaseline: 41.1, euiCurrent: 31.1, euiPeriodLabel: 'Jan 2026 to Sep 2026 annualized, all fuels', weatherWaiting: [] },
+        totals: { euiBaselineQ: 10, euiCurrentQ: 11, savings: 2222, blCost: 22222, kwhBl: 2222, kwhCur: 2422, thermsBl: 2022, thermsCur: 2202, peakKwBl: 222, peakKwCur: 242, euiBaseline: 41.1, euiCurrent: 31.1, euiPeriodLabel: 'Jan 2026 to Sep 2026 annualized, all fuels', weatherWaiting: [] },
         buildings: [bld('Building A'), bld('Building B')],
         weather: { monthly: [], totals: { cddBl: 0, cddCur: 0 } },
         rawBills: [],

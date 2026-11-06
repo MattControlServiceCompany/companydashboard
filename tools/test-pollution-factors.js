@@ -67,6 +67,8 @@ const chg = vm.runInContext('emissionsChangeText', sb);
 // Q3-style: electricity use ROSE by 107,310 kWh, gas and propane fell -> savings inputs are the negatives
 const q3 = calc(-107310, 222, 24);
 ok(chg(q3.pollutants.co2) === '+75,248' && q3.co2eMT < 0 && q3.equivalents.carsRemoved === 0, 'Q3 use rose: CO2 change +75,248 (plus = more), no equivalents');
+ok(q3.increaseEquivalents.carsRemoved > 0 && red0().increaseEquivalents.carsRemoved === 0, 'net increase has increaseEquivalents; a reduction has none');
+function red0() { return calc(10000, 0, 0); }
 // synthetic reduction: 10,000 kWh saved -> fewer emissions, minus sign, equivalents shown
 const red = calc(10000, 0, 0);
 ok(chg(red.pollutants.co2) === '-7,282' && red.co2eMT > 0 && red.equivalents.carsRemoved > 0, 'reduction: CO2 change -7,282 (minus = fewer), equivalents shown');

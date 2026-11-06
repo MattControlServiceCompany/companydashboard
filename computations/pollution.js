@@ -189,6 +189,24 @@ function energyUseChangeLine(kwhSaved, thermsSaved, galSaved) {
 }
 var EMISSIONS_SIGN_NOTE = 'A plus sign means more emissions than baseline.';
 
+// _equivalentsOf(mt): the EPA equivalency counts for mt metric tons of CO2e (one rule for avoided and added emissions).
+function _equivalentsOf(mt) {
+  var eq = EQUIV_PER_MT_CO2E;
+  return {
+    carsRemoved: Math.ceil(mt * eq.carsRemoved),
+    gallonsGasoline: Math.ceil(mt * eq.gallonsGasoline),
+    tankerTrucks: Math.ceil(mt * eq.tankerTrucks),
+    barrelsOil: Math.ceil(mt * eq.barrelsOil),
+    households: Math.ceil(mt * eq.households),
+    treeSeedlings: Math.ceil(mt * eq.treeSeedlings),
+    acresForest: Math.ceil(mt * eq.acresForest),
+    railcarsCoal: Math.ceil(mt * eq.railcarsCoal),
+    tonsRecycled: Math.ceil(mt * eq.tonsRecycled),
+    propaneCylinders: Math.ceil(mt * eq.propaneCylinders),
+    coalPlants: Math.ceil(mt * eq.coalPlants),
+  };
+}
+
 function calculatePollutionCredits(kwhSaved, thermsSaved, propaneGalSaved, stateCode, unit) {
   unit = unit || 'lbs';
 
@@ -250,27 +268,16 @@ function calculatePollutionCredits(kwhSaved, thermsSaved, propaneGalSaved, state
   // CO2-equivalent in metric tons (CO2 + GWP_CH4*CH4 + GWP_N2O*N2O, all in MT)
   var co2eMT = (pollutants.co2 + GWP_CH4 * pollutants.ch4 + GWP_N2O * pollutants.n2o) / LBS_PER_METRIC_TON;
 
-  // Equivalencies based on CO2e metric tons (Excel Calculations rows 34-44)
-  var eq = EQUIV_PER_MT_CO2E;
-  // Equivalents describe avoided emissions only; a net increase has none.
-  var absCo2eMT = Math.max(0, co2eMT);
-  var equivalents = {
-    carsRemoved: Math.ceil(absCo2eMT * eq.carsRemoved),
-    gallonsGasoline: Math.ceil(absCo2eMT * eq.gallonsGasoline),
-    tankerTrucks: Math.ceil(absCo2eMT * eq.tankerTrucks),
-    barrelsOil: Math.ceil(absCo2eMT * eq.barrelsOil),
-    households: Math.ceil(absCo2eMT * eq.households),
-    treeSeedlings: Math.ceil(absCo2eMT * eq.treeSeedlings),
-    acresForest: Math.ceil(absCo2eMT * eq.acresForest),
-    railcarsCoal: Math.ceil(absCo2eMT * eq.railcarsCoal),
-    tonsRecycled: Math.ceil(absCo2eMT * eq.tonsRecycled),
-    propaneCylinders: Math.ceil(absCo2eMT * eq.propaneCylinders),
-    coalPlants: Math.ceil(absCo2eMT * eq.coalPlants),
-  };
+  // Equivalencies based on CO2e metric tons (Excel Calculations rows 34-44).
+  // equivalents describe avoided emissions only; a net increase has none. increaseEquivalents is the same set
+  // for a net increase (the magnitude of the added emissions); empty when emissions fell.
+  var equivalents = _equivalentsOf(Math.max(0, co2eMT));
+  var increaseEquivalents = _equivalentsOf(Math.max(0, -co2eMT));
 
   return {
     pollutants: pollutants,
     equivalents: equivalents,
+    increaseEquivalents: increaseEquivalents,
     co2eMT: co2eMT,
     stateCode: stateCode,
     inputs: { kwhSaved: kwhSaved, thermsSaved: thermsSaved, propaneGalSaved: propaneGalSaved },
