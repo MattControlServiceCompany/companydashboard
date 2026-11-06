@@ -2507,6 +2507,11 @@ async function siteResetAllMeterTableSettings() {
    site-ui.js delegates to this array and should NOT maintain its own copy.
 */
 var RELEASE_NOTES = [
+  { v: 'v2026.11.06.241', date: '2026-11-06', title: 'Quarterly report: nothing touches the page footer',
+    items: [
+      { type: 'fix', text: 'Reports > Quarterly report > Appendix B: a table that does not fit above the page footer now moves to the next page whole, with its heading and formula line. This holds for every page of the report.' }
+    ]
+  },
   { v: 'v2026.11.06.240', date: '2026-11-06', title: 'Quarterly report: Word download matches the PDF',
     items: [
       { type: 'fix', text: 'Reports > Quarterly report: the Word download now matches the PDF, and its footer shows the report label with Page N of M.' },

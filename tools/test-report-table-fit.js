@@ -66,6 +66,50 @@ const ok = (c, m) => {
       });
       ok(res.length === 0, 'no cell overflows or wraps a number/date (' + media + '): ' + [...new Set(res)].slice(0, 6).join(' | '));
     }
+    // Page fit: Appendix B of a 9 building synthetic report. On every page the lowest content edge stays above the footer
+    // line (page number and label) with 16px to spare, and no building heading is the last thing on a page.
+    const fit = await page.evaluate(() => {
+      const mon = ['2026-07', '2026-08', '2026-09'];
+      const bld = (i) => ({
+        name: 'Test School Number ' + i,
+        meterDetails: [
+          { commodity: 'Electric', account: 'E' + i, regrCoeffs: { type: 'dual', intercept: 100.5, slopeHDD: 2.25, slopeCDD: 0.5, r2: 0.9, n: 12, cvrmse: 0.08 }, kwFit: { intercept: 40, slope: 0.07, n: 12, r2: 0.46, cvrmse: 0.13 } },
+          { commodity: 'Gas', account: 'G' + i, regrCoeffs: { type: 'dual', intercept: 5, slopeHDD: 0.3, slopeCDD: 0.1, r2: 0.97, n: 12, cvrmse: 0.05 } },
+        ],
+        electric: { monthly: mon.map((m, k) => ({ month: m, bl: 80000 + k * 900 + i, cur: 70000 + k * 700 + i, kwBl: 300 + k, kwCur: 280 + k })) },
+        gas: { monthly: mon.map((m, k) => ({ month: m, bl: 1200 + k * 30 + i, cur: 1100 + k * 20 + i })) },
+      });
+      const d = {
+        period: { type: 'quarterly', quarter: 3, year: 2026, label: 'Q3 2026' },
+        project: { client: 'Test Client' },
+        buildings: [1, 2, 3, 4, 5, 6, 7, 8, 9].map(bld),
+        weather: { monthly: mon.map((m) => ({ month: m, hddBl: 0, cddBl: 500, cddCur: 520 })) },
+      };
+      const f = { yms: mon, year: 2026, qLabel: 'Q3 2026' };
+      const res = _rptQAppendixBPages(20, d, f, 'B');
+      const host = document.createElement('div');
+      host.id = 'reportPages';
+      host.innerHTML = res.html;
+      document.body.appendChild(host);
+      const bad = [];
+      const pages = host.querySelectorAll('.rpt-page');
+      pages.forEach((pg, i) => {
+        const pr = pg.getBoundingClientRect();
+        let bottom = 0;
+        pg.querySelector('.rpt-body').querySelectorAll('*').forEach((e) => {
+          const r = e.getBoundingClientRect();
+          if (r.height > 0) bottom = Math.max(bottom, r.bottom - pr.top);
+        });
+        const foot = Math.min(...[...pg.querySelectorAll('.rpt-footer-label,.rpt-pg-footer-pagenum')].map((e) => e.getBoundingClientRect().top - pr.top));
+        if (bottom > foot - 16) bad.push('page ' + (i + 1) + ': content bottom ' + Math.round(bottom) + ' footer top ' + Math.round(foot));
+        const kids = [...pg.querySelector('.rpt-body').children].filter((e) => e.getBoundingClientRect().height > 0);
+        const lastTag = kids.length ? kids[kids.length - 1].tagName : '';
+        if (/^H[23]$/.test(lastTag)) bad.push('page ' + (i + 1) + ' ends with a heading');
+      });
+      host.remove();
+      return { n: pages.length, bad };
+    });
+    ok(fit.n > 1 && fit.bad.length === 0, 'Appendix B (' + fit.n + ' pages): no page content reaches the footer zone: ' + fit.bad.join(' | '));
   } finally {
     await ctx.close();
   }

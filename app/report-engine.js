@@ -4495,7 +4495,10 @@ function _rptQEstH(html) {
 // The joined body is measured in the DOM; the budget is the content height of one page.
 // The tallest body (px, content only) a quarterly page holds above its footer line. _rptContentBudget keeps room for the
 // letterhead footer graphic, which the quarterly pages after the cover do not draw.
-var RPT_Q_PAGE_BODY_PX = 900;
+// 850 = the page's footer line (922px from the page top: the "Page N of M" number and the label) minus the body top (60px
+// header + 12px padding); 20px stay clear above the footer, so no table or text ever touches it. The Appendix B check in
+// tools/test-report-table-fit.js fails when any page's content bottom is within 16px of the footer.
+var RPT_Q_PAGE_BODY_PX = 830;
 function _rptQBodyFits(bodyHtml) {
   var h = _rptQMeasureH(bodyHtml);
   if (h != null) return h <= RPT_Q_PAGE_BODY_PX;
