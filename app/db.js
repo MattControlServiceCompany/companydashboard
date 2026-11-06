@@ -339,6 +339,42 @@ const DB = (() => {
   // used only for db.js's own local-only bookkeeping keys (ch_replica_state,
   // ch_sync_queue) and for applying already-verified server values during
   // hydration (which update _replicaVersions separately, not through set()).
+  // Fallback mode (IndexedDB failed to open twice): data stays in memory (_cache) and the server holds it.
+  // Only small keys go to localStorage. A key over the limit is never mirrored, because a large
+  // setItem throws QuotaExceededError and fills the 5 MB origin quota that the small unsent-write queue
+  // (ch_sync_queue) needs. The queue always gets a try. If a write cannot be kept locally, the existing
+  // save-failed toast shows once per page load. Returns true when the value is kept in localStorage.
+  const FALLBACK_LS_MAX_CHARS = 200000;
+  let _fallbackToastShown = false;
+  const _fallbackMemoryOnly = new Set(); // keys too large for localStorage in fallback mode
+  function _fallbackSave(key, value) {
+    let json;
+    try {
+      json = JSON.stringify(value);
+    } catch (e) {
+      json = undefined;
+    }
+    if (json === undefined) return true; // nothing to store (undefined value)
+    const isQueue = key === SYNC_QUEUE_KEY;
+    if (!isQueue && json.length > FALLBACK_LS_MAX_CHARS) {
+      _fallbackMemoryOnly.add(key); // memory only; the server holds it
+      return false;
+    }
+    // The version stamp of a key whose data was not kept here is not kept either. After a reload the
+    // key then counts as new to this browser and the pull fetches it, instead of the page starting empty.
+    if (typeof RV_PREFIX === 'string' && key.indexOf(RV_PREFIX) === 0 && _fallbackMemoryOnly.has(key.slice(RV_PREFIX.length))) return false;
+    try {
+      localStorage.setItem(key, json);
+      return true;
+    } catch (e) {
+      console.warn('[DB] fallback localStorage write failed:', key, e);
+      if (!_fallbackToastShown && typeof showToast === 'function') {
+        _fallbackToastShown = true;
+        showToast(TOAST_SAVE_FAILED, 'error');
+      }
+      return false;
+    }
+  }
   function _rawSet(key, value) {
     // A collection merged by the engine is adopted IN PLACE: page globals hold
     // the cache reference (core.js init `projects = sget(...)`) and must see it.
@@ -348,13 +384,7 @@ const DB = (() => {
     }
     _cache[key] = value;
     if (_usingFallback) {
-      try {
-        localStorage.setItem(key, JSON.stringify(value));
-      } catch (e) {
-        console.warn('[DB] _rawSet localStorage failed:', key, e);
-        // The retry queue could not be stored: the edit is not safe across a reload. Same message as a failed save.
-        if (key === SYNC_QUEUE_KEY && typeof showToast === 'function') showToast(TOAST_SAVE_FAILED, 'error');
-      }
+      _fallbackSave(key, value);
       return Promise.resolve();
     }
     return _open()
@@ -762,7 +792,85 @@ const DB = (() => {
   // object of the cache, and _adoptCollection copies the winning fields INTO that
   // same object a moment later (Keep theirs), which would turn the archived
   // loser into the winner.
+  // A whole-key losing value over ARCHIVE_DIFF_MIN_CHARS is not copied whole (an equipment matrix is MBs).
+  // The entry keeps losingDiff: the paths where the losing value differs from the winning value, with the
+  // losing content at each path. recoverArchivedValue(entry, winningValue) rebuilds the exact losing value.
+  // The winning value is the key's server version winningVersion + 1 (kv_history keeps it). When the diff is
+  // not clearly smaller than the value, or no winning value is known, the full copy is kept: nothing is dropped.
+  const ARCHIVE_DIFF_MIN_CHARS = 200000;
+  const _isObj = (v) => v !== null && typeof v === 'object' && !Array.isArray(v);
+  function _diffLosing(l, w, path, out) {
+    if (l === w) return;
+    if (_isObj(l) && _isObj(w)) {
+      Object.keys(l).forEach((k) => _diffLosing(l[k], w[k], path.concat([k]), out));
+      Object.keys(w).forEach((k) => {
+        if (!Object.prototype.hasOwnProperty.call(l, k)) out.push({ p: path.concat([k]), absent: true });
+      });
+      return;
+    }
+    if (Array.isArray(l) && Array.isArray(w)) {
+      for (let i = 0; i < l.length; i++) {
+        if (i < w.length) _diffLosing(l[i], w[i], path.concat([i]), out);
+        else out.push({ p: path.concat([i]), v: l[i] });
+      }
+      if (w.length > l.length) out.push({ p: path, len: l.length });
+      return;
+    }
+    out.push({ p: path, v: l });
+  }
+  function recoverArchivedValue(entry, winningValue) {
+    if (!entry || !Array.isArray(entry.losingDiff)) return entry ? entry.losingValue : undefined;
+    let root = JSON.parse(JSON.stringify(winningValue === undefined ? null : winningValue));
+    entry.losingDiff.forEach((d) => {
+      if (d.len !== undefined) return;
+      const v = d.v === undefined ? undefined : JSON.parse(JSON.stringify(d.v));
+      if (d.p.length === 0) {
+        root = v;
+        return;
+      }
+      let node = root;
+      for (let i = 0; i < d.p.length - 1; i++) node = node[d.p[i]];
+      const last = d.p[d.p.length - 1];
+      if (d.absent) delete node[last];
+      else node[last] = v;
+    });
+    // Truncations last: they only cut arrays that the losing value has shorter.
+    entry.losingDiff.forEach((d) => {
+      if (d.len === undefined) return;
+      let node = root;
+      for (let i = 0; i < d.p.length; i++) node = node[d.p[i]];
+      node.length = d.len;
+    });
+    return root;
+  }
   function _appendConflictArchive(entry) {
+    if (entry && entry.winningValue !== undefined) {
+      // winningValue is only an input for the diff: it is never stored.
+      const winningValue = entry.winningValue;
+      entry = Object.assign({}, entry);
+      delete entry.winningValue;
+      const lv = entry.losingValue;
+      if (lv !== undefined && lv !== null && typeof lv === 'object' && winningValue !== undefined && winningValue !== null) {
+        try {
+          const size = JSON.stringify(lv).length;
+          if (size > ARCHIVE_DIFF_MIN_CHARS) {
+            const diff = [];
+            _diffLosing(lv, winningValue, [], diff);
+            const dsize = JSON.stringify(diff).length;
+            if (dsize < size / 2) {
+              const check = recoverArchivedValue({ losingDiff: diff }, winningValue);
+              if (JSON.stringify(check) === JSON.stringify(lv)) {
+                delete entry.losingValue;
+                entry.losingDiff = JSON.parse(JSON.stringify(diff));
+                entry.losingDiffOf = size; // chars of the full value, for the viewer
+              }
+            }
+          }
+        } catch (e) {
+          /* keep the full copy */
+        }
+      }
+    }
     if (entry && entry.losingValue !== undefined && entry.losingValue !== null) {
       entry = Object.assign({}, entry, { losingValue: JSON.parse(JSON.stringify(entry.losingValue)) });
     }
@@ -1672,6 +1780,7 @@ const DB = (() => {
       losingSide: 'server',
       losingValue: current.deleted ? null : current.value,
       losingDeleted: !!current.deleted,
+      winningValue: payload.deleted ? undefined : payload.value,
       winningSide: 'local',
       winningVersion: current.version,
       winningUpdatedBy: current.updatedBy,
@@ -3055,7 +3164,17 @@ const DB = (() => {
     _drainQueueOnce();
   }
 
+  // One retry after a short wait: a transient open error ("Internal error") often clears. A browser
+  // without indexedDB at all is not retried.
+  const IDB_OPEN_RETRY_MS = 300;
   function _open() {
+    if (_db) return Promise.resolve(_db);
+    return _openOnce().catch((e) => {
+      if (typeof indexedDB === 'undefined' || !indexedDB) throw e;
+      return new Promise((r) => setTimeout(r, IDB_OPEN_RETRY_MS)).then(_openOnce);
+    });
+  }
+  function _openOnce() {
     return new Promise((resolve, reject) => {
       if (_db) return resolve(_db);
       const req = indexedDB.open(DB_NAME, DB_VERSION);
@@ -3332,15 +3451,8 @@ const DB = (() => {
     // --- end replication tail ---
 
     if (_usingFallback) {
-      return new Promise((resolve, reject) => {
-        try {
-          localStorage.setItem(key, JSON.stringify(value));
-          resolve();
-        } catch (e) {
-          console.warn('[DB] localStorage write failed:', key, e);
-          reject(e);
-        }
-      });
+      _fallbackSave(key, value);
+      return Promise.resolve();
     }
     // Return a Promise that resolves only on tx.oncomplete — the real IDB commit.
     // Callers that care about durability (e.g. bulk import) can await this.
@@ -3627,6 +3739,7 @@ const DB = (() => {
     noteUserAction,
     getAutoLocalCount,
     getConflictArchive,
+    recoverArchivedValue,
     getConflictArchiveOthers,
     isConflictArchiveFull,
     clearConflictArchive,
