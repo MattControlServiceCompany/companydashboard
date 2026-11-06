@@ -473,10 +473,14 @@ const ok = (body) => ({ ok: true, status: 200, json: async () => body });
     L.state.mode = 'on';
     await L.DB.__t._handleAuthIdentityChange();
     assert.strictEqual(puts.length, 0, 'B must not send an edit made before B signed in as A');
+    assert.strictEqual(L.DB.getQueueDepth(), 0, 'the edit left the queue');
+    const arch = L.DB.getConflictArchiveOthers().filter((e) => e.key === 'en_note'); // hidden from B: it is A's
+    assert.strictEqual(arch.length, 1, 'the edit is in the conflict archive, not dropped');
+    assert.strictEqual(arch[0].reason, 'queued-edit-other-user');
+    assert.strictEqual(arch[0].losingValue, 'edit while expired');
     L.state.uid = 'A';
     await L.DB.__t._handleAuthIdentityChange();
-    assert.strictEqual(puts.length, 1, 'A signs back in: edit goes out');
-    assert.strictEqual(L.DB.getQueueDepth(), 0);
+    assert.strictEqual(puts.length, 0, 'A signs back in: the archived edit is not sent');
   });
   await t(
     'attribution: edit whose send fails is queued under the user who made it, even if identity changed during the send',
@@ -507,13 +511,13 @@ const ok = (body) => ({ ok: true, status: 200, json: async () => body });
       await pending;
       await new Promise((r) => setTimeout(r, 20));
       const info = L.DB.getForeignQueueInfo();
-      const q = JSON.parse(L.store['ch_sync_queue']).filter((e) => e.key === 'en_note');
+      const arch = L.DB.getConflictArchiveOthers().filter((e) => e.key === 'en_note');
       assert.ok(
-        q.some((e) => e.owner.id === 'A' && e.value === 'by A'),
-        'queued under A',
+        arch.some((e) => e.owner.id === 'A' && e.losingValue === 'by A' && e.reason === 'queued-edit-other-user'),
+        'the edit of A is in the conflict archive under A',
       );
-      assert.strictEqual(info.length, 1, 'entry owned by A, foreign to B');
-      assert.strictEqual(info[0].id, 'A');
+      assert.strictEqual(L.DB.getQueueDepth(), 0, 'nothing left to send as B');
+      assert.strictEqual(info.length, 0, 'no unsent-changes bar for B');
     },
   );
   await t('attribution: drain stops when identity changes mid-drain; no A entry sent with B token', async () => {
@@ -1390,6 +1394,36 @@ const ok = (body) => ({ ok: true, status: 200, json: async () => body });
   });
 
   // ---- the REAL ch-auth.js and the REAL db.js in one sandbox (fix 8, fix 9)
+  // A fake IndexedDB that only records the keys written (writes[]). Reads find nothing.
+  function fakeIdb(writes) {
+    const tx = () => {
+      const x = {};
+      const done = () => setTimeout(() => x.oncomplete && x.oncomplete(), 0);
+      x.objectStore = () => ({
+        put(v, k) {
+          writes.push(k);
+          done();
+        },
+        delete(k) {
+          writes.push('delete:' + k);
+          done();
+        },
+        get() {
+          const r = {};
+          setTimeout(() => r.onsuccess && r.onsuccess(), 0);
+          return r;
+        },
+      });
+      return x;
+    };
+    return {
+      open() {
+        const req = {};
+        setTimeout(() => req.onsuccess && req.onsuccess({ target: { result: { transaction: tx } } }), 0);
+        return req;
+      },
+    };
+  }
   function loadReal(opts) {
     const uid = opts.userId || 'u1';
     const store = opts.store || {};
@@ -1475,7 +1509,7 @@ const ok = (body) => ({ ok: true, status: 200, json: async () => body });
           },
         },
       },
-      indexedDB: undefined,
+      indexedDB: opts.idbWrites ? fakeIdb(opts.idbWrites) : undefined,
       fetch: (u, o) => (String(u).indexOf('/auth/v1/token') >= 0 ? opts.tokenFetch(u, o) : opts.kvFetch(u, o)),
     };
     vm.createContext(sandbox);
@@ -1539,7 +1573,7 @@ const ok = (body) => ({ ok: true, status: 200, json: async () => body });
     },
   );
 
-  await t('401, refresh returns a DIFFERENT user: REAL drain sends nothing as B, A entry stays queued under A', async () => {
+  await t('401, refresh returns a DIFFERENT user: REAL drain sends nothing as B, A entry goes to the conflict archive', async () => {
     const puts = [];
     const L = loadReal({
       userId: 'u1',
@@ -1563,7 +1597,11 @@ const ok = (body) => ({ ok: true, status: 200, json: async () => body });
     assert.strictEqual(mine[0].auth, 'Bearer ' + FK('a'), "with A's token");
     assert.strictEqual(L.A.getUserId(), 'u2');
     assert.strictEqual(L.A.backendMode(), 'on', 'B stays signed in');
-    assert.ok(L.DB.__t._queue().some((e) => e.id === 'q1' && e.owner.id === 'u1'), 'A entry still queued under A');
+    assert.ok(!L.DB.__t._queue().some((e) => e.id === 'q1'), 'A entry left the queue');
+    assert.ok(
+      L.DB.getConflictArchiveOthers().some((e) => e.key === 'en_budget_z' && e.losingValue === 'A-value' && e.owner.id === 'u1'),
+      'A entry is in the conflict archive under A',
+    );
     puts.length = 0;
     await L.DB.__t._drainQueueOnce();
     assert.ok(!puts.some((x) => x.value === 'A-value'), "B's drain never sends A's entry");
@@ -2522,7 +2560,7 @@ const ok = (body) => ({ ok: true, status: 200, json: async () => body });
     },
   );
   await t(
-    '7d: a SHARED key with an unsent edit of another user: this user pulls the server copy; the edit stays queued under its author and is never sent',
+    '7d: a SHARED key with an unsent edit of another user: this user pulls the server copy; the edit goes to the conflict archive under its author and is never sent',
     async () => {
       const puts = [];
       const L = loadReal({
@@ -2556,8 +2594,11 @@ const ok = (body) => ({ ok: true, status: 200, json: async () => body });
       await L.DB.warmCache();
       await tick(60);
       assert.strictEqual(L.DB.get('en_budget_x'), 'server', "B sees the server copy, never A's unsent value");
-      assert.strictEqual(L.DB.getQueueDepth(), 1, "A's edit is still queued");
-      assert.strictEqual(L.DB.__t._queue()[0].owner.id, 'u1');
+      assert.strictEqual(L.DB.getQueueDepth(), 0, "A's edit left the queue");
+      assert.ok(
+        L.DB.getConflictArchiveOthers().some((e) => e.key === 'en_budget_x' && e.losingValue === 'A-unsent' && e.owner.id === 'u1'),
+        "A's edit is in the conflict archive under A",
+      );
       assert.ok(!puts.some((k) => /en_budget_x$/.test(k)), "A's unsent value never uploaded by B");
     },
   );
@@ -3298,6 +3339,76 @@ await t(
     assert.strictEqual(queued(L4).length, 0, "queue emptied");
   },
 );
+// 8m/8n (2026-11-05, #9b): an edit queued before a sign-out, then a sign-in through the sign-in page. That page loads
+// db.js but never runs warmCache, so its in-memory queue is empty: it must not write that empty queue over the stored one.
+async function signedOutEditScenario(signInAs) {
+  const S = {};
+  const puts = [];
+  const kv = (fail) => async (u, o) => {
+    if (!o || o.method !== "PUT") return ok([]);
+    const b = JSON.parse(o.body);
+    puts.push({ key: b.key, value: b.value });
+    if (fail) throw new TypeError("Failed to fetch");
+    return ok({ version: 1, hash: null, deleted: false });
+  };
+  // page 1 (the app): u1 edits a shared item while the server is unreachable: the edit is queued
+  const L1 = loadReal({ userId: "u1", store: S, tokenFetch: tokUser("u1"), kvFetch: kv(true) });
+  await L1.DB.warmCache();
+  L1.DB.set("en_budget_z", "U-edit");
+  await tick(60);
+  assert.strictEqual(JSON.parse(S.ch_sync_queue).length, 1, "edit queued");
+  puts.length = 0;
+  // page 2 (the sign-in page): db.js without warmCache; the user signs in
+  const idbWrites = [];
+  const L2 = loadReal({ store: S, sess: emptySess(), tokenFetch: tokUser(signInAs), kvFetch: kv(false), idbWrites });
+  await L2.A.signIn(signInAs + "@example.com", "pw");
+  await tick(250);
+  assert.ok(!idbWrites.includes("ch_sync_queue"), "the sign-in page never writes its empty queue over the stored one: " + JSON.stringify(idbWrites));
+  assert.ok(!idbWrites.includes("ch_local_identity"), "the sign-in page never moves the stored identity marker");
+  assert.strictEqual(JSON.parse(S.ch_sync_queue).length, 1, "the sign-in page leaves the stored queue as it was");
+  assert.strictEqual(puts.length, 0, "the sign-in page sends nothing");
+  // page 3 (the app again), the same session
+  const L3 = loadReal({ store: S, sess: emptySess(), tokenFetch: tokUser(signInAs), kvFetch: kv(false) });
+  await L3.DB.warmCache();
+  await L3.A.signIn(signInAs + "@example.com", "pw");
+  await tick(300);
+  return { S, puts, L3 };
+}
+await t("8m: same user signs in again: the signed-out edit reaches the server once and the queue empties", async () => {
+  const { puts, L3 } = await signedOutEditScenario("u1");
+  assert.strictEqual(puts.filter((p) => p.key === "en_budget_z" && p.value === "U-edit").length, 1, "sent once");
+  assert.strictEqual(L3.DB.getQueueDepth(), 0);
+});
+await t("8n: a different user signs in: the signed-out edit goes to the conflict archive and is never sent", async () => {
+  const { puts, L3 } = await signedOutEditScenario("u2");
+  assert.ok(!puts.some((p) => p.value === "U-edit"), "never sent under the new identity");
+  assert.strictEqual(L3.DB.getQueueDepth(), 0, "left the queue");
+  const arch = L3.DB.getConflictArchiveOthers().filter((e) => e.key === "en_budget_z");
+  assert.strictEqual(arch.length, 1, "kept in the archive");
+  assert.strictEqual(arch[0].losingValue, "U-edit");
+  assert.strictEqual(arch[0].owner.id, "u1", "tagged with its author");
+  assert.notStrictEqual(L3.DB.get("en_budget_z"), "U-edit", "the new user does not see the value");
+});
+await t("8o: u2 cannot see or clear the queued-edit-other-user entry of u1; u1 sees it again after signing in", async () => {
+  const { S } = await signedOutEditScenario("u2");
+  const L = loadReal({ store: S, sess: emptySess(), tokenFetch: tokUser("u2"), kvFetch: async () => ok([]) });
+  await L.DB.warmCache();
+  await L.A.signIn("u2@example.com", "pw");
+  await tick(200);
+  const mine = (DB) => DB.getConflictArchive().filter((e) => e.reason === "queued-edit-other-user");
+  assert.strictEqual(mine(L.DB).length, 0, "u2 cannot see it");
+  L.DB.clearConflictArchive(10);
+  assert.strictEqual(
+    JSON.parse(S.en_conflict_archive).filter((e) => e.reason === "queued-edit-other-user").length,
+    1,
+    "u2 cannot clear it",
+  );
+  const L1 = loadReal({ store: S, sess: emptySess(), tokenFetch: tokUser("u1"), kvFetch: async () => ok([]) });
+  await L1.DB.warmCache();
+  await L1.A.signIn("u1@example.com", "pw");
+  await tick(200);
+  assert.strictEqual(mine(L1.DB).length, 1, "u1 sees it after signing back in");
+});
 await t("8l: a load with no edit sends 0 PUT (reload and reopen)", async () => {
   const S = {};
   const L1 = loadReal({
@@ -4250,8 +4361,11 @@ await t(
     assert.strictEqual(asked.length, 0, 'B is not asked about the edit of A');
     assert.strictEqual(S.puts.length, 0, 'nothing is sent as B');
     assert.deepStrictEqual(clone(L.DB.get('en_budget_a')), { n: 'server' }, 'B sees the server copy');
-    assert.strictEqual(L.DB.getQueueDepth(), 1, 'the edit of A is still queued');
-    assert.strictEqual(L.DB.__t._queue()[0].owner.id, 'u3');
+    assert.strictEqual(L.DB.getQueueDepth(), 0, 'the edit of A left the queue');
+    assert.ok(
+      L.DB.getConflictArchiveOthers().some((e) => e.key === 'en_budget_a' && e.owner.id === 'u3' && e.losingValue.n === 'A-edit'),
+      'the edit of A is in the conflict archive',
+    );
   });
   await t('IDENTITY 6: a sign-in that returns after another user needs a NEW full pull before any send (the old pull is void)', async () => {
     const S = casServer([kvRow('en_budget_a', { n: 1 }, 5)]);
@@ -4267,7 +4381,7 @@ await t(
     assert.strictEqual(S.puts.length, 0, 'nothing is sent before the new full pull');
     assert.strictEqual(L.DB.getQueueDepth(), 1, 'the edit waits in the queue');
   });
-  await t('IDENTITY 3: an unsent edit made as A on a shared item is not on the page for B, not sent as B, back for A', async () => {
+  await t('IDENTITY 3: an unsent edit made as A on a shared item is not on the page for B, not sent as B, kept in the archive for A', async () => {
     const S = casServer([kvRow('en_budget_a', { n: 1 }, 5)]);
     const L = load({ mode: 'on', syncHost: true, classify: true, fetchImpl: S.fetchImpl });
     await L.DB.warmCache();
@@ -4284,14 +4398,19 @@ await t(
     await L.DB.set('en_budget_other', { x: 1 }); // B works; nothing of A rides along
     await tick(60);
     assert.ok(S.puts.every((p) => p.key !== 'en_budget_a'), 'the value of A is not sent as B');
-    assert.strictEqual(L.DB.getQueueDepth(), 1, 'the edit of A is kept');
+    assert.strictEqual(L.DB.getQueueDepth(), 0, 'the edit of A left the queue');
+    assert.ok(
+      L.DB.getConflictArchiveOthers().some((e) => e.key === 'en_budget_a' && e.owner.id === 'u1' && e.losingValue.n === 'A-unsent'),
+      'the edit of A is kept in the conflict archive, hidden from B',
+    );
     await signOut(L);
     await signIn(L, 'u1');
     await tick(60);
-    const sentA = S.puts.filter((p) => p.key === 'en_budget_a');
-    assert.strictEqual(sentA.length, 1, 'A signs back in: the edit goes out once');
-    assert.deepStrictEqual(clone(sentA[0].value), { n: 'A-unsent' });
-    assert.strictEqual(L.DB.getQueueDepth(), 0);
+    assert.strictEqual(S.puts.filter((p) => p.key === 'en_budget_a').length, 0, 'A signs back in: the archived edit is not sent');
+    assert.ok(
+      L.DB.getConflictArchive().some((e) => e.key === 'en_budget_a' && e.losingValue.n === 'A-unsent'),
+      'A can still recover the value from the archive',
+    );
   });
   await t('IDENTITY 4: a per-user setting queued as A is not on the page for B, not sent as B, back for A', async () => {
     const S = casServer([]);

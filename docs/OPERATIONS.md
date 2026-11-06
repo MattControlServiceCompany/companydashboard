@@ -204,6 +204,18 @@ about 0.4 credits a day, and 0 for a hidden or closed tab. The text below about 
   `entry.baseVersion` as the stamp, when its author signs in again (a newer server copy then goes to the conflict
   path for A). Before this, B saw A's unsent value on the page and a stale edit of A opened a conflict for B
   with A's value. Check: IDENTITY 2-6 tests.
+- Edit made while signed out (2026-11-05, app/db.js `_handleAuthIdentityChange`, `_archiveOtherUsersEdits`, `_checkDurableIdentityMarker`).
+  Cause of the lost edit (found with a local two-user run): the sign-in page (index.html) loads db.js but never runs
+  `warmCache`, so its in-memory queue is empty. The sign-in event ran `_handleAuthIdentityChange`, which wrote that empty
+  queue (`_persistSyncQueue`) and the identity marker over the stored ones. Now the handler does nothing until the stored
+  state is loaded (`_stateLoaded`, set by `_loadSyncQueue`); the next page's `warmCache` reads the real queue. SAME user
+  signed in again: the edit stays queued and goes out through the normal conflict path (list merge or later save wins;
+  the replaced server value is archived). DIFFERENT user signed in: each unsent edit of a SHARED key made by another user
+  (`!_entryBelongsTo`) is copied to the conflict archive (reason `queued-edit-other-user`, tagged with its author), leaves
+  the queue, and its page copy and version stamp are dropped so the browser takes the server copy. It is never sent under
+  the new identity and never dropped. Per-user keys (`ch_*` prefs) stay queued under their author. The user finds the
+  copy in Sync status, Past conflicts. Check: node test-sync-golive-blockers.js, tests 8m and 8n (a fake IndexedDB
+  records that the sign-in page writes neither `ch_sync_queue` nor `ch_local_identity`), IDENTITY 2-3, 7d.
 - Legacy utility blob (2026-10-21, app/utility-data.js), backend mode 'on' only (`_backendOn`); the GitHub site runs
   as before. `_legacyBlobToMigrate(customerId)` is the ONE rule for "copy the old `en_utility_<projectId>` blob into
   `en_utility_<customerId>`": the customer key does not exist at all (an existing blob, empty or not, is never
