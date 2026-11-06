@@ -13151,9 +13151,6 @@ async function exportReportToDocx() {
     pages.forEach((pageEl) => {
       const clone = pageEl.cloneNode(true);
       _docxStampLiveStyles(pageEl, clone); // alignment, fills and widths the clone cannot compute
-      CHROME_SELECTORS.forEach((sel) => {
-        clone.querySelectorAll(sel).forEach((el) => el.remove());
-      });
       pageEls.push(clone);
     });
 
@@ -13167,6 +13164,19 @@ async function exportReportToDocx() {
         img.setAttribute('alt', 'Chart');
         img.setAttribute('style', 'display:block;width:' + liveCanvases[ci].clientWidth + 'px;height:' + liveCanvases[ci].clientHeight + 'px');
         cloneCanvas.parentNode.replaceChild(img, cloneCanvas);
+      });
+    });
+
+    // Quarterly/Annual report: layout blocks Word cannot lay out (hero, rings, status cards, charts) become
+    // pictures of the live page. Must run while each clone still has the same structure as its live page.
+    if (!data._agreement && !data._ashrae && !data._scorecard) {
+      await _docxRasterizeVisualBlocks(pages, pageEls);
+      pageEls.forEach((clone) => clone.setAttribute('data-dx-live-widths', '1')); // table columns take the PDF's widths
+    }
+
+    pageEls.forEach((clone) => {
+      CHROME_SELECTORS.forEach((sel) => {
+        clone.querySelectorAll(sel).forEach((el) => el.remove());
       });
     });
 
