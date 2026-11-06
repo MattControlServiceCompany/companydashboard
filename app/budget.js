@@ -45,8 +45,7 @@ function saveBudgetData(projId, data) {
 function _getOrInitBudgetData(projId) {
   let d = loadBudgetData(projId);
   if (!d) {
-    d = { projId: String(projId), fiscalYearStart: '07', budgets: [] };
-    saveBudgetData(projId, d);
+    d = { projId: String(projId), fiscalYearStart: '07', budgets: [] }; // in memory only: a render must not save; every edit saves through saveBudgetData
   }
   return d;
 }

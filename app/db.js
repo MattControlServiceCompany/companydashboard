@@ -1923,9 +1923,22 @@ const DB = (() => {
       _enqueueWrite(key, payload);
       return;
     }
-    // A delete of a key this browser never stamped (the server has no row) cannot succeed: the server answers 400
-    // "no baseVersion". Nothing to delete, nothing to queue (Clear All Data removes keys that may not exist).
-    if (payload.deleted && !_replicaVersions[key] && !_hasQueuedWrite(key)) return;
+    // A delete of a key this browser never stamped: ask the server (manifest). No row, or already deleted: nothing
+    // to send (the server would answer 400 "no baseVersion"). A row another user made after this page loaded: stamp
+    // its version and send the delete with it, so a real delete is never dropped. No answer: keep it queued.
+    if (payload.deleted && !_replicaVersions[key] && !_hasQueuedWrite(key)) {
+      let man;
+      try {
+        man = await _withAuthRetry(() => _fetchManifestWithTimeout(MANIFEST_TIMEOUT_MS));
+      } catch (e) {
+        _enqueueWrite(key, payload);
+        return;
+      }
+      const wk = _wireKey(key);
+      const row = Array.isArray(man) ? man.find((m) => m && m.key === wk) : null;
+      if (!row || row.deleted) return;
+      _setSynced(key, { version: row.version, hash: row.hash || null });
+    }
     // A value the server already holds is not sent (opening a pane, a render
     // that re-saves, a migration that changes nothing).
     if (!payload.deleted && !(await _valueChanged(key, payload.value))) {

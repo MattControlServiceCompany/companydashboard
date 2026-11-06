@@ -842,18 +842,14 @@ function _renderSavingsContent(wrap, projId) {
   }
   const sd = getProjSavingsData(projId);
   const bldgs = getUDBldgs(projId);
-  let _migrated = followOwnerMeasureRates(projId, sd);
+  followOwnerMeasureRates(projId, sd);
   sd.measures.forEach((m) => {
-    if (!m.rates) _migrated = initMeasureRates(m, projId, m.bldgId, 'matrix render') || _migrated; // rates-ok: existence check, init writes through writeRateSet
-    // Migrate missing selected field (undefined → true)
-    if (m.selected === undefined) {
-      m.selected = true;
-      _migrated = true;
-    }
+    if (!m.rates) initMeasureRates(m, projId, m.bldgId, 'matrix render'); // rates-ok: existence check, init writes through writeRateSet
+    // Missing selected field (undefined → true)
+    if (m.selected === undefined) m.selected = true;
   });
-  if (_migrated) sset('en_projects', projects);
+  // No write here: this is a render. The defaults above live in memory and are saved with the next edit a person makes.
   // Auto-sync SQFT from current building data if measure has a building assigned
-  let _sqftChanged = false;
   sd.measures.forEach((m) => {
     if (m.bldgId) {
       const bldg = getUDBldg(projId, m.bldgId);
@@ -861,12 +857,10 @@ function _renderSavingsContent(wrap, projId) {
         const bldgSqft = parseFloat(bldg.sqft) || 0;
         if (bldgSqft > 0 && (m.sqft || 0) !== bldgSqft) {
           m.sqft = bldgSqft;
-          _sqftChanged = true;
         }
       }
     }
   });
-  if (_sqftChanged) sset('en_projects', projects);
   const MO = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
 
   // ── Collapsible month header helper ──

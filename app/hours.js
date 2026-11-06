@@ -77,8 +77,7 @@ function saveHoursData(projId, data) {
 function _getOrInitHoursData(projId) {
   let d = loadHoursData(projId);
   if (!d) {
-    d = { projId: projId, entries: [] };
-    saveHoursData(projId, d);
+    d = { projId: projId, entries: [] }; // in memory only: a render must not save; every edit saves through saveHoursData
   }
   return d;
 }

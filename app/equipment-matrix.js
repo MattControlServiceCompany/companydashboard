@@ -4474,14 +4474,19 @@ function emUpdateStickyOffsets() {
 }
 
 /* A remote update of this project's matrix redraws the open page. chDropStoreCaches (below) marks the
-   project here; the next emRenderMatrix for the SAME project keeps the view. The mark is used once and
-   ends after 60 seconds, so a later open of the page starts from the default view. */
-var _emKeepViewOnce = null; // { pid, until }
+   project here while the matrix tab is open; the FIRST emRenderMatrix for the SAME project after that keeps
+   the view and clears the mark. A tab switch or a project change (chViewChanged, not sent by the refresh
+   redraw itself, see app/core.js) clears it too. No clock: a redraw held back by edit mode or a dialog still
+   keeps the view however long it waits. */
+var _emKeepViewOnce = null; // { pid }
 function _emTakeKeepView(pid) {
   var k = _emKeepViewOnce;
   _emKeepViewOnce = null;
-  return !!(k && Date.now() < k.until && String(k.pid) === String(pid));
+  return !!(k && String(k.pid) === String(pid));
 }
+if (typeof window.addEventListener === 'function') window.addEventListener('chViewChanged', function () {
+  if (!window._chRefreshing) _emKeepViewOnce = null;
+});
 
 function emRenderMatrix(container, data, pid) {
   window._emActivePid = pid;
@@ -24553,8 +24558,9 @@ if (typeof window.addEventListener === 'function') window.addEventListener('chDr
     })
   )
     return;
-  if (window._emActivePid && document.getElementById('em-table-wrap')) {
-    _emKeepViewOnce = { pid: window._emActivePid, until: Date.now() + 60000 };
+  var _emTabEl = document.getElementById('ptab-eq-matrix');
+  if (window._emActivePid && document.getElementById('em-table-wrap') && _emTabEl && _emTabEl.classList.contains('active')) {
+    _emKeepViewOnce = { pid: window._emActivePid };
   }
   _emSelfHealDone = {};
   _emRowByIdCache = {};

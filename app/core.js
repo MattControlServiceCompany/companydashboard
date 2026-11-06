@@ -841,7 +841,14 @@ function chRefreshFromStore(keys, draw) {
     sv(viewId);
   }
 }
-window.addEventListener('chRefreshFromStore', (e) => chRefreshFromStore(e.detail && e.detail.keys, e.detail && e.detail.draw));
+window.addEventListener('chRefreshFromStore', (e) => {
+  window._chRefreshing = true; // the redraw below sends chViewChanged (sv); modules that keep a mark across the redraw ignore it
+  try {
+    chRefreshFromStore(e.detail && e.detail.keys, e.detail && e.detail.draw);
+  } finally {
+    window._chRefreshing = false;
+  }
+});
 // The user left the view or changed a tab. app/sync-ui.js clears its dirty mark and runs a pending redraw.
 function chViewChanged() {
   window.dispatchEvent(new CustomEvent('chViewChanged'));

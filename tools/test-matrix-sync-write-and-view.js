@@ -144,6 +144,16 @@ async function expireAction(page) {
     s = await state();
     assert(s.auditActive && !s.rawActive, 'a normal render later starts from Audit View');
 
+    // A pending mark (a refresh that has not redrawn yet) ends with a tab switch: coming back starts in Audit View.
+    await page.locator('#em-raw-btn').click();
+    await page.evaluate((pid) => window.dispatchEvent(new CustomEvent('chDropStoreCaches', { detail: { keys: ['en_eqmatrix_' + pid] } })), PID);
+    await page.locator('#pdTabBar .pdt[data-tab="dashboard"]').click();
+    await page.waitForTimeout(500);
+    await page.locator('#pdTabBar .pdt[data-tab="eq-matrix"]').click();
+    await page.waitForTimeout(1500);
+    s = await state();
+    assert(s.auditActive && !s.rawActive, 'a pending keep-view mark ends with a tab switch (no clock)');
+
     // ---- Defect 2: Save Edits click is a user action ----
     await page.locator('#em-raw-btn').click();
     await page.locator('#em-edit-mode-btn').click();
