@@ -44,6 +44,7 @@ const CSV = [
 const rows = new Map(); // key -> { value, version, deleted }
 const puts = []; // { key, deleted, baseVersion, value, status }
 let nextHash = 1;
+let kvMode = 'ok'; // 'ok' | 'down' (every request fails) | 'no-manifest' (the manifest never answers in time)
 function setRow(key, value) {
   const r = rows.get(key);
   rows.set(key, { value, version: r ? r.version + 1 : 1, deleted: false });
@@ -51,6 +52,11 @@ function setRow(key, value) {
 function handleKv(route) {
   const req = route.request();
   const url = new URL(req.url());
+  if (kvMode === 'down') return route.abort();
+  if (kvMode === 'no-manifest' && req.method() === 'GET' && url.searchParams.get('manifest')) {
+    setTimeout(() => route.abort().catch(() => {}), 6000); // no answer inside the page's 4 s wait
+    return;
+  }
   const json = (status, body) => route.fulfill({ status, contentType: 'application/json', body: JSON.stringify(body) });
   if (req.method() === 'GET') {
     if (url.searchParams.get('manifest')) {
@@ -70,8 +76,8 @@ function handleKv(route) {
         rec.status = 400;
         return json(400, { error: 'Cannot tombstone a key with no baseVersion - key must already exist' });
       }
+      if (!cur.deleted) cur.version += 1; // a delete of an already deleted row changes nothing
       cur.deleted = true;
-      cur.version += 1;
       rec.status = 200;
       return json(200, { version: cur.version, hash: 'd' + nextHash++, deleted: true });
     }
@@ -126,7 +132,9 @@ async function openMatrix(page) {
   await page.locator('#projTableBody tr', { hasText: 'Fixture Project' }).first().locator('td').first().click();
   await page.waitForTimeout(1200);
   await page.locator('#pdTabBar .pdt[data-tab="eq-matrix"]').click();
-  await page.waitForTimeout(1800);
+  await page.waitForTimeout(1200);
+  await page.locator('#ptab-eq-matrix .ptab-subbar [data-sub="matrix"]').click(); // the sub-view is remembered across loads
+  await page.waitForTimeout(800);
 }
 const expireAction = async (page) => {
   await page.evaluate(() => DB.noteUserAction('test: expired', 1));
@@ -229,6 +237,31 @@ const expireAction = async (page) => {
     }
     const stray = puts.slice(n);
     assert(stray.length === 0, 'no PUT from clicks and renders in any project tab' + (stray.length ? ': ' + stray.map((x) => x.key).join(', ') : ''));
+    // 5. Offline Clear All Data, then back online: the queue empties with no 400 and no failed entry
+    // 6. The manifest does not answer (timeout), then a retry: same result
+    for (const mode of ['down', 'no-manifest']) {
+      kvMode = 'ok';
+      setRow(MK, matrix);
+      await signInAndOpen(page, false);
+      await openMatrix(page);
+      const before = puts.length;
+      kvMode = mode;
+      await expireAction(page);
+      await page.locator('#em-clear-all-btn').click();
+      await page.waitForTimeout(mode === 'down' ? 2500 : 6500);
+      const queued = await page.evaluate(() => DB.getQueueDepth());
+      assert(queued > 0, mode + ': the deletes wait in the queue (' + queued + ')');
+      assert((await page.evaluate(() => DB.getQueueFailures().length)) === 0, mode + ': waiting is not a failed entry');
+      kvMode = 'ok';
+      await page.evaluate(() => window.dispatchEvent(new Event('online')));
+      await page.waitForTimeout(6000);
+      const after = puts.slice(before);
+      assert(after.some((x) => x.key === MK && x.deleted && x.status === 200), mode + ': the matrix delete reached the server after reconnect');
+      assert(!after.some((x) => x.status === 400), mode + ': no 400 after reconnect' + after.filter((x) => x.status === 400).map((x) => ' ' + x.key.replace(String(PID), '<pid>') + ' base=' + x.baseVersion).join(','));
+      assert((await page.evaluate(() => DB.getQueueDepth())) === 0, mode + ': the queue is empty after reconnect');
+      assert((await page.evaluate(() => DB.getQueueFailures().length)) === 0, mode + ': no failed entry after reconnect');
+      if (process.env.TEST_DEBUG) console.log(JSON.stringify(await page.evaluate(() => ({ f: DB.getQueueFailures(), d: DB.getQueueDepth() }))));
+    }
     assert(errs.length === 0, 'no page errors' + (errs.length ? ': ' + errs[0] : ''));
   } catch (e) {
     failed++;

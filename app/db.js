@@ -1902,6 +1902,33 @@ const DB = (() => {
       return true;
     }
   }
+  // The ONE rule for a delete of a key this browser has no stamp for (Clear All Data removes keys that may not exist
+  // on the server; another user may have made one after this page loaded). Asks the server manifest (one fetch shared
+  // for 5 s, so one Clear All asks once). Returns 'drop' (no row, or already deleted: send nothing, a send would be
+  // answered 400 "no baseVersion"), 'send' (a row exists: its version is stamped, send the delete at it) or 'wait'
+  // (no answer: keep the delete queued and retry later, never a permanent failure).
+  let _delManifest = null; // { at, p }
+  async function _stampOrDropDelete(key) {
+    if (_replicaVersions[key]) return 'send';
+    if (!_delManifest || Date.now() - _delManifest.at > 5000) {
+      const p = _withAuthRetry(() => _fetchManifestWithTimeout(MANIFEST_TIMEOUT_MS));
+      _delManifest = { at: Date.now(), p };
+      p.catch(() => {
+        if (_delManifest && _delManifest.p === p) _delManifest = null;
+      });
+    }
+    let man;
+    try {
+      man = await _delManifest.p;
+    } catch (e) {
+      return 'wait';
+    }
+    const wk = _wireKey(key);
+    const row = Array.isArray(man) ? man.find((m) => m && m.key === wk) : null;
+    if (!row || row.deleted) return 'drop';
+    _setSynced(key, { version: row.version, hash: row.hash || null });
+    return 'send';
+  }
   async function _writeOne(key, payload) {
     const mode = _backendMode();
     if (mode === 'off') {
@@ -1923,21 +1950,18 @@ const DB = (() => {
       _enqueueWrite(key, payload);
       return;
     }
-    // A delete of a key this browser never stamped: ask the server (manifest). No row, or already deleted: nothing
-    // to send (the server would answer 400 "no baseVersion"). A row another user made after this page loaded: stamp
-    // its version and send the delete with it, so a real delete is never dropped. No answer: keep it queued.
-    if (payload.deleted && !_replicaVersions[key] && !_hasQueuedWrite(key)) {
-      let man;
-      try {
-        man = await _withAuthRetry(() => _fetchManifestWithTimeout(MANIFEST_TIMEOUT_MS));
-      } catch (e) {
+    // A delete of a key this browser never stamped: _stampOrDropDelete asks the server (one shared rule, also used by the drain).
+    if (payload.deleted && !_replicaVersions[key]) {
+      const d = await _stampOrDropDelete(key);
+      if (d === 'wait') {
         _enqueueWrite(key, payload);
         return;
       }
-      const wk = _wireKey(key);
-      const row = Array.isArray(man) ? man.find((m) => m && m.key === wk) : null;
-      if (!row || row.deleted) return;
-      _setSynced(key, { version: row.version, hash: row.hash || null });
+      if (d === 'drop') {
+        _syncQueue = _syncQueue.filter((e) => !(e.key === key && _entryOwnerKey(e.owner) === _entryOwnerKey(payload.owner)));
+        _persistSyncQueue();
+        return;
+      }
     }
     // A value the server already holds is not sent (opening a pane, a render
     // that re-saves, a migration that changes nothing).
@@ -2000,6 +2024,18 @@ const DB = (() => {
       const payload = entry.deleted
         ? { deleted: true, owner: entry.owner, cause: entry.cause }
         : { value: entry.value, owner: entry.owner, cause: entry.cause };
+      // A delete with no stamp: the shared rule decides (drop it, stamp it, or wait for an answer).
+      if (entry.deleted && !_replicaVersions[entry.key]) {
+        const d = await _stampOrDropDelete(entry.key);
+        if (epoch !== _identityEpoch) return;
+        if (d === 'drop') {
+          _queueFailures.delete(entry.key);
+          _syncQueue = _syncQueue.filter((e) => e.id !== entry.id);
+          _persistSyncQueue();
+          continue;
+        }
+        if (d === 'wait') continue; // no answer yet: stays queued, retried next cycle, not a failure
+      }
       // _sendKvPut always reads baseVersion from the live _replicaVersions
       // map (not entry.baseVersion) — a real conflict still 409s honestly.
       let result;
