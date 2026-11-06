@@ -3461,6 +3461,77 @@ await t("8p: edit made after a real sign-out (identity marker blank): another us
   assert.strictEqual(puts.filter((p) => p.value === "U-edit").length, 1, "A gets it back and it is sent once");
   assert.strictEqual(L4.DB.getQueueDepth(), 0);
 });
+// Review 2026-11-06 (HIGH): A edits a list offline at base v1 and signs out. B signs in, syncs v2 and changes the list.
+// A returns. A's edit must be applied, B's change must survive, and no record may vanish without a copy.
+async function twoUsersListScenario(aEdit, bEdit, stripBase) {
+  const S = {};
+  const srv = makeServer({ en_projects: [{ id: "p1", name: "one" }] });
+  const kv = async (u, o) => srv.fetchImpl(u, o);
+  const L1 = loadReal({ userId: "u1", store: S, tokenFetch: tokUser("u1"), kvFetch: kv });
+  await L1.DB.warmCache();
+  await tick(150);
+  srv.failPut = true; // A is offline: the edit stays queued
+  L1.DB.set("en_projects", aEdit);
+  await tick(80);
+  assert.strictEqual(JSON.parse(S.ch_sync_queue).length, 1, "A's edit is queued");
+  srv.failPut = false;
+  await L1.A.signOut();
+  await tick(100);
+  const L2 = loadReal({ userId: "u2", store: S, tokenFetch: tokUser("u2"), kvFetch: kv });
+  await L2.DB.warmCache();
+  await tick(250);
+  assert.ok(!JSON.stringify(L2.DB.get("en_projects")).includes("A-"), "B never sees A's unsent edit");
+  L2.DB.set("en_projects", bEdit);
+  await tick(250);
+  assert.strictEqual(srv.rows.en_projects.version, 2, "B's change reached the server (v2)");
+  srv.rows.en_projects.updatedBy = "u2@example.com";
+  if (stripBase) {
+    // an entry queued by an older build has no merge base: the wrong base (B's copy) is used, the safety net must catch it
+    const q = JSON.parse(S.ch_sync_queue);
+    q.forEach((e) => delete e.base);
+    S.ch_sync_queue = JSON.stringify(q);
+  }
+  const L3 = loadReal({ userId: "u1", store: S, tokenFetch: tokUser("u1"), kvFetch: kv });
+  await L3.DB.warmCache();
+  await tick(500);
+  return { S, srv, kv, L3 };
+}
+await t("8q: A's offline list edit meets B's newer version: A's edit applied, B's item X kept, nothing dropped", async () => {
+  const { srv, L3 } = await twoUsersListScenario(
+    [{ id: "p1", name: "one" }, { id: "pA", name: "A-edit" }],
+    [{ id: "p1", name: "one" }, { id: "pX", name: "B-item-X" }],
+  );
+  const ids = (v) => (v || []).map((x) => x.id).sort().join(",");
+  assert.strictEqual(ids(srv.rows.en_projects.value), "p1,pA,pX", "server holds all three: " + JSON.stringify(srv.rows.en_projects.value));
+  assert.strictEqual(ids(L3.DB.get("en_projects")), "p1,pA,pX", "A's page holds all three");
+  assert.strictEqual(L3.DB.getQueueDepth(), 0, "queue emptied");
+});
+await t("8r: the server value a later save replaces is archived with its writer (B) as owner, and B sees it", async () => {
+  const { S, srv, kv, L3 } = await twoUsersListScenario(
+    [{ id: "p1", name: "A-rename" }],
+    [{ id: "p1", name: "B-rename" }],
+  );
+  assert.strictEqual(srv.rows.en_projects.value[0].name, "A-rename", "the later save (A) wins");
+  const mine = L3.DB.getConflictArchive().filter((e) => JSON.stringify(e.losingValue || "").includes("B-rename"));
+  assert.strictEqual(mine.length, 1, "B's replaced record is in the history once");
+  assert.strictEqual(mine[0].owner.email, "u2@example.com", "owner = writer of the replaced value: " + JSON.stringify(mine[0].owner));
+  const L4 = loadReal({ userId: "u2", store: S, tokenFetch: tokUser("u2"), kvFetch: kv });
+  await L4.DB.warmCache();
+  await tick(200);
+  assert.ok(JSON.stringify(L4.DB.getConflictArchive()).includes("B-rename"), "B sees it in Past conflicts");
+});
+await t("8s: wrong merge base (no base stored with the entry): the server record the merge drops is archived, owner B", async () => {
+  const { srv, L3 } = await twoUsersListScenario(
+    [{ id: "p1", name: "one" }, { id: "pA", name: "A-edit" }],
+    [{ id: "p1", name: "one" }, { id: "pX", name: "B-item-X" }],
+    true,
+  );
+  const x = L3.DB.getConflictArchive().filter((e) => e.reason === "merge-removed-server-record" && e.recordId === "pX");
+  assert.strictEqual(x.length, 1, "X copied to the history");
+  assert.strictEqual(x[0].losingValue.name, "B-item-X");
+  assert.strictEqual(x[0].owner.email, "u2@example.com");
+  assert.ok(srv.puts.some((b) => b.explicitOverwrite === true), "the server is asked to keep its replaced row in kv_history");
+});
 await t("8l: a load with no edit sends 0 PUT (reload and reopen)", async () => {
   const S = {};
   const L1 = loadReal({

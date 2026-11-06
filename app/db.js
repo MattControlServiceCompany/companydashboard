@@ -628,6 +628,11 @@ const DB = (() => {
         _replicaVersions[e.key] = { version: e.baseVersion, hash: null };
         _persistStamp(e.key);
       }
+      // The merge base of a list key is the one the edit was made on (stored with the entry), not the copy another
+      // user may have synced here meanwhile. In memory only: the next sync of the key writes a matching pair.
+      if (!_isPerUserKey(e.key) && e.base !== undefined && _collectionCfg(e.key)) {
+        _syncBase[e.key] = JSON.parse(JSON.stringify(e.base));
+      }
       if (e.deleted) {
         delete _cache[e.key];
         _rawDelete(e.key);
@@ -708,7 +713,7 @@ const DB = (() => {
     _syncQueue = _syncQueue.filter(
       (e) => !(e.key === key && _entryOwnerKey(e.owner) === _entryOwnerKey(owner)),
     );
-    _syncQueue.push({
+    const entry = {
       id: _genId(),
       key,
       owner,
@@ -720,7 +725,13 @@ const DB = (() => {
           ? _replicaVersions[key].version
           : null,
       ts: Date.now(),
-    });
+    };
+    // A list key keeps the merge base (the server copy this edit was made on) WITH the edit. Another user can
+    // sync the same key before this author returns; the 3-way merge must still use the author's own base.
+    if (_collectionCfg(key) && !payload.deleted && _own(_syncBase, key) && typeof entry.baseVersion === 'number') {
+      entry.base = JSON.parse(JSON.stringify(_syncBase[key]));
+    }
+    _syncQueue.push(entry);
     _persistSyncQueue();
     _scheduleDrain();
   }
@@ -1494,9 +1505,46 @@ const DB = (() => {
       removedLocal: ls.removed,
     };
   }
+  // Owner tag for a SERVER value that a merge or save replaces: the person who wrote it, when known.
+  // The server gives the writer's email (updatedBy). A per-user key's row is always the signed-in user's own.
+  function _ownerOfServerValue(key, updatedBy) {
+    const mine = _queueOwner();
+    if (_isPerUserKey(key) || !updatedBy) return mine;
+    let myEmail = null;
+    try {
+      myEmail = window.CH_AUTH && window.CH_AUTH.getEmail ? window.CH_AUTH.getEmail() : null;
+    } catch (e) {
+      myEmail = null;
+    }
+    if (myEmail && String(myEmail).toLowerCase() === String(updatedBy).toLowerCase()) return mine;
+    return { id: null, email: String(updatedBy), hintId: null };
+  }
+  // Server records that are not in the merge result were removed by the merge. Each one is copied to the conflict
+  // history first (the safety net for a wrong merge base: no record is lost without a recoverable copy).
+  // Returns how many were copied.
+  function _archiveServerRecordsDropped(key, mergedValue, serverValue, updatedBy) {
+    if (serverValue === undefined || serverValue === null) return 0;
+    const kept = _itemIds(key, mergedValue);
+    const dropped = [];
+    _itemIds(key, _dropTombstoned(key, serverValue).value).forEach((item, id) => {
+      if (!kept.has(id)) dropped.push({ id, item });
+    });
+    dropped.forEach((d) => {
+      _appendConflictArchive({
+        key,
+        reason: 'merge-removed-server-record',
+        recordId: d.id,
+        losingSide: 'server',
+        losingValue: d.item,
+        winningSide: 'local',
+        owner: _ownerOfServerValue(key, updatedBy),
+      });
+    });
+    return dropped.length;
+  }
   // Same record changed on both sides: the local (later) record replaces the server one. The server
   // record is archived first, for every conflict.
-  function _applyLaterSaveWinsRecords(key, merge) {
+  function _applyLaterSaveWinsRecords(key, merge, updatedBy) {
     const cfg = _collectionCfg(key);
     const mine = new Map();
     merge.conflicts.forEach((c) => {
@@ -1507,6 +1555,7 @@ const DB = (() => {
         losingSide: 'server',
         losingValue: c.server,
         winningSide: 'local',
+        owner: _ownerOfServerValue(key, updatedBy),
       });
       mine.set(String(c.id), c.local);
     });
@@ -1616,6 +1665,7 @@ const DB = (() => {
       winningVersion: current.version,
       winningUpdatedBy: current.updatedBy,
       winningUpdatedAt: current.updatedAt,
+      owner: _ownerOfServerValue(key, current.updatedBy),
     });
     await _saveOverServer(key, payload, current, epoch, depth);
   }
@@ -1656,7 +1706,10 @@ const DB = (() => {
     let value = merge.value;
     // The same record changed on both sides: the later save (this write) wins. The server record it replaces
     // goes to the conflict history here and to kv_history on the server (explicitOverwrite on the re-send).
-    if (merge.conflicts.length) value = _applyLaterSaveWinsRecords(key, merge);
+    if (merge.conflicts.length) value = _applyLaterSaveWinsRecords(key, merge, current.updatedBy);
+    // A server record the merge drops without a field conflict (a wrong merge base): copy it to the history here
+    // and let the server copy it to kv_history (explicitOverwrite on the re-send).
+    const droppedServer = _archiveServerRecordsDropped(key, value, current.value, current.updatedBy);
     await _rawSet(key, value);
     if (epoch !== _identityEpoch) return true;
     if (typeof window !== 'undefined') {
@@ -1665,7 +1718,7 @@ const DB = (() => {
     _setSynced(key, { version: current.version, hash: current.hash || null }, current.value);
     // The merge result IS the server value (the other user already wrote every record we hold): nothing to send.
     if (!merge.conflicts.length && _sameCanonical(key, value, current.value)) return true;
-    await _resendMerged(key, value, epoch, depth, merge.conflicts.length > 0);
+    await _resendMerged(key, value, epoch, depth, merge.conflicts.length > 0 || droppedServer > 0);
     if (merge.conflicts.length) _announceResolvedView(key, epoch); // redraw with the merged result
     // Background history lists (calendar and BAS import history, audit log) are written by the app, not typed by the
     // user, and often on page load: a merge there is not news, so no "merged with yours" message.
