@@ -188,7 +188,7 @@ about 0.4 credits a day, and 0 for a hidden or closed tab. The text below about 
   WINS: this write is sent again at the server version just seen with `explicitOverwrite`, cause "Sync conflict: later
   save wins". The server value it replaces is copied to the local Conflict history (reason `write-conflict-later-save-wins`
   or `record-conflict`, `losingSide: 'server'`) and kv-sync.js copies the replaced row to `kv_history`. The user sees only
-  the toast "Changes saved by another user were merged with yours. Nothing was lost." A newer 409 on the re-send runs
+  one of two toasts, each defined once in app/db.js (`TOAST_SAVED_OVER_EARLIER`, `TOAST_MERGED`): when the later save replaced a value (same field, list or whole key) "Saved. Another user's earlier change to this item is kept in history."; only a merge with no clash says "Changes saved by another user were merged with yours. Nothing was lost." A newer 409 on the re-send runs
   the same rule again (bounded by `CONFLICT_RESEND_CAP` = 4, then the retry queue). A deletion on either side follows the
   same rule. A key with no version stamp whose local value differs from the server (first load) keeps the server copy and
   copies the local value to Conflict history (`_reconcileIncoming`, reason `hydration-server-wins`); nothing is sent.

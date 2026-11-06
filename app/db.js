@@ -1551,6 +1551,10 @@ const DB = (() => {
   // The identity epoch is captured here and re-checked after every await: a
   // conflict resolved after a user switch writes nothing.
   const CONFLICT_RESEND_CAP = 4;
+  // The two messages a user can see after a conflict resolves by itself. ONE text per outcome, used by every path:
+  // the later save replaced the other user's value (same field or whole key), or both sides merged with no clash.
+  const TOAST_SAVED_OVER_EARLIER = "Saved. Another user's earlier change to this item is kept in history.";
+  const TOAST_MERGED = 'Changes saved by another user were merged with yours. Nothing was lost.';
   async function _handleConflict(key, payload, body, mode, depth) {
     depth = depth || 0;
     const epoch = _identityEpoch;
@@ -1677,7 +1681,7 @@ const DB = (() => {
     // user, and often on page load: a merge there is not news, so no "merged with yours" message.
     const quietMerge = !merge.conflicts.length && _isBackgroundList(key);
     if (!quietMerge && epoch === _identityEpoch && typeof showToast === 'function') {
-      showToast('Changes saved by another user were merged with yours. Nothing was lost.', 'info');
+      showToast(merge.conflicts.length ? TOAST_SAVED_OVER_EARLIER : TOAST_MERGED, 'info');
     }
     return true;
   }
@@ -1700,7 +1704,7 @@ const DB = (() => {
     if (epoch !== _identityEpoch) return;
     if (result.status === 'ok') {
       if (typeof showToast === 'function') {
-        showToast("Saved. Another user's earlier change to this item is kept in history.", 'info');
+        showToast(TOAST_SAVED_OVER_EARLIER, 'info');
       }
       return;
     }

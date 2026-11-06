@@ -685,15 +685,17 @@ const ok = (body) => ({ ok: true, status: 200, json: async () => body });
     { id: 'p1', name: 'Alpha', note: 'base' },
     { id: 'p2', name: 'Beta', note: 'base' },
   ];
-  async function sameFieldConflict() {
+  async function sameFieldConflict(otherField) {
     const KEY = 'en_projects';
     const srv = makeServer({ [KEY]: projects0() });
     const asked = [];
+    const toasts = [];
     const L = load({
       mode: 'on',
       syncHost: true,
       classify: false,
       fetchImpl: srv.fetchImpl,
+      toast: (m) => toasts.push(m),
       modal: async (d) => {
         asked.push(d); // must never be called: the engine resolves the conflict itself
         return { action: 'dismiss' };
@@ -706,11 +708,12 @@ const ok = (body) => ({ ok: true, status: 200, json: async () => body });
     srv.rows[KEY] = { value: theirs, version: 2, hash: 'h2' };
     // Like a page: edit the object the cache holds, then save the same reference.
     const A = L.DB.get(KEY);
-    A[0].note = 'MINE';
+    if (otherField) A[0].name = 'Alpha2'; // a different field of the same record: a true merge, no clash
+    else A[0].note = 'MINE';
     await L.DB.set(KEY, A);
     await settle();
     const entries = L.DB.getConflictArchive().filter((e) => e.reason === 'record-conflict');
-    return { srv, L, asked, entries, KEY };
+    return { srv, L, asked, entries, KEY, toasts };
   }
   const noteOf = (v) => v[0].note;
   await t('M2 same field: the later save wins with no dialog; the replaced server version is in the conflict history and the server write is flagged', async () => {
@@ -723,6 +726,25 @@ const ok = (body) => ({ ok: true, status: 200, json: async () => body });
     assert.strictEqual(noteOf(L.DB.get(KEY)), 'MINE', 'local keeps it');
     assert.strictEqual(L.DB.getQueueDepth(), 0, 'nothing left in the queue');
     assert.strictEqual(srv.puts[srv.puts.length - 1].explicitOverwrite, true, 'the server copies the old row to kv_history');
+  });
+  // 2026-11-05 (#4): ONE message per outcome. A replaced value says "kept in history"; only a clash-free merge says "merged".
+  const TOAST_REPLACED = "Saved. Another user's earlier change to this item is kept in history.";
+  const TOAST_MERGED = 'Changes saved by another user were merged with yours. Nothing was lost.';
+  const conflictToast = (m) => m === TOAST_REPLACED || m === TOAST_MERGED; // the harness also shows an unrelated storage toast
+  await t('toast: same field changed on a list key: "Saved. ... kept in history" once, never "merged with yours"', async () => {
+    const { toasts } = await sameFieldConflict(false);
+    assert.deepStrictEqual(toasts.filter(conflictToast), [TOAST_REPLACED]);
+  });
+  await t('toast: different fields of one record on a list key (true merge): "merged with yours", never "kept in history"', async () => {
+    const { toasts, srv, KEY } = await sameFieldConflict(true);
+    assert.deepStrictEqual(toasts.filter(conflictToast), [TOAST_MERGED]);
+    assert.strictEqual(srv.rows[KEY].value[0].name, 'Alpha2');
+    assert.strictEqual(srv.rows[KEY].value[0].note, 'THEIRS');
+  });
+  await t('toast: db.js holds each toast text once (one shared constant per outcome)', () => {
+    const src = fs.readFileSync(path.join(__dirname, 'app', 'db.js'), 'utf8');
+    assert.strictEqual(src.split(TOAST_REPLACED).length - 1, 1, 'replaced-value text appears once');
+    assert.strictEqual(src.split(TOAST_MERGED).length - 1, 1, 'merged text appears once');
   });
   await t('M2 utility data: a removed building on one side and a rename on the other both apply', async () => {
     const KEY = 'en_utility_cust_1';
