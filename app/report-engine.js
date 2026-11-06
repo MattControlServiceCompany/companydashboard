@@ -1679,19 +1679,19 @@ function _rptFooterLabelText(data, escape) {
 // kWh, kW, kBtu/ft2, $/kWh, $/kW and $/therm into KWH, KW, KBTU/FT2. Each unit goes into a span that opts out of the
 // capitals and does not wrap. The Word export reads the same span (text-transform:none), so PDF and Word agree.
 // rptPage() calls it for every page, so no table builder needs its own copy.
-var _RPT_UNIT_RE = /(\(?)(\$\/(?:kWh|kW|therm|gal)|kBtu\/ft(?:²|&sup2;)(?:\/yr)?|kWh|kW|MMBtu)(\)?)(?![A-Za-z])/gi;
-function _rptUnitRealCase(u) {
-  return u.toLowerCase().replace('kbtu', 'kBtu').replace('mmbtu', 'MMBtu').replace(/kwh/, 'kWh').replace(/kw(?!h)/, 'kW');
-}
 function _rptProtectHeaderUnits(html) {
+  var unitRe = /(\(?)(\$\/(?:kWh|kW|therm|gal)|kBtu\/ft(?:²|&sup2;)(?:\/yr)?|kWh|kW|MMBtu)(\)?)(?![A-Za-z])/gi;
+  var realCase = function (u) {
+    return u.toLowerCase().replace('kbtu', 'kBtu').replace('mmbtu', 'MMBtu').replace(/kwh/, 'kWh').replace(/kw(?!h)/, 'kW');
+  };
   return String(html).replace(/<th\b[^>]*>[\s\S]*?<\/th>/gi, function (th) {
     return th
       .split(/(<[^>]*>)/)
       .map(function (part) {
         if (part.charAt(0) === '<') return part;
-        return part.replace(_RPT_UNIT_RE, function (m, open, unit, close, off, whole) {
+        return part.replace(unitRe, function (m, open, unit, close, off, whole) {
           if (off > 0 && /[A-Za-z]/.test(whole.charAt(off - 1))) return m; // inside a word
-          return '<span style="text-transform:none;white-space:nowrap">' + open + _rptUnitRealCase(unit) + close + '</span>';
+          return '<span style="text-transform:none;white-space:nowrap">' + open + realCase(unit) + close + '</span>';
         });
       })
       .join('');

@@ -246,6 +246,7 @@ assert(
 // both land on the sum, end to end, not just via source-text pattern matching.
 const wdOptionFns = [
   loadFn(REPO + '/lib/formatting.js', '_escHtml'),
+  loadFn(REPO + '/app/report-engine.js', '_rptProtectHeaderUnits'),
   loadFn(REPO + '/app/report-engine.js', 'rptPage'),
   loadFn(REPO + '/app/report-engine-woodland.js', '_wdRoundHalfUp'),
   loadFn(REPO + '/app/report-engine-woodland.js', '_wdN'),
