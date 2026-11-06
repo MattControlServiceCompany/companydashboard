@@ -256,12 +256,16 @@ function _rebuildSidebar() {
     if (baseKey && !sk.endsWith('-cont') && !(baseKey in sectionPageMap)) {
       sectionPageMap[baseKey] = { pageIdx: i, isVisible: isVis, pageNum: isVis ? globalVisibleIdx : null };
     }
-    // Sections that share a page (data-subsection) each get their own sidebar row and checkbox.
+    // Sections that share a page (data-subsection) each get their own sidebar row and checkbox. A section whose blocks
+    // sit on several pages (the packed pages of the quarterly report) is visible while one of its blocks is shown.
     pg.querySelectorAll('[data-subsection]').forEach(function (sub) {
       var subKey = sub.getAttribute('data-subsection');
       var subVis = isVis && sub.style.display !== 'none';
-      if (baseKey === subKey) sectionPageMap[subKey].isVisible = subVis;
-      else sectionPageMap[subKey] = { pageIdx: i, isVisible: subVis, pageNum: subVis ? globalVisibleIdx : null };
+      if (!(subKey in sectionPageMap) || (baseKey === subKey && sectionPageMap[subKey].pageIdx === i)) {
+        sectionPageMap[subKey] = { pageIdx: i, isVisible: subVis, pageNum: subVis ? globalVisibleIdx : null };
+      } else if (subVis) {
+        sectionPageMap[subKey].isVisible = true;
+      }
     });
   }
 
@@ -269,6 +273,7 @@ function _rebuildSidebar() {
   // Only record the FIRST visible page per section (not the last).
   var visNum = 0;
   var _seenSectionForPageNum = {};
+  var _seenSubForPageNum = {};
   for (var pi = 0; pi < pages.length; pi++) {
     var pgSk = pages[pi].getAttribute('data-section') || '';
     var pgBase = pgSk.replace(/-cont$/, '');
@@ -280,7 +285,9 @@ function _rebuildSidebar() {
       }
       pages[pi].querySelectorAll('[data-subsection]').forEach(function (sub) {
         var subKey = sub.getAttribute('data-subsection');
-        if (sectionPageMap[subKey]) sectionPageMap[subKey].pageNum = sub.style.display !== 'none' ? visNum : null;
+        if (!sectionPageMap[subKey] || sub.style.display === 'none' || _seenSubForPageNum[subKey]) return;
+        sectionPageMap[subKey].pageNum = visNum;
+        _seenSubForPageNum[subKey] = true;
       });
     }
   }
@@ -398,14 +405,16 @@ function _rptPageKeyOf(key) {
 
 function _setSectionVisible(key, visible) {
   key = _rptPageKeyOf(key);
-  var sub = document.querySelector('#rptPreviewPages [data-subsection="' + key + '"]');
-  if (sub) {
-    sub.style.display = visible ? '' : 'none';
-    var pageEl = sub.closest('.rpt-preview-page');
-    var anyShown = Array.prototype.some.call(pageEl.querySelectorAll('[data-subsection]'), function (x) {
-      return x.style.display !== 'none';
+  var subs = document.querySelectorAll('#rptPreviewPages [data-subsection="' + key + '"]');
+  if (subs.length) {
+    Array.prototype.forEach.call(subs, function (sub) {
+      sub.style.display = visible ? '' : 'none';
+      var pageEl = sub.closest('.rpt-preview-page');
+      var anyShown = Array.prototype.some.call(pageEl.querySelectorAll('[data-subsection]'), function (x) {
+        return x.style.display !== 'none';
+      });
+      pageEl.style.display = anyShown ? '' : 'none';
     });
-    pageEl.style.display = anyShown ? '' : 'none';
     _rebuildSidebar();
     _updatePageNumbers();
     return;

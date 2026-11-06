@@ -2507,6 +2507,11 @@ async function siteResetAllMeterTableSettings() {
    site-ui.js delegates to this array and should NOT maintain its own copy.
 */
 var RELEASE_NOTES = [
+  { v: 'v2026.11.06.243', date: '2026-11-06', title: 'Quarterly report: tables share pages',
+    items: [
+      { type: 'fix', text: 'Reports > Quarterly report: after Observations, tables follow each other on the same page and a new page starts only when the next table does not fit. Building Summaries, Meter Performance, Use Detail, Year-to-Date and the Appendices each start on a new page. A 6-building report is 31 pages, down from 41.' }
+    ]
+  },
   { v: 'v2026.11.06.242', date: '2026-11-06', title: 'Quarterly report: green and red savings, footer below the wave, Observations on one page, restored pages',
     items: [
       { type: 'fix', text: 'Reports > Quarterly report > Building Status & Key Findings: a building that saved energy shows its savings percent in green, and a building that used more shows it in red. The status words (On Track, Below Target) keep their own colors. The Target vs Actual savings figure on the first page follows the same rule.' },

@@ -1706,7 +1706,8 @@ function _rptProtectHeaderUnits(html) {
  * @param {object} options - { data, hero, label, noPageNum, hideIntHdr, smallHeaderImg }
  */
 function rptPage(pageNum, title, bodyHTML, options = {}) {
-  bodyHTML = _rptProtectHeaderUnits(bodyHTML);
+  // unitsProtected: the body is a body the quarterly packer took from pages that rptPage already protected.
+  if (!options.unitsProtected) bodyHTML = _rptProtectHeaderUnits(bodyHTML);
   const data = options.data;
   const isHero = options.hero === true;
   const pageLabel = _escHtml(options.label || 'Page ' + pageNum);
@@ -4244,6 +4245,150 @@ function _rptQMethodPage(n, d, f, letter) {
   return rptPage(n, title, body, { data: d, letterhead: false, label: 'Page ' + n + ' - Method' });
 }
 
+// ---- Page packing of the quarterly report (Matt 2026-11-06) ------------------------------------------------------------
+// The core pages (cover to Observations) keep the page each builder made. Every section after them (flow: true in
+// REPORT_SECTIONS) is cut into UNITS (a heading with its notes and its table, or one block marked data-unit="keep") and the
+// units of one sidebar group are packed onto pages one after the other: a unit goes on the page when the measured body
+// still fits RPT_Q_PAGE_BODY_PX (_rptQBodyFits), else it starts the next page. A new group always starts a new page.
+// A table is never split from its heading. Each unit sits in a data-subsection block of its section, so the preview
+// sidebar toggles it (report-preview.js) and a page with no block left is hidden.
+
+// _rptQPageParts(chunk): the label, title, body and pack attributes of one rendered page, or null for a hero page.
+function _rptQPageParts(chunk) {
+  if (/class="rpt-page rpt-cover"/.test(chunk)) return null;
+  var lab = /^<div class="rpt-pl">([\s\S]*?)<\/div>/.exec(chunk);
+  var tit = /<div class="rpt-pg-title">([\s\S]*?)<\/div>/.exec(chunk);
+  var bs = /<div class="rpt-body">/.exec(chunk);
+  if (!lab || !tit || !bs) return null;
+  var from = bs.index + bs[0].length;
+  var end = chunk.length;
+  ['<div class="rpt-footer-label"', '<div class="rpt-footer rpt-pg-footer"', '<div class="rpt-pg-footer-pagenum"'].forEach(function (m) {
+    var k = chunk.indexOf(m, from);
+    if (k >= 0 && k < end) end = k;
+  });
+  var body = chunk.slice(from, end).replace(/<\/div>\s*$/, '');
+  var tag = /<div class="rpt-page[^"]*"([^>]*)>/.exec(chunk);
+  var attr = function (n) {
+    var m = tag && new RegExp(n + '="([^"]*)"').exec(tag[1]);
+    return m ? m[1] : '';
+  };
+  return { label: lab[1], title: tit[1], body: body, packTitle: attr('data-pack-title'), packFirst: attr('data-pack-first') };
+}
+
+// _rptQTopLevel(body): the top-level elements of an HTML fragment, in order (text outside a tag is its own element).
+function _rptQTopLevel(body) {
+  var re = /<(\/?)([a-zA-Z][\w:-]*)((?:"[^"]*"|'[^']*'|[^>"'])*)>/g;
+  var VOID = /^(br|hr|img|input|meta|link|col)$/i;
+  var out = [];
+  var depth = 0;
+  var start = 0;
+  var m;
+  var flushText = function (to) {
+    if (to > start && body.slice(start, to).trim()) out.push(body.slice(start, to));
+  };
+  while ((m = re.exec(body))) {
+    var closing = m[1] === '/';
+    var selfClosed = /\/\s*$/.test(m[3]) || VOID.test(m[2]);
+    if (depth === 0 && !closing) {
+      flushText(m.index);
+      start = m.index;
+    }
+    if (closing) depth = Math.max(0, depth - 1);
+    else if (!selfClosed) depth++;
+    if (depth === 0) {
+      out.push(body.slice(start, m.index + m[0].length));
+      start = m.index + m[0].length;
+    }
+  }
+  flushText(body.length);
+  return out;
+}
+
+// _rptQUnits(body): the units of a page body, each { html, head, keep } (head = the tag of its first heading, '' when none).
+// A heading starts a new unit when the unit before it already holds a table or list; a note after a table stays with it.
+function _rptQUnits(body) {
+  var els = _rptQTopLevel(body);
+  var units = [];
+  var cur = null;
+  var close = function () {
+    if (cur) units.push(cur);
+    cur = null;
+  };
+  els.forEach(function (el, i) {
+    var tag = ((/^<([a-zA-Z0-9]+)/.exec(el) || [])[1] || '').toLowerCase();
+    var isHead = /^h[1-6]$/.test(tag);
+    var keep = /^<[^>]*data-unit="keep"/.test(el);
+    // A "(continued)" building heading ahead of a sub-heading is made again where a page really breaks.
+    if (tag === 'h2' && / \(continued\)<\/h2>$/.test(el) && /^<h3[ >]/.test(els[i + 1] || '')) return;
+    if (keep) {
+      if (cur && !cur.body) cur.parts.push(el);
+      else {
+        close();
+        cur = { parts: [el], body: true, head: '' };
+      }
+      cur.keep = true;
+      close();
+      return;
+    }
+    if (isHead && cur && cur.body) close();
+    if (!cur) cur = { parts: [], body: false, head: '' };
+    cur.parts.push(el);
+    if (isHead && !cur.head) cur.head = tag;
+    if (/^(table|ul|ol)$/.test(tag) || (tag === 'div' && /<(table|ul|ol)[\s>]/i.test(el))) cur.body = true;
+  });
+  close();
+  return units.map(function (u) {
+    return { html: u.parts.join(''), head: u.head, keep: !!u.keep };
+  });
+}
+
+function _rptQUnescape(t) {
+  return String(t).replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&quot;/g, '"').replace(/&#39;/g, "'").replace(/&amp;/g, '&');
+}
+
+// _rptQPackRun(run, d, st, out): packs the units of one group onto pages and pushes the page HTML to out.
+// run = { units: [{ html, head, key, title, first, label }] }. st = { total (pages so far), titles, keys } is updated.
+function _rptQPackRun(run, d, st, out) {
+  var pages = [];
+  var cur = null;
+  var lastH2 = '';
+  var wrap = function (key, html) {
+    return '<div data-subsection="' + key + '">' + html + '</div>';
+  };
+  var h2Of = function (u) {
+    var m = /<h2[^>]*>([\s\S]*?)<\/h2>/.exec(u.html);
+    return m ? m[1].replace(/\s*\(continued\)$/, '') : '';
+  };
+  run.units.forEach(function (u) {
+    var own = h2Of(u);
+    // lead: the heading of a unit that has none of its own (the page title of its source page). On the page it opens,
+    // the page title says the same, so the heading is added only where the unit follows other units.
+    if (cur && _rptQBodyFits(cur.html + wrap(u.key, u.lead + u.html))) {
+      cur.html += wrap(u.key, u.lead + u.html);
+      cur.keys.push(u.key);
+    } else {
+      // A page that opens with a sub-heading names its building again: "<name> (continued)".
+      var lead = u.head === 'h3' && lastH2 ? '<h2>' + lastH2 + ' (continued)</h2>' : '';
+      cur = { html: wrap(u.key, (u.leadAlways ? u.lead : '') + lead + u.html), u: u, keys: [u.key] };
+      pages.push(cur);
+    }
+    if (own) lastH2 = own;
+  });
+  pages.forEach(function (pg) {
+    var u = pg.u;
+    st.total++;
+    var again = !!st.titles[u.title];
+    st.titles[u.title] = true;
+    var title = again ? u.title + ' (continued)' : u.first || u.title;
+    var key = st.keys[u.key] ? u.key + '-cont' : u.key;
+    pg.keys.forEach(function (k) {
+      st.keys[k] = true;
+    });
+    var label = _rptQUnescape(u.label).replace(/^Page \d+/, 'Page ' + st.total);
+    out.push(_rptQTagPage(rptPage(st.total, title, pg.html, { data: d, letterhead: false, label: label, unitsProtected: true }), key));
+  });
+}
+
 // One section of a merged page. The preview sidebar toggles it by its key (report-preview.js _setSectionVisible).
 function _rptQSub(key, html) {
   return '<div data-subsection="' + key + '">' + html + '</div>';
@@ -4251,10 +4396,16 @@ function _rptQSub(key, html) {
 
 function _rptQuarterReportHTML(d, s) {
   // One section table (REPORT_SECTIONS): each checked section prints its page(s), in the order of the table (the order of the
-  // preview sidebar), or its empty-state text. A section starts a new page. A section row with no qRender (a row that
-  // shares the page of another row, see sameAs) prints no page of its own.
+  // preview sidebar), or its empty-state text. A section row with no qRender (a row that shares the page of another row,
+  // see sameAs) prints no page of its own. A row with flow: true is packed with the rows of its group (_rptQPackRun).
   var pages = [];
   var c = { d: d, f: _rptQFacts(d), s: s, n: 1, letter: 'A', appMap: {} };
+  var st = { total: 0, titles: {}, keys: {} };
+  var run = null;
+  var flush = function () {
+    if (run) _rptQPackRun(run, d, st, pages);
+    run = null;
+  };
   REPORT_SECTIONS.forEach(function (sec) {
     if (!sec.qRender) return;
     if (!(sec.qOn ? sec.qOn(s) : s[sec.key] !== false)) return;
@@ -4267,9 +4418,31 @@ function _rptQuarterReportHTML(d, s) {
     if (!r && sec.qNone) r = emptyPage(sec.qNone(d));
     if (!r) return;
     if (typeof r === 'string') r = { html: r, pageCount: 1 };
-    pages.push(r.tagged ? r.html : _rptQTagPage(r.html, sec.key));
     c.n += r.pageCount;
+    if (sec.flow) {
+      var chunks = r.html.split(/(?=<div class="rpt-pl">)/).filter(function (x) {
+        return x.trim();
+      });
+      var parts = chunks.map(_rptQPageParts);
+      if (parts.every(Boolean)) {
+        if (run && run.group !== sec.group) flush();
+        run = run || { group: sec.group, units: [] };
+        parts.forEach(function (pt) {
+          var base = pt.packTitle || sec.packTitle || pt.title.replace(/ \(continued\)$/, '');
+          _rptQUnits(pt.body).forEach(function (u, ui) {
+            // leadTitle: the page title of the source page names the unit (a building summary has no other name).
+            var lead = ui === 0 && (sec.leadTitle || (!u.head && !u.keep)) ? '<h2>' + pt.title.replace(/ \(continued\)$/, '') + '</h2>' : '';
+            run.units.push({ html: u.html, lead: lead, leadAlways: !!sec.leadTitle, head: lead ? 'h2' : u.head, key: sec.key, title: base, first: pt.packFirst, label: pt.label });
+          });
+        });
+        return;
+      }
+    }
+    flush();
+    pages.push(r.tagged ? r.html : _rptQTagPage(r.html, sec.key));
+    st.total += r.pageCount;
   });
+  flush();
   return _rptQNoBreakMinus(_injectPageNumbers(pages.join('\n')));
 }
 
@@ -4295,12 +4468,14 @@ function _rptQStdPage(r) {
 // of the site after each building's page. Returns { pages: [{ html, key }] }.
 function _rptMeterPerformancePages(d, n, withBaseline) {
   var out = [];
+  var baselines = [];
   var num = n;
+  // data-unit="keep": the packer (_rptQPackRun) never splits this block across pages.
   d.buildings.forEach(function (b) {
     var r = rptPageBuildingSummary(0, d, b);
     if (!r.meterPerfHTML) return;
     var block =
-      '<div style="page-break-inside:avoid;break-inside:avoid;margin-bottom:10px">' +
+      '<div data-unit="keep" style="page-break-inside:avoid;break-inside:avoid;margin-bottom:10px">' +
       '<div style="font-size:12px;font-weight:700;color:var(--rpt-blue);margin-bottom:3px;border-bottom:1px solid var(--rpt-blue-light);padding-bottom:2px">' +
       _escHtml(b.name || 'Building') +
       '</div>' +
@@ -4309,24 +4484,26 @@ function _rptMeterPerformancePages(d, n, withBaseline) {
     var first = !out.length;
     var title = first ? 'Meter Performance (All Buildings)' : 'Meter Performance (continued)';
     out.push({
-      html: rptPage(num, title, block, { data: d, letterhead: false, label: 'Page ' + num + ' — Meter Performance' }),
+      html: rptPage(num, title, block, { data: d, letterhead: false, label: 'Page ' + num + ' — Meter Performance' }).replace('<div class="rpt-page"', '<div class="rpt-page" data-pack-title="Meter Performance" data-pack-first="Meter Performance (All Buildings)"'),
       key: first ? 'meterPerformance' : 'meterPerformance-cont',
     });
     num++;
     if (withBaseline) {
       var bl = rptBuildSiteBaselineData(b, d);
-      if (bl) {
-        out.push({
-          html: rptPage(num, _escHtml(b.name || 'Building') + ' — Baseline Data', bl, {
-            data: d,
-            letterhead: false,
-            label: 'Page ' + num + ' — ' + (b.name || 'Building') + ' Baseline Data',
-          }),
-          key: 'meterPerformance-cont',
-        });
-        num++;
-      }
+      if (bl) baselines.push({ b: b, bl: bl });
     }
+  });
+  // The meter tables of every building come first, then the Building Baseline Data of every building.
+  baselines.forEach(function (x) {
+    out.push({
+      html: rptPage(num, _escHtml(x.b.name || 'Building') + ' — Baseline Data', '<div data-unit="keep">' + x.bl + '</div>', {
+        data: d,
+        letterhead: false,
+        label: 'Page ' + num + ' — ' + (x.b.name || 'Building') + ' Baseline Data',
+      }).replace('<div class="rpt-page"', '<div class="rpt-page" data-pack-title="Building Baseline Data"'),
+      key: 'meterPerformance-cont',
+    });
+    num++;
   });
   return { pages: out };
 }
@@ -13681,6 +13858,7 @@ const REPORT_SECTIONS = [
   },
   {
     key: 'approvedChanges',
+    flow: true,
     label: 'Approved Changes',
     group: 'Main',
     qEmpty: function (d) {
@@ -13692,6 +13870,7 @@ const REPORT_SECTIONS = [
   },
   {
     key: 'setpoints',
+    flow: true,
     label: 'BAS Set Points & Schedules',
     group: 'Main',
     qNone: function (d) {
@@ -13703,6 +13882,9 @@ const REPORT_SECTIONS = [
   },
   {
     key: 'buildingSummaries',
+    flow: true,
+    packTitle: 'Building Summaries',
+    leadTitle: true,
     label: 'Per-Building Summaries (all)',
     group: 'Buildings',
     qRender: function (c) {
@@ -13714,6 +13896,7 @@ const REPORT_SECTIONS = [
   },
   {
     key: 'meterPerformance',
+    flow: true,
     label: 'Per-Building Meter Performance',
     group: 'Buildings',
     qNone: function (d) {
@@ -13735,6 +13918,7 @@ const REPORT_SECTIONS = [
   },
   {
     key: 'electricDetail',
+    flow: true,
     label: 'Electricity Use Detail',
     group: 'Commodity',
     qEmpty: _rptQNoCom('electric', 'electricity'),
@@ -13744,6 +13928,7 @@ const REPORT_SECTIONS = [
   },
   {
     key: 'gasDetail',
+    flow: true,
     label: 'Natural Gas Use Detail',
     group: 'Commodity',
     qEmpty: _rptQNoCom('gas', 'gas'),
@@ -13753,6 +13938,7 @@ const REPORT_SECTIONS = [
   },
   {
     key: 'propaneDetail',
+    flow: true,
     label: 'Propane Use Detail',
     group: 'Commodity',
     qEmpty: _rptQNoCom('propane', 'propane'),
@@ -13764,6 +13950,7 @@ const REPORT_SECTIONS = [
   // closing "Year-to-Date / Overall Performance" section, so the picker groups them.
   {
     key: 'euiBenchmarking',
+    flow: true,
     label: 'Site Energy Use Intensity Benchmarking',
     group: 'Year-to-Date',
     qRender: function (c) {
@@ -13772,6 +13959,7 @@ const REPORT_SECTIONS = [
   },
   {
     key: 'yearToDate',
+    flow: true,
     label: 'Year-to-Date Monthly Trend',
     group: 'Year-to-Date',
     qRender: function (c) {
@@ -13780,6 +13968,7 @@ const REPORT_SECTIONS = [
   },
   {
     key: 'contractProjection',
+    flow: true,
     label: 'Contract Projection',
     group: 'Year-to-Date',
     qRender: function (c) {
@@ -13788,6 +13977,7 @@ const REPORT_SECTIONS = [
   },
   {
     key: 'appendixA',
+    flow: true,
     label: 'Appendix A: Normalization & Baseline',
     group: 'Appendices',
     qRender: function (c) {
@@ -13798,6 +13988,7 @@ const REPORT_SECTIONS = [
   },
   {
     key: 'appendixB',
+    flow: true,
     label: 'Appendix B: Regression Model Methodology',
     group: 'Appendices',
     qRender: function (c) {
@@ -13809,6 +14000,7 @@ const REPORT_SECTIONS = [
   },
   {
     key: 'appendixC',
+    flow: true,
     label: 'Appendix C: Weather Data',
     group: 'Appendices',
     qRender: function (c) {
@@ -13820,6 +14012,7 @@ const REPORT_SECTIONS = [
   },
   {
     key: 'appendixD',
+    flow: true,
     label: 'Appendix D: Utility Bills',
     group: 'Appendices',
     defaultOff: true,

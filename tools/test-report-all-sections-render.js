@@ -46,7 +46,7 @@ const ok = (c, m) => {
       };
       const on = {};
       REPORT_SECTIONS.forEach((s) => (on[s.key] = !s.defaultOff));
-      const keysOf = (html) => [...html.matchAll(/data-section="([^"]+)"/g)].map((m) => m[1]);
+      const keysOf = (html) => [...html.matchAll(/data-(?:sub)?section="([^"]+)"/g)].map((m) => m[1]);
       let html;
       try {
         html = _rptQuarterReportHTML(d, on);
