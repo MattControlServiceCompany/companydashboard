@@ -2537,11 +2537,10 @@ function _rptQTerms(d) {
       _escHtml(d.project.blStart) + ' through ' + _escHtml(d.project.blEnd) + ', evaluated at the ' + ((d.period && d.period.year ? d.period.year : 0) - 1) +
       ' weather (billed kW: the weather of the month reported).',
     measured: 'Savings measured is the baseline cost minus the actual cost.',
-    billed: 'Savings billed is the amount invoiced under the contract. Shared savings for a contract quarter cannot go below $0, so a quarter below zero is billed at $0.',
+    billed: 'Savings billed is the amount invoiced under the contract.',
     target: 'Allocated target is the savings the contract sets for the quarter.',
     degreeDays: 'Degree days measure the weather: cooling degree days how hot and heating degree days how cold, each day against ' + WX_DD_BASE_F + '&deg;F.',
     billedKw: 'Billed kW is the demand, in kW, that the utility bills for the month.',
-    fit: 'R&sup2; is the share of the month-to-month variation in use that the model accounts for. CV(RMSE) is the typical error of the model as a percent of the average monthly use of the baseline months.',
     eui: 'Energy use intensity (EUI) is the energy use per square foot, in kBtu per square foot per year.',
   };
 }
@@ -4015,7 +4014,7 @@ function _rptQMethodPage(n, d, f, letter) {
     '</ul>' +
     '<h2>Terms</h2>' +
     '<ul style="margin:2px 0 4px 20px;padding:0;font-size:14px;line-height:1.4">' +
-    [t.baseline, t.measured, t.billed, t.target, t.degreeDays, t.billedKw, t.fit, t.eui].map(li).join('') +
+    [t.baseline, t.measured, t.billed, t.target, t.degreeDays, t.billedKw, t.eui].map(li).join('') +
     li('Contract period: ' + _rptContractPeriodText(d) + '. Contract progress: ' + _rptContractProgressText(d) + '.') +
     '</ul>';
   var title = (letter ? 'Appendix ' + letter + ': ' : '') + 'How Savings Are Measured';
@@ -8721,11 +8720,9 @@ function _rptQBaselineDataBody(b, d) {
   }
   // A month whose bill was typed in (no bill file attached) says so next to the month: "entered" and the fuel.
   var FUEL_WORD = { Electric: 'electricity', Gas: 'gas', Propane: 'propane' };
-  var anyEntered = false;
   var enteredTag = function (mi3) {
     var fl = (b.baselineEntered || {})[mi3];
     if (!fl || !fl.length) return '';
-    anyEntered = true;
     return ', ' + fl.map(function (c) { return FUEL_WORD[c] || c.toLowerCase(); }).join(' and ') + ' entered';
   };
   var keys = ['hdd', 'cdd', 'kwh', 'kw', 'ec', 'th', 'gc', 'gal', 'pc', 'tc'];
@@ -8773,8 +8770,7 @@ function _rptQBaselineDataBody(b, d) {
   var fixed = mrows.some(function (r) {
     return (hasE && !r.kwh && r.ec > 0) || (hasG && !r.th && r.gc > 0) || (hasP && !r.gal && r.pc > 0);
   });
-  // One note line for both facts, so the table keeps its page.
-  var blNote = [fixed ? 'A month with cost and no use is a fixed charge.' : '', anyEntered ? 'Entered: the bill was typed in and has no bill file attached.' : ''].filter(Boolean).join(' ');
+  var blNote = fixed ? 'A month with cost and no use is a fixed charge.' : '';
   return _rptQPara(sentence.join(' ')) + _rptQTable(widths, heads, rows) + (blNote ? _rptQNote(blNote) : '');
 }
 function _rptQBuildingPages(n, d, b) {

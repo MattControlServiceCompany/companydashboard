@@ -617,12 +617,12 @@ console.log('\n--- 13. model fit, wording, entered months, allocated target ---'
   const dT = { project: { blStart: 'January 2025', blEnd: 'December 2025' }, period: { year: 2026 } };
   const T = run(ctx, '_rptQTerms')(dT);
   assert(T.baseline === 'Baseline is the use a meter would have had with no savings measures. It is a weather model of the use of the meter, January 2025 through December 2025, evaluated at the 2025 weather (billed kW: the weather of the month reported).', 'baseline term states the weather model and the 2025 weather: ' + T.baseline);
-  assert(/Shared savings for a contract quarter cannot go below \$0, so a quarter below zero is billed at \$0\./.test(T.billed), 'billed term states the $0 floor');
-  assert(/^Allocated target is /.test(T.target) && T.fit && /CV\(RMSE\)/.test(T.fit), 'target term is "Allocated target"; fit term defines R2 and CV(RMSE)');
+  assert(T.billed === 'Savings billed is the amount invoiced under the contract.', 'billed term gets no new sentence');
+  assert(/^Allocated target is /.test(T.target) && !T.fit, 'target term is "Allocated target"; no new fit term');
   const p1Terms = run(ctx, '_rptQTermsText')(dT);
-  assert(/billed at \$0/.test(p1Terms) && /Allocated target/.test(p1Terms), 'page 1 definitions carry the $0 sentence and "Allocated target"');
+  assert(!/billed at \$0/.test(p1Terms) && /Allocated target/.test(p1Terms), 'page 1 definitions carry "Allocated target" and no new sentence');
   const methodHtml = plain(run(ctx, '_rptQMethodPage')(9, d, f, 'A'));
-  assert(/billed at \$0/.test(methodHtml) && /Allocated target\./.test(methodHtml) && !/Savings target/.test(methodHtml), 'Appendix A: the $0 sentence and "Allocated target", no "Savings target"');
+  assert(!/billed at \$0/.test(methodHtml) && /Allocated target\./.test(methodHtml) && !/Savings target/.test(methodHtml), 'Appendix A: "Allocated target", no "Savings target", no new sentence');
 
   // Results words (point 22)
   const rk = run(ctx, '_rptResultKind');
@@ -647,7 +647,7 @@ console.log('\n--- 13. model fit, wording, entered months, allocated target ---'
   const bData = { name: 'Alpha Building', sqft: 10000, blMonths: ['2025-03', '2025-04'], baselineEntered: { 3: ['Gas'] },
     baselineMaps: { elecByMo: {}, propaneByMo: {}, gasByMo: { 2: { therms: 300, cost: 240, hdd: 200, cdd: 0 }, 3: { therms: 200, cost: 160, hdd: 100, cdd: 5 } } } };
   const blTxt = plain(run(ctx, '_rptQBaselineDataBody')(bData, d));
-  assert(/April 2025, gas entered/.test(blTxt) && !/March 2025, /.test(blTxt) && /Entered: the bill was typed in and has no bill file attached\./.test(blTxt), 'Baseline Data: "April 2025, gas entered" and a one-line note; March (bill file attached) is not marked');
+  assert(/April 2025, gas entered/.test(blTxt) && !/March 2025, /.test(blTxt) && !/Entered:/.test(blTxt), 'Baseline Data: "April 2025, gas entered", no note; March (bill file attached) is not marked');
   bData.baselineEntered = {};
   assert(!/entered/i.test(plain(run(ctx, '_rptQBaselineDataBody')(bData, d))), 'Baseline Data: nothing is marked when every bill has a bill file');
 
