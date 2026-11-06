@@ -2507,6 +2507,11 @@ async function siteResetAllMeterTableSettings() {
    site-ui.js delegates to this array and should NOT maintain its own copy.
 */
 var RELEASE_NOTES = [
+  { v: 'v2026.11.05.236', date: '2026-11-05', title: 'Sync conflicts resolve automatically',
+    items: [
+      { type: 'change', text: 'Sync: when two people change the same item at the same time, the later save is kept automatically and the other change is kept in history; no more "You both changed the same item" box.' }
+    ]
+  },
   { v: 'v2026.11.05.235', date: '2026-11-05', title: 'Quarterly report Word tables',
     items: [
       { type: 'fix', text: 'Quarterly report: Word tables have their earlier column widths again, so building names stay on one line; "Meters with No Bill" heading and en dash in building page titles.' }
