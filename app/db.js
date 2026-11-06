@@ -444,7 +444,30 @@ const DB = (() => {
     const lu = _cache[LAST_USER_KEY];
     _lastUser = lu && typeof lu.id === 'string' ? lu : null;
     _recordLastUser();
+    _retireHeldEntries();
     _retireOwnerlessEntries();
+  }
+  // Older builds kept a draft apart with held:true (a dialog choice). That flag is gone. Such an entry
+  // is NEVER sent: it could replace a newer server value without a user choice. Its value goes to the
+  // conflict history (with its key and time) and the entry leaves the queue. No value is lost.
+  function _retireHeldEntries() {
+    const held = _syncQueue.filter((e) => e && e.held === true);
+    if (!held.length) return;
+    _syncQueue = _syncQueue.filter((e) => !(e && e.held === true));
+    held.forEach((e) => {
+      const archived = {
+        key: e.key,
+        reason: 'held-draft-retired',
+        losingSide: 'local',
+        losingValue: e.deleted ? null : e.value,
+        losingDeleted: !!e.deleted,
+        losingVersion: typeof e.baseVersion === 'number' ? e.baseVersion : null,
+      };
+      if (e.owner) archived.owner = e.owner;
+      if (typeof e.ts === 'number' && isFinite(e.ts)) archived.archivedAt = new Date(e.ts).toISOString();
+      _appendConflictArchive(archived);
+    });
+    _persistSyncQueue();
   }
   // Entries saved by a build before owner tags existed (v83 and older) name no
   // user. They are NEVER sent: a guessed owner could write one user's data under
@@ -1638,7 +1661,7 @@ const DB = (() => {
     if (epoch !== _identityEpoch) return;
     if (result.status === 'ok') {
       if (typeof showToast === 'function') {
-        showToast('Changes saved by another user were merged with yours. Nothing was lost.', 'info');
+        showToast("Saved. Another user's earlier change to this item is kept in history.", 'info');
       }
       return;
     }

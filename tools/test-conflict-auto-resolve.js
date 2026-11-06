@@ -152,8 +152,9 @@ async function syncedBrowser(srv) {
     assert.strictEqual(arch.length, 1, 'one conflict history entry');
     assert.deepStrictEqual(clone(arch[0].losingValue), { note: 'THEIRS' }, 'the conflict history holds the replaced value');
     assert.strictEqual(arch[0].losingSide, 'server');
-    const conflictToasts = B.toasts.filter((m) => /Nothing was lost/.test(m)); // the sandbox has no IndexedDB: ignore its storage notice
+    const conflictToasts = B.toasts.filter((m) => /kept in history/.test(m)); // the sandbox has no IndexedDB: ignore its storage notice
     assert.strictEqual(conflictToasts.length, 1, 'one short toast: ' + JSON.stringify(B.toasts));
+    assert.ok(!/merged/.test(conflictToasts[0]), 'the toast does not say merged when the value was replaced');
   });
 
   await t('record in a list: same field of the same record on both sides -> no dialog, later save wins, replaced record archived', async () => {
@@ -202,6 +203,37 @@ async function syncedBrowser(srv) {
     const arch = B.DB.getConflictArchive().filter((e) => e.key === KEY);
     assert.strictEqual(arch.length, 1);
     assert.deepStrictEqual(clone(arch[0].losingValue), { n: 'LOCAL' }, 'the local value is kept in the conflict history');
+  });
+
+  await t('old held:true queue entry: never sent, value moved to the conflict history, entry leaves the queue', async () => {
+    const KEY = 'en_budget_held';
+    const srv = makeServer({ [KEY]: { n: 'NEWER SERVER' } });
+    srv.rows[KEY].version = 5;
+    const store = {};
+    store[KEY] = JSON.stringify({ n: 'HELD DRAFT' });
+    store.ch_sync_queue = JSON.stringify([
+      { id: 'q1', key: KEY, owner: { id: 'u1', email: 'u1@example.invalid' }, value: { n: 'HELD DRAFT' }, deleted: false, baseVersion: 2, ts: 1700000000000, held: true },
+    ]);
+    const B = browser(srv, store);
+    await B.DB.warmCache();
+    await B.DB.__t._hydrate();
+    await B.DB.__t._drainQueueOnce();
+    await tick(80);
+    assert.strictEqual(srv.puts.filter((p) => p.key === KEY).length, 0, 'the held entry is never sent');
+    assert.deepStrictEqual(clone(srv.rows[KEY].value), { n: 'NEWER SERVER' }, 'the server value is not overwritten');
+    assert.strictEqual(B.DB.getQueueDepth(), 0, 'the entry left the queue');
+    const arch = B.DB.getConflictArchive().filter((e) => e.key === KEY && e.losingSide === 'local');
+    assert.ok(arch.some((e) => e.losingValue && e.losingValue.n === 'HELD DRAFT'), 'the held value is in the conflict history');
+    assert.ok(arch.every((e) => e.key === KEY && e.archivedAt), 'with its key and time');
+    assert.ok(arch.some((e) => e.archivedAt === new Date(1700000000000).toISOString()), 'the time of the held entry is kept');
+  });
+
+  await t('conflict history text: server row deleted -> says another user deleted it', async () => {
+    const ui = fs.readFileSync(path.join(ROOT, 'app', 'sync-ui.js'), 'utf8');
+    const m = ui.match(/entry\.winningSide === 'local' && entry\.losingSide === 'server' && entry\.losingDeleted\) \{\s*text = (.+)/);
+    assert.ok(m, 'a branch for a deleted server row exists, before the generic local-wins branch');
+    assert.ok(/another user deleted this/.test(m[1]) && !/saved a different version/.test(m[1]));
+    assert.ok(ui.indexOf(m[0]) < ui.indexOf("} else if (entry.winningSide === 'local') {"), 'it comes first');
   });
 
   await t('source check: no dialog code is left in db.js or sync-ui.js', () => {

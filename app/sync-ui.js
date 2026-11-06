@@ -704,6 +704,9 @@
     } else if (r === 'queue-entry-no-owner') {
       text = who + ': an edit that was not sent yet could not be matched to a user, so it was not applied. Download it to see it.';
       button = 'Download the edit';
+    } else if (entry.winningSide === 'local' && entry.losingSide === 'server' && entry.losingDeleted) {
+      text = who + ': another user deleted this on ' + when + '. Your later save was kept.';
+      button = 'Download your version';
     } else if (entry.winningSide === 'local') {
       text = who + ': another user saved a different version on ' + when + '. Your later save was kept. ' + theirs;
       button = 'Download their version';
