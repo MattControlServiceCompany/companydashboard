@@ -7,11 +7,11 @@
 const EXPECTED = {
  "Building|Square|||Feet|Baseline|||Cost|Projected|||Cost|Actual|||Cost|Q2 2025|||Savings Measured|Percent of|||Baseline Cost|Status": "1713,1008,1109,1311,1109,1210,1109,1511",
  "Quarter|Baseline|||kWh|Actual|||kWh|Baseline|||Therms|Actual|||Therms|Baseline|||Gallons|Actual|||Gallons|Baseline|||Cost|Actual|||Cost|Savings|||Measured": "1010,1031,927,1031,938,1031,1004,1031,926,1151",
- "Period|kWh|kW|Therms|Propane|||Gallons|Cost|Site EUI|||kBtu/ft\u00b2 (Q2 2025)|Savings vs|||Baseline": "1311,1210,1008,1109,1210,1210,1814,1208",
- "Building|Year|kWh|kW|Therms|Propane Gallons|Cost|Site EUI|||kBtu/ft\u00b2 (Q2 2025)": "2506,1078,635,496,927,1940,674,1824",
- "Month|Days|BL Therms|Act Therms|Therms Saved|%|$/Therm|Therm Sav $": "1260,1260,1260,1260,1260,1260,1260,1260",
+ "Period|kWh|kW|Therms|Propane|||Gallons|Cost|Site EUI|||kBtu/ft\u00b2| (Q2 2025)|Savings vs|||Baseline": "1311,1210,1008,1109,1210,1210,1814,1208",
+ "Building|Year|kWh|kW|Therms|Propane Gallons|Cost|Site EUI|||kBtu/ft\u00b2| (Q2 2025)": "2554,1100,649,496,948,1979,690,1664",
+ "Month|Days|BL Therms|Act Therms|Therms Saved|%|$/therm|Therm Sav $": "1260,1260,1260,1260,1260,1260,1260,1260",
  "Month|Days|BL Gal|Act Gal|Gal Saved|%|$/Gallon|Gallon Sav $": "1260,1260,1260,1260,1260,1260,1260,1260",
- "Month|Cooling degree days (2025)|Baseline billed kW|Actual billed kW|Change kW": "2418,2218,1814,1814,1816"
+ "Month|Cooling degree days |(2025)|Baseline billed |kW|Actual billed |kW|Change |kW": "2418,2218,1814,1814,1816"
 };
 const path = require('path');
 const { pathToFileURL } = require('url');

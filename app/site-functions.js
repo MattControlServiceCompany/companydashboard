@@ -2507,6 +2507,12 @@ async function siteResetAllMeterTableSettings() {
    site-ui.js delegates to this array and should NOT maintain its own copy.
 */
 var RELEASE_NOTES = [
+  { v: 'v2026.11.06.240', date: '2026-11-06', title: 'Quarterly report: Word download matches the PDF',
+    items: [
+      { type: 'fix', text: 'Reports > Quarterly report: the Word download now matches the PDF, and its footer shows the report label with Page N of M.' },
+      { type: 'fix', text: 'Reports > Quarterly report: table headers are centered, and units such as kWh, kW and kBtu/ft²/yr stay on one line in their real case.' }
+    ]
+  },
   { v: 'v2026.11.06.239', date: '2026-11-06', title: 'Q3 quarterly report review fixes',
     items: [
       { type: 'change', text: 'Reports > Quarterly report (Q3): the Q2 layout is back, with the hero page first. Letterhead and footer now show on the site and in the PDF.' },

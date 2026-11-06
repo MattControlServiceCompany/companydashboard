@@ -381,7 +381,7 @@ try {
 } catch (e) {
   console.log('ERR meter ' + String(e.stack).split(String.fromCharCode(10)).slice(0, 2).join(' / '));
 }
-assert(/Bills \(count\)/.test(meterPg) && /Cost/.test(meterPg) && !/Utility bill amount|Amount billed/.test(meterPg), 'meter page: Bills (count) and Cost');
+assert(/Bills\s+\(count\)/.test(meterPg) && /Cost/.test(meterPg) && !/Utility bill amount|Amount billed/.test(meterPg), 'meter page: Bills (count) and Cost');
 // decision 2: signs
 assert(/A minus sign on savings means more use than baseline/.test(energy), 'energy page: the minus sign is stated');
 assert(/plus means savings; minus means more use than baseline/.test(cover), 'cover: the dollar sign rule is stated once');

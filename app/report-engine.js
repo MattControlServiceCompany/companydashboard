@@ -1661,6 +1661,43 @@ function _rptPaginateWithTail(tokens, firstBudget, contBudget, tailH) {
 var RPT_PAGENUM_DIV =
   '<div class="rpt-pg-footer-pagenum" style="position:absolute;bottom:10px;right:24px;font-size:16px;color:var(--rpt-page-text)"></div>';
 
+// _rptFooterLabelText(data, escape): the one place that words the page-footer label ("Q3 2026 Quarterly Report").
+// The PDF/site footer (rptPage) and the Word footer (exportReportToDocx) both call it.
+function _rptFooterLabelText(data, escape) {
+  var e = escape ? _escHtml : function (v) { return String(v == null ? '' : v); };
+  var per = data && data.period;
+  if (!per) return '';
+  return per.type === 'quarterly'
+    ? _rptQuarterLabel(per.quarter || 1, e(per.year || '')) + ' Quarterly Report'
+    : per.type === 'annual' && per.year
+      ? e(per.year) + ' Annual Report'
+      : e(per.label || '');
+}
+
+// _rptProtectHeaderUnits(html): every table header (<th>) in a report page keeps its units in their real case and on
+// one line. The report prints header words in capitals (CSS text-transform on .rpt-table th), which would turn
+// kWh, kW, kBtu/ft2, $/kWh, $/kW and $/therm into KWH, KW, KBTU/FT2. Each unit goes into a span that opts out of the
+// capitals and does not wrap. The Word export reads the same span (text-transform:none), so PDF and Word agree.
+// rptPage() calls it for every page, so no table builder needs its own copy.
+var _RPT_UNIT_RE = /(\(?)(\$\/(?:kWh|kW|therm|gal)|kBtu\/ft(?:²|&sup2;)(?:\/yr)?|kWh|kW|MMBtu)(\)?)(?![A-Za-z])/gi;
+function _rptUnitRealCase(u) {
+  return u.toLowerCase().replace('kbtu', 'kBtu').replace('mmbtu', 'MMBtu').replace(/kwh/, 'kWh').replace(/kw(?!h)/, 'kW');
+}
+function _rptProtectHeaderUnits(html) {
+  return String(html).replace(/<th\b[^>]*>[\s\S]*?<\/th>/gi, function (th) {
+    return th
+      .split(/(<[^>]*>)/)
+      .map(function (part) {
+        if (part.charAt(0) === '<') return part;
+        return part.replace(_RPT_UNIT_RE, function (m, open, unit, close, off, whole) {
+          if (off > 0 && /[A-Za-z]/.test(whole.charAt(off - 1))) return m; // inside a word
+          return '<span style="text-transform:none;white-space:nowrap">' + open + _rptUnitRealCase(unit) + close + '</span>';
+        });
+      })
+      .join('');
+  });
+}
+
 /**
  * rptPage — wraps a single report page with header, body, and footer.
  * @param {number} pageNum - Page number for the data-page attribute
@@ -1669,6 +1706,7 @@ var RPT_PAGENUM_DIV =
  * @param {object} options - { data, hero, label, noPageNum, hideIntHdr, smallHeaderImg }
  */
 function rptPage(pageNum, title, bodyHTML, options = {}) {
+  bodyHTML = _rptProtectHeaderUnits(bodyHTML);
   const data = options.data;
   const isHero = options.hero === true;
   const pageLabel = _escHtml(options.label || 'Page ' + pageNum);
@@ -1748,11 +1786,7 @@ function rptPage(pageNum, title, bodyHTML, options = {}) {
       ? '<div class="rpt-footer-label" style="text-align:center;font-size:14px;color:var(--rpt-page-text);padding:0;line-height:1.2;position:absolute;bottom:' +
         (_waveAll ? '110px' : isHero ? '45px' : '17px') +
         ';left:0;right:0">' +
-        (data.period.type === 'quarterly'
-          ? _rptQuarterLabel(data.period.quarter || 1, _escHtml(data.period.year || '')) + ' Quarterly Report'
-          : data.period.type === 'annual' && data.period.year
-            ? _escHtml(data.period.year) + ' Annual Report'
-            : _escHtml(data.period.label || '')) +
+        _rptFooterLabelText(data, true) +
         '</div>'
       : '';
 
@@ -2490,6 +2524,13 @@ var _RPT_Q_W_BILLS = [19, 12, 15, 14, 8, 9, 23];
 var _RPT_Q_WDX_FUEL_ELEC = [28, 10, 9, 8, 8, 8, 10, 10, 9];
 var _RPT_Q_WDX_FUEL = [30, 13, 13, 11, 12, 12, 11];
 var _RPT_Q_WDX_BILLS = [23, 11, 17, 15, 8, 9, 17];
+// _rptHeadKeepUnits(h): a unit in parentheses in a header, like (kBtu/ft&sup2;/yr), never breaks across lines.
+// A header may wrap only before the "(". Used by every quarterly table header (_rptQTable).
+function _rptHeadKeepUnits(h) {
+  return String(h).replace(/\([^()\s<]*\)/g, function (m) {
+    return '<span style="white-space:nowrap">' + m + '</span>';
+  });
+}
 function _rptQTable(widths, heads, rows, textCols, docxWidths) {
   textCols = textCols || [];
   // Word only: a building name never wraps (the .docx writer reads data-dx-nw). The PDF wraps the name inside its cell.
@@ -2508,7 +2549,7 @@ function _rptQTable(widths, heads, rows, textCols, docxWidths) {
     heads
       .map(function (h, i) {
         var num = i > 0 && textCols.indexOf(i) < 0;
-        return '<th' + (num ? ' class="rpt-n"' : '') + ' style="text-transform:none;text-align:' + (num ? 'right' : 'left') + '">' + h + '</th>';
+        return '<th' + (num ? ' class="rpt-n"' : '') + ' style="text-transform:none;text-align:center;vertical-align:middle">' + _rptHeadKeepUnits(h) + '</th>';
       })
       .join('') +
     '</tr></thead><tbody>' +
@@ -4681,7 +4722,7 @@ function _rptInjectUiPassOverrides() {
        preview container — the live Generate Preview / Download PDF path). */
     '#reportPages .rpt-table th,#reportPages .rpt-table-wrap th,#reportPages .rpt-table-bl th,' +
     '#rptPreviewPages .rpt-table th,#rptPreviewPages .rpt-table-wrap th,#rptPreviewPages .rpt-table-bl th' +
-    '{word-break:keep-all !important;overflow-wrap:normal !important;word-wrap:normal !important;hyphens:none !important}' +
+    '{word-break:keep-all !important;overflow-wrap:normal !important;word-wrap:normal !important;hyphens:none !important;text-align:center !important;vertical-align:middle !important}' +
     /* A2: squared-off corners on every report table */
     '#reportPages .rpt-table,#reportPages .rpt-table-bl,#reportPages .rpt-table-wrap,' +
     '#reportPages .rpt-table-dark,#reportPages .rpt-table-compact{border-radius:0 !important}' +
@@ -13224,6 +13265,7 @@ async function exportReportToDocx() {
       images: translated.images,
       numIds: translated.numIds,
       compactLetterhead: translated.isReport,
+      footerLabel: _rptFooterLabelText(data, false), // "Q3 2026 Quarterly Report", as in the PDF footer
       pageCount: pages.length, // the footer's cached "of M": one Word page for each report page
       headerText: headerText,
     });

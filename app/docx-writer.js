@@ -624,7 +624,7 @@ async function _docxApplyHeaderText(zip, text) {
  * Called from _docxAssemble() -- the single choke point every .docx export goes
  * through -- so no export path can miss it.
  */
-async function _docxApplyPageNumberFooters(zip, pageCount) {
+async function _docxApplyPageNumberFooters(zip, pageCount, label) {
   var names = Object.keys(zip.files).filter(function (n) {
     return /^word\/footer\d*\.xml$/.test(n);
   });
@@ -640,7 +640,14 @@ async function _docxApplyPageNumberFooters(zip, pageCount) {
       /(<w:sdtContent><w:p\b[^>]*>(?:<w:pPr>.*?<\/w:pPr>)?)(.*?)(<\/w:p><\/w:sdtContent>)/,
       function (m, head, runs, tail) {
         if (runs.indexOf('PAGE') === -1) return m; // not the page-number paragraph
-        return head.replace(/<w:pPr>(.*?)<w:jc /, '<w:pPr>$1<w:spacing w:before="0" w:after="0" w:line="' + _DOCX_FOOTER_NUM_LINE_TWIPS + '" w:lineRule="exact"/><w:ind w:right="' + (-_DOCX_FOOTER_RIGHT_OUTDENT_TWIPS) + '"/><w:jc ') + _docxPageNOfMRuns(pageCount) + tail;
+        // With a label ("Q3 2026 Quarterly Report"): the label sits at the centre tab, the page number at the right tab.
+        var tabs = label ? '<w:tabs><w:tab w:val="clear" w:pos="4320"/><w:tab w:val="clear" w:pos="8640"/><w:tab w:val="center" w:pos="5040"/><w:tab w:val="right" w:pos="' + (10080 + _DOCX_FOOTER_RIGHT_OUTDENT_TWIPS) + '"/></w:tabs>' : '';
+        var labelRuns = label
+          ? '<w:r>' + _DOCX_FOOTER_RPR + '<w:tab/></w:r><w:r>' + _DOCX_FOOTER_RPR + '<w:t xml:space="preserve">' + _docxEscapeXml(label) + '</w:t></w:r><w:r>' + _DOCX_FOOTER_RPR + '<w:tab/></w:r>'
+          : '';
+        var newHead = head.replace(/<w:pPr>(.*?)<w:jc /, '<w:pPr>$1' + tabs + '<w:spacing w:before="0" w:after="0" w:line="' + _DOCX_FOOTER_NUM_LINE_TWIPS + '" w:lineRule="exact"/><w:ind w:right="' + (-_DOCX_FOOTER_RIGHT_OUTDENT_TWIPS) + '"/><w:jc ');
+        if (label) newHead = newHead.replace('<w:jc w:val="right"/>', '<w:jc w:val="left"/>');
+        return newHead + labelRuns + _docxPageNOfMRuns(pageCount) + tail;
       },
     );
     // The empty paragraph after the page-number control: 1pt high, so the number stays at the bottom of the footer.
@@ -1123,7 +1130,7 @@ async function _docxAssemble(documentXml, opts) {
   // applied here rather than in the skeleton asset so the skeleton stays a
   // verbatim record of its two source templates. See the function's comment for
   // why this deliberately diverges from the Client A footer.
-  await _docxApplyPageNumberFooters(zip, opts.pageCount);
+  await _docxApplyPageNumberFooters(zip, opts.pageCount, opts.footerLabel);
   if (opts.headerText) await _docxApplyHeaderText(zip, opts.headerText);
 
   // The skeleton has Heading 1 and Heading 3 but no Heading 2: add it (Arial, keep with next, outline level 2).
@@ -1628,6 +1635,7 @@ function _docxStyleFmtFromEl(el, baseFmt, ctx) {
   var fw = el.style.fontWeight;
   if (fw === 'bold' || fw === '700' || fw === '800' || fw === '900' || parseInt(fw, 10) >= 600) fmt.bold = true;
   if (el.style.fontStyle === 'italic') fmt.italic = true;
+  if (el.style.textTransform === 'none') fmt.caps = false; // a unit (kWh, kW) keeps its case inside a capitalised header
   var fs = el.style.fontSize;
   if (fs) {
     var hp = _docxPxToHalfPt(fs);
@@ -2280,6 +2288,7 @@ function _docxTranslateTable(tableEl, ctx) {
         if (isHeaderRow && _hasStamp) cellBaseFmt.bold = true;
         var align = _docxCellAlign(cell) || 'center';
         if (_hasStamp && span === 1 && colAlign[colIdx] && (isHeaderRow || !_docxCellAlign(cell))) align = colAlign[colIdx];
+        if (_hasStamp && isHeaderCell) align = 'center';
         var cellParagraphs;
         if (_docxHasBlockChild(cell)) {
           // Cell contains block-level content (e.g. a <ul> improvement list -- the Service
