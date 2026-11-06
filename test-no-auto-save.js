@@ -318,14 +318,7 @@ const seed = () => ({
   await t('A real collision (a person edits the field the other side also changed) still logs a conflict', async () => {
     const srv = makeServer({ en_projects: projects0() });
     const asked = [];
-    const B = session(srv, {
-      modal: async (d) => {
-        asked.push(d);
-        const choices = {};
-        d.records.forEach((r) => (choices[String(r.id)] = 'theirs'));
-        return { action: 'records', choices };
-      },
-    });
+    const B = session(srv, { modal: async (d) => (asked.push(d), { action: 'dismiss' }) });
     await B.start();
     const theirs = projects0();
     theirs[0].note = 'THEIRS';
@@ -335,10 +328,10 @@ const seed = () => ({
     mine[0].note = 'MINE';
     await B.DB.set('en_projects', mine);
     await settle();
-    assert.strictEqual(asked.length, 1, 'the person is asked');
+    assert.strictEqual(asked.length, 0, 'nobody is asked: the later save wins');
     const entries = B.DB.getConflictArchive().filter((e) => e.reason === 'record-conflict');
     assert.strictEqual(entries.length, 1, 'one conflict entry');
-    assert.strictEqual(entries[0].losingValue.note, 'MINE');
+    assert.strictEqual(entries[0].losingValue.note, 'THEIRS', 'the replaced server version is archived');
   });
 
   await t('A queued person edit is kept when newer server data arrives (it is a pending edit, not replaced)', async () => {

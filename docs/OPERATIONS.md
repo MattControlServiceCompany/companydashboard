@@ -94,7 +94,7 @@ about 0.4 credits a day, and 0 for a hidden or closed tab. The text below about 
 | supabase-keepalive (netlify.toml:27, `@daily`) | One Supabase read | 1 a day | about 0 |
 
 ### Sync fixes 2026-11-02 (go-live test v194)
-- Conflict choice redraw: after the per-record dialog (`_resolveCollectionConflict`) or "Load theirs" (`_applyConflictResolution`), app/db.js `_announceResolvedView` sends `dbRemoteApplied` (reason `conflict-resolved`); app/sync-ui.js redraws the open view when safe (no reload), after 2.5 s so the toast shows first. Check: SYNCDEF2, SYNCDEF2b.
+- Conflict redraw: after a same-field conflict is resolved (`_resolveCollectionConflict` for a list, `_saveOverServer` for any other key), app/db.js `_announceResolvedView` sends `dbRemoteApplied` (reason `conflict-resolved`); app/sync-ui.js redraws the open view when safe (no reload), after 2.5 s so the toast shows first. Check: SYNCDEF2, SYNCDEF2b.
 - A merge of a collection key that equals the server row sends nothing (`_sameCanonical`); a merge of a background history list (calendar, BAS, audit log; `_isBackgroundList`) shows no "merged with yours" message. Check: SYNCDEF3d, SYNCDEF3e.
 - Per-user flag `ch_qs_seen` is written under `<user id>::ch_qs_seen`; two users never share the row. Check: SYNCDEF3c.
 
@@ -178,30 +178,32 @@ about 0.4 credits a day, and 0 for a hidden or closed tab. The text below about 
 - Queued write versus the pull (app/db.js `_queuedWriteBlocksPull`, `_resolveStaleQueuedWrites`). A queued write
   stops the pull from taking the server copy of its key only while the server version is not newer than the version
   the write was based on (`entry.baseVersion`; none recorded counts as older). A newer server copy wins: the write
-  leaves the queue and goes to the normal conflict path (`_handleConflict`: list merge or the modal; local side
-  archived). A held draft never blocks (see below). Only the signed-in user's OWN waiting write counts, for shared
+  leaves the queue and goes to the normal conflict path (`_handleConflict`: list merge or later-save-wins; the
+  replaced value archived). Only the signed-in user's OWN waiting write counts, for shared
   keys too (`_queuedEntryFor`, `_hasQueuedWrite`): another user's write never blocks or opens a conflict for this
   user. Check: SYNC-SAFETY 3 tests, IDENTITY 2.
-- Held local draft (app/db.js `_holdLocalDraft`, app/sync-ui.js `_renderHeldDrafts`, `renderHeldLink`). "Decide later"
-  (action `dismiss`), a closed modal, an unknown action or a missing modal keep the local value as a queue entry with
-  `held:true`. The drain (`_drainQueueLocked`, `_queueHasSendable`) never sends it. It counts as an unsynced change
-  but does NOT block the pull: the page shows the server copy (the old page value goes to Conflict history), the
-  draft stays in the queue, and the pull does not ask again for a key that has a draft (`_findHeld` in the drift
-  check). A normal edit of the key does not replace the draft (a newer held draft does). Small pill "Held drafts (N)"
-  (id `ch-held-link`, bottom row) opens Sync status; there a collapsible "Held drafts (N)" lists each draft (what,
-  when, which user). "Use my draft" = `DB.releaseHeldDraft(key)`: removes the draft and writes the value again with
-  `set`/`remove` (normal gated path, based on the server version this device holds; a newer server copy opens the
-  conflict choice again). "Discard" = `DB.discardHeldDraft(key)`: copied to Conflict history (reason
-  `held-draft-discarded`) first. `DB.getHeldDrafts()` lists only the signed-in user's drafts. Check:
-  node test-sync-golive-blockers.js (HELD 1-5 tests).
-- Identity safety (2026-10-21, app/db.js). A queued, held or stale write made as user A is never sent as user B:
+- Same-field conflict, no dialog (2026-11-05, app/db.js `_handleConflict`, `_saveOverServer`, `_applyLaterSaveWinsRecords`). When
+  a write meets a newer server row (HTTP 409, a stale queued write, or a first-load difference) nobody is asked. Lists
+  (`_collectionCfg` keys) merge per record; for a record changed on both sides, and for every other key, the LATER SAVE
+  WINS: this write is sent again at the server version just seen with `explicitOverwrite`, cause "Sync conflict: later
+  save wins". The server value it replaces is copied to the local Conflict history (reason `write-conflict-later-save-wins`
+  or `record-conflict`, `losingSide: 'server'`) and kv-sync.js copies the replaced row to `kv_history`. The user sees only
+  the toast "Changes saved by another user were merged with yours. Nothing was lost." A newer 409 on the re-send runs
+  the same rule again (bounded by `CONFLICT_RESEND_CAP` = 4, then the retry queue). A deletion on either side follows the
+  same rule. A key with no version stamp whose local value differs from the server (first load) keeps the server copy and
+  copies the local value to Conflict history (`_reconcileIncoming`, reason `hydration-server-wins`); nothing is sent.
+  The conflict dialog (`SyncConflictUI.showConflictModal`, `#ch-conflict-overlay`) and the held-draft feature
+  (Decide later, `DB.getHeldDrafts`) are removed. A queue entry saved with `held:true` by an older build is now a
+  normal queued write: it is sent, meets the same rule, and the replaced value is archived. Check:
+  node tools/test-conflict-auto-resolve.js, node test-sync-golive-blockers.js (M2 same field, SYNC-SAFETY 3, SYNCDEF2/2b).
+- Identity safety (2026-10-21, app/db.js). A queued or stale write made as user A is never sent as user B:
   `_sendKvPut` refuses an entry whose owner is not the signed-in user, the drain sends only own entries, every
   sign-in needs its own full pull (`_pulledUid` is reset in `_handleAuthIdentityChange`, so A returning after B must
   pull again before any send). `_clearPerUserLocalState` also removes from the page and the version map any shared
-  key that holds another user's UNSENT edit (not held drafts); `_reapplyQueuedPerUserValues` puts it back, with
+  key that holds another user's UNSENT edit; `_reapplyQueuedPerUserValues` puts it back, with
   `entry.baseVersion` as the stamp, when its author signs in again (a newer server copy then goes to the conflict
-  choice for A). Before this, B saw A's unsent value on the page and a stale edit of A opened a conflict window for B
-  with A's value. Check: IDENTITY 1-6 tests.
+  path for A). Before this, B saw A's unsent value on the page and a stale edit of A opened a conflict for B
+  with A's value. Check: IDENTITY 2-6 tests.
 - Legacy utility blob (2026-10-21, app/utility-data.js), backend mode 'on' only (`_backendOn`); the GitHub site runs
   as before. `_legacyBlobToMigrate(customerId)` is the ONE rule for "copy the old `en_utility_<projectId>` blob into
   `en_utility_<customerId>`": the customer key does not exist at all (an existing blob, empty or not, is never
@@ -305,13 +307,10 @@ about 0.4 credits a day, and 0 for a hidden or closed tab. The text below about 
   node test-restore-merge.js ("backup-wins" tests), node test-sync-golive-blockers.js ("migration R1-R3"),
   node tools/test-backend-mode-default.js (scenarios G1-G3: a synthetic backup with 5 missing keys incl. one 2.3 MB key,
   differing keys and collection keys with server-only records).
-- Unstamped differing key (app/db.js `_hydrateInner` drift loop, `_driftNeedsAsk`). A key with no `ch_rv` stamp, a real local
-  value and a live server row that differs used to take the server value silently (local archived). A plain key (not a
-  collection key, not the deletion records) now opens the existing conflict modal through `_handleConflict`: "Overwrite with
-  mine" sends the local value at the server version with `explicitOverwrite`; "Keep server" loads the server value. Nothing is
-  written before the user answers; the local copy is archived first; a dismissed dialog leaves the key unstamped and it asks
-  again on the next load. Same content is adopted silently. Collection keys still merge per record. A page with no conflict
-  dialog keeps the old rule (server wins, local archived). How to check: node test-sync-golive-blockers.js, "migration H1-H6".
+- Unstamped differing key (app/db.js `_hydrateInner` drift loop). A key with no `ch_rv` stamp, a real local value and a
+  live server row that differs takes the server value; the local value is copied to Conflict history first
+  (`_reconcileIncoming`). No dialog (the `_driftNeedsAsk` rule is removed, 2026-11-05). Same content is adopted silently.
+  Collection keys merge per record. How to check: node test-sync-golive-blockers.js, "migration H1-H6".
 - Failures name the key. The first-connect upload keeps `{key, status, httpStatus}` for every failed key (a 409 counts as
   failed) in `DB.getUploadProgress().failures`; the toast and the Sync status panel list up to five keys as "key (HTTP 502)"
   (`DB.describeFailure`, the one text function). A queued write that keeps failing is listed by `DB.getQueueFailures()` with
@@ -332,8 +331,8 @@ Matt's steps, in this order:
 1. On the GitHub site: Backup. Save the file. This is the fresh backup. Do not edit data on the GitHub site after this.
 2. Open the Netlify site (cscdashboard.netlify.app). Sign in as yourself first. Do not sign in as another user first.
    Per-user settings go to the signed-in user.
-3. If a "conflict" window opens on load for a setting, read it. "Keep server" keeps the server value. "Overwrite with mine"
-   sends this browser's value. The old value is kept in the server history either way.
+3. No conflict window opens. A setting that differs on load keeps the server value; this browser's value goes to
+   Conflict history. The old value is also kept in the server history.
 4. Open Restore. Choose the backup file from step 1.
 5. Choose "Make this backup the server copy". Read the table. Read the list "would remove records that the backup does not
    have". Leave those items unticked. Tick one only after you compare it.
@@ -1077,7 +1076,7 @@ This includes a new or changed function, schedule, env var name, timer, host, or
 - Nothing that stays on screen may be `position: fixed` over the header, the tabs or the page, and nothing may reserve layout space with padding or margin. The page (`main.content`) ends at the window bottom.
 - Notices (offline, signed out) go in ONE stack in the normal page flow: `#ch-sync-banner-stack`, first child of `.app-col` (`ensureStack` in app/sync-ui.js, also `window.chNoticeStack`). The new-version notice is NOT in that stack: `_showVersionUpdateBanner` (app/report-engine.js) shows a plain sidebar footer link "New version: reload" (`#ch-ver-update-link`, made by `window.chSidebarLink` in app/sync-ui.js; slim rail text "Reload"). A click saves the page state (`_savePageStateForVersionUpdate`) and reloads. It shows only when the live version differs from the loaded one. It takes no space in the main column.
 - The login page has no sidebar, so it shows no Sync status and no sidebar links.
-- "Conflict history (N)" and "Held drafts (N)" are plain text links in the sidebar footer under the version line (`ensureSidebarLink`, `renderArchiveLink`, `renderHeldLink` in app/sync-ui.js). Hidden when N = 0.
+- "Conflict history (N)" is a plain text link in the sidebar footer under the version line (`ensureSidebarLink`, `renderArchiveLink` in app/sync-ui.js). Hidden when N = 0.
 - Kept fixed on purpose: dialogs and panels the user opens, the transient toast (below the header row, goes away alone), the Customize toolbar and the feedback button (modes the user turns on).
 - Check: `node test-no-overlay-layout.js <outDir>` (1920x1080 and 960x1080; Dashboard, Utility Data Normalized, Equipment Matrix, Cost Estimate).
 

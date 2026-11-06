@@ -1,6 +1,6 @@
 // app/sync-ui.js — passive UI for the client sync engine (Phase 2a, folds in 2a.5's pill
-// and 2a.6's "refresh" banner, per phase2a-build-plan.md §3) PLUS the Phase 2b
-// conflict-resolution UX (blocking modal + conflict-archive viewer).
+// and 2a.6's "refresh" banner, per phase2a-build-plan.md §3) PLUS the conflict-archive viewer.
+// There is no conflict dialog: app/db.js resolves a same-field conflict itself (the later save wins).
 //
 // Listens ONLY to events app/db.js already dispatches; has no dependency on DB internals
 // beyond the small public accessors DB already exposes (getQueueDepth, getConflictArchive).
@@ -10,17 +10,12 @@
 //      draws again by itself (dbRemoteApplied -> chRefreshFromStore). No banner, no reload.
 //   3. Persistent "offline — showing local copy" banner (dbOfflineBanner), cleared by the
 //      next successful hydration/manifest round-trip (dbHydrated).
-//   4. (Phase 2b) A BLOCKING conflict-resolution modal, opened by app/db.js calling
-//      `window.SyncConflictUI.showConflictModal(descriptor)` on a write-time 409 in
-//      'on' mode. db.js owns every data mutation (archive/adopt/CAS-retry/union-PUT);
-//      this file owns ONLY the DOM/UX and resolves the returned Promise with the
-//      user's chosen `{action, unionValue?}`.
-//   5. (Phase 2b) A small "Conflict history (N)" link + slide-in panel listing
+//   4. (Phase 2b) A small "Conflict history (N)" link + slide-in panel listing
 //      en_conflict_archive entries with a per-entry JSON download button.
 //
 // This is a first, functional pass — the polished Settings-adjacent placement (2a.7 / Pass
 // C2) is a follow-up; this file's job in 2a/2b is just to make the events/conflicts visible
-// to a user, following the modal pattern documented in ui-standards.md ("Modal pattern").
+// to a user.
 (function () {
   if (typeof window === 'undefined') return;
 
@@ -40,44 +35,17 @@
       '#ch-sync-archive-full-banner{background:var(--warn,#b45309);color:#fff;}' +
       '#ch-sync-archive-full-banner button{margin-left:8px;border-radius:4px;padding:2px 10px;font-size:12px;' +
       'font-family:inherit;cursor:pointer;border:1px solid #fff;background:transparent;color:#fff;}' +
-      // --- Phase 2b: conflict modal + archive viewer -------------------------
+      // --- Phase 2b: conflict history viewer -------------------------
       // Conflict history link: plain text in the sidebar footer, next to the Sync status link.
       '#ch-archive-link{background:none;border:0;padding:0;font-size:inherit;font-family:inherit;letter-spacing:inherit;' +
       'color:var(--text2,#9aa3b8);text-decoration:underline;cursor:pointer;}' +
       '#ch-archive-link:hover{color:var(--text,#fff);}' +
-      '#ch-conflict-overlay{position:fixed;inset:0;z-index:var(--z-modal,800);' +
-      'background:rgba(0,0,0,.55);display:flex;align-items:center;justify-content:center;' +
-      'font-family:inherit;}' +
-      '.ch-conflict-modal{display:flex;flex-direction:column;max-width:520px;width:92%;' +
-      'max-height:85vh;overflow:hidden;background:var(--s2,#181d2e);' +
-      'border:1px solid var(--border,#333);border-radius:8px;box-shadow:0 8px 32px rgba(0,0,0,.45);}' +
-      '.ch-conflict-hdr{flex-shrink:0;background:var(--s1,#0c0f1a);padding:14px 18px;' +
-      'border-bottom:1px solid var(--border2,#444);font-size:15px;font-weight:700;color:var(--text,#fff);}' +
-      '.ch-conflict-body{flex:1;min-height:0;overflow-y:auto;padding:16px 18px;' +
-      'color:var(--text,#fff);font-size:13px;line-height:1.6;}' +
-      '.ch-conflict-body p{margin:0 0 10px;}' +
       '.ch-conflict-meta{color:var(--text2,#9aa3b8);font-size:12px;}' +
-      '.ch-conflict-ftr{flex-shrink:0;padding:12px 18px;border-top:1px solid var(--border,#333);' +
-      'display:flex;gap:8px;flex-wrap:wrap;justify-content:flex-end;}' +
       '.ch-conflict-btn{border-radius:6px;padding:8px 14px;font-size:12px;font-weight:600;' +
       'cursor:pointer;border:1px solid var(--border,#333);background:var(--s3,#1e2438);' +
       'color:var(--text,#fff);font-family:inherit;}' +
       '.ch-conflict-btn:hover{background:var(--s4,#252c42);}' +
-      '.ch-conflict-btn.ch-conflict-primary{background:var(--accent,#2563eb);' +
-      'border-color:var(--accent,#2563eb);color:#fff;}' +
-      '.ch-conflict-btn.ch-conflict-primary:hover{filter:brightness(1.1);}' +
       '.ch-conflict-btn:disabled{cursor:not-allowed;}' +
-      '.ch-conflict-rec{background:var(--s3,#1e2438);border:1px solid var(--border,#333);' +
-      'border-radius:6px;padding:8px 10px;margin:0 0 8px;display:flex;flex-wrap:wrap;gap:4px 16px;align-items:center;}' +
-      '.ch-conflict-rec-name{flex-basis:100%;font-weight:600;color:var(--text,#fff);}' +
-      '.ch-conflict-rec label{color:var(--text,#fff);cursor:pointer;display:inline-flex;gap:6px;align-items:center;}' +
-      '.ch-conflict-field{flex-basis:100%;padding:4px 8px;margin-bottom:4px;background:var(--s2,#181d2e);' +
-      'border:1px solid var(--border,#333);border-radius:4px;color:var(--text,#fff);overflow-wrap:anywhere;}' +
-      '.ch-conflict-typed{margin-top:4px;display:flex;gap:8px;align-items:center;flex-wrap:wrap;' +
-      'justify-content:flex-end;width:100%;}' +
-      '.ch-conflict-typed input{flex:1;min-width:140px;padding:6px 8px;border-radius:4px;' +
-      'border:1px solid var(--border,#333);background:var(--s1,#0c0f1a);color:var(--text,#fff);' +
-      'font-size:12px;font-family:inherit;}' +
       '#ch-archive-panel{position:fixed;top:0;right:0;bottom:0;width:360px;max-width:90vw;' +
       'z-index:var(--z-modal,800);background:var(--s2,#181d2e);border-left:1px solid var(--border,#333);' +
       'display:none;flex-direction:column;box-shadow:-4px 0 20px rgba(0,0,0,.4);}' +
@@ -115,13 +83,9 @@
       '.ch-sync-status-key-in-sync .ch-sync-status-key-name{color:var(--accent,#2563eb);}' +
       '.ch-sync-status-key-diverged .ch-sync-status-key-name{color:var(--warn,#b45309);}' +
       '.ch-sync-status-key-pending .ch-sync-status-key-name{color:var(--text2,#9aa3b8);}' +
-      '#ch-ver-update-link,#ch-held-link{background:none;border:0;padding:0;font-size:inherit;font-family:inherit;letter-spacing:inherit;' +
+      '#ch-ver-update-link{background:none;border:0;padding:0;font-size:inherit;font-family:inherit;letter-spacing:inherit;' +
       'color:var(--text2,#9aa3b8);text-decoration:underline;cursor:pointer;}' +
-      '#ch-ver-update-link:hover,#ch-held-link:hover{color:var(--text,#fff);}' +
-      '.ch-held-details{border:1px solid var(--border,#333);border-radius:6px;background:var(--s3,#1e2438);padding:6px 10px;}' +
-      '.ch-held-details summary{cursor:pointer;font-size:13px;font-weight:600;color:var(--text,#fff);}' +
-      '.ch-held-row{margin-top:8px;padding-top:8px;border-top:1px solid var(--border,#333);font-size:12px;color:var(--text,#fff);}' +
-      '.ch-held-btns{display:flex;gap:8px;margin-top:6px;}' +
+      '#ch-ver-update-link:hover{color:var(--text,#fff);}' +
       '.sb-version .ch-sb-link-row{display:block;margin-top:4px;}' +
       '.sb-version .ch-sb-link-row button{display:block;margin:0 auto;}' +
       '.sb-version .ch-sb-sep{display:none;}' +
@@ -146,8 +110,8 @@
     return ensureSidebarLink(id);
   };
 
-  // The Conflict history and Held drafts links sit in the sidebar footer under the version line, as plain
-  // text links. No sidebar (login page): they stay hidden, the Sync status panel lists held drafts.
+  // The Conflict history link sits in the sidebar footer under the version line, as plain
+  // text links. No sidebar (login page): it stays hidden.
   function ensureSidebarLink(id) {
     var el = document.getElementById(id);
     if (el) return el;
@@ -353,7 +317,7 @@
   // and the conflict rule in app/db.js.
   var PENDING_REFRESH_RETRY_MS = 1000;
   var OPEN_DIALOG_SELECTOR =
-    '.modal-bg.open, .ems-modal-bg.open, .modal-overlay.open, .modal.open, #ch-conflict-overlay, dialog[open]';
+    '.modal-bg.open, .ems-modal-bg.open, .modal-overlay.open, .modal.open, dialog[open]';
   var STATE_CLASSES = ['open', 'expanded', 'selected', 'sel'];
   var SCROLL_KEYS = { PageUp: 1, PageDown: 1, Home: 1, End: 1, ArrowUp: 1, ArrowDown: 1, ' ': 1 };
   var _dirty = false;
@@ -641,13 +605,6 @@
     return 'this item';
   }
 
-  // One short, readable line for a field value in the conflict modal.
-  function _shortValue(v) {
-    if (v === undefined || v === null || v === '') return '(empty)';
-    var s = typeof v === 'object' ? JSON.stringify(v) : String(v);
-    return s.length > 160 ? s.slice(0, 157) + '...' : s;
-  }
-
   function fmtDate(iso) {
     if (!iso) return 'an unknown time';
     try {
@@ -675,283 +632,7 @@
     }
   }
 
-  // --- Modal queue (serialize — never stack two conflict modals) -----------
-  var _modalQueue = [];
-  var _modalShowing = false;
-
-  function showConflictModal(descriptor) {
-    return new Promise(function (resolve) {
-      _modalQueue.push({ descriptor: descriptor, resolve: resolve });
-      _drainModalQueue();
-    });
-  }
-
-  function _drainModalQueue() {
-    if (_modalShowing) return;
-    var next = _modalQueue.shift();
-    if (!next) return;
-    _modalShowing = true;
-    _renderConflictModal(next.descriptor, function (resolution) {
-      _modalShowing = false;
-      next.resolve(resolution);
-      _drainModalQueue();
-    });
-  }
-
-  function _buttonPlan(descriptor) {
-    if (descriptor.conflictClass === 'tombstone') {
-      return [
-        { action: 'restore-mine', label: 'Restore my version', primary: true, gated: descriptor.typedConfirmRequired },
-        { action: 'discard-mine', label: 'Discard my change', primary: false, gated: false },
-        DECIDE_LATER,
-      ];
-    }
-    if (descriptor.conflictClass === 'records') {
-      // Per-record choice. The record not chosen goes to the conflict history.
-      return [{ action: 'records', label: 'Save my choices', primary: true, gated: false }];
-    }
-    return [
-      { action: 'load-theirs', label: 'Load theirs (recommended)', primary: true, gated: false },
-      {
-        action: 'overwrite-mine',
-        label: 'Overwrite with mine',
-        primary: false,
-        gated: descriptor.typedConfirmRequired,
-      },
-      { action: 'save-copy', label: 'Save mine as a copy / download', primary: false, gated: false },
-      DECIDE_LATER,
-    ];
-  }
-  // 'dismiss': db.js keeps the local value as a held draft and does not send it until the user chooses.
-  var DECIDE_LATER = { action: 'dismiss', label: 'Decide later', primary: false, gated: false };
-  var DRAFT_NOTE =
-    '<p class="ch-conflict-meta">If you choose Decide later, your version stays on this computer as a draft. ' +
-    'It is not sent to the server until you choose.</p>';
-
-  function _bodyHtml(descriptor) {
-    var name = friendlyKeyName(descriptor.key);
-    var who = descriptor.server.updatedBy || 'another user';
-    var when = fmtDate(descriptor.server.updatedAt);
-    var html = '';
-
-    if (descriptor.conflictClass === 'tombstone') {
-      html +=
-        '<p><strong>' +
-        _escHtml(who) +
-        '</strong> deleted ' +
-        _escHtml(name) +
-        ' at ' +
-        _escHtml(when) +
-        ' while you were editing it.</p>';
-      html += '<p>Your changes were not lost — they are saved and available below.</p>';
-      html += DRAFT_NOTE;
-    } else if (descriptor.conflictClass === 'records') {
-      var recs = descriptor.records || [];
-      html +=
-        '<p><strong>' +
-        _escHtml(who) +
-        '</strong> and you both changed the same ' +
-        (recs.length === 1 ? 'item' : recs.length + ' items') +
-        ' in ' +
-        _escHtml(name) +
-        ' (theirs saved at ' +
-        _escHtml(when) +
-        '). Everything else was merged already. Choose which version to keep for each item. ' +
-        'The version you do not keep stays in the conflict history.</p>';
-      recs.forEach(function (r, i) {
-        var fields = r.fields || [];
-        html += '<div class="ch-conflict-rec">' + '<div class="ch-conflict-rec-name">' + _escHtml(r.label) + '</div>';
-        // Both values of every field changed on both sides, so the choice is informed.
-        fields.forEach(function (f) {
-          html +=
-            '<div class="ch-conflict-field"><div class="ch-conflict-meta">' +
-            _escHtml(f) +
-            '</div>' +
-            '<div><span class="ch-conflict-meta">Theirs: </span>' +
-            _escHtml(_shortValue(r.server && r.server[f])) +
-            '</div>' +
-            '<div><span class="ch-conflict-meta">Mine: </span>' +
-            _escHtml(_shortValue(r.local && r.local[f])) +
-            '</div></div>';
-        });
-        html +=
-          '<label><input type="radio" name="ch-conflict-rec-' +
-          i +
-          '" value="theirs" checked> Keep theirs</label>' +
-          '<label><input type="radio" name="ch-conflict-rec-' +
-          i +
-          '" value="mine"> Keep mine</label>' +
-          '</div>';
-      });
-    } else {
-      html +=
-        '<p><strong>' +
-        _escHtml(who) +
-        '</strong> changed ' +
-        _escHtml(name) +
-        ' at ' +
-        _escHtml(when) +
-        ' while you were editing it. Saving your changes now would overwrite theirs.</p>';
-      html +=
-        '<p class="ch-conflict-meta">Their saved version: ' +
-        _escHtml(descriptor.server.version) +
-        '. Yours was based on version: ' +
-        _escHtml(descriptor.localBaseVersion != null ? descriptor.localBaseVersion : 'unknown') +
-        '.</p>';
-      html += DRAFT_NOTE;
-      if (descriptor.conflictClass === 'union-candidate') {
-        html +=
-          '<p>It looks like you each only ADDED new items, with nothing else changed. ' +
-          '"Keep both" combines both sets of changes so nothing is lost.</p>';
-      }
-    }
-    return html;
-  }
-
-  function _confirmText(action) {
-    if (action === 'overwrite-mine') return 'This will permanently replace the saved copy with yours. Continue?';
-    if (action === 'restore-mine') return 'This will undo the deletion and bring back your version. Continue?';
-    if (action === 'discard-mine')
-      return 'This will accept the deletion. Your change stays only in the conflict history. Continue?';
-    return 'Continue?';
-  }
-
-  function _renderConflictModal(descriptor, done) {
-    ensureStyles();
-    var finished = false;
-    var overlay = document.createElement('div');
-    overlay.id = 'ch-conflict-overlay';
-
-    var modal = document.createElement('div');
-    modal.className = 'ch-conflict-modal';
-
-    var hdr = document.createElement('div');
-    hdr.className = 'ch-conflict-hdr';
-    hdr.textContent =
-      descriptor.conflictClass === 'tombstone'
-        ? 'This was deleted while you were editing it'
-        : descriptor.conflictClass === 'records'
-          ? 'You both changed the same item'
-          : 'Someone else changed this while you were editing';
-
-    var body = document.createElement('div');
-    body.className = 'ch-conflict-body';
-    body.innerHTML = _bodyHtml(descriptor);
-
-    var ftr = document.createElement('div');
-    ftr.className = 'ch-conflict-ftr';
-
-    function teardown() {
-      if (overlay.parentNode) overlay.parentNode.removeChild(overlay);
-    }
-
-    function finish(resolution) {
-      if (finished) return; // never resolve twice
-      finished = true;
-      teardown();
-      done(resolution);
-    }
-
-    function commit(btnCfg) {
-      if (btnCfg.action === 'save-copy') {
-        downloadJSON(descriptor.key, descriptor.local.deleted ? null : descriptor.local.value);
-      }
-      var resolution = { action: btnCfg.action };
-      if (btnCfg.action === 'records') {
-        resolution.choices = {};
-        (descriptor.records || []).forEach(function (r, i) {
-          var picked = body.querySelector('input[name="ch-conflict-rec-' + i + '"]:checked');
-          resolution.choices[String(r.id)] = picked && picked.value === 'mine' ? 'mine' : 'theirs';
-        });
-      }
-      finish(resolution);
-    }
-
-    var plan = _buttonPlan(descriptor);
-
-    // Renders the normal button row into `ftr` — also the Cancel target for
-    // the typed-confirm inline row below, so Cancel genuinely returns the
-    // user to their original set of choices instead of a dead end.
-    function renderButtonRow() {
-      ftr.innerHTML = '';
-      plan.forEach(function (btnCfg) {
-        var btn = document.createElement('button');
-        btn.className = 'ch-conflict-btn' + (btnCfg.primary ? ' ch-conflict-primary' : '');
-        btn.textContent = btnCfg.label;
-        btn.addEventListener('click', function () {
-          if (btnCfg.gated) {
-            _showTypedConfirmInline(ftr, btnCfg, renderButtonRow, function () {
-              commit(btnCfg);
-            });
-            return;
-          }
-          if (
-            btnCfg.action === 'overwrite-mine' ||
-            btnCfg.action === 'restore-mine' ||
-            btnCfg.action === 'discard-mine'
-          ) {
-            if (!window.confirm(_confirmText(btnCfg.action))) return;
-          }
-          commit(btnCfg);
-        });
-        ftr.appendChild(btn);
-      });
-    }
-    renderButtonRow();
-
-    modal.appendChild(hdr);
-    modal.appendChild(body);
-    modal.appendChild(ftr);
-    overlay.appendChild(modal);
-    document.body.appendChild(overlay);
-  }
-
-  // Typed-confirm tiering (§5): en_utility_* overwrite/restore actions require
-  // typing the word "overwrite" before the action runs. Replaces the footer's
-  // buttons with an inline input + Confirm/Cancel so the user cannot miss it.
-  // `onCancel` restores the normal button row (never a dead end).
-  function _showTypedConfirmInline(ftr, btnCfg, onCancel, onConfirmed) {
-    var row = document.createElement('div');
-    row.className = 'ch-conflict-typed';
-
-    var label = document.createElement('span');
-    label.className = 'ch-conflict-meta';
-    label.textContent = 'Type "overwrite" to confirm:';
-
-    var input = document.createElement('input');
-    input.type = 'text';
-    input.autocomplete = 'off';
-    input.spellcheck = false;
-
-    var confirmBtn = document.createElement('button');
-    confirmBtn.className = 'ch-conflict-btn ch-conflict-primary';
-    confirmBtn.textContent = 'Confirm overwrite';
-    confirmBtn.disabled = true;
-
-    var cancelBtn = document.createElement('button');
-    cancelBtn.className = 'ch-conflict-btn';
-    cancelBtn.textContent = 'Cancel';
-
-    input.addEventListener('input', function () {
-      confirmBtn.disabled = input.value.trim().toLowerCase() !== 'overwrite';
-    });
-    confirmBtn.addEventListener('click', function () {
-      if (input.value.trim().toLowerCase() !== 'overwrite') return;
-      onConfirmed();
-    });
-    cancelBtn.addEventListener('click', onCancel);
-
-    row.appendChild(label);
-    row.appendChild(input);
-    row.appendChild(cancelBtn);
-    row.appendChild(confirmBtn);
-    ftr.innerHTML = '';
-    ftr.appendChild(row);
-    input.focus();
-  }
-
   window.SyncConflictUI = window.SyncConflictUI || {};
-  window.SyncConflictUI.showConflictModal = showConflictModal;
   window.SyncConflictUI.describeConflictEntry = describeConflictEntry;
 
   // --- Conflict-archive viewer ----------------------------------------------
@@ -1020,17 +701,11 @@
     } else if (r === 'deleted-elsewhere') {
       text = who + ': another user deleted some items that you had changed. The deletion was kept. Download the deleted items to compare.';
       button = 'Download the deleted items';
-    } else if (r === 'held-draft-discarded') {
-      text = who + ': you discarded a draft that was not saved yet. Download the draft to see it.';
-      button = 'Download the draft';
-    } else if (r === 'held-draft-replaced-queued-edit') {
-      text = who + ': you saved a draft over an earlier edit that was not sent yet. The draft was kept. Download the earlier edit to compare.';
-      button = 'Download the earlier edit';
     } else if (r === 'queue-entry-no-owner') {
       text = who + ': an edit that was not sent yet could not be matched to a user, so it was not applied. Download it to see it.';
       button = 'Download the edit';
     } else if (entry.winningSide === 'local') {
-      text = who + ': another user saved a different version on ' + when + '. You chose to keep your version. ' + theirs;
+      text = who + ': another user saved a different version on ' + when + '. Your later save was kept. ' + theirs;
       button = 'Download their version';
     } else if (r === 'hydration-server-wins' || r === 'write-conflict-server-wins' || r === 'record-conflict') {
       text = who + ': another user saved a newer version on ' + when + '. Their version was kept. ' + mine;
@@ -1403,7 +1078,6 @@
     _renderModeControl(body, currentMode);
     _renderQueueDepth(body, window.DB && typeof window.DB.getQueueDepth === 'function' ? window.DB.getQueueDepth() : 0);
     _renderUploadProgress(body);
-    _renderHeldDrafts(body);
 
     var loading = document.createElement('div');
     loading.id = 'ch-sync-status-loading';
@@ -1431,83 +1105,6 @@
       loading.textContent = 'Sync status is unavailable on this page.';
     }
   }
-
-  // Held drafts: versions the user kept with "Decide later". They are saved apart from the page (the page shows
-  // the server copy). One small collapsible entry in this panel, plus a small pill while any exist.
-  // "Use my draft" = DB.releaseHeldDraft (a new edit through the normal send path); "Discard" = DB.discardHeldDraft
-  // (the value goes to Conflict history first).
-  function _renderHeldDrafts(container) {
-    var list = window.DB && typeof window.DB.getHeldDrafts === 'function' ? window.DB.getHeldDrafts() : [];
-    if (!list.length) return;
-    var refresh = function () {
-      if (typeof renderHeldLink === 'function') renderHeldLink();
-      if (typeof _statusPanelOpen !== 'undefined' && _statusPanelOpen && typeof openSyncStatusPanel === 'function') {
-        openSyncStatusPanel();
-      }
-    };
-    var det = document.createElement('details');
-    det.className = 'ch-held-details';
-    var sum = document.createElement('summary');
-    sum.textContent = 'Held drafts (' + list.length + ')';
-    sum.title =
-      'Versions you chose to decide on later. The page shows the saved server copy. These drafts stay on this computer and are not sent until you choose.';
-    det.appendChild(sum);
-    list.forEach(function (d) {
-      var row = document.createElement('div');
-      row.className = 'ch-held-row';
-      var what = document.createElement('div');
-      what.textContent =
-        (d.deleted ? 'Your delete of ' : 'Your version of ') +
-        friendlyKeyName(d.key) +
-        ', kept ' +
-        fmtDate(d.ts ? new Date(d.ts).toISOString() : null) +
-        (d.userEmail ? ' by ' + d.userEmail : '');
-      var btns = document.createElement('div');
-      btns.className = 'ch-held-btns';
-      var use = document.createElement('button');
-      use.className = 'ch-conflict-btn';
-      use.textContent = 'Use my draft';
-      use.title =
-        'Send your draft to the server now as a new change. If someone saved a newer version first, you will be asked again.';
-      use.addEventListener('click', function () {
-        Promise.resolve(window.DB.releaseHeldDraft(d.key)).then(refresh);
-      });
-      var del = document.createElement('button');
-      del.className = 'ch-conflict-btn';
-      del.textContent = 'Discard';
-      del.title = 'Remove this draft. A copy goes to Past conflicts first, so it can still be downloaded.';
-      del.addEventListener('click', function () {
-        window.DB.discardHeldDraft(d.key);
-        refresh();
-      });
-      btns.appendChild(use);
-      btns.appendChild(del);
-      row.appendChild(what);
-      row.appendChild(btns);
-      det.appendChild(row);
-    });
-    container.appendChild(det);
-  }
-
-  function renderHeldLink() {
-    ensureStyles();
-    var list = window.DB && typeof window.DB.getHeldDrafts === 'function' ? window.DB.getHeldDrafts() : [];
-    var el = document.getElementById('ch-held-link');
-    if (!list.length) {
-      if (el) el.style.display = 'none';
-      return;
-    }
-    el = ensureSidebarLink('ch-held-link');
-    if (!el) return;
-    el.textContent = 'Held drafts (' + list.length + ')';
-    el.setAttribute('data-sync-short', 'Held ' + list.length);
-    el.title = 'Versions kept on this computer with Decide later. Click to see them and choose what to do.';
-    el.style.display = '';
-    el.onclick = openSyncStatusPanel;
-  }
-  ['syncQueueChanged', 'dbReady', 'chAuthStateChanged'].forEach(function (n) {
-    window.addEventListener(n, renderHeldLink);
-  });
 
   // Live queue-depth updates (task 2a.7 point 3) — only touches the DOM when
   // the panel is actually open, so this listener is a no-op the rest of the time.

@@ -536,16 +536,14 @@ const DB = (() => {
   }
   // Identity rule (2026-10-21): only the signed-in user's OWN waiting write counts, for shared keys too.
   // Another user's write never blocks this user's pull and never opens a conflict for this user (it
-  // stays queued under its author and is decided when the author signs in). A held draft is not a
-  // waiting write: it is kept apart and never blocks the pull.
+  // stays queued under its author and is decided when the author signs in).
   function _queuedEntryFor(key) {
     const me = _myUserId();
-    return _syncQueue.find((e) => e.key === key && !e.held && _entryBelongsTo(e, me)) || null;
+    return _syncQueue.find((e) => e.key === key && _entryBelongsTo(e, me)) || null;
   }
   // The ONE rule for "does this queued write stop the pull from taking the server copy of its key".
   // It blocks only while the server has nothing newer than the version the write was based on
-  // (entry.baseVersion; none recorded = the write never saw a server row). A held draft never blocks
-  // (_queuedEntryFor ignores it): the page shows the server copy and the draft stays saved apart.
+  // (entry.baseVersion; none recorded = the write never saw a server row).
   // A write that is stale against the server copy does NOT block: the server
   // copy wins and the write goes to the conflict path (_resolveStaleQueuedWrites).
   function _queuedWriteBlocksPull(entry, serverVersion) {
@@ -571,7 +569,7 @@ const DB = (() => {
     if (!me) return;
     _claimSignedOutEntries(me);
     _syncQueue.forEach((e) => {
-      if (e.held || !_entryBelongsTo(e, me)) return; // a held draft is never put on the page
+      if (!_entryBelongsTo(e, me)) return;
       // A shared key lost its version stamp when another user was cleared in. The edit was made on
       // entry.baseVersion: that is the stamp to send against (a newer server row then goes to the conflict path).
       if (!_isPerUserKey(e.key) && !_replicaVersions[e.key] && typeof e.baseVersion === 'number') {
@@ -641,7 +639,7 @@ const DB = (() => {
     _pullFailWhat = what;
     _pullFailDetail = detail ? String(detail) : '';
   }
-  function _enqueueWrite(key, payload, opts) {
+  function _enqueueWrite(key, payload) {
     // Coalesce to the latest pending write per key. DESIGN DECISION (flagged,
     // not silently guessed — see implementer report): the app's write pattern
     // is whole-value replace via module-global read-modify-write (plan §3),
@@ -655,10 +653,8 @@ const DB = (() => {
     // (payload.owner). Never re-read after an await: the user may have changed.
     const owner = payload.owner || _queueOwner();
     // Coalesce per key AND owner: one user's edit never replaces another user's pending edit.
-    // A held draft is kept apart from the live edit: a normal write never replaces it, a newer held draft does.
-    const isHeld = !!(opts && opts.held);
     _syncQueue = _syncQueue.filter(
-      (e) => !(e.key === key && _entryOwnerKey(e.owner) === _entryOwnerKey(owner) && !!e.held === isHeld),
+      (e) => !(e.key === key && _entryOwnerKey(e.owner) === _entryOwnerKey(owner)),
     );
     _syncQueue.push({
       id: _genId(),
@@ -666,7 +662,6 @@ const DB = (() => {
       owner,
       value: payload.deleted ? undefined : payload.value,
       deleted: !!payload.deleted,
-      held: isHeld, // a held local draft: kept, never sent by the drain (_holdLocalDraft)
       cause: payload.cause || null, // why the edit was made (page: action); sent with the write
       baseVersion:
         _replicaVersions[key] && typeof _replicaVersions[key].version === 'number'
@@ -869,8 +864,7 @@ const DB = (() => {
     const bodyObj = isTombstone
       ? { key: wireKey, deleted: true, baseVersion, cause }
       : { key: wireKey, value: stripDerivedCaches(key, payload.value), baseVersion, cause };
-    // Phase 2b conflict-modal "Overwrite with mine" / "Restore my version"
-    // actions set this so kv-sync.js snapshots the row being replaced into
+    // The later-save-wins path (_saveOverServer) sets this so kv-sync.js snapshots the row being replaced into
     // kv_history BEFORE the overwrite lands (kv-sync.js handlePut, explicit
     // deliberate overwrite only — never set on an ordinary write).
     if (payload.explicitOverwrite === true) bodyObj.explicitOverwrite = true;
@@ -955,7 +949,7 @@ const DB = (() => {
     // Customer/Multi-Project (2026-09-24): deterministic customer ids ('cust_' +
     // projectId, see _selfHealCustomersAndScope in app/utility-data.js) make two
     // independent browsers migrating the same project converge on byte-identical
-    // shared-id rows, so this merges cleanly with no conflict modal.
+    // shared-id rows, so this merges cleanly with no conflict.
     en_customers: Object.assign({}, _bareList, {
       getLabel: (it) => it && it.name,
     }),
@@ -978,7 +972,7 @@ const DB = (() => {
   // the same three-way merge (_mergeCollection) as UNION_KEY_CONFIG, but a
   // removal is decided by the merge base alone (no shared deletion record), and
   // every item must carry an id (requireIds): a list that cannot be matched by
-  // id is not merged and goes to the whole-key conflict modal, so nothing is
+  // id is not merged and goes to the whole-key later-save-wins path, so nothing is
   // dropped. `children` names nested id lists merged the same way.
   //   en_utility_audit_log  append-only: an entry never changes after it is written
   //   en_pdf_bills          list of held bill records, id 'pb...'
@@ -1448,26 +1442,22 @@ const DB = (() => {
       removedLocal: ls.removed,
     };
   }
-  // Applies the user's per-record choices to a merge result: 'mine' puts the
-  // local record back in place of the server one; the losing record of every
-  // conflict is archived first.
-  function _applyRecordChoices(key, merge, choices) {
+  // Same record changed on both sides: the local (later) record replaces the server one. The server
+  // record is archived first, for every conflict.
+  function _applyLaterSaveWinsRecords(key, merge) {
     const cfg = _collectionCfg(key);
     const mine = new Map();
     merge.conflicts.forEach((c) => {
-      const pick = choices && _own(choices, String(c.id)) ? choices[String(c.id)] : 'theirs';
-      const keepMine = pick === 'mine';
       _appendConflictArchive({
         key,
         reason: 'record-conflict',
         recordId: c.id,
-        losingSide: keepMine ? 'server' : 'local',
-        losingValue: keepMine ? c.server : c.local,
-        winningSide: keepMine ? 'local' : 'server',
+        losingSide: 'server',
+        losingValue: c.server,
+        winningSide: 'local',
       });
-      if (keepMine) mine.set(String(c.id), c.local);
+      mine.set(String(c.id), c.local);
     });
-    if (!mine.size) return merge.value;
     const items = cfg.getItems(merge.value).map((it) => {
       const id = cfg.getId(it);
       return id !== undefined && id !== null && mine.has(String(id)) ? mine.get(String(id)) : it;
@@ -1509,7 +1499,7 @@ const DB = (() => {
       // Defensive: kv-sync.js's contract always returns `current` on a 409
       // (see kv-sync.js rowToConflict) — this should not happen. Never hang
       // the app on a malformed response; queue for a later retry instead.
-      console.warn('[DB] Conflict 409 with no current row — cannot show modal, queued for retry:', key);
+      console.warn('[DB] Conflict 409 with no current row — queued for retry:', key);
       _enqueueWrite(key, payload);
       return;
     }
@@ -1527,8 +1517,8 @@ const DB = (() => {
       return;
     }
 
-    // Collection keys: per-record three-way merge. A modal only when the same
-    // record was changed on both sides, and then the user chooses per record.
+    // Collection keys: per-record three-way merge. When the same record was changed on both sides,
+    // the later save (this write) wins and the server record is archived.
     if (_collectionCfg(key) && !payload.deleted && !current.deleted) {
       const handled = await _resolveCollectionConflict(key, payload, current, epoch, depth);
       if (handled) return;
@@ -1540,7 +1530,7 @@ const DB = (() => {
     // identical content to the same key (en_customers, en_utility_<customerId>) at nearly
     // the same time. If the local payload and the server's current value are the same in
     // canonical form, nothing is lost and there is nothing to reconcile — adopt the
-    // server's version, no archive entry, no modal. Canonical, not JSON.stringify:
+    // server's version, no archive entry. Canonical, not JSON.stringify:
     // Postgres jsonb returns keys in its own order, so equal values differ byte for byte
     // and the "someone else changed this" dialog opened for identical data.
     if (!payload.deleted && !current.deleted && current.value !== undefined) {
@@ -1553,33 +1543,33 @@ const DB = (() => {
           return;
         }
       } catch (e) {
-        /* fall through to the normal modal path if either side isn't serializable */
+        /* fall through to the later-save-wins path if either side isn't serializable */
       }
     }
 
-    // Data-safety invariant: archive the losing local write BEFORE adopting
-    // the server version or opening any modal — never silently lose either
-    // side, and never let a modal button be clickable before this has run.
+    // Same-field conflict (2026-11-05): no dialog and no waiting for the user. The later save wins:
+    // this write goes out at the server version just seen. The value it replaces is copied to the
+    // conflict history here, and the server copies it to kv_history (explicitOverwrite). Nothing is lost.
     _appendConflictArchive({
       key,
-      reason: current.deleted ? 'write-conflict-tombstone' : 'write-conflict-server-wins',
-      losingSide: 'local',
-      losingValue: payload.deleted ? null : payload.value,
-      losingDeleted: !!payload.deleted,
+      reason: 'write-conflict-later-save-wins',
+      losingSide: 'server',
+      losingValue: current.deleted ? null : current.value,
+      losingDeleted: !!current.deleted,
+      winningSide: 'local',
       winningVersion: current.version,
       winningUpdatedBy: current.updatedBy,
       winningUpdatedAt: current.updatedAt,
     });
-
-    await _presentConflictModal(key, payload, current, epoch);
+    await _saveOverServer(key, payload, current, epoch, depth);
   }
 
   // Re-sends a merged value at the server version just adopted. A new 409
   // merges again (bounded); a network/server error goes to the retry queue.
-  async function _resendMerged(key, value, epoch, depth) {
+  async function _resendMerged(key, value, epoch, depth, explicitOverwrite) {
     let r;
     try {
-      r = await _sendKvPut(key, { value, cause: 'Sync conflict: merged both versions' });
+      r = await _sendKvPut(key, { value, cause: 'Sync conflict: merged both versions', explicitOverwrite: explicitOverwrite === true });
     } catch (e) {
       r = { status: 'network-error' };
     }
@@ -1594,7 +1584,7 @@ const DB = (() => {
 
   // Write-conflict path for a collection key. Resolves true when it handled
   // the conflict (merged, queued, or dropped after an identity change), false
-  // when the value is not a list (the caller falls back to the whole-key modal).
+  // when the value is not a list (the caller falls back to the whole-key later-save-wins path).
   async function _resolveCollectionConflict(key, payload, current, epoch, depth) {
     if (!_collectionCfg(key).noDeletionRecords && !(await _refreshTombstones())) {
       // FAIL CLOSED: without the latest deletion records a merge could bring a
@@ -1608,50 +1598,9 @@ const DB = (() => {
     const merge = _mergeCollection(key, _syncBase[key], local, current.value);
     if (merge === null) return false;
     let value = merge.value;
-    if (merge.conflicts.length) {
-      if (
-        typeof window === 'undefined' ||
-        !window.SyncConflictUI ||
-        typeof window.SyncConflictUI.showConflictModal !== 'function'
-      ) {
-        console.warn('[DB] SyncConflictUI unavailable — record conflict left queued:', key);
-        _enqueueWrite(key, payload);
-        return true;
-      }
-      const cfg = _collectionCfg(key);
-      const localBase = _replicaVersions[key];
-      const descriptor = {
-        key,
-        conflictClass: 'records',
-        records: merge.conflicts.map((c) => ({
-          id: c.id,
-          label: String((cfg.getLabel && cfg.getLabel(c.local)) || c.id),
-          fields: c.fields,
-          local: c.local,
-          server: c.server,
-        })),
-        local: { value: local, deleted: false },
-        server: {
-          value: current.value,
-          version: current.version,
-          deleted: false,
-          updatedBy: current.updatedBy,
-          updatedAt: current.updatedAt,
-        },
-        localBaseVersion: localBase && typeof localBase.version === 'number' ? localBase.version : null,
-        typedConfirmRequired: false,
-      };
-      let resolution;
-      try {
-        resolution = await window.SyncConflictUI.showConflictModal(descriptor);
-      } catch (e) {
-        console.warn('[DB] Conflict modal threw, leaving write queued:', key, e);
-        _enqueueWrite(key, payload);
-        return true;
-      }
-      if (epoch !== _identityEpoch) return true; // user switched while the modal was open: write nothing
-      value = _applyRecordChoices(key, merge, resolution && resolution.choices);
-    }
+    // The same record changed on both sides: the later save (this write) wins. The server record it replaces
+    // goes to the conflict history here and to kv_history on the server (explicitOverwrite on the re-send).
+    if (merge.conflicts.length) value = _applyLaterSaveWinsRecords(key, merge);
     await _rawSet(key, value);
     if (epoch !== _identityEpoch) return true;
     if (typeof window !== 'undefined') {
@@ -1660,210 +1609,46 @@ const DB = (() => {
     _setSynced(key, { version: current.version, hash: current.hash || null }, current.value);
     // The merge result IS the server value (the other user already wrote every record we hold): nothing to send.
     if (!merge.conflicts.length && _sameCanonical(key, value, current.value)) return true;
-    await _resendMerged(key, value, epoch, depth);
-    if (merge.conflicts.length) _announceResolvedView(key, epoch); // the user chose per record: redraw with the result
+    await _resendMerged(key, value, epoch, depth, merge.conflicts.length > 0);
+    if (merge.conflicts.length) _announceResolvedView(key, epoch); // redraw with the merged result
     // Background history lists (calendar and BAS import history, audit log) are written by the app, not typed by the
     // user, and often on page load: a merge there is not news, so no "merged with yours" message.
     const quietMerge = !merge.conflicts.length && _isBackgroundList(key);
     if (!quietMerge && epoch === _identityEpoch && typeof showToast === 'function') {
-      showToast(
-        merge.conflicts.length
-          ? 'Your choices were saved. The other versions are in the conflict history.'
-          : 'Changes saved by another user were merged with yours. Nothing was lost.',
-        'info',
-      );
+      showToast('Changes saved by another user were merged with yours. Nothing was lost.', 'info');
     }
     return true;
   }
 
-  // --- Phase 2b: blocking conflict modal (full/'on' mode only) --------------
-  async function _presentConflictModal(key, payload, current, epoch) {
-    const isTombstoneConflict = current.deleted === true && !payload.deleted;
-    const localBase = _replicaVersions[key];
-
-    const descriptor = {
-      key,
-      local: {
-        value: payload.deleted ? undefined : payload.value,
-        deleted: !!payload.deleted,
-      },
-      server: {
-        value: current.value,
-        version: current.version,
-        deleted: !!current.deleted,
-        updatedBy: current.updatedBy,
-        updatedAt: current.updatedAt,
-      },
-      localBaseVersion: localBase && typeof localBase.version === 'number' ? localBase.version : null,
-      conflictClass: isTombstoneConflict ? 'tombstone' : 'standard',
-      typedConfirmRequired: key.indexOf('en_utility_') === 0,
-    };
-
-    if (
-      typeof window === 'undefined' ||
-      !window.SyncConflictUI ||
-      typeof window.SyncConflictUI.showConflictModal !== 'function'
-    ) {
-      console.warn('[DB] SyncConflictUI unavailable — cannot present conflict modal, write held as a draft:', key);
-      _holdLocalDraft(key, payload);
-      return;
-    }
-
-    let resolution;
-    try {
-      resolution = await window.SyncConflictUI.showConflictModal(descriptor);
-    } catch (e) {
-      console.warn('[DB] Conflict modal threw, write held as a draft:', key, e);
-      _holdLocalDraft(key, payload);
-      return;
-    }
-    if (epoch !== _identityEpoch) return; // user switched while the modal was open: write nothing
-
-    await _applyConflictResolution(key, payload, current, resolution, epoch);
-  }
-
-  // --- Phase 2b: execute the user's chosen conflict-modal resolution --------
-  async function _applyConflictResolution(key, payload, current, resolution, epoch) {
-    const action = resolution && resolution.action;
-
-    if (action === 'load-theirs' || action === 'save-copy' || action === 'discard-mine') {
-      // Local losing value was already archived before the modal opened.
-      // Adopt the server's current value/version as the new local truth.
-      if (current.deleted) {
-        await _rawDelete(key);
-        if (epoch !== _identityEpoch) return;
-        _setSynced(key, {
-          version: current.version,
-          hash: current.hash || null,
-          deleted: true,
-        });
-      } else {
-        await _rawSet(key, current.value);
-        if (epoch !== _identityEpoch) {
-          if (_isPerUserKey(key)) await _rawDelete(key); // never leave the old user's row under the new user
-          return;
-        }
-        _setSynced(key, { version: current.version, hash: current.hash || null }, current.value);
-      }
-      if (typeof window !== 'undefined') {
-        window.dispatchEvent(new CustomEvent('dataUpdated', { detail: { key } }));
-      }
-      if (typeof showToast === 'function') {
-        showToast('Loaded the latest saved version of this item.', 'info');
-      }
-      _announceResolvedView(key, epoch);
-      return;
-    }
-
-    if (action === 'overwrite-mine' || action === 'restore-mine') {
-      // Retry at the server's current version with explicitOverwrite so
-      // kv-sync.js snapshots the row being replaced into kv_history first.
-      _setSynced(key, { version: current.version, hash: current.hash || null }, current.value);
-      const retryPayload = Object.assign({}, payload, {
-        explicitOverwrite: true,
-        cause: 'Sync conflict: ' + (action === 'restore-mine' ? 'Restore my version' : 'Keep mine'),
-      });
-      let result;
-      try {
-        result = await _sendKvPut(key, retryPayload);
-      } catch (e) {
-        result = { status: 'network-error' };
-      }
-      if (epoch !== _identityEpoch) return;
-      if (result.status === 'ok') {
-        if (typeof showToast === 'function') {
-          showToast('Your version was saved, replacing the server copy.', 'info');
-        }
-        return;
-      }
-      if (result.status === 'conflict') {
-        // Someone changed it again in the meantime — fresh conflict.
-        await _handleConflict(key, payload, result.body, 'on');
-        return;
-      }
-      _enqueueWrite(key, retryPayload);
-      return;
-    }
-
-    // 'dismiss' (closed without a choice) or an action this build does not know: keep the local value.
-    _holdLocalDraft(key, payload);
-  }
-  // A dismissed conflict keeps the local value as a held local draft: it stays in the durable queue
-  // (so it counts as an unsynced change and the pull never replaces it) but the drain never sends it.
-  // Sending it again would only get the same 409 and open the same modal forever. The user chooses
-  // later: a new edit of the key replaces the draft (normal write), releaseHeldDraft sends it again.
-  function _holdLocalDraft(key, payload) {
-    _enqueueWrite(key, payload, { held: true });
-    if (typeof showToast === 'function') {
-      showToast('Your version is kept on this computer as a draft. It is not sent to the server until you choose.', 'info');
-    }
-  }
-  // The held drafts of the signed-in user (never another user's). Plain facts for the sync status panel.
-  function getHeldDrafts() {
-    const me = _myUserId();
-    return _syncQueue
-      .filter((e) => e.held && _entryBelongsTo(e, me))
-      .map((e) => ({ key: e.key, ts: e.ts, deleted: !!e.deleted, userEmail: (e.owner && e.owner.email) || null }));
-  }
-  function _findHeld(key) {
-    const me = _myUserId();
-    return _syncQueue.find((x) => x.key === key && x.held && _entryBelongsTo(x, me)) || null;
-  }
-  function _dropEntry(e) {
-    _syncQueue = _syncQueue.filter((x) => x.id !== e.id);
-    _persistSyncQueue();
-  }
-  // "Use my draft": the draft leaves the held list and goes through the normal write path (set/remove ->
-  // _replicateWrite -> the full-pull gate, _valueChanged, _sendKvPut) as a NEW edit made now by the signed-in
-  // user, on the server version this device holds now. A newer server change opens the conflict choice again.
-  async function releaseHeldDraft(key) {
-    const e = _findHeld(key);
-    if (!e) return false;
-    // A newer live queued edit of the same item (made offline) is replaced by the draft: copy it to
-    // Conflict history first, so no value is lost.
-    const me = _myUserId();
-    const live = _syncQueue.find((x) => x.key === key && !x.held && _entryBelongsTo(x, me));
-    if (live) {
-      _appendConflictArchive({
-        key: live.key,
-        reason: 'held-draft-replaced-queued-edit',
-        losingSide: 'local',
-        losingValue: live.deleted ? null : live.value,
-        losingDeleted: !!live.deleted,
-        losingVersion: typeof live.baseVersion === 'number' ? live.baseVersion : null,
-      });
-    }
-    // The draft stays held until the write is saved. If the save fails, it stays held and the error shows.
-    try {
-      if (e.deleted) remove(key);
-      else await set(key, e.value);
-    } catch (err) {
-      console.warn('[DB] Use my draft failed; the draft stays held:', key, err);
-      if (typeof showToast === 'function') {
-        showToast('Could not save your draft. It is still kept as a draft.', 'error');
-      }
-      return false;
-    }
-    _dropEntry(e);
-    if (typeof window !== 'undefined') window.dispatchEvent(new CustomEvent('dataUpdated', { detail: { key } }));
-    return true;
-  }
-  // "Discard": the draft's value is copied to the conflict history first (never lost), then it leaves the list.
-  function discardHeldDraft(key) {
-    const e = _findHeld(key);
-    if (!e) return false;
-    _appendConflictArchive({
-      key: e.key,
-      reason: 'held-draft-discarded',
-      losingSide: 'local',
-      losingValue: e.deleted ? null : e.value,
-      losingDeleted: !!e.deleted,
-      losingVersion: typeof e.baseVersion === 'number' ? e.baseVersion : null,
+  // --- Same-field conflict: the later save wins (no dialog) -----------------
+  // Sends this write again at the server version just seen, with explicitOverwrite so kv-sync.js copies
+  // the row being replaced into kv_history first. A deletion on either side follows the same rule.
+  async function _saveOverServer(key, payload, current, epoch, depth) {
+    _setSynced(key, { version: current.version, hash: current.hash || null }, current.value);
+    const retryPayload = Object.assign({}, payload, {
+      explicitOverwrite: true,
+      cause: 'Sync conflict: later save wins',
     });
-    _dropEntry(e);
-    return true;
+    let result;
+    try {
+      result = await _sendKvPut(key, retryPayload);
+    } catch (e) {
+      result = { status: 'network-error' };
+    }
+    if (epoch !== _identityEpoch) return;
+    if (result.status === 'ok') {
+      if (typeof showToast === 'function') {
+        showToast('Changes saved by another user were merged with yours. Nothing was lost.', 'info');
+      }
+      return;
+    }
+    if (result.status === 'conflict' && depth < CONFLICT_RESEND_CAP) {
+      // Someone changed it again in the meantime: the same rule applies to the newer row.
+      await _handleConflict(key, payload, result.body, 'on', depth + 1);
+      return;
+    }
+    _enqueueWrite(key, retryPayload); // the retry queue sends it again later
   }
-
   // --- Live write replication tail (set()/remove() call this) --------------
   // ONE PUT in flight per key. A write that arrives while one is in flight
   // waits (the newest value wins, older waiting values are dropped) and goes
@@ -2037,7 +1822,7 @@ const DB = (() => {
       // must never be replayed over it by the drain.
       const ok = _entryOwnerKey(payload.owner);
       const before = _syncQueue.length;
-      _syncQueue = _syncQueue.filter((e) => !(e.key === key && _entryOwnerKey(e.owner) === ok && !e.held));
+      _syncQueue = _syncQueue.filter((e) => !(e.key === key && _entryOwnerKey(e.owner) === ok));
       if (_syncQueue.length !== before) _persistSyncQueue();
       return;
     }
@@ -2069,7 +1854,7 @@ const DB = (() => {
     // Send only the signed-in user's own entries; others stay queued untouched.
     const me = _myUserId();
     _claimSignedOutEntries(me);
-    const snapshot = _syncQueue.filter((e) => e.owner && e.owner.id && e.owner.id === me && !e.held);
+    const snapshot = _syncQueue.filter((e) => e.owner && e.owner.id && e.owner.id === me);
     const epoch = _identityEpoch;
     for (const entry of snapshot) {
       // Identity changed during the drain: stop. The token now belongs to someone else.
@@ -2141,7 +1926,6 @@ const DB = (() => {
     if (!_hasFullPull()) return false; // the pull's success re-arms the drain (_hydrate)
     const me = _myUserId();
     return _syncQueue.some((e) => {
-      if (e.held) return false; // a held draft is never sent by itself
       if (!(e.owner && e.owner.id && e.owner.id === me)) return false;
       const f = _queueFailures.get(e.key);
       return !(f && f.permanent);
@@ -2298,7 +2082,7 @@ const DB = (() => {
         } while (_hydrateRerun);
       } finally {
         _hydrateInFlight = null;
-        if (_hasFullPull() && _syncQueue.length) _scheduleDrain(); // held entries may go now
+        if (_hasFullPull() && _syncQueue.length) _scheduleDrain(); // queued entries may go now
         if (_hasFullPull()) _purgeFalseConflicts();
         if (_archivedLocalThisRun > 0) {
           _showLater(
@@ -2344,7 +2128,7 @@ const DB = (() => {
     let serverValue = row.value;
     let collectionMerge = null;
     // Collection keys: the ONE per-record merge (_mergeCollection). A record
-    // changed on both sides takes the server version here (no modal at load);
+    // changed on both sides takes the server version here (no dialog at load);
     // the local record is archived first and counted for the toast.
     // A copy that was synced before and has no pending edit (checked above) is not merged and sends nothing:
     // the server copy replaces it (below). Only a copy that never synced is merged and sent (first sync).
@@ -2475,21 +2259,6 @@ const DB = (() => {
     const local = _replicaVersions[localKey];
     if (local && typeof local.version === 'number') return m.version > local.version;
     return !m.deleted && _cache[localKey] === undefined;
-  }
-  // The ONE rule for "an unstamped key whose local value differs from the server
-  // needs the user's answer": a live server row, a plain key (not a collection,
-  // not the deletion records) and a meaningful local value.
-  function _driftNeedsAsk(localKey, local, row) {
-    if (!row || row.deleted || row.value === undefined || row.value === null) return false;
-    if (_collectionCfg(localKey) || localKey === TOMBSTONE_KEY) return false;
-    // No dialog on this page (nobody can answer): the old rule stays, server wins and the
-    // local value is archived first.
-    if (typeof window === 'undefined' || !window.SyncConflictUI || typeof window.SyncConflictUI.showConflictModal !== 'function')
-      return false;
-    if (local === undefined || local === null || local === '') return false;
-    if (Array.isArray(local) && !local.length) return false;
-    if (typeof local === 'object' && !Array.isArray(local) && !Object.keys(local).length) return false;
-    return true;
   }
   async function _hydrateInner() {
     const mode = _backendMode();
@@ -2659,28 +2428,8 @@ const DB = (() => {
         }
         if (_hasQueuedWrite(localKey)) continue; // race guard
         const before = _cache[localKey];
-        // A plain (non-collection) key with a real local value and no stamp: the
-        // user decides in the conflict modal. Never a silent server-wins. Same
-        // content is adopted silently by _handleConflict. Collection keys keep
-        // the per-record merge in _reconcileIncoming.
-        // A held draft means the user already chose "Decide later" for this key: the pull does not ask
-        // again, the page takes the server copy (the old local value goes to the conflict history).
-        if (!_findHeld(localKey) && _driftNeedsAsk(localKey, before, rows[0])) {
-          const row = rows[0];
-          const current = {
-            value: row.value,
-            version: row.version,
-            hash: row.hash || m.hash || null,
-            deleted: false,
-            updatedBy: row.updatedBy || row.updated_by,
-            updatedAt: row.updatedAt || row.updated_at,
-          };
-          // Not awaited: the modal waits for the user and must not hold the load.
-          _handleConflict(localKey, { value: before }, { current }, 'on').catch((e) =>
-            console.warn('[DB] Hydration: conflict handling failed, key left unstamped:', localKey, e),
-          );
-          continue;
-        }
+        // A key with no stamp and a different local value: the server copy is adopted and the local value
+        // is copied to the conflict history first (_reconcileIncoming). No dialog.
         await _reconcileIncoming(localKey, rows[0], m.hash);
         if (_cache[localKey] !== before) updatedFromServer++;
       }
@@ -2743,7 +2492,7 @@ const DB = (() => {
 
   // Queued writes the server has already passed (server version newer than the write's base): the
   // write leaves the queue and goes to the normal conflict path with the server row as `current` (merge
-  // for lists, the modal otherwise; the local side is archived first). Never a silent overwrite either way.
+  // for lists, later-save-wins otherwise; the replaced value is archived first). Never a silent overwrite either way.
   // Returns false when a server row could not be read (that write stays queued, the pull is not complete).
   async function _resolveStaleQueuedWrites(list, epoch) {
     let allRead = true;
@@ -2778,7 +2527,7 @@ const DB = (() => {
       _syncQueue = _syncQueue.filter((e) => e.id !== entry.id);
       _persistSyncQueue();
       const payload = entry.deleted ? { deleted: true, owner: entry.owner } : { value: entry.value, owner: entry.owner };
-      // Not awaited: a modal waits for the user and must not hold the load.
+      // Not awaited: the load does not wait for the re-send.
       _handleConflict(localKey, payload, { current }, 'on').catch((e) => {
         console.warn('[DB] Stale queued write: conflict handling failed, write re-queued:', localKey, e);
         _enqueueWrite(localKey, payload);
@@ -3023,9 +2772,8 @@ const DB = (() => {
     // A shared key holding someone's UNSENT write is cleared too (2026-10-21, identity safety):
     // the page value is that user's edit, not the server copy. The next user pulls the server copy,
     // and the edit stays in the queue under its author (reapplied when that author signs in again).
-    // Held drafts are never on the page, so they are skipped.
     _syncQueue.forEach((e) => {
-      if (e.held || _isPerUserKey(e.key) || _entryBelongsTo(e, nextUid)) return;
+      if (_isPerUserKey(e.key) || _entryBelongsTo(e, nextUid)) return;
       if (cleared.indexOf(e.key) === -1) cleared.push(e.key);
     });
 
@@ -3154,7 +2902,7 @@ const DB = (() => {
     _backgroundTasksStarted = true;
     if (typeof window === 'undefined') return;
     window.addEventListener('online', () => {
-      // Back online with no full pull yet: pull first (its success releases the held queue).
+      // Back online with no full pull yet: pull first (its success sends the queue).
       if (_backendMode() === 'on' && !_hasFullPull()) _hydrate().catch((e) => console.warn('[DB] Pull on reconnect failed:', e));
       _drainQueueOnce();
     });
@@ -3753,9 +3501,6 @@ const DB = (() => {
     restoreFetchServer,
     restorePush,
     hasFullPull: _hasFullPull,
-    getHeldDrafts,
-    releaseHeldDraft,
-    discardHeldDraft,
   };
 })();
 

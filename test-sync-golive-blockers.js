@@ -658,7 +658,7 @@ const ok = (body) => ({ ok: true, status: 200, json: async () => body });
     assert.ok(!JSON.stringify(srv.rows[KEY].value).includes('_savingsCache'));
   });
   await t(
-    'M2 utility data: same bill field changed by both users is a real conflict; server not overwritten, edit kept',
+    'M2 utility data: same bill field changed by both users: the later save wins, no dialog, their value archived',
     async () => {
       const KEY = 'en_utility_cust_1';
       const srv = makeServer({ [KEY]: util0() });
@@ -670,18 +670,18 @@ const ok = (body) => ({ ok: true, status: 200, json: async () => body });
       A.buildings[0].meters[0].bills[0].kwh = 111;
       await L.DB.set(KEY, A);
       await settle();
-      // No page UI in this sandbox: the engine must not overwrite the server and must keep the edit.
-      assert.strictEqual(srv.rows[KEY].value.buildings[0].meters[0].bills[0].kwh, 999);
-      assert.strictEqual(L.DB.getQueueDepth(), 1, 'local edit kept in the queue');
+      assert.strictEqual(srv.rows[KEY].value.buildings[0].meters[0].bills[0].kwh, 111, 'the later save won');
+      assert.strictEqual(L.DB.getQueueDepth(), 0, 'nothing left in the queue');
+      assert.ok(JSON.stringify(L.DB.getConflictArchive()).includes('999'), 'their value (999) is in the conflict history');
     },
   );
-  // Same field of the same record changed by both users: the user answers per record.
-  // The discarded version must be in the conflict history, whichever side is kept.
+  // Same field of the same record changed by both users: the later save wins with no dialog.
+  // The replaced server version must be in the conflict history.
   const projects0 = () => [
     { id: 'p1', name: 'Alpha', note: 'base' },
     { id: 'p2', name: 'Beta', note: 'base' },
   ];
-  async function sameFieldConflict(choice) {
+  async function sameFieldConflict() {
     const KEY = 'en_projects';
     const srv = makeServer({ [KEY]: projects0() });
     const asked = [];
@@ -691,10 +691,8 @@ const ok = (body) => ({ ok: true, status: 200, json: async () => body });
       classify: false,
       fetchImpl: srv.fetchImpl,
       modal: async (d) => {
-        asked.push(d);
-        const choices = {};
-        d.records.forEach((r) => (choices[String(r.id)] = choice));
-        return { action: 'records', choices };
+        asked.push(d); // must never be called: the engine resolves the conflict itself
+        return { action: 'dismiss' };
       },
     });
     await L.DB.warmCache();
@@ -711,22 +709,16 @@ const ok = (body) => ({ ok: true, status: 200, json: async () => body });
     return { srv, L, asked, entries, KEY };
   }
   const noteOf = (v) => v[0].note;
-  await t('M2 same field, Keep theirs: the discarded local edit is in the conflict history; server value kept', async () => {
-    const { srv, L, asked, entries, KEY } = await sameFieldConflict('theirs');
-    assert.strictEqual(asked.length, 1, 'dialog opened once');
-    assert.strictEqual(entries.length, 1);
-    assert.strictEqual(entries[0].losingSide, 'local');
-    assert.strictEqual(entries[0].losingValue.note, 'MINE', 'archive holds MY edit');
-    assert.strictEqual(noteOf(srv.rows[KEY].value), 'THEIRS', 'server keeps theirs');
-    assert.strictEqual(noteOf(L.DB.get(KEY)), 'THEIRS', 'local takes theirs');
-  });
-  await t('M2 same field, Keep mine: the discarded server version is in the conflict history; my value kept', async () => {
-    const { srv, L, entries, KEY } = await sameFieldConflict('mine');
+  await t('M2 same field: the later save wins with no dialog; the replaced server version is in the conflict history and the server write is flagged', async () => {
+    const { srv, L, asked, entries, KEY } = await sameFieldConflict();
+    assert.strictEqual(asked.length, 0, 'no dialog');
     assert.strictEqual(entries.length, 1);
     assert.strictEqual(entries[0].losingSide, 'server');
     assert.strictEqual(entries[0].losingValue.note, 'THEIRS', 'archive holds THEIR version');
-    assert.strictEqual(noteOf(srv.rows[KEY].value), 'MINE', 'server takes mine');
-    assert.strictEqual(noteOf(L.DB.get(KEY)), 'MINE', 'local keeps mine');
+    assert.strictEqual(noteOf(srv.rows[KEY].value), 'MINE', 'server takes the later save');
+    assert.strictEqual(noteOf(L.DB.get(KEY)), 'MINE', 'local keeps it');
+    assert.strictEqual(L.DB.getQueueDepth(), 0, 'nothing left in the queue');
+    assert.strictEqual(srv.puts[srv.puts.length - 1].explicitOverwrite, true, 'the server copies the old row to kv_history');
   });
   await t('M2 utility data: a removed building on one side and a rename on the other both apply', async () => {
     const KEY = 'en_utility_cust_1';
@@ -799,9 +791,9 @@ const ok = (body) => ({ ok: true, status: 200, json: async () => body });
     srv.rows[KEY] = { value: [{ id: 'pb1' }, { id: 'pb2' }], version: 2, hash: 'h2' };
     await L.DB.set(KEY, [{ id: 'pb1' }, { fileName: 'no-id.pdf' }]);
     await settle();
-    assert.strictEqual(srv.rows[KEY].value.length, 2, 'server not overwritten');
-    assert.strictEqual(L.DB.getQueueDepth(), 1, 'local list kept in the queue, not lost');
-    assert.ok(JSON.stringify(L.DB.get(KEY)).includes('no-id.pdf'), 'local record still present');
+    assert.strictEqual(L.DB.getQueueDepth(), 0, 'nothing left in the queue');
+    assert.ok(JSON.stringify(srv.rows[KEY].value).includes('no-id.pdf'), 'the later save (local list) is on the server');
+    assert.ok(JSON.stringify(L.DB.getConflictArchive()).includes('pb2'), 'the replaced server list (pb2) is in the conflict history');
   });
 
   // ---- M1: poll applies server changes when there is no pending local edit
@@ -835,7 +827,8 @@ const ok = (body) => ({ ok: true, status: 200, json: async () => body });
       await L.DB.__t._checkForRemoteChanges();
       assert.strictEqual(L.DB.get('en_note'), 'mine', 'pending local edit not overwritten');
       assert.ok(!L.events.some((e) => e.type === 'remoteChange'), 'no refresh bar event');
-      assert.ok(!L.events.some((e) => e.type === 'dbRemoteApplied'), 'not announced as applied');
+      // The queued edit is older than the server row: it meets the conflict path (later save wins). Offline, it stays queued.
+      assert.ok(L.DB.getQueueDepth() >= 1, 'edit still waiting in the queue');
     },
   );
   await t('M1 poll applies a changed utility list by merging, keeps a different local pending list', async () => {
@@ -2980,7 +2973,7 @@ const ok = (body) => ({ ok: true, status: 200, json: async () => body });
     assert.ok(hook === null, 'the edit was injected during the real await');
     assert.strictEqual(L.DB.get('en_note'), 'local-edit-in-gap', 'local edit not replaced by the server value');
   });
-  await t('REV4 a key created on the server while this browser holds a queued local value for it: local kept and sent, no loss, no phantom conflict', async () => {
+  await t('REV4 a key created on the server while this browser holds a queued local value for it: local kept and sent, no loss: their value is archived', async () => {
     const srv = makeServer({ en_projects: [] });
     let down = false;
     const f0 = srv.fetchImpl;
@@ -3003,14 +2996,14 @@ const ok = (body) => ({ ok: true, status: 200, json: async () => body });
     await settle();
     assert.deepStrictEqual(clone(L.DB.get('en_tasks')), { n: 'local' }, 'local value kept');
     assert.strictEqual(L.DB.getQueueDepth(), 1, 'still queued');
-    assert.ok(!L.events.some((e) => e.type === 'dbRemoteApplied' && Array.from(e.detail.keys).includes('en_tasks')), 'not announced as applied');
-    assert.strictEqual(L.DB.getConflictArchive().length, 0, 'no phantom conflict archive');
     // Back online: the queued value is sent.
     down = false;
     await L.DB.__t._drainQueueOnce();
     await settle();
-    assert.strictEqual(srv.puts.filter((p) => p.key === 'en_tasks').length, 1, 'exactly one PUT, nothing sent by the poll');
-    assert.deepStrictEqual(clone(srv.puts.find((p) => p.key === 'en_tasks').value), { n: 'local' }, 'the local value was sent');
+    const taskPuts = srv.puts.filter((p) => p.key === 'en_tasks');
+    assert.strictEqual(taskPuts.length, 2, 'the first send meets the new server row (409), the second is the later save at the new version');
+    assert.deepStrictEqual(clone(taskPuts[taskPuts.length - 1].value), { n: 'local' }, 'the local value was sent last');
+    assert.strictEqual(taskPuts[taskPuts.length - 1].baseVersion, 1, 'sent at the server version just seen');
     assert.deepStrictEqual(clone(L.DB.get('en_tasks')), { n: 'local' }, 'local value still held');
     const onServer = JSON.stringify(srv.rows.en_tasks.value);
     const archived = JSON.stringify(L.DB.getConflictArchive());
@@ -3402,15 +3395,15 @@ await t("8l: a load with no edit sends 0 PUT (reload and reopen)", async () => {
     await tick(80);
     return { L, S, asked, key };
   }
-  await t('migration H1: unstamped + differing plain key: modal opens once; Decide later keeps a draft; the next pull shows the server copy, 0 PUT, archive entry', async () => {
+  await t('migration H1: unstamped + differing plain key: no dialog; the page shows the server copy, 0 PUT, the local value is in the conflict history', async () => {
     const { L, S, asked, key } = await hydrateScenario({ n: 'LOCAL' }, { n: 'SERVER' });
-    assert.strictEqual(asked.length, 1, 'modal opened once (the second pull does not ask again)');
-    assert.strictEqual(asked[0].key, key);
+    assert.strictEqual(asked.length, 0, 'no dialog');
     assert.strictEqual(JSON.stringify(L.DB.get(key)), JSON.stringify({ n: 'SERVER' }), 'the page shows the server copy');
     assert.strictEqual(S.puts.filter((p) => p.key === key).length, 0, 'no server write');
     assert.ok(L.DB.getConflictArchive().some((e) => e.key === key), 'local copy archived');
     assert.strictEqual(L.DB.__t._stampOf(key).version, 7, 'the key is stamped at the server version');
-    assert.strictEqual(L.DB.getHeldDrafts().length, 1, 'the local value stays as a draft');
+    assert.deepStrictEqual(clone(L.DB.getConflictArchive().find((e) => e.key === key).losingValue), { n: 'LOCAL' });
+    assert.strictEqual(L.DB.getQueueDepth(), 0, 'nothing waits');
   });
   await t('migration H2: unstamped + equal content: adopts the version silently (no modal)', async () => {
     const { L, asked, key } = await hydrateScenario({ a: 1, b: 2 }, { b: 2, a: 1 });
@@ -3430,21 +3423,7 @@ await t("8l: a load with no edit sends 0 PUT (reload and reopen)", async () => {
       'a,b',
     );
   });
-  await t('migration H4: "Overwrite with mine" -> PUT at the server version with explicitOverwrite, local value sent', async () => {
-    const { S, key } = await hydrateScenario({ n: 'LOCAL' }, { n: 'SERVER' }, { answer: { action: 'overwrite-mine' } });
-    const p = S.puts.filter((x) => x.key === key);
-    assert.strictEqual(p.length, 1);
-    assert.strictEqual(p[0].baseVersion, 7);
-    assert.strictEqual(p[0].explicitOverwrite, true);
-    assert.strictEqual(JSON.stringify(p[0].value), JSON.stringify({ n: 'LOCAL' }));
-  });
-  await t('migration H5: "Keep server" -> server value loaded and the key is stamped', async () => {
-    const { L, S, key } = await hydrateScenario({ n: 'LOCAL' }, { n: 'SERVER' }, { answer: { action: 'load-theirs' } });
-    assert.strictEqual(JSON.stringify(L.DB.get(key)), JSON.stringify({ n: 'SERVER' }));
-    assert.strictEqual(L.DB.__t._stampOf(key).version, 7);
-    assert.strictEqual(S.puts.filter((x) => x.key === key).length, 0);
-  });
-  await t('migration H6: a page with no conflict dialog keeps the old rule (server wins, local archived)', async () => {
+  await t('migration H6: a page with no conflict dialog behaves the same (server wins, local archived)', async () => {
     const { L, key } = await hydrateScenario({ n: 'LOCAL' }, { n: 'SERVER' }, { noModal: true });
     assert.strictEqual(JSON.stringify(L.DB.get(key)), JSON.stringify({ n: 'SERVER' }));
     assert.ok(L.DB.getConflictArchive().some((e) => e.key === key));
@@ -4153,7 +4132,7 @@ await t(
     assert.strictEqual(S.puts[0].key, 'en_budget_r');
     assert.ok(!('allowBeforeFullPull' in S.puts[0]), 'the flag is not sent to the server');
   });
-  async function staleScenario(serverVersion, answer) {
+  async function staleScenario(serverVersion) {
     const asked = [];
     const S = casServer([], { failManifest: false });
     const L = load({
@@ -4161,7 +4140,7 @@ await t(
       syncHost: true,
       classify: true,
       fetchImpl: S.fetchImpl,
-      modal: async (d) => (asked.push(d), { action: answer || 'load-theirs' }),
+      modal: async (d) => (asked.push(d), { action: 'dismiss' }),
     });
     await L.DB.warmCache();
     S.o.failManifest = true;
@@ -4175,17 +4154,18 @@ await t(
     await tick(80);
     return { L, S, asked };
   }
-  await t('SYNC-SAFETY 3: a queued write older than the server copy never makes the pull skip the key: server wins, the write goes to the conflict path', async () => {
-    const { L, S, asked } = await staleScenario(5, 'load-theirs');
-    assert.strictEqual(asked.length, 1, 'the conflict path asked once');
-    assert.deepStrictEqual(clone(asked[0].local.value), { n: 'stale-local' });
-    assert.deepStrictEqual(clone(L.DB.get('en_budget_a')), { n: 'server' }, 'the server copy is the local value now');
-    assert.strictEqual(S.puts.length, 0, 'the stale write was never sent');
+  await t('SYNC-SAFETY 3: a queued write older than the server copy never makes the pull skip the key: it goes to the conflict path and the later save wins', async () => {
+    const { L, S, asked } = await staleScenario(5);
+    assert.strictEqual(asked.length, 0, 'no dialog');
+    await L.DB.__t._drainQueueOnce(); // the pull was still running when the write was resolved: the queue sends it now
+    await tick(60);
+    assert.strictEqual(S.puts.length, 1, 'the stale write goes out once, at the server version just seen');
+    assert.strictEqual(S.puts[0].baseVersion, 5);
+    assert.deepStrictEqual(clone(L.DB.get('en_budget_a')), { n: 'stale-local' }, 'the later save wins');
     assert.strictEqual(L.DB.getQueueDepth(), 0, 'nothing left to send');
-    assert.ok(
-      L.DB.getConflictArchive().some((e) => e.key === 'en_budget_a'),
-      'the stale local value is in the conflict history',
-    );
+    const e = L.DB.getConflictArchive().filter((x) => x.key === 'en_budget_a');
+    assert.strictEqual(e.length, 1);
+    assert.deepStrictEqual(clone(e[0].losingValue), { n: 'server' }, 'the replaced server value is in the conflict history');
   });
   await t('SYNC-SAFETY 3: a queued write whose base is still the server version keeps blocking the pull (no overwrite of an unsent edit)', async () => {
     const S = casServer([kvRow('en_budget_a', { n: 1 }, 5)]);
@@ -4233,198 +4213,6 @@ await t(
     assert.ok(/^Offline/.test(els['ch-sync-offline-banner'].textContent), 'the normal offline text is unchanged');
   });
 
-  // ---- SYNC SAFETY 2026-10-21 fix 6: a dismissed conflict keeps a held local draft that is never re-sent by itself
-  async function dismissScenario() {
-    const asked = [];
-    const S = casServer([kvRow('en_budget_a', { n: 1 }, 5)]);
-    const L = load({
-      mode: 'on',
-      syncHost: true,
-      classify: true,
-      fetchImpl: S.fetchImpl,
-      modal: async (d) => (asked.push(d), { action: 'dismiss' }),
-    });
-    await L.DB.warmCache(); // stamped at version 5
-    S.rows[0] = kvRow('en_budget_a', { n: 'other' }, 6); // another user saved version 6
-    await L.DB.set('en_budget_a', { n: 'mine' }); // PUT at base 5 -> 409 -> modal -> dismiss
-    await tick(60);
-    return { L, S, asked };
-  }
-  await t('SYNC-SAFETY 6: dismiss keeps the local value as a held draft; repeated drains send nothing and the modal does not come back', async () => {
-    const { L, S, asked } = await dismissScenario();
-    assert.strictEqual(asked.length, 1);
-    const putsAfterDismiss = S.puts.length;
-    await L.DB.__t._drainQueueOnce();
-    await L.DB.__t._drainQueueOnce();
-    await tick(60);
-    assert.strictEqual(S.puts.length, putsAfterDismiss, 'the held draft is not re-sent');
-    assert.strictEqual(asked.length, 1, 'the modal is not shown again');
-    assert.deepStrictEqual(clone(L.DB.get('en_budget_a')), { n: 'mine' }, 'local value kept');
-    assert.strictEqual(L.DB.getQueueDepth(), 1, 'the draft still counts as an unsynced change');
-    assert.strictEqual(JSON.stringify(L.DB.getHeldDrafts().map((d) => d.key)), JSON.stringify(['en_budget_a']));
-  });
-  await t('HELD 1: a held draft does not block the pull: the page shows the server copy, the draft stays saved apart', async () => {
-    const { L, S, asked } = await dismissScenario();
-    await L.DB.__t._hydrate();
-    await tick(60);
-    assert.deepStrictEqual(clone(L.DB.get('en_budget_a')), { n: 'other' }, 'the page shows the server value');
-    const held = L.DB.getHeldDrafts();
-    assert.strictEqual(held.length, 1, 'the draft is still listed');
-    assert.strictEqual(held[0].key, 'en_budget_a');
-    assert.strictEqual(held[0].userEmail, 'u1@example.com', 'the list says which user');
-    assert.ok(typeof held[0].ts === 'number', 'the list says when');
-    assert.deepStrictEqual(clone(L.DB.__t._queue()[0].value), { n: 'mine' }, 'the draft value is kept');
-    assert.strictEqual(S.puts.length, 1, 'nothing was sent by the pull (only the first write that conflicted)');
-    assert.strictEqual(asked.length, 1, 'no second modal');
-  });
-  await t('HELD 2: "Use my draft" sends it as a new edit on the current server version, through the normal gate', async () => {
-    const { L, S } = await dismissScenario();
-    await L.DB.__t._hydrate(); // device now holds server version 6
-    await tick(60);
-    const before = S.puts.length;
-    assert.strictEqual(await L.DB.releaseHeldDraft('en_budget_a'), true);
-    await tick(80);
-    assert.strictEqual(S.puts.length, before + 1, 'one send');
-    const p = S.puts[S.puts.length - 1];
-    assert.strictEqual(p.baseVersion, 6, 'based on the current server version');
-    assert.deepStrictEqual(clone(p.value), { n: 'mine' });
-    assert.strictEqual(L.DB.getHeldDrafts().length, 0, 'the draft left the list');
-    assert.deepStrictEqual(clone(L.DB.get('en_budget_a')), { n: 'mine' });
-    assert.strictEqual(L.DB.getQueueDepth(), 0, 'nothing left waiting');
-  });
-  await t('HELD 2b: "Use my draft" with no full pull for this sign-in is held by the gate (nothing sent)', async () => {
-    const { L, S } = await dismissScenario();
-    S.o.failManifest = true;
-    L.state.uid = 'u2';
-    await L.DB.__t._handleAuthIdentityChange(); // u2: the pull fails
-    L.state.uid = 'u1';
-    await L.DB.__t._handleAuthIdentityChange(); // u1 again: the pull fails, no full pull
-    const before = S.puts.length;
-    await L.DB.releaseHeldDraft('en_budget_a');
-    await tick(60);
-    assert.strictEqual(S.puts.length, before, 'no send without a full pull');
-    assert.strictEqual(L.DB.getQueueDepth(), 1, 'the edit waits in the queue');
-  });
-  await t('HELD 3: "Discard" removes the draft; its value goes to the conflict history first', async () => {
-    const { L, S } = await dismissScenario();
-    assert.strictEqual(L.DB.discardHeldDraft('en_budget_a'), true);
-    await tick(30);
-    assert.strictEqual(L.DB.getHeldDrafts().length, 0);
-    assert.strictEqual(L.DB.getQueueDepth(), 0);
-    const arc = L.DB.getConflictArchive().filter((e) => e.reason === 'held-draft-discarded');
-    assert.strictEqual(arc.length, 1);
-    assert.deepStrictEqual(clone(arc[0].losingValue), { n: 'mine' });
-    assert.strictEqual(S.puts.length, 1, 'nothing sent');
-  });
-  await t('HELD 4: a new normal edit of the same item does not delete the held draft', async () => {
-    const { L } = await dismissScenario();
-    await L.DB.__t._hydrate();
-    await tick(40);
-    await L.DB.set('en_budget_a', { n: 'newer' });
-    await tick(60);
-    assert.strictEqual(L.DB.getHeldDrafts().length, 1, 'draft kept next to the new edit');
-  });
-  async function heldScenarioWithFailingStore() {
-    const failKeys = new Set();
-    const store = new Proxy({}, {
-      set(o, k, v) {
-        if (failKeys.has(k)) throw new Error('QuotaExceededError');
-        o[k] = v;
-        return true;
-      },
-    });
-    const S = casServer([kvRow('en_budget_a', { n: 1 }, 5)]);
-    const L = load({ mode: 'on', syncHost: true, classify: true, fetchImpl: S.fetchImpl, store, modal: async () => ({ action: 'dismiss' }) });
-    await L.DB.warmCache();
-    S.rows[0] = kvRow('en_budget_a', { n: 'other' }, 6);
-    await L.DB.set('en_budget_a', { n: 'mine' });
-    await tick(60);
-    await L.DB.__t._hydrate();
-    await tick(60);
-    return { L, S, failKeys };
-  }
-  await t('HELD 6: "Use my draft" whose save fails keeps the draft held and reports failure', async () => {
-    const { L, failKeys } = await heldScenarioWithFailingStore();
-    assert.strictEqual(L.DB.getHeldDrafts().length, 1);
-    failKeys.add('en_budget_a');
-    const ok = await L.DB.releaseHeldDraft('en_budget_a');
-    assert.strictEqual(ok, false, 'the failure is reported');
-    const held = L.DB.getHeldDrafts();
-    assert.strictEqual(held.length, 1, 'the draft is still held');
-    assert.deepStrictEqual(clone(L.DB.__t._queue().find((e) => e.held).value), { n: 'mine' }, 'the draft value is kept');
-  });
-  await t('HELD 7: "Use my draft" over a newer live queued edit copies that edit to Conflict history first', async () => {
-    const { L, S } = await heldScenarioWithFailingStore();
-    S.o.failPut = true;
-    await L.DB.set('en_budget_a', { n: 'newer-offline' }); // live queued edit next to the held draft
-    await tick(80);
-    S.o.failPut = false;
-    assert.ok(L.DB.__t._queue().some((e) => !e.held && e.key === 'en_budget_a'), 'a live queued edit exists');
-    assert.strictEqual(await L.DB.releaseHeldDraft('en_budget_a'), true);
-    const arc = L.DB.getConflictArchive().filter((e) => e.reason === 'held-draft-replaced-queued-edit');
-    assert.strictEqual(arc.length, 1, 'one history copy');
-    assert.deepStrictEqual(clone(arc[0].losingValue), { n: 'newer-offline' });
-  });
-  await t('HELD 5: sync-ui lists held drafts in the Sync status panel with Use my draft and Discard, plain words, hover text', () => {
-    const src = fs.readFileSync(path.join(__dirname, 'app', 'sync-ui.js'), 'utf8').split('\r').join('');
-    assert.ok(/function _renderHeldDrafts\(/.test(src), 'renderer exists');
-    assert.ok(/Held drafts \(/.test(src), 'entry text');
-    assert.ok(/Use my draft/.test(src) && /Discard/.test(src));
-    assert.ok(/ch-held-link/.test(src), 'small pill');
-    const els = [];
-    const mk = (tag) => {
-      const el = {
-        tag,
-        children: [],
-        style: {},
-        className: '',
-        textContent: '',
-        title: '',
-        appendChild(c) {
-          this.children.push(c);
-          return c;
-        },
-        addEventListener(n, f) {
-          this['on' + n] = f;
-        },
-      };
-      els.push(el);
-      return el;
-    };
-    const calls = [];
-    const DB = {
-      getHeldDrafts: () => [{ key: 'en_budget_a', ts: 1760000000000, deleted: false, userEmail: 'jane.doe@example.com' }],
-      releaseHeldDraft: (k) => (calls.push('use:' + k), Promise.resolve(true)),
-      discardHeldDraft: (k) => (calls.push('discard:' + k), true),
-    };
-    const f = new Function(
-      'document',
-      'window',
-      'friendlyKeyName',
-      'fmtDate',
-      fnFrom('sync-ui.js', '_renderHeldDrafts') + '\nreturn _renderHeldDrafts;',
-    );
-    const render = f({ createElement: mk }, { DB }, () => 'this budget data', () => 'some time');
-    const holder = mk('div');
-    render(holder);
-    const txt = els
-      .filter((e) => e.textContent)
-      .map((e) => e.textContent)
-      .join(' | ');
-    assert.ok(/Held drafts \(1\)/.test(txt), txt);
-    assert.ok(/this budget data/.test(txt) && /jane\.doe@example\.com/.test(txt) && /some time/.test(txt), txt);
-    const btns = els.filter((e) => e.tag === 'button');
-    assert.deepStrictEqual(
-      btns.map((b) => b.textContent),
-      ['Use my draft', 'Discard'],
-    );
-    btns.forEach((b) => assert.ok(b.title && b.title.length > 20, 'hover text on ' + b.textContent));
-    btns[0].onclick();
-    btns[1].onclick();
-    assert.deepStrictEqual(calls, ['use:en_budget_a', 'discard:en_budget_a']);
-    assert.ok(!/[\u{1F300}-\u{1FAFF}☀-➿]/u.test(txt), 'no emoji');
-  });
-
   // ---- SYNC SAFETY 2026-10-21 identity safety: a write made as user A is never sent as, or shown to, user B
   async function signOut(L) {
     L.state.uid = null;
@@ -4438,24 +4226,6 @@ await t(
     await L.DB.__t._handleAuthIdentityChange();
     await tick(80);
   }
-  await t('IDENTITY 1: a held draft made as A is not listed, released, discarded or sent while B is signed in; A gets it back', async () => {
-    const { L, S, asked } = await dismissScenario(); // u1 holds a draft of en_budget_a
-    const sent = S.puts.length;
-    await signOut(L);
-    await signIn(L, 'u2');
-    assert.strictEqual(L.DB.getHeldDrafts().length, 0, 'B sees no draft');
-    assert.strictEqual(await L.DB.releaseHeldDraft('en_budget_a'), false, 'B cannot release it');
-    assert.strictEqual(L.DB.discardHeldDraft('en_budget_a'), false, 'B cannot discard it');
-    await L.DB.__t._drainQueueOnce();
-    await tick(40);
-    assert.strictEqual(S.puts.slice(sent).length, 0, 'nothing sent as B');
-    assert.strictEqual(asked.length, 1, 'B was never asked about the draft');
-    assert.deepStrictEqual(clone(L.DB.get('en_budget_a')), { n: 'other' }, 'B sees the server copy');
-    assert.strictEqual(L.DB.getForeignQueueInfo().length, 1, 'the draft is reported as belonging to another user');
-    await signOut(L);
-    await signIn(L, 'u1');
-    assert.strictEqual(L.DB.getHeldDrafts().length, 1, 'A has the draft again');
-  });
   await t('IDENTITY 2: a stale queued write made as A (shared item) never opens a conflict for B and is never sent as B', async () => {
     const asked = [];
     const S = casServer([]);
@@ -4551,37 +4321,9 @@ await t(
     assert.strictEqual(L.DB.getQueueDepth(), 1);
     await signIn(L, 'u2');
     assert.deepStrictEqual(clone(L.DB.get('en_budget_a')), { n: 1 }, 'B sees the server copy');
-    assert.strictEqual(L.DB.getHeldDrafts().length, 0);
     await L.DB.__t._drainQueueOnce();
     assert.strictEqual(S.puts.length, 0, 'nothing sent as B');
   });
-  await t('SYNC-SAFETY 6: the conflict modal text says a dismissed version stays a draft and is not sent; a Decide later button exists', () => {
-    const src = fs.readFileSync(path.join(__dirname, 'app', 'sync-ui.js'), 'utf8').split('\r').join('');
-    const note = /var DRAFT_NOTE =\s*([\s\S]*?);\n/.exec(src);
-    assert.ok(note, 'DRAFT_NOTE exists');
-    const DRAFT_NOTE = new Function('return ' + note[1])();
-    assert.ok(/stays on this computer as a draft/.test(DRAFT_NOTE) && /not sent to the server until you choose/.test(DRAFT_NOTE));
-    const plan = new Function(
-      'DECIDE_LATER',
-      fnFrom('sync-ui.js', '_buttonPlan') + '\nreturn _buttonPlan;',
-    )({ action: 'dismiss', label: 'Decide later' });
-    ['standard', 'tombstone'].forEach((c) =>
-      assert.ok(plan({ conflictClass: c }).some((b) => b.action === 'dismiss'), c + ' has Decide later'),
-    );
-    const body = new Function(
-      'DRAFT_NOTE',
-      'friendlyKeyName',
-      '_escHtml',
-      'fmtDate',
-      '_shortValue',
-      fnFrom('sync-ui.js', '_bodyHtml') + '\nreturn _bodyHtml;',
-    )(DRAFT_NOTE, (k) => k, (x) => String(x), () => 'now', () => '');
-    ['standard', 'tombstone'].forEach((c) => {
-      const html = body({ key: 'k', conflictClass: c, server: { version: 2 }, localBaseVersion: 1 });
-      assert.ok(/stays on this computer as a draft/.test(html), c + ' text carries the draft note');
-    });
-  });
-
   // ---- SYNC SAFETY 2026-10-21 fix 3: a fresh signed-in origin shows the session user, not "Loading..."
   function coreEntry(host, withSession, savedUser) {
     const ss = {};
@@ -4671,26 +4413,31 @@ await t(
     assert.strictEqual(S.urls.length - h0, 0, 'hidden tab: 0 calls');
     assert.strictEqual(env.pending(), 0, 'hidden tab: no poll timer pending');
   });
-  await t('SYNCDEF2 after Keep theirs / Keep mine the page is told to redraw (dbRemoteApplied for the key)', async () => {
-    for (const choice of ['theirs', 'mine']) {
-      const { L, KEY } = await sameFieldConflict(choice);
-      const ev = L.events.filter((e) => e.type === 'dbRemoteApplied');
-      assert.strictEqual(ev.length, 1, choice + ': one redraw event, got ' + ev.length);
-      assert.strictEqual(JSON.stringify(ev[0].detail.keys), JSON.stringify([KEY]));
-      assert.strictEqual(ev[0].detail.reason, 'conflict-resolved');
-    }
+  await t('SYNCDEF2 after a same-field conflict is resolved the page is told to redraw (dbRemoteApplied for the key)', async () => {
+    const { L, KEY } = await sameFieldConflict();
+    const ev = L.events.filter((e) => e.type === 'dbRemoteApplied');
+    assert.strictEqual(ev.length, 1, 'one redraw event, got ' + ev.length);
+    assert.strictEqual(JSON.stringify(ev[0].detail.keys), JSON.stringify([KEY]));
+    assert.strictEqual(ev[0].detail.reason, 'conflict-resolved');
   });
-  await t('SYNCDEF2b "Load theirs" in the whole-key dialog also redraws the page', async () => {
+  await t('SYNCDEF2b whole-key conflict: the later save wins with no dialog; the replaced server value is in the conflict history', async () => {
     const KEY = 'en_budget_plain';
     const srv = makeServer({ [KEY]: { n: 'base' } });
-    const L2 = load({ mode: 'on', syncHost: true, classify: true, fetchImpl: srv.fetchImpl, modal: async () => ({ action: 'load-theirs' }) });
+    const asked = [];
+    const L2 = load({ mode: 'on', syncHost: true, classify: true, fetchImpl: srv.fetchImpl, modal: async (d) => (asked.push(d), { action: 'dismiss' }) });
     await L2.DB.warmCache();
     await L2.DB.__t._hydrate();
     srv.rows[KEY] = { value: { n: 'THEIRS' }, version: 2, hash: 'h2' };
     await L2.DB.set(KEY, { n: 'MINE' });
     await settle();
-    assert.deepStrictEqual(L2.DB.get(KEY), { n: 'THEIRS' });
-    assert.ok(L2.events.some((e) => e.type === 'dbRemoteApplied' && e.detail.keys[0] === KEY), 'redraw event');
+    assert.strictEqual(asked.length, 0, 'no dialog');
+    assert.deepStrictEqual(clone(L2.DB.get(KEY)), { n: 'MINE' });
+    assert.deepStrictEqual(clone(srv.rows[KEY].value), { n: 'MINE' }, 'the later save is on the server');
+    assert.strictEqual(srv.puts[srv.puts.length - 1].explicitOverwrite, true);
+    const e = L2.DB.getConflictArchive().filter((x) => x.key === KEY);
+    assert.strictEqual(e.length, 1);
+    assert.strictEqual(e[0].losingSide, 'server');
+    assert.deepStrictEqual(clone(e[0].losingValue), { n: 'THEIRS' });
   });
   // A server with real hashes and compare-and-set, so "identical to the server" can be seen.
   function liveServer() {

@@ -540,22 +540,22 @@ const same = (a, b) => JSON.stringify(a) === JSON.stringify(b);
     await tick(2200);
     const arch = b3.DB.get('en_conflict_archive', []);
     check(
-      '8 signed-out edit + other-device bump: edit archived',
-      arch.some((e) => e.key === 'en_budget_a' && same(e.losingValue, { n: 'SIGNED-OUT-EDIT' })),
+      '8 signed-out edit + other-device bump: the replaced other-device value is archived',
+      arch.some((e) => e.key === 'en_budget_a' && same(e.losingValue, { n: 'OTHER-DEVICE' })),
       'archive=' + JSON.stringify(arch.map((e) => e.key)),
     );
     // 2026-10-21 (sync safety): the signed-out edit was based on version 1 and the server holds version 9.
-    // The pull sees that the write is older than the server copy: it is NOT sent (not even to be refused),
-    // the server copy wins and the write goes to the conflict path (archived; the user decides in the dialog).
+    // The pull sees that the write is older than the server copy: it is NOT sent as a blind write. It goes to the
+    // conflict path (2026-11-05: no dialog, the later save wins) and is sent once at the server version.
     const sent = srv.puts.slice(putsBefore).map((x) => JSON.parse(x));
     check(
-      '8 ...signed-out edit older than the server copy is not sent; it goes to the conflict path',
-      sent.length === 0,
+      '8 ...signed-out edit older than the server copy goes to the conflict path: one send, at the server version 9',
+      sent.length === 1 && sent[0].baseVersion === 9,
       JSON.stringify(sent),
     );
     check(
-      '8 ...other device value on the server is not overwritten',
-      same(srv.rows.get('en_budget_a').value, { n: 'OTHER-DEVICE' }) && srv.rows.get('en_budget_a').version === 9,
+      '8 ...the later save is on the server (version 10) and the other-device value is kept in the conflict history',
+      same(srv.rows.get('en_budget_a').value, { n: 'SIGNED-OUT-EDIT' }) && srv.rows.get('en_budget_a').version === 10,
       JSON.stringify(srv.rows.get('en_budget_a')),
     );
   });
@@ -1200,42 +1200,19 @@ const same = (a, b) => JSON.stringify(a) === JSON.stringify(b);
   });
   await scenario('R5c', async () => {
     const srv = makeServer(four());
-    const answer = (d) => ({
-      action: 'records',
-      choices: Object.fromEntries(d.records.map((r) => [String(r.id), 'mine'])),
-    });
-    const { A, B, mA, mB } = await pair(srv, answer, answer);
+    const { A, B, mA, mB } = await pair(srv);
     rename(A, 1, 'P1 by A');
     rename(B, 1, 'P1 by B');
     await tick(400);
-    const m = mA.concat(mB);
-    check(
-      'R5c same field on both sides: one per-record prompt, only that record listed',
-      m.length === 1 &&
-        m[0].conflictClass === 'records' &&
-        m[0].records.length === 1 &&
-        String(m[0].records[0].id) === '1' &&
-        same(m[0].records[0].fields, ['name']),
-      JSON.stringify(m.map((d) => d.conflictClass + ':' + (d.records || []).map((r) => r.id))),
-    );
-    const loser = m.length === 1 ? (mA.length ? B : A) : null; // the side that did not get the prompt
-    const winner = m.length === 1 ? (mA.length ? A : B) : null;
+    check('R5c same field on both sides: no dialog on either side', mA.length === 0 && mB.length === 0, 'A=' + mA.length + ' B=' + mB.length);
     const s1 = byId(srv.rows.get('en_projects').value, 1);
+    check('R5c one of the two saves is on the server', s1.name === 'P1 by A' || s1.name === 'P1 by B', JSON.stringify(s1));
+    const winner = s1.name === 'P1 by A' ? A : B;
+    const lostName = s1.name === 'P1 by A' ? 'P1 by B' : 'P1 by A';
+    const arch = winner.DB.getConflictArchive();
     check(
-      'R5c "keep mine" wins on the server',
-      winner && s1.name === (winner === A ? 'P1 by A' : 'P1 by B'),
-      JSON.stringify(s1),
-    );
-    const arch = winner ? winner.DB.getConflictArchive() : [];
-    check(
-      'R5c the other version is archived (record-conflict), nothing silently dropped',
-      loser &&
-        arch.some(
-          (e) =>
-            e.reason === 'record-conflict' &&
-            e.losingValue &&
-            e.losingValue.name === (loser === A ? 'P1 by A' : 'P1 by B'),
-        ),
+      'R5c the replaced version is archived (record-conflict), nothing silently dropped',
+      arch.some((e) => e.reason === 'record-conflict' && e.losingValue && e.losingValue.name === lostName),
       JSON.stringify(arch.map((e) => e.reason + ':' + (e.losingValue && e.losingValue.name))),
     );
     check('R5c other projects untouched', same(srvIds(srv), [1, 2, 3, 4]), JSON.stringify(srvIds(srv)));
@@ -1265,47 +1242,6 @@ const same = (a, b) => JSON.stringify(a) === JSON.stringify(b);
       'R9 P1 stays deleted on the server and locally',
       same(srvIds(srv), [2, 3, 4]) && same(ids(A.DB.get('en_projects')), [2, 3, 4]),
       JSON.stringify(srvIds(srv)) + JSON.stringify(ids(A.DB.get('en_projects'))),
-    );
-  });
-
-  // Finding 6: a modal resolved after a user switch writes nothing.
-  await scenario('R6', async () => {
-    const srv = makeServer(SEED());
-    const b = await boot({
-      host: NETLIFY,
-      signedIn: true,
-      server: srv,
-      onCtx: (c) => {
-        c.window.SyncConflictUI = {
-          showConflictModal: async () => {
-            // user switches while the modal is open
-            c.window.CH_AUTH.getUserId = () => 'user-2';
-            c.window.dispatchEvent({ type: 'chAuthStateChanged' });
-            await tick(50);
-            return { action: 'overwrite-mine' };
-          },
-        };
-      },
-    });
-    srv.rows.set('en_budget_a', { value: { n: 'OTHER-DEVICE' }, version: 9, deleted: false });
-    const putsBefore = srv.puts.length;
-    b.DB.set('en_budget_a', { n: 'MINE' });
-    await tick(400);
-    const puts = srv.puts
-      .slice(putsBefore)
-      .map((p) => JSON.parse(p))
-      .filter((p) => p.key === 'en_budget_a');
-    check(
-      'R6 overwrite chosen after a user switch: nothing sent, server untouched',
-      puts.length === 1 && same(srv.rows.get('en_budget_a').value, { n: 'OTHER-DEVICE' }),
-      puts.length + ' PUTs (1 = the original 409 attempt)',
-    );
-    // The new identity's own hydration pulled the server value; the local edit is archived, not lost.
-    check(
-      'R6 new identity holds the server value, the old edit is archived',
-      same(b.DB.get('en_budget_a'), { n: 'OTHER-DEVICE' }) &&
-        b.DB.getConflictArchive().some((e) => same(e.losingValue, { n: 'MINE' })),
-      JSON.stringify(b.DB.get('en_budget_a')),
     );
   });
 
