@@ -2532,12 +2532,18 @@ const ok = (body) => ({ ok: true, status: 200, json: async () => body });
       );
     },
   );
-  await t('7c: sync-ui redraws Conflict history on an identity change', () => {
+  await t('7c: Past conflicts has no sidebar link; it opens from the Sync status panel only and closes on an identity change', () => {
     const ui = fs
       .readFileSync(path.join(__dirname, 'app', 'sync-ui.js'), 'utf8')
       .split('\r')
       .join('');
-    assert.ok(/addEventListener\('chAuthStateChanged', function \(\) \{[\s\S]{0,200}renderArchiveLink\(\);/.test(ui));
+    assert.ok(!/ch-archive-link|renderArchiveLink/.test(ui), 'no sidebar link code');
+    const calls = ui.match(/(?<!function )openArchivePanel\(\)/g) || [];
+    assert.strictEqual(calls.length, 1, 'one caller of openArchivePanel');
+    assert.ok(/_renderArchiveEntry\(body,[\s\S]{0,200}\}\);/.test(ui), 'the Sync status panel draws the archive entry');
+    assert.ok(/addEventListener\('chAuthStateChanged', function \(\) \{[\s\S]{0,200}classList\.remove\('ch-open'\)/.test(ui));
+    const css = fs.readFileSync(path.join(__dirname, 'sidebar-rail.css'), 'utf8');
+    assert.ok(!/ch-archive-link/.test(css));
   });
   // ---- 7d (2026-10-06): local per-user stores never act across users (real db.js, localStorage fallback mode)
   const perUserServer = (uid, value) => {

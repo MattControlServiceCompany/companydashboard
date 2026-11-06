@@ -266,8 +266,9 @@ about 0.4 credits a day, and 0 for a hidden or closed tab. The text below about 
   `DB.getConflictArchive` (the one reader: the viewer and the export button call it): an entry for a shared
   key is shown to everyone on this browser; an entry for a per-user key (`ch_*` prefs, zoom levels) only to its owner.
   Another user's per-user entry, or one saved by a build before owner tags, stays in storage, is never shown and is never
-  removed by this user (`clearConflictArchive` removes only entries the user can see). app/sync-ui.js redraws the link and
-  closes the panel on `chAuthStateChanged`. How to check: node test-sync-golive-blockers.js, the "7c:" tests.
+  removed by this user (`clearConflictArchive` removes only entries the user can see). app/sync-ui.js closes the panel on `chAuthStateChanged`.
+  There is no sidebar link and no count in the sidebar (2026-11-05: sync needs no user action). The list opens only from
+  Sync status, button "Past conflicts (N)" (`_renderArchiveEntry`, shown when N > 0). How to check: node test-sync-golive-blockers.js, the "7c:" tests.
   Reset (`siteResetData`, site-functions.js) exports only the entries this user can see (`DB.getConflictArchive`), never
   another user's. The wipe KEEPS the entries this user cannot see (`DB.getConflictArchiveOthers`, written back after
   `DB.clear()`): they are neither exported nor deleted. The backup (`DB.getAllForExport`, then `siteBackup`) holds the same
@@ -1088,7 +1089,7 @@ This includes a new or changed function, schedule, env var name, timer, host, or
 - Nothing that stays on screen may be `position: fixed` over the header, the tabs or the page, and nothing may reserve layout space with padding or margin. The page (`main.content`) ends at the window bottom.
 - Notices (offline, signed out) go in ONE stack in the normal page flow: `#ch-sync-banner-stack`, first child of `.app-col` (`ensureStack` in app/sync-ui.js, also `window.chNoticeStack`). The new-version notice is NOT in that stack: `_showVersionUpdateBanner` (app/report-engine.js) shows a plain sidebar footer link "New version: reload" (`#ch-ver-update-link`, made by `window.chSidebarLink` in app/sync-ui.js; slim rail text "Reload"). A click saves the page state (`_savePageStateForVersionUpdate`) and reloads. It shows only when the live version differs from the loaded one. It takes no space in the main column.
 - The login page has no sidebar, so it shows no Sync status and no sidebar links.
-- "Conflict history (N)" is a plain text link in the sidebar footer under the version line (`ensureSidebarLink`, `renderArchiveLink` in app/sync-ui.js). Hidden when N = 0.
+- Past conflicts has NO sidebar link (removed 2026-11-05). It opens from the Sync status panel (`_renderArchiveEntry` in app/sync-ui.js). `ensureSidebarLink` still serves the page-update link.
 - Kept fixed on purpose: dialogs and panels the user opens, the transient toast (below the header row, goes away alone), the Customize toolbar and the feedback button (modes the user turns on).
 - Check: `node test-no-overlay-layout.js <outDir>` (1920x1080 and 960x1080; Dashboard, Utility Data Normalized, Equipment Matrix, Cost Estimate).
 

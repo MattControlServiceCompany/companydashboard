@@ -464,7 +464,10 @@ const proj = (name) => ({
     await page.evaluate(() => { showList(); sv('projects'); });
     // 3. conflict history wording
     const texts = await page.evaluate(() => {
-      document.getElementById('ch-archive-link').click();
+      // Past conflicts opens from the Sync status panel only (no sidebar link).
+      if (document.getElementById('ch-archive-link')) throw new Error('sidebar link ch-archive-link must not exist');
+      document.getElementById('ch-sync-status-btn').click();
+      document.querySelector('#ch-sync-status-archive button').click();
       return Array.from(document.querySelectorAll('#ch-archive-panel .ch-archive-meta'))
         .map((e) => e.textContent)
         .concat(Array.from(document.querySelectorAll('#ch-archive-panel button.ch-conflict-btn')).map((e) => 'BTN:' + e.textContent));

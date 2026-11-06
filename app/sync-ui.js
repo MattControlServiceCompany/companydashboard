@@ -10,7 +10,7 @@
 //      draws again by itself (dbRemoteApplied -> chRefreshFromStore). No banner, no reload.
 //   3. Persistent "offline — showing local copy" banner (dbOfflineBanner), cleared by the
 //      next successful hydration/manifest round-trip (dbHydrated).
-//   4. (Phase 2b) A small "Conflict history (N)" link + slide-in panel listing
+//   4. (Phase 2b) A slide-in "Past conflicts" panel (opened from the Sync status panel only) listing
 //      en_conflict_archive entries with a per-entry JSON download button.
 //
 // This is a first, functional pass — the polished Settings-adjacent placement (2a.7 / Pass
@@ -36,10 +36,6 @@
       '#ch-sync-archive-full-banner button{margin-left:8px;border-radius:4px;padding:2px 10px;font-size:12px;' +
       'font-family:inherit;cursor:pointer;border:1px solid #fff;background:transparent;color:#fff;}' +
       // --- Phase 2b: conflict history viewer -------------------------
-      // Conflict history link: plain text in the sidebar footer, next to the Sync status link.
-      '#ch-archive-link{background:none;border:0;padding:0;font-size:inherit;font-family:inherit;letter-spacing:inherit;' +
-      'color:var(--text2,#9aa3b8);text-decoration:underline;cursor:pointer;}' +
-      '#ch-archive-link:hover{color:var(--text,#fff);}' +
       '.ch-conflict-meta{color:var(--text2,#9aa3b8);font-size:12px;}' +
       '.ch-conflict-btn{border-radius:6px;padding:8px 14px;font-size:12px;font-weight:600;' +
       'cursor:pointer;border:1px solid var(--border,#333);background:var(--s3,#1e2438);' +
@@ -110,8 +106,8 @@
     return ensureSidebarLink(id);
   };
 
-  // The Conflict history link sits in the sidebar footer under the version line, as plain
-  // text links. No sidebar (login page): it stays hidden.
+  // Sidebar footer links sit under the version line, as plain
+  // text links (for example the page-update link). No sidebar (login page): it stays hidden.
   function ensureSidebarLink(id) {
     var el = document.getElementById(id);
     if (el) return el;
@@ -283,7 +279,6 @@
       if (window.confirm('Did the file save? Choose OK to remove these ' + count + ' entries from the browser.')) {
         window.DB.clearConflictArchive(count);
         el.style.display = 'none';
-        renderArchiveLink();
       }
     };
     el.appendChild(btn);
@@ -539,7 +534,6 @@
     if (window.DB && typeof window.DB.getQueueDepth === 'function') {
       setSyncState({ depth: window.DB.getQueueDepth() });
     }
-    renderArchiveLink();
     renderArchiveFullBanner();
   });
 
@@ -701,6 +695,9 @@
     } else if (r === 'deleted-elsewhere') {
       text = who + ': another user deleted some items that you had changed. The deletion was kept. Download the deleted items to compare.';
       button = 'Download the deleted items';
+    } else if (r === 'queued-edit-other-user') {
+      text = who + ': an edit that was not sent yet was made by another user on this browser, so it was not sent. Download it to see it.';
+      button = 'Download the edit';
     } else if (r === 'queue-entry-no-owner') {
       text = who + ': an edit that was not sent yet could not be matched to a user, so it was not applied. Download it to see it.';
       button = 'Download the edit';
@@ -716,22 +713,6 @@
       text = who + ': a change was set aside on ' + when + '. ' + mine;
     }
     return { text: text, button: button };
-  }
-
-  function renderArchiveLink() {
-    ensureStyles();
-    var archive = window.DB && typeof window.DB.getConflictArchive === 'function' ? window.DB.getConflictArchive() : [];
-    var el = ensureSidebarLink('ch-archive-link');
-    if (!el) return;
-    if (archive.length > 0) {
-      el.textContent = 'Past conflicts (' + archive.length + ')';
-      el.title = 'These are saved copies of conflicts that are already resolved.';
-      el.setAttribute('data-sync-short', 'Past ' + archive.length);
-      el.style.display = '';
-      el.onclick = openArchivePanel;
-    } else {
-      el.style.display = 'none';
-    }
   }
 
   function openArchivePanel() {
@@ -797,15 +778,11 @@
     panel.classList.add('ch-open');
   }
 
-  window.addEventListener('dataUpdated', function (e) {
-    if (e.detail && e.detail.key === 'en_conflict_archive') renderArchiveLink();
-  });
-  // What Conflict history shows depends on who is signed in (DB.getConflictArchive):
-  // on an identity change close the open panel and redraw the link for the new user.
+  // What the Past conflicts panel shows depends on who is signed in (DB.getConflictArchive):
+  // on an identity change close the open panel. It opens from the Sync status panel only.
   window.addEventListener('chAuthStateChanged', function () {
     var panel = document.getElementById('ch-archive-panel');
     if (panel) panel.classList.remove('ch-open');
-    renderArchiveLink();
   });
 
   // =========================================================================
@@ -904,6 +881,27 @@
         window.DB.describeFailure(f) + (f.permanent ? ' - the server will not accept this value' : ' - will retry');
       row.appendChild(line);
     });
+    container.appendChild(row);
+  }
+
+  // Past conflicts: reachable from the Sync status panel ONLY (Matt 2026-11-05: sync needs no user action, so no
+  // sidebar link and no count that asks for attention). Shown when this user has saved copies; opens the viewer.
+  function _renderArchiveEntry(container, closeStatusPanel) {
+    var archive = window.DB && typeof window.DB.getConflictArchive === 'function' ? window.DB.getConflictArchive() : [];
+    if (!archive.length) return;
+    var row = document.createElement('div');
+    row.id = 'ch-sync-status-archive';
+    row.className = 'ch-conflict-meta';
+    row.textContent = 'Saved copies of changes that were set aside: ' + archive.length + '. ';
+    var btn = document.createElement('button');
+    btn.type = 'button';
+    btn.className = 'ch-conflict-btn';
+    btn.textContent = 'Past conflicts (' + archive.length + ')';
+    btn.addEventListener('click', function () {
+      closeStatusPanel();
+      openArchivePanel();
+    });
+    row.appendChild(btn);
     container.appendChild(row);
   }
 
@@ -1081,6 +1079,10 @@
     _renderModeControl(body, currentMode);
     _renderQueueDepth(body, window.DB && typeof window.DB.getQueueDepth === 'function' ? window.DB.getQueueDepth() : 0);
     _renderUploadProgress(body);
+    _renderArchiveEntry(body, function () {
+      panel.classList.remove('ch-open');
+      _statusPanelOpen = false;
+    });
 
     var loading = document.createElement('div');
     loading.id = 'ch-sync-status-loading';

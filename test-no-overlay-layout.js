@@ -133,7 +133,7 @@ const failures = [];
         if (r.bad.length) failures.push(label + ' overlay over page/tabs: ' + r.bad.join(','));
         if (Math.abs(r.mainBottom - r.vh) > 1) failures.push(label + ' main bottom ' + r.mainBottom + ' != window ' + r.vh);
         if (r.docH > r.vh + 1) failures.push(label + ' page taller than window');
-        if (!r.linkVisible) failures.push(label + ' conflict link not visible');
+        if (r.linkVisible || r.link) failures.push(label + ' Past conflicts sidebar link must not exist');
         if (r.noticeBar || r.barText) failures.push(label + ' version bar text found in the main column');
         if (r.verLink !== 'New version: reload') failures.push(label + ' new-version link missing in sidebar footer: "' + r.verLink + '"');
         if (OUT) await page.screenshot({ path: OUT + '/layout-' + label + '.png' });
