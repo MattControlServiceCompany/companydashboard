@@ -222,12 +222,14 @@ about 0.4 credits a day, and 0 for a hidden or closed tab. The text below about 
   (`_hasForeignQueuedWrite`). Check: test 8p (edit after a real sign-out, then another user loads, then the author returns).
   A queued edit of a list key (a key with a merge config, `_collectionCfg`) stores its merge base WITH the entry
   (`entry.base`, set in `_enqueueWrite` from `_syncBase`). `_reapplyQueuedPerUserValues` puts it back into `_syncBase`
-  (memory only) when the author returns, so the 3-way merge uses the author's own base, not a copy another user synced
-  meanwhile. Safety net: `_archiveServerRecordsDropped` copies every server record that a merge removes without a field
+  together with the stamp version `entry.baseVersion` (one pair, then `_persistStamp`) when the author returns, so the
+  3-way merge uses the author's own base, not a copy another user synced meanwhile. An entry with no base (older build)
+  removes `_syncBase` for the key: the merge has no base, so it is a union and deletes nothing. If the browser cannot
+  store `ch_sync_queue` (localStorage fallback full), `_rawSet` shows the same error toast as a failed save. Safety net: `_archiveServerRecordsDropped` copies every server record that a merge removes without a field
   conflict to the conflict history (reason `merge-removed-server-record`), and the re-send uses explicitOverwrite so
   kv-sync.js also keeps the replaced row in kv_history. A history entry for a replaced SERVER value is owned by the
   person who wrote it (`_ownerOfServerValue`, from `updatedBy`), not by the signed-in user. Check: node
-  test-sync-golive-blockers.js, tests 8q, 8r, 8s.
+  test-sync-golive-blockers.js, tests 8q, 8r, 8s, 8t.
 - Legacy utility blob (2026-10-21, app/utility-data.js), backend mode 'on' only (`_backendOn`); the GitHub site runs
   as before. `_legacyBlobToMigrate(customerId)` is the ONE rule for "copy the old `en_utility_<projectId>` blob into
   `en_utility_<customerId>`": the customer key does not exist at all (an existing blob, empty or not, is never

@@ -44,6 +44,7 @@ const DB = (() => {
   // Track the number of IDB writes that have not yet received tx.oncomplete.
   // Used by the beforeunload guard to warn users if they navigate away mid-write.
   let _pendingWriteCount = 0;
+  const TOAST_SAVE_FAILED = 'Save failed — data may not persist after reload';
 
   // --- 2a.3: persisted per-key version map --------------------------------
   // key -> { version: number, hash: string|null, deleted?: boolean }.
@@ -351,6 +352,8 @@ const DB = (() => {
         localStorage.setItem(key, JSON.stringify(value));
       } catch (e) {
         console.warn('[DB] _rawSet localStorage failed:', key, e);
+        // The retry queue could not be stored: the edit is not safe across a reload. Same message as a failed save.
+        if (key === SYNC_QUEUE_KEY && typeof showToast === 'function') showToast(TOAST_SAVE_FAILED, 'error');
       }
       return Promise.resolve();
     }
@@ -629,9 +632,17 @@ const DB = (() => {
         _persistStamp(e.key);
       }
       // The merge base of a list key is the one the edit was made on (stored with the entry), not the copy another
-      // user may have synced here meanwhile. In memory only: the next sync of the key writes a matching pair.
-      if (!_isPerUserKey(e.key) && e.base !== undefined && _collectionCfg(e.key)) {
-        _syncBase[e.key] = JSON.parse(JSON.stringify(e.base));
+      // user may have synced here meanwhile. The base and its version are restored as ONE pair, so a later
+      // _persistStamp never writes a base that belongs to another version. An entry from an older build has no base:
+      // merge with no base (a union, nothing deleted), never with another user's synced copy.
+      if (!_isPerUserKey(e.key) && _collectionCfg(e.key)) {
+        if (e.base !== undefined && typeof e.baseVersion === 'number') {
+          _syncBase[e.key] = JSON.parse(JSON.stringify(e.base));
+          _replicaVersions[e.key] = { version: e.baseVersion, hash: null };
+        } else {
+          delete _syncBase[e.key];
+        }
+        _persistStamp(e.key);
       }
       if (e.deleted) {
         delete _cache[e.key];
@@ -3357,7 +3368,7 @@ const DB = (() => {
             const err = tx.error;
             console.warn('[DB] Write failed — transaction aborted:', key, err);
             if (typeof showToast === 'function') {
-              showToast('Save failed — data may not persist after reload', 'error');
+              showToast(TOAST_SAVE_FAILED, 'error');
             }
             reject(err || new Error('IDB transaction aborted'));
           };

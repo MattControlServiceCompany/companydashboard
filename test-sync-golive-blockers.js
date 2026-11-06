@@ -3463,7 +3463,7 @@ await t("8p: edit made after a real sign-out (identity marker blank): another us
 });
 // Review 2026-11-06 (HIGH): A edits a list offline at base v1 and signs out. B signs in, syncs v2 and changes the list.
 // A returns. A's edit must be applied, B's change must survive, and no record may vanish without a copy.
-async function twoUsersListScenario(aEdit, bEdit, stripBase) {
+async function twoUsersListScenario(aEdit, bEdit, stripBase, holdPuts) {
   const S = {};
   const srv = makeServer({ en_projects: [{ id: "p1", name: "one" }] });
   const kv = async (u, o) => srv.fetchImpl(u, o);
@@ -3491,6 +3491,7 @@ async function twoUsersListScenario(aEdit, bEdit, stripBase) {
     q.forEach((e) => delete e.base);
     S.ch_sync_queue = JSON.stringify(q);
   }
+  if (holdPuts) srv.failPut = true; // A's edit stays queued: the stored state is the one right after the restore
   const L3 = loadReal({ userId: "u1", store: S, tokenFetch: tokUser("u1"), kvFetch: kv });
   await L3.DB.warmCache();
   await tick(500);
@@ -3520,17 +3521,29 @@ await t("8r: the server value a later save replaces is archived with its writer 
   await tick(200);
   assert.ok(JSON.stringify(L4.DB.getConflictArchive()).includes("B-rename"), "B sees it in Past conflicts");
 });
-await t("8s: wrong merge base (no base stored with the entry): the server record the merge drops is archived, owner B", async () => {
+await t("8s: no merge base stored with the entry (older build): union, no deletions, B's item X stays in A's PUT", async () => {
   const { srv, L3 } = await twoUsersListScenario(
     [{ id: "p1", name: "one" }, { id: "pA", name: "A-edit" }],
     [{ id: "p1", name: "one" }, { id: "pX", name: "B-item-X" }],
     true,
   );
-  const x = L3.DB.getConflictArchive().filter((e) => e.reason === "merge-removed-server-record" && e.recordId === "pX");
-  assert.strictEqual(x.length, 1, "X copied to the history");
-  assert.strictEqual(x[0].losingValue.name, "B-item-X");
-  assert.strictEqual(x[0].owner.email, "u2@example.com");
-  assert.ok(srv.puts.some((b) => b.explicitOverwrite === true), "the server is asked to keep its replaced row in kv_history");
+  const ids = (v) => (v || []).map((x) => x.id).sort().join(",");
+  assert.strictEqual(ids(srv.rows.en_projects.value), "p1,pA,pX", "server holds all three: " + JSON.stringify(srv.rows.en_projects.value));
+  const last = srv.puts[srv.puts.length - 1];
+  assert.ok(ids(last.value).includes("pX"), "X is in A's PUT: " + JSON.stringify(last.value));
+  assert.ok(!L3.DB.getConflictArchive().some((e) => e.reason === "merge-removed-server-record"), "nothing dropped, nothing archived");
+});
+await t("8t: the restored merge base and the stamp version are stored as one matching pair (A's edit still queued)", async () => {
+  const { S } = await twoUsersListScenario(
+    [{ id: "p1", name: "one" }, { id: "pA", name: "A-edit" }],
+    [{ id: "p1", name: "one" }, { id: "pX", name: "B-item-X" }],
+    false,
+    true,
+  );
+  const rec = JSON.parse(S["ch_rv::en_projects"]);
+  const q = JSON.parse(S.ch_sync_queue)[0];
+  assert.strictEqual(rec.stamp.version, q.baseVersion, "stamp version = the edit's base version: " + JSON.stringify(rec.stamp));
+  assert.deepStrictEqual(rec.base, q.base, "the stored base is the base of that version");
 });
 await t("8l: a load with no edit sends 0 PUT (reload and reopen)", async () => {
   const S = {};
