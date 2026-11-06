@@ -1910,9 +1910,10 @@ const DB = (() => {
   let _delManifest = null; // { at, p }
   async function _stampOrDropDelete(key) {
     if (_replicaVersions[key]) return 'send';
-    if (!_delManifest || Date.now() - _delManifest.at > 5000) {
+    const epoch = _identityEpoch; // a manifest belongs to the identity that asked for it
+    if (!_delManifest || _delManifest.epoch !== epoch || Date.now() - _delManifest.at > 5000) {
       const p = _withAuthRetry(() => _fetchManifestWithTimeout(MANIFEST_TIMEOUT_MS));
-      _delManifest = { at: Date.now(), p };
+      _delManifest = { at: Date.now(), p, epoch };
       p.catch(() => {
         if (_delManifest && _delManifest.p === p) _delManifest = null;
       });
@@ -1923,8 +1924,13 @@ const DB = (() => {
     } catch (e) {
       return 'wait';
     }
+    if (!Array.isArray(man)) {
+      _delManifest = null; // not a manifest: do not reuse it
+      return 'wait';
+    }
+    if (epoch !== _identityEpoch) return 'wait'; // someone else is signed in now: this answer is not theirs
     const wk = _wireKey(key);
-    const row = Array.isArray(man) ? man.find((m) => m && m.key === wk) : null;
+    const row = man.find((m) => m && m.key === wk);
     if (!row || row.deleted) return 'drop';
     _setSynced(key, { version: row.version, hash: row.hash || null });
     return 'send';
@@ -2034,7 +2040,7 @@ const DB = (() => {
           _persistSyncQueue();
           continue;
         }
-        if (d === 'wait') continue; // no answer yet: stays queued, retried next cycle, not a failure
+        if (d === 'wait') return; // no answer: the rest would wait too; entries stay queued, retried next cycle, not a failure
       }
       // _sendKvPut always reads baseVersion from the live _replicaVersions
       // map (not entry.baseVersion) — a real conflict still 409s honestly.

@@ -25,9 +25,10 @@ const MIME = { '.html': 'text/html', '.js': 'application/javascript', '.json': '
 const PID = 900001;
 const MK = 'en_eqmatrix_' + PID;
 const UID = '00000000-0000-4000-8000-000000000001';
-const jwt = () => {
+const UID2 = '00000000-0000-4000-8000-000000000002';
+const jwt = (uid, email) => {
   const b = (o) => Buffer.from(JSON.stringify(o)).toString('base64url');
-  return b({ alg: 'none' }) + '.' + b({ sub: UID, email: 'fixture@example.com', exp: Math.floor(Date.now() / 1000) + 3600 }) + '.x';
+  return b({ alg: 'none' }) + '.' + b({ sub: uid, email, exp: Math.floor(Date.now() / 1000) + 3600 }) + '.x';
 };
 const project = {
   id: PID, name: 'Fixture Project', client: 'Fixture', addr: '', type: 'Test', status: 'active', phase: '', contacts: [], pm: '', tech: '', notes: '',
@@ -44,7 +45,7 @@ const CSV = [
 const rows = new Map(); // key -> { value, version, deleted }
 const puts = []; // { key, deleted, baseVersion, value, status }
 let nextHash = 1;
-let kvMode = 'ok'; // 'ok' | 'down' (every request fails) | 'no-manifest' (the manifest never answers in time)
+let kvMode = 'ok'; // 'ok' | 'down' (every request fails) | 'no-manifest' (the manifest never answers in time) | 'bad-manifest' (the manifest answer is not a list) | 'slow-manifest' (the manifest answers after 2 s)
 function setRow(key, value) {
   const r = rows.get(key);
   rows.set(key, { value, version: r ? r.version + 1 : 1, deleted: false });
@@ -55,6 +56,14 @@ function handleKv(route) {
   if (kvMode === 'down') return route.abort();
   if (kvMode === 'no-manifest' && req.method() === 'GET' && url.searchParams.get('manifest')) {
     setTimeout(() => route.abort().catch(() => {}), 6000); // no answer inside the page's 4 s wait
+    return;
+  }
+  if (kvMode === 'bad-manifest' && req.method() === 'GET' && url.searchParams.get('manifest')) {
+    return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ error: 'not a manifest' }) });
+  }
+  if (kvMode === 'slow-manifest' && req.method() === 'GET' && url.searchParams.get('manifest')) {
+    const list = [...rows].map(([key, r]) => ({ key, version: r.version, hash: 'h' + r.version, deleted: r.deleted }));
+    setTimeout(() => route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(list) }).catch(() => {}), 2000);
     return;
   }
   const json = (status, body) => route.fulfill({ status, contentType: 'application/json', body: JSON.stringify(body) });
@@ -93,8 +102,13 @@ async function pageRoutes(ctx) {
     const u = new URL(route.request().url());
     if (u.hostname.endsWith('supabase.co')) {
       if (u.pathname.endsWith('/token')) {
-        const session = { expires_in: 3600, user: { id: UID, email: 'fixture@example.com' } };
-        session['access_' + 'token'] = jwt();
+        let who = {};
+        try { who = JSON.parse(route.request().postData() || '{}'); } catch (e) {}
+        const other = /^other@/.test(who.email || '');
+        const uid = other ? UID2 : UID;
+        const email = other ? 'other@example.com' : 'fixture@example.com';
+        const session = { expires_in: 3600, user: { id: uid, email } };
+        session['access_' + 'token'] = jwt(uid, email);
         session['refresh_' + 'token'] = 'stub';
         return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(session) });
       }
@@ -239,7 +253,7 @@ const expireAction = async (page) => {
     assert(stray.length === 0, 'no PUT from clicks and renders in any project tab' + (stray.length ? ': ' + stray.map((x) => x.key).join(', ') : ''));
     // 5. Offline Clear All Data, then back online: the queue empties with no 400 and no failed entry
     // 6. The manifest does not answer (timeout), then a retry: same result
-    for (const mode of ['down', 'no-manifest']) {
+    for (const mode of ['down', 'no-manifest', 'bad-manifest']) {
       kvMode = 'ok';
       setRow(MK, matrix);
       await signInAndOpen(page, false);
@@ -248,7 +262,7 @@ const expireAction = async (page) => {
       kvMode = mode;
       await expireAction(page);
       await page.locator('#em-clear-all-btn').click();
-      await page.waitForTimeout(mode === 'down' ? 2500 : 6500);
+      await page.waitForTimeout(mode === 'down' ? 2500 : mode === 'bad-manifest' ? 2500 : 6500);
       const queued = await page.evaluate(() => DB.getQueueDepth());
       assert(queued > 0, mode + ': the deletes wait in the queue (' + queued + ')');
       assert((await page.evaluate(() => DB.getQueueFailures().length)) === 0, mode + ': waiting is not a failed entry');
@@ -262,6 +276,21 @@ const expireAction = async (page) => {
       assert((await page.evaluate(() => DB.getQueueFailures().length)) === 0, mode + ': no failed entry after reconnect');
       if (process.env.TEST_DEBUG) console.log(JSON.stringify(await page.evaluate(() => ({ f: DB.getQueueFailures(), d: DB.getQueueDepth() }))));
     }
+    // 7. The user changes while the manifest is on its way: the answer is not used for the new user, and the
+    //    first user's deletes stay queued under that user (not dropped, not stamped)
+    kvMode = 'ok';
+    setRow(MK, matrix);
+    await signInAndOpen(page, false);
+    await openMatrix(page);
+    kvMode = 'slow-manifest';
+    await expireAction(page);
+    await page.locator('#em-clear-all-btn').click();
+    await page.waitForTimeout(300);
+    await page.evaluate(() => CH_AUTH.signIn('other@example.com', 'fixture-pass'));
+    await page.waitForTimeout(4500);
+    const keptDeletes = await page.evaluate(() => (DB.get('ch_sync_queue', []) || []).filter((e) => e.deleted && /eqmatrix_(edits|cmaps)_/.test(e.key)).length);
+    assert(keptDeletes === 2, 'identity change: the first user deletes for keys the server never had stay queued (' + keptDeletes + ')');
+    assert(!puts.some((x) => x.status === 400), 'identity change: no 400');
     assert(errs.length === 0, 'no page errors' + (errs.length ? ': ' + errs[0] : ''));
   } catch (e) {
     failed++;
