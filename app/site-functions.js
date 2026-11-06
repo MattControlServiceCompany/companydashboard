@@ -2507,6 +2507,14 @@ async function siteResetAllMeterTableSettings() {
    site-ui.js delegates to this array and should NOT maintain its own copy.
 */
 var RELEASE_NOTES = [
+  { v: 'v2026.11.06.238', date: '2026-11-06', title: 'Equipment Matrix sync and storage fixes',
+    items: [
+      { type: 'fix', text: 'Equipment Matrix: Clear All Data, Delete All and Save Edits now sync to the other user.' },
+      { type: 'fix', text: 'Equipment Matrix: the matrix keeps your current view when a change from the other user arrives.' },
+      { type: 'fix', text: 'Savings, Hours and Budget pages no longer save when you only view them.' },
+      { type: 'fix', text: 'Some browsers no longer show a false "full" error when saving your work.' }
+    ]
+  },
   { v: 'v2026.11.06.237', date: '2026-11-06', title: 'Sync keeps edits made while signed out',
     items: [
       { type: 'fix', text: 'Sync: an edit made while signed out is now saved after you sign in again; if someone else signs in on the same browser, your unsent edit waits for you and is never shown to them; the conflict notice says when an earlier change was replaced and kept in history; Past conflicts moved to the Sync status panel.' }
