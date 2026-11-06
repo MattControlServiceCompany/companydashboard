@@ -1788,7 +1788,7 @@ const DB = (() => {
   const USER_ACTION_MS = 120000;
   const FILE_ACTION_MS = 15 * 60000; // a file chosen or dropped: big imports run for minutes
   const NAV_SELECTOR =
-    '.nav-item, .sb-item, .pdt, .ptab, .sidebar a, [onclick^="sv("], [onclick^="sPTab("], [onclick^="openDetail("], [onclick^="showList("], [data-nav]';
+    '.nav-item, .sb-item, .pdt, .sidebar a, [onclick^="sv("], [onclick^="sPTab("], [onclick^="openDetail("], [onclick^="showList("], [data-nav]';
   let _userAction = null; // { at, ms, cause }
   let _gateUserAction = false; // true when a real page (DOM) is present, see _installActionTracker
   let _autoLocalCount = 0; // writes kept in this browser only because no user action caused them
@@ -1923,6 +1923,9 @@ const DB = (() => {
       _enqueueWrite(key, payload);
       return;
     }
+    // A delete of a key this browser never stamped (the server has no row) cannot succeed: the server answers 400
+    // "no baseVersion". Nothing to delete, nothing to queue (Clear All Data removes keys that may not exist).
+    if (payload.deleted && !_replicaVersions[key] && !_hasQueuedWrite(key)) return;
     // A value the server already holds is not sent (opening a pane, a render
     // that re-saves, a migration that changes nothing).
     if (!payload.deleted && !(await _valueChanged(key, payload.value))) {

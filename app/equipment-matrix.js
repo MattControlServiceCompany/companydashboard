@@ -4473,6 +4473,16 @@ function emUpdateStickyOffsets() {
   styleEl.textContent = css;
 }
 
+/* A remote update of this project's matrix redraws the open page. chDropStoreCaches (below) marks the
+   project here; the next emRenderMatrix for the SAME project keeps the view. The mark is used once and
+   ends after 60 seconds, so a later open of the page starts from the default view. */
+var _emKeepViewOnce = null; // { pid, until }
+function _emTakeKeepView(pid) {
+  var k = _emKeepViewOnce;
+  _emKeepViewOnce = null;
+  return !!(k && Date.now() < k.until && String(k.pid) === String(pid));
+}
+
 function emRenderMatrix(container, data, pid) {
   window._emActivePid = pid;
   if (!data) {
@@ -4510,15 +4520,20 @@ function emRenderMatrix(container, data, pid) {
     return;
   }
 
+  // A redraw that follows a remote update of this same project keeps the user's view, edit mode, sort and
+  // column choices (see _emKeepViewOnce below). Any other render starts from the default view.
+  var _emKeepView = _emTakeKeepView(pid);
   _emFilters = { building: '', type: '', search: '' };
-  _emSortCol = null;
-  _emSortDir = 1;
-  _emHiddenGroups = { asset: true }; // asset columns (Serial#, Model#, Manufacturer, Size/Capacity) hidden by default
-  _emEditMode = false;
-  _emShowAllDynCols = false;
-  _emViewMode = 'audit';
-  _emOpenDrawers = new Set();
-  _emAllPointsOpen = new Set();
+  if (!_emKeepView) {
+    _emSortCol = null;
+    _emSortDir = 1;
+    _emHiddenGroups = { asset: true }; // asset columns (Serial#, Model#, Manufacturer, Size/Capacity) hidden by default
+    _emEditMode = false;
+    _emShowAllDynCols = false;
+    _emViewMode = 'audit';
+    _emOpenDrawers = new Set();
+    _emAllPointsOpen = new Set();
+  }
   var savedZoom = parseInt(DB.get('en_em_zoom', '100'), 10);
   _emZoomLevel = savedZoom >= 50 && savedZoom <= 150 ? savedZoom : 100;
   emInjectMatrixCSS();
@@ -4601,6 +4616,18 @@ function emRenderMatrix(container, data, pid) {
       sPTab('district', document.querySelector('.pdt[data-tab="district"]'));
     });
 
+  if (_emKeepView) {
+    // The toolbar was drawn from the defaults: put the kept view and edit mode on its buttons.
+    emSyncViewModeControls();
+    var _emEditBtn = document.getElementById('em-edit-mode-btn');
+    if (_emEditBtn && _emEditMode) {
+      _emEditBtn.textContent = 'Lock';
+      _emEditBtn.style.background = 'var(--accent)';
+      _emEditBtn.style.color = '#fff';
+    }
+    var _emDelBtn = document.getElementById('em-delete-all-btn');
+    if (_emDelBtn) _emDelBtn.style.display = _emEditMode ? '' : 'none';
+  }
   emRenderTable(data, _emFilters);
   // Apply persisted zoom (read only; saving happens only when the user clicks zoom)
   emApplyZoom();
@@ -24526,6 +24553,9 @@ if (typeof window.addEventListener === 'function') window.addEventListener('chDr
     })
   )
     return;
+  if (window._emActivePid && document.getElementById('em-table-wrap')) {
+    _emKeepViewOnce = { pid: window._emActivePid, until: Date.now() + 60000 };
+  }
   _emSelfHealDone = {};
   _emRowByIdCache = {};
   _emDynPointFreqCache = null;
