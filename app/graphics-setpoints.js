@@ -1456,34 +1456,34 @@ function egfxRefresh(projId) {
             ? '<div style="margin-bottom:14px;color:var(--text2)">The decrease in emissions is equivalent to:</div>' +
           '<div style="margin-bottom:4px">Removing <strong>' +
           _fmt(_eq.carsRemoved) +
-          '</strong> cars from the road each year</div>' +
+          '</strong> ' + _rptPluralize(_eq.carsRemoved, 'car{s} from the road each year') + '</div>' +
           '<div style="margin-bottom:4px">Conserving <strong>' +
           _fmt(_eq.gallonsGasoline) +
-          '</strong> gallons of gasoline each year</div>' +
+          '</strong> ' + _rptPluralize(_eq.gallonsGasoline, 'gallon{s} of gasoline each year') + '</div>' +
           '<div style="margin-bottom:4px">Conserving <strong>' +
           _fmt(_eq.tankerTrucks) +
-          '</strong> tanker trucks of gasoline each year</div>' +
+          '</strong> ' + _rptPluralize(_eq.tankerTrucks, 'tanker truck{s} of gasoline each year') + '</div>' +
           '<div style="margin-bottom:4px">Conserving <strong>' +
           _fmt(_eq.barrelsOil) +
-          '</strong> barrels of oil each year</div>' +
+          '</strong> ' + _rptPluralize(_eq.barrelsOil, 'barrel{s} of oil each year') + '</div>' +
           '<div style="margin-bottom:4px">Conserving <strong>' +
           _fmt(_eq.households) +
-          '</strong> households worth of electricity each year</div>' +
+          '</strong> ' + _rptPluralize(_eq.households, 'household{s} worth of electricity each year') + '</div>' +
           '<div style="margin-bottom:4px"><strong>' +
           _fmt(_eq.treeSeedlings) +
-          '</strong> tree seedlings allowed to grow for 10 years each year</div>' +
+          '</strong> ' + _rptPluralize(_eq.treeSeedlings, 'tree seedling{s} allowed to grow for 10 years each year') + '</div>' +
           '<div style="margin-bottom:4px"><strong>' +
           _fmt(_eq.acresForest) +
-          '</strong> acres of forest preserved from deforestation</div>' +
+          '</strong> ' + _rptPluralize(_eq.acresForest, 'acre{s} of forest preserved from deforestation') + '</div>' +
           '<div style="margin-bottom:4px">Conserving <strong>' +
           _fmt(_eq.railcarsCoal) +
-          '</strong> railcars of coal each year</div>' +
+          '</strong> ' + _rptPluralize(_eq.railcarsCoal, 'railcar{s} of coal each year') + '</div>' +
           '<div style="margin-bottom:4px">Recycling <strong>' +
           _fmt(_eq.tonsRecycled) +
-          '</strong> tons of waste rather than landfilling each year</div>' +
+          '</strong> ' + _rptPluralize(_eq.tonsRecycled, 'ton{s} of waste rather than landfilling each year') + '</div>' +
           '<div style="margin-bottom:4px">Conserving <strong>' +
           _fmt(_eq.propaneCylinders) +
-          '</strong> propane cylinders used for home barbeques each year</div>' +
+          '</strong> ' + _rptPluralize(_eq.propaneCylinders, 'propane cylinder{s} used for home barbeques each year') + '</div>' +
           '<div style="margin-bottom:18px"><strong>' +
           _fmt(_eq.coalPlants) +
           '</strong> coal-fired power plant emissions each year</div>'

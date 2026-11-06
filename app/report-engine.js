@@ -2292,6 +2292,32 @@ function _rptQMonthStory(f) {
   return out.length ? out.join('; ') + '.' : '';
 }
 
+// _rptComResultText(list): the result of each utility of a building, list = [{ name, sav }] sorted best first. A
+// utility is called the strongest or the weakest performer only when it saved; any other utility gets its dollar
+// result in plain words ("Electric used $6,713 more than baseline").
+function _rptComResultText(list) {
+  var out = [];
+  var plain = [];
+  list.forEach(function (c, i) {
+    var amt = _fmtUSD(Math.abs(c.sav), '$0');
+    var word = c.sav >= 0 ? 'saved ' + amt : 'used ' + amt + ' more than baseline';
+    if (list.length === 1) {
+      if (c.sav > 0) out.push(_escHtml(c.name) + ' is the primary commodity.');
+      else plain.push(_escHtml(c.name) + ' ' + word);
+    } else if (i === 0 && c.sav > 0) out.push(_escHtml(c.name) + ' is the strongest performer.');
+    else if (i === list.length - 1 && c.sav > 0) out.push(_escHtml(c.name) + ' is the weakest performer.');
+    else plain.push(_escHtml(c.name) + ' ' + word);
+  });
+  if (plain.length) out.push(plain.join('; ') + '.');
+  return out.join(' ');
+}
+
+// _rptPluralize(n, text): text with {s} where the plural ending goes: '' when n rounds to 1, 's' otherwise.
+// "1 tanker truck{s}" -> "1 tanker truck"; the one pluralizer of the report.
+function _rptPluralize(n, text) {
+  return String(text).replace(/\{s\}/g, Math.round(Math.abs(n)) === 1 ? '' : 's');
+}
+
 // _rptMeasuredPct(d): the measured savings as a percent of the period baseline cost (d.totals.pctBase).
 function _rptMeasuredPct(d) {
   return d.totals.pctBase > 0 ? (_rptMeasuredTotal(d) / d.totals.pctBase) * 100 : 0;
@@ -2389,7 +2415,7 @@ function _rptBuildingMonthMap(b) {
       if (!out[m.month]) out[m.month] = { bl: 0, cur: 0, sav: 0 };
       out[m.month].bl += m.blCost || 0;
       out[m.month].cur += m.curCost || 0;
-      out[m.month].sav += m.savings != null ? m.savings : (m.blCost || 0) - (m.curCost || 0);
+      out[m.month].sav += m.savings || 0;
     });
   });
   return out;
@@ -2675,7 +2701,7 @@ function _rptQTerms(d) {
       'Baseline is the use a meter would have had with no savings measures. It is a weather model of the use of the meter, ' +
       _escHtml(d.project.blStart) + ' through ' + _escHtml(d.project.blEnd) + ', evaluated at the ' + ((d.period && d.period.year ? d.period.year : 0) - 1) +
       ' weather (billed kW: the weather of the month reported).',
-    measured: 'Savings measured is the baseline cost minus the actual cost.',
+    measured: 'Savings measured is, for each month, the baseline use minus the actual use, times the rate of that month, added over the months.',
     billed: 'Savings billed is the amount invoiced under the contract.',
     target: 'Allocated target is the savings the contract sets for the quarter.',
     degreeDays: 'Degree days measure the weather: cooling degree days how hot and heating degree days how cold, each day against ' + WX_DD_BASE_F + '&deg;F.',
@@ -4122,7 +4148,7 @@ function _rptQAppendixDPages(n, d, f, letter) {
     used += 28 + 40 + ROW * none.length;
   }
   if (used + 30 > BUDGET) newPage();
-  cur += _rptQNote('Total of ' + count + ' bills in ' + f.qLabel + ': ' + _fmtUSD(grand, '$0') + '.');
+  cur += _rptQNote('Total of ' + count + _rptPluralize(count, ' bill{s}') + ' in ' + f.qLabel + ': ' + _fmtUSD(grand, '$0') + '.');
   if (cur) pages.push(cur);
   var html = pages
     .map(function (body, i) {
@@ -4248,33 +4274,80 @@ function _rptMeterPerformancePages(d, n, withBaseline) {
 }
 
 // rptBuildSiteBaselineData(b, d): the Building Baseline Data table of the site (_buildBaselineDataHtml in
-// app/calculators.js, the one builder the Energy Graphics page and the HVAC load page call) for one report building,
-// in the report's table style: regular body, bold shaded total row, no site card or colours.
+// app/calculators.js, the one builder the Energy Graphics page and the HVAC load page call) for one report building.
+// The columns and cells are the site's own. The table is cut into two standard report tables so the text stays
+// readable: Electricity, then Natural Gas / Propane with Total Utility. Each has the 12 months and a total row.
 function rptBuildSiteBaselineData(b, d) {
   if (typeof _buildBaselineDataHtml !== 'function' || typeof getUDBldg !== 'function') return '';
   var ub = getUDBldg(d.project.id, b.id);
   var html = ub ? _buildBaselineDataHtml(ub, d.project.id) : '';
   if (!html) return '';
+  var doc = new DOMParser().parseFromString(html, 'text/html');
   var sqft = (/<span style="font-size:11px[^>]*>([^<]*)<\/span>/.exec(html) || [0, ''])[1];
-  var table = (/<table[\s\S]*?<\/table>/.exec(html) || [''])[0];
-  var tail = (/<\/table>\s*<\/div>([\s\S]*)<\/div>\s*$/.exec(html) || [0, ''])[1];
-  table = table
-    .replace(/<table class="dtbl"[^>]*>/, '<table class="rpt-table rpt-bl-site" style="width:100%;font-size:6.5px">')
-    .replace(/<tr style="border-top:2px solid var\(--border2\);font-weight:800">/, '<tr class="rpt-tot">')
-    .replace(/font-family:var\(--mono\);?/g, '')
-    .replace(/font-size:11px;?/g, '')
-    .replace(/font-weight:(?:600|700|800);?/g, '')
-    .replace(/color:var\(--em\);?/g, '')
-    .replace(/border-left:2px solid var\(--border2\);?/g, '')
-    .replace(/ style="width:80px"/, '')
-    .replace(/ style=""/g, '');
-  tail = tail.replace(/<strong style="color:[^"]*">/g, '<strong>');
+  var tail = (/<\/table>\s*<\/div>([\s\S]*)<\/div>\s*$/.exec(html) || [0, ''])[1].replace(/<strong style="color:[^"]*">/g, '<strong>');
+  var heads = Array.prototype.map.call(doc.querySelectorAll('thead th'), function (th) {
+    return th.textContent.trim();
+  });
+  var rows = Array.prototype.map.call(doc.querySelectorAll('tbody tr'), function (tr) {
+    return Array.prototype.map.call(tr.children, function (td) {
+      return td.textContent.trim();
+    });
+  });
+  if (!heads.length || !rows.length) return '';
+  var firstOther = heads.findIndex(function (h) {
+    return h === 'Therms' || h === 'Propane Gal' || h === 'Total Utility';
+  });
+  var sub = function (cols, title) {
+    var last = rows.length - 1;
+    var trs = rows
+      .map(function (r, ri) {
+        var cells = cols
+          .map(function (c, ci) {
+            var v = ci === 0 && ri === last ? 'Total' : r[c];
+            return '<td' + (ci ? ' class="rpt-n"' : '') + '>' + _escHtml(v) + '</td>';
+          })
+          .join('');
+        return '<tr' + (ri === last ? ' class="rpt-tot"' : '') + '>' + cells + '</tr>';
+      })
+      .join('');
+    var wt = cols.map(function (c, ci) {
+      return ci === 0 ? 0 : /^Normalized/.test(heads[c]) ? 1.4 : 1;
+    });
+    var wsum = wt.reduce(function (x, y) {
+      return x + y;
+    }, 0);
+    var widths = wt.map(function (w, ci) {
+      return ci === 0 ? 7 : (93 * w) / wsum;
+    });
+    return (
+      '<h2 style="font-size:15px;margin:8px 0 3px">' + title + '</h2>' +
+      _rptQTable(
+        widths,
+        cols.map(function (c) {
+          return _escHtml(heads[c]);
+        }),
+        trs,
+      ).replace('table-layout:fixed"', 'table-layout:fixed;font-size:9.5px"')
+    );
+  };
+  var range = function (a, z) {
+    var o = [];
+    for (var i = a; i < z; i++) o.push(i);
+    return o;
+  };
+  var out = '';
+  if (firstOther > 1) out += sub([0].concat(range(1, firstOther)), 'Electricity');
+  var names = [];
+  if (heads.indexOf('Therms') >= 0) names.push('Natural Gas');
+  if (heads.indexOf('Propane Gal') >= 0) names.push('Propane');
+  names.push('Total Utility');
+  out += sub([0].concat(range(firstOther < 0 ? 1 : firstOther, heads.length)), names.join(', ').replace(/, ([^,]*)$/, ' and $1'));
   return (
     '<div style="font-size:12px;font-weight:700;color:var(--rpt-blue);margin-bottom:4px">' +
     _escHtml(b.name || 'Building') +
     (sqft ? ' &mdash; ' + sqft : '') +
     '</div>' +
-    table +
+    out +
     tail
   );
 }
@@ -4990,14 +5063,14 @@ function rptPageCover(n, d) {
   const _nBldgs = _rptPVn(d, 'cover', 'Portfolio', '', '', 'buildings_total', d.buildings.length);
   const exceedLabel =
     pctOfTarget > 105
-      ? onTrack + ' of ' + _nBldgs + ' buildings exceeding expectations'
+      ? onTrack + ' of ' + _nBldgs + _rptPluralize(_nBldgs, ' building{s}') + ' exceeding expectations'
       : pctOfTarget >= 90
-        ? onTrack + ' of ' + _nBldgs + ' buildings on track'
-        : onTrack + ' of ' + _nBldgs + ' buildings need attention';
+        ? onTrack + ' of ' + _nBldgs + _rptPluralize(_nBldgs, ' building{s}') + ' on track'
+        : onTrack + ' of ' + _nBldgs + _rptPluralize(_nBldgs, ' building{s}') + ' need attention';
 
   // The line under the big figure.
   const heroSub = _uq
-    ? 'Savings billed to date ' + _fmtUSD(_qf.cumulative, '$0') + ' &nbsp;&bull;&nbsp; ' + _qf.saved.length + ' of ' + _nBldgs + ' buildings saved'
+    ? 'Savings billed to date ' + _fmtUSD(_qf.cumulative, '$0') + ' &nbsp;&bull;&nbsp; ' + _qf.saved.length + ' of ' + _nBldgs + _rptPluralize(_nBldgs, ' building{s}') + ' saved'
     : aheadLabel + ' &nbsp;&bull;&nbsp; ' + exceedLabel;
   // Narrative paragraph
   const contractYrLabel = 'Year ' + d.contract.currentYear + ' of ' + d.contract.years;
@@ -6768,7 +6841,7 @@ function rptPageEnvironmentalImpact(n, d) {
       $n(val) +
       '</strong>' +
       ' ' +
-      suffix +
+      _rptPluralize(val, suffix) +
       '</div>'
     );
   }
@@ -6797,27 +6870,27 @@ function rptPageEnvironmentalImpact(n, d) {
 
   var eqLines =
     (_added
-      ? eqLine('Adding', eq.carsRemoved, 'cars to the road ' + _eqYrSuffix) +
-        eqLine('Using', eq.gallonsGasoline, 'gallons of gasoline ' + _eqYrSuffix) +
-        eqLine('Using', eq.tankerTrucks, 'tanker trucks of gasoline ' + _eqYrSuffix) +
-        eqLine('Using', eq.barrelsOil, 'barrels of oil ' + _eqYrSuffix) +
-        eqLine('Adding the energy use of', eq.households, 'households ' + _eqOneYrSuffix) +
-        eqLine('Losing', eq.treeSeedlings, 'tree seedlings grown for 10 years') +
-        eqLine('Losing', eq.acresForest, 'acres of forest to deforestation') +
-        eqLine('Burning', eq.railcarsCoal, 'railcars of coal ' + _eqYrSuffix) +
-        eqLine('Landfilling', eq.tonsRecycled, 'tons of waste') +
-        eqLine('Using', eq.propaneCylinders, 'propane cylinders ' + _eqYrSuffix) +
+      ? eqLine('Adding', eq.carsRemoved, 'car{s} to the road ' + _eqYrSuffix) +
+        eqLine('Using', eq.gallonsGasoline, 'gallon{s} of gasoline ' + _eqYrSuffix) +
+        eqLine('Using', eq.tankerTrucks, 'tanker truck{s} of gasoline ' + _eqYrSuffix) +
+        eqLine('Using', eq.barrelsOil, 'barrel{s} of oil ' + _eqYrSuffix) +
+        eqLine('Adding the energy use of', eq.households, 'household{s} ' + _eqOneYrSuffix) +
+        eqLine('Losing', eq.treeSeedlings, 'tree seedling{s} grown for 10 years') +
+        eqLine('Losing', eq.acresForest, 'acre{s} of forest to deforestation') +
+        eqLine('Burning', eq.railcarsCoal, 'railcar{s} of coal ' + _eqYrSuffix) +
+        eqLine('Landfilling', eq.tonsRecycled, 'ton{s} of waste') +
+        eqLine('Using', eq.propaneCylinders, 'propane cylinder{s} ' + _eqYrSuffix) +
         eqLine('Adding', eq.coalPlants, 'coal-fired power plant emissions ' + _eqYrSuffix)
-      : eqLine('Removing', eq.carsRemoved, 'cars from the road ' + _eqYrSuffix) +
-        eqLine('Conserving', eq.gallonsGasoline, 'gallons of gasoline ' + _eqYrSuffix) +
-        eqLine('Conserving', eq.tankerTrucks, 'tanker trucks of gasoline ' + _eqYrSuffix) +
-        eqLine('Conserving', eq.barrelsOil, 'barrels of oil ' + _eqYrSuffix) +
-        eqLine('Powering', eq.households, 'households ' + _eqOneYrSuffix) +
-        eqLine('Growing', eq.treeSeedlings, 'tree seedlings for 10 years') +
-        eqLine('Preserving', eq.acresForest, 'acres of forest from deforestation') +
-        eqLine('Displacing', eq.railcarsCoal, 'railcars of coal ' + _eqYrSuffix) +
-        eqLine('Recycling', eq.tonsRecycled, 'tons of waste instead of landfilling') +
-        eqLine('Replacing', eq.propaneCylinders, 'propane cylinders ' + _eqYrSuffix) +
+      : eqLine('Removing', eq.carsRemoved, 'car{s} from the road ' + _eqYrSuffix) +
+        eqLine('Conserving', eq.gallonsGasoline, 'gallon{s} of gasoline ' + _eqYrSuffix) +
+        eqLine('Conserving', eq.tankerTrucks, 'tanker truck{s} of gasoline ' + _eqYrSuffix) +
+        eqLine('Conserving', eq.barrelsOil, 'barrel{s} of oil ' + _eqYrSuffix) +
+        eqLine('Powering', eq.households, 'household{s} ' + _eqOneYrSuffix) +
+        eqLine('Growing', eq.treeSeedlings, 'tree seedling{s} for 10 years') +
+        eqLine('Preserving', eq.acresForest, 'acre{s} of forest from deforestation') +
+        eqLine('Displacing', eq.railcarsCoal, 'railcar{s} of coal ' + _eqYrSuffix) +
+        eqLine('Recycling', eq.tonsRecycled, 'ton{s} of waste instead of landfilling') +
+        eqLine('Replacing', eq.propaneCylinders, 'propane cylinder{s} ' + _eqYrSuffix) +
         eqLine('Offsetting', eq.coalPlants, 'coal-fired power plant emissions ' + _eqYrSuffix));
 
   if (!polLines)
@@ -6946,7 +7019,9 @@ function rptPageObservations(n, d) {
     // Build subtitle and narrative based on status
     var subtitle, narrative, rec;
     var strongWeak = '';
-    if (topCom && weakCom && topCom.name !== weakCom.name) {
+    if (_uq) {
+      strongWeak = _rptComResultText(comSavings);
+    } else if (topCom && weakCom && topCom.name !== weakCom.name) {
       strongWeak = _escHtml(topCom.name) + ' is the strongest performer. ' + _escHtml(weakCom.name) + ' is the weakest performer.';
     } else if (topCom) {
       strongWeak = _escHtml(topCom.name) + ' is the primary commodity.';
@@ -6988,7 +7063,19 @@ function rptPageObservations(n, d) {
       // recommendation text is added; a result is stated, not advised on.
       subtitle = _escHtml(_res.word);
       narrative =
-        _escHtml(b.name) +
+        _uq && rawSav < 0
+          ? _escHtml(b.name) +
+            ' used ' +
+            _fmtUSD(Math.abs(rawSav), '$0') +
+            ' (' +
+            $p(Math.abs(rawSavPct)) +
+            ') more than baseline, against a baseline cost of ' +
+            _fmtUSD(b.blCost, '$0') +
+            ', with current costs at ' +
+            _fmtUSD(b.curCost, '$0') +
+            '. ' +
+            strongWeak
+          : _escHtml(b.name) +
         ' is at ' +
         $p(rawSavPct) +
         ' savings (' +
@@ -9821,8 +9908,8 @@ function rptPageBuildingSummary(n, d, b) {
               : meter.commodity === 'Propane'
                 ? 'Propane'
                 : meter.commodity;
-        if (_rptCommCounts[meter.commodity] > 1) {
-          commLabel = _rptMeterLabel(meter.commodity, meter.account);
+        if (_rptCommCounts[meter.commodity] > 1 || _rptUnpresentedQuarter(d)) {
+          commLabel = _escHtml(_rptMeterLabel(meter.commodity, meter.account));
         }
         var commColor =
           meter.commodity === 'Electric'
