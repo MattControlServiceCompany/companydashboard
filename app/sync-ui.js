@@ -695,9 +695,6 @@
     } else if (r === 'deleted-elsewhere') {
       text = who + ': another user deleted some items that you had changed. The deletion was kept. Download the deleted items to compare.';
       button = 'Download the deleted items';
-    } else if (r === 'queued-edit-other-user') {
-      text = who + ': an edit that was not sent yet was made by another user on this browser, so it was not sent. Download it to see it.';
-      button = 'Download the edit';
     } else if (r === 'queue-entry-no-owner') {
       text = who + ': an edit that was not sent yet could not be matched to a user, so it was not applied. Download it to see it.';
       button = 'Download the edit';

@@ -590,37 +590,6 @@ const DB = (() => {
     });
     if (changed) _persistSyncQueue();
   }
-  // A different verified user signed in. Unsent edits of a shared key that the previous user made (a signed-out edit
-  // names that user as its hint) are never sent under the new identity and never dropped: each goes to the conflict
-  // archive, tagged with its author, and leaves the queue. The author finds it in Sync status > Past conflicts.
-  // Per-user keys stay queued: they are written to the author's own row when the author signs in again.
-  function _archiveOtherUsersEdits(me) {
-    if (!me) return;
-    const other = _syncQueue.filter((e) => !_isPerUserKey(e.key) && !_entryBelongsTo(e, me));
-    if (!other.length) return;
-    _syncQueue = _syncQueue.filter((e) => other.indexOf(e) === -1);
-    other.forEach((e) => {
-      const archived = {
-        key: e.key,
-        reason: 'queued-edit-other-user',
-        losingSide: 'local',
-        losingValue: e.deleted ? null : e.value,
-        losingDeleted: !!e.deleted,
-        losingVersion: typeof e.baseVersion === 'number' ? e.baseVersion : null,
-        owner: e.owner,
-      };
-      if (typeof e.ts === 'number' && isFinite(e.ts)) archived.archivedAt = new Date(e.ts).toISOString();
-      _appendConflictArchive(archived);
-      // The page copy of that key holds the unsent edit. Drop it so the browser takes the server copy on the next pull
-      // (browser and server then agree); the edit itself is safe in the archive.
-      delete _cache[e.key];
-      delete _replicaVersions[e.key];
-      delete _syncBase[e.key];
-      _persistStamp(e.key);
-      _rawDelete(e.key);
-    });
-    _persistSyncQueue();
-  }
   // Put this user's queued values back into the local cache (the identity change removed
   // them so another user never sees or writes them; per-user keys and shared keys alike).
   function _reapplyQueuedPerUserValues(me) {
@@ -815,11 +784,7 @@ const DB = (() => {
   // another user, or one with no owner tag (older build), stays in storage and
   // is never shown and never deleted by this user.
   function _archiveEntryVisible(e, me) {
-    if (!e) return false;
-    // An unsent edit set aside because another user signed in (_archiveOtherUsersEdits) is its author's alone,
-    // whatever the key: the next user on this browser can neither see nor clear it.
-    if (e.reason === 'queued-edit-other-user') return _entryBelongsTo(e, me);
-    return !_isPerUserKey(e.key) || _entryBelongsTo(e, me);
+    return !!e && (!_isPerUserKey(e.key) || _entryBelongsTo(e, me));
   }
   // Removes the FIRST `count` entries this user can see (the ones the user
   // exported). Call only after the export file was saved and the user
@@ -2903,7 +2868,6 @@ const DB = (() => {
     _pulledUid = null; // the identity changed: a pull done for an earlier sign-in does not open the send gate again
     _uploadProgress = { running: false, total: 0, done: 0, uploaded: 0, failed: 0, failures: [] };
     const cleared = _clearPerUserLocalState(prevUid, uid);
-    _archiveOtherUsersEdits(uid); // after the clear: it needs the queue to find the shared keys to clear
     _reapplyQueuedPerUserValues(uid); // this user's own queued values, before hydrate and drain
     // Finding 2 — persist the new owner durably so a hard refresh right after
     // this switch (warmCache() -> _checkDurableIdentityMarker() below) sees
@@ -2956,7 +2920,6 @@ const DB = (() => {
     // switch).
     if (priorKnown && currentUid && priorKnown !== currentUid) {
       cleared = _clearPerUserLocalState(priorKnown, currentUid);
-      _reapplyQueuedPerUserValues(currentUid);
       _lastKnownUserId = currentUid;
       if (typeof window !== 'undefined' && cleared.length) {
         window.dispatchEvent(
@@ -2966,9 +2929,9 @@ const DB = (() => {
         );
       }
     }
-    // The stored marker is blank after a sign-out, so a different user signing in is not always a "mismatch" above.
-    // Whoever is signed in now: unsent shared edits of another user are archived, never sent.
-    _archiveOtherUsersEdits(currentUid);
+    // This user's own queued edits: back on the page, with their base version as the stamp. A sign-out removed the
+    // stamp of a shared key that held an unsent edit; without it the edit would go out with no base and meet a 409.
+    _reapplyQueuedPerUserValues(currentUid);
     if (currentUid !== priorKnown) {
       _rawSet(LOCAL_IDENTITY_KEY, currentUid || '');
     }
