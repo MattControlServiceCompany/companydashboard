@@ -103,9 +103,14 @@ async function extractOnly(page, url, files, syncOn) {
   });
   await stub(page, syncOn);
   await page.setInputFiles('#pdfInput', files);
+  // Wait on the real condition: a 2-file batch is ready only when the queue has a result for EVERY file.
+  // (_pdfMultiBills is set after the FIRST file, so waiting on it alone races the second file under load.)
+  const nFiles = Array.isArray(files) ? files.length : 1;
   await page.waitForFunction(
-    () => (window._pdfMultiBills && window._pdfMultiBills.length) || (window._pdfQueue && window._pdfQueue.status === 'done'),
-    null, { timeout: 90000 },
+    (n) => n > 1
+      ? window._pdfQueue && window._pdfQueue.status === 'done' && window._pdfQueue.results && window._pdfQueue.results.length >= n
+      : (window._pdfMultiBills && window._pdfMultiBills.length) || (window._pdfQueue && window._pdfQueue.status === 'done'),
+    nFiles, { timeout: 90000 },
   );
   await page.waitForTimeout(700);
 }

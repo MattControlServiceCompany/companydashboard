@@ -383,8 +383,8 @@ try {
 }
 assert(/Bills\s+\(count\)/.test(meterPg) && /Cost/.test(meterPg) && !/Utility bill amount|Amount billed/.test(meterPg), 'meter page: Bills (count) and Cost');
 // decision 2: signs
-assert(/A minus sign on savings means more use than baseline/.test(energy), 'energy page: the minus sign is stated');
-assert(/plus means savings; minus means more use than baseline/.test(cover), 'cover: the dollar sign rule is stated once');
+assert(!/minus sign on savings/.test(energy), 'energy page: no sign explanation under the table');
+assert(!/plus means|minus means/.test(cover), 'cover: no sign explanation');
 // decision 7: propane unit symbol
 assert(run(ctx, '_rptCommodityUnit')('Propane') === 'gal', 'propane unit is gal');
 // 5. complete data: no internal status text on any report page (Matt 2026-11-03)
@@ -490,7 +490,7 @@ console.log('\n--- 12. controlled rounding, billing period, state name, sign rul
   assert(ctHead.length === 3 && /^Contract year/.test(ctHead[0]) && ctHead[1] === 'Allocated target' && ctHead[2] === 'Savings billed', 'Contract to Date table has three columns: year, Allocated target, Savings billed: ' + JSON.stringify(ctHead));
   assert((ctTable.match(/<tr/g) || []).length === 6 && (ctTable.match(/<tr[^>]*>(?:(?!<\/tr>)[\s\S])*?<\/tr>/g) || []).every((tr) => (tr.match(/<t[dh]/g) || []).length === 3), 'Contract to Date table keeps header, Q1 to Q4 and the Through row, every row has 3 cells');
   const fl2 = flat.replace(/\s+/g, ' ');
-  assert(!/Actual minus baseline/.test(fl2) && /Change = actual use minus baseline use; plus means more use than baseline/.test(fl2), 'building pages: "Change" with the rule in a note (no "Actual minus baseline" column)');
+  assert(!/Actual minus baseline/.test(fl2) && !/Change = actual use minus baseline use|plus means|minus means/.test(fl2), 'building pages: no sign explanation note under the tables (no "Actual minus baseline" column)');
   // K. Year to Date: Q1, Q2, Q3 in order, then Total; no blank cell
   const ytd = run(ctx, '(function(d,f){ return _rptQYearToDatePage(15,d,f); })')(d, f);
   const rowsY = (ytd.match(/<tr[\s\S]*?<\/tr>/g) || []).map((r) => r.replace(/<[^>]+>/g, '|').replace(/\|+/g, '|'));
@@ -562,6 +562,19 @@ console.log('\n--- 13. model fit, wording, entered months, allocated target ---'
   // Results words (point 22)
   const rk = run(ctx, '_rptResultKind');
   assert(rk(500, 5, 1000).word === 'Below Target' && rk(500, 5, 1000).cls === 'rpt-r' && rk(1500, 5, 1000).word === 'On Track' && rk(1500, 5, 1000).cls === 'rpt-g', 'result words are On Track (green) and Below Target (red) only');
+
+  // Savings colour (Matt, 2026-11-06): a savings figure is green above zero, red below zero; the status word keeps its status colour.
+  const sv = run(ctx, '_rptSavVar');
+  assert(sv(500, true) === 'var(--rpt-green-dark)' && sv(500, false) === 'var(--rpt-green)' && sv(-500, true) === 'var(--rpt-red)' && sv(0, true) === 'var(--rpt-page-text)', '_rptSavVar: green above zero, red below zero, page text at zero');
+  const dS = pageData();
+  dS.buildings[0].savings = 3654; dS.buildings[0].savingsPct = 5.5; // saved money, but under its target
+  dS.contract.quarterlyTargets = [90000, 90000, 90000, 90000]; // each building target is 30000, above the 3654 saved
+  dS.buildings[1].savings = -800; dS.buildings[1].savingsPct = -2.1;
+  const pg2 = run(ctx, 'rptPageCover')(1, dS).html;
+  const cardOf = (nm) => { const i = pg2.indexOf('>' + nm + '<'); return pg2.slice(i, pg2.indexOf('</div></div>', pg2.indexOf('rpt-sc-label', i)) + 12); };
+  const cA = cardOf('Building A'), cB = cardOf('Building B');
+  assert(/Below Target/.test(cA) && /rpt-sc-val" style="color:var\(--rpt-green-dark\)"[^>]*>5\.5%/.test(cA) && /rpt-sc-label" style="color:var\(--rpt-red\)"[^>]*>[^<]*Below Target/.test(cA), 'page 2 card: positive savings with Below Target status shows the savings green and the status red: ' + cA.replace(/contenteditable="true"/g, ''));
+  assert(/Below Target/.test(cB) && /rpt-sc-val" style="color:var\(--rpt-red\)"[^>]*>-2\.1%/.test(cB) && /rpt-sc-label" style="color:var\(--rpt-red\)"/.test(cB), 'page 2 card: negative savings shows the savings red');
 
   // Contract page (point 17): contract facts, no prediction, no "Projection"
   const ctPage = plain(run(ctx, '_rptQContractPage')(5, d, f));

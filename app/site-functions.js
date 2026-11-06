@@ -2507,6 +2507,14 @@ async function siteResetAllMeterTableSettings() {
    site-ui.js delegates to this array and should NOT maintain its own copy.
 */
 var RELEASE_NOTES = [
+  { v: 'v2026.11.06.242', date: '2026-11-06', title: 'Quarterly report: green and red savings, footer below the wave, Observations on one page, restored pages',
+    items: [
+      { type: 'fix', text: 'Reports > Quarterly report > Building Status & Key Findings: a building that saved energy shows its savings percent in green, and a building that used more shows it in red. The status words (On Track, Below Target) keep their own colors. The Target vs Actual savings figure on the first page follows the same rule.' },
+      { type: 'fix', text: 'Reports > Quarterly report: the report name and Page N of M print below the wave on every page.' },
+      { type: 'fix', text: 'Reports > Quarterly report > Observations: all building paragraphs and the Weather paragraph print on one page when they fit. A new page starts only when the content does not fit.' },
+      { type: 'fix', text: 'Reports > Quarterly report: every section checked in the sidebar prints its page again: Approved Changes, Per-Building Summaries, Use Detail pages, Site EUI Benchmark, Year-to-Date Trend, Contract Projection and Appendix C. The sign notes under the tables are removed.' }
+    ]
+  },
   { v: 'v2026.11.06.241', date: '2026-11-06', title: 'Quarterly report: nothing touches the page footer',
     items: [
       { type: 'fix', text: 'Reports > Quarterly report > Appendix B: a table that does not fit above the page footer now moves to the next page whole, with its heading and formula line. This holds for every page of the report.' }

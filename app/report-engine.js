@@ -1783,8 +1783,8 @@ function rptPage(pageNum, title, bodyHTML, options = {}) {
   // gives a stylesheet rule a selector to target this element.
   const footerLabelHtml =
     data && data.period
-      ? '<div class="rpt-footer-label" style="text-align:center;font-size:14px;color:var(--rpt-page-text);padding:0;line-height:1.2;position:absolute;bottom:' +
-        (_waveAll ? '110px' : isHero ? '45px' : '17px') +
+      ? '<div class="rpt-footer-label" style="text-align:center;font-size:14px;color:var(--rpt-page-text);padding:0;line-height:1.2;position:absolute;z-index:1;bottom:' +
+        (_waveAll ? '10px' : isHero ? '45px' : '17px') +
         ';left:0;right:0">' +
         _rptFooterLabelText(data, true) +
         '</div>'
@@ -1837,7 +1837,7 @@ function rptPage(pageNum, title, bodyHTML, options = {}) {
       footerTextHtml +
       footerLabelHtml +
       footerImgHtml +
-      (noPageNum ? '' : _waveAll ? RPT_PAGENUM_DIV.replace('bottom:10px', 'bottom:110px') : RPT_PAGENUM_DIV) +
+      (noPageNum ? '' : RPT_PAGENUM_DIV) +
       '</div>'
     );
   }
@@ -1892,7 +1892,7 @@ function rptPage(pageNum, title, bodyHTML, options = {}) {
     footerTextHtml +
     footerLabelHtml +
     footerImgHtml +
-    (noPageNum ? '' : _waveAll ? RPT_PAGENUM_DIV.replace('bottom:10px', 'bottom:110px') : RPT_PAGENUM_DIV) +
+    (noPageNum ? '' : RPT_PAGENUM_DIV) +
     '</div>'
   );
 }
@@ -2428,6 +2428,13 @@ function _rptResultVar(r, dark) {
         : 'var(--rpt-page-text)';
 }
 
+// _rptSavVar(v, dark) - the ONE colour of a savings figure: green above zero, red below zero (by _rptQSavCls, the same
+// sign rule as the report tables), page text at zero. The status word keeps its own colour (_rptResultVar).
+function _rptSavVar(v, dark) {
+  var c = _rptQSavCls(v);
+  return c === 'rpt-g' ? (dark ? 'var(--rpt-green-dark)' : 'var(--rpt-green)') : c === 'rpt-r' ? 'var(--rpt-red)' : 'var(--rpt-page-text)';
+}
+
 // Net energy result for the period in thousand Btu (constants: computations/physics.js).
 function _rptEnergySavedKBtu(d) {
   var t = d.totals || {};
@@ -2489,13 +2496,6 @@ function _rptQN(v) {
 function _rptQPct(v, dp) {
   var s = Math.abs(v || 0).toFixed(dp == null ? 1 : dp);
   return (v > 0 && Number(s) > 0 ? '+' : v < 0 && Number(s) > 0 ? '-' : '') + s + '%';
-}
-// The two sign rules, stated once on each page that uses them.
-function _rptQChangeRule() {
-  return 'Change = actual use minus baseline use; plus means more use than baseline.';
-}
-function _rptQSavingsRule() {
-  return 'Savings in dollars: plus means savings; minus means more use than baseline.';
 }
 function _rptQSavCls(v) {
   var r = Math.round(v || 0);
@@ -3038,7 +3038,7 @@ function _rptQCoverPage(n, d, f, s) {
     '</tbody></table>';
   // Terms (defined once, here), the contract progress and the carbon dioxide change, under the table.
   var co2 = _rptQEmissionChange(_rptQNetPollution(d).pollutants.co2, 'lb');
-  var terms = _rptQNote(_rptQTermsText(d) + ' ' + _rptQSavingsRule());
+  var terms = _rptQNote(_rptQTermsText(d));
   var board =
     !s || s.boardSummary !== false
       ? _rptQSub(
@@ -3067,7 +3067,7 @@ function _rptQCoverPage(n, d, f, s) {
     '<div style="flex:1"><div style="font-size:14px;font-weight:700;color:var(--rpt-blue);margin-bottom:2px">' + f.qLabel + ' savings measured, by month (dollars)</div>' +
     _rptQBarsSVG(340, 128, mBars, function (v) { return _fmtUSD(v, '$0'); }) +
     '</div></div>' +
-    _rptQNote('Bar values are dollars. Green = less use than baseline; red = more use than baseline; dashed box = allocated target. The baseline of each month is the use of the meter at the ' + (f.year - 1) + ' weather of that month, from a weather model of its own use (Appendix A).') +
+    _rptQNote('Bar values are dollars. The baseline of each month is the use of the meter at the ' + (f.year - 1) + ' weather of that month, from a weather model of its own use (Appendix A).') +
     '</div>';
   return rptPage(n, 'Cover', body, { hero: true, data: d, label: 'Page ' + n + ' - Cover' });
 }
@@ -3296,7 +3296,7 @@ function _rptQResultsPage(n, d, f) {
     t1 +
     _rptQNote(
       _rptPctBasisText(d, 'quarter') +
-        '<br>Savings columns in dollars: a plus sign means savings and a minus sign means more use than baseline. Saved = less use than baseline. The allocated target is defined on page 1; Appendix A gives the method.',
+        '<br>The allocated target is defined on page 1; Appendix A gives the method.',
     ) +
     '<h2>Savings by Building and Utility</h2>' +
     _rptQByFuelTable(d, f) +
@@ -3352,7 +3352,7 @@ function _rptQEnergyPage(n, d, f) {
       gasWord + (gasWord ? ' ' : '') + 'The kWh and therms baselines use the degree days of ' + (f.year - 1) + '. The billed kW baseline uses the degree days of the month in ' + f.year + '. ' +
         _rptQCddSentence(f) + ' ' + t.degreeDays + ' Appendix C gives the degree days by month.',
     ) +
-    _rptQNote('The use, billed kW and cost of each building and fuel are on the detail pages. A minus sign on savings means more use than baseline.');
+    _rptQNote('The use, billed kW and cost of each building and fuel are on the detail pages.');
   return rptPage(n, 'Energy Use', body, { data: d, letterhead: false, label: 'Page ' + n + ' - Energy Use' });
 }
 
@@ -3447,9 +3447,6 @@ function _rptQFindingsBody(d, f) {
     .join('');
   var body = '<h2>Building Findings</h2>' + blocks;
   return body;
-}
-function _rptQFindingsPage(n, d, f) {
-  return rptPage(n, 'Findings', _rptQFindingsBody(d, f), { data: d, letterhead: false, label: 'Page ' + n + ' - Findings' });
 }
 
 // ---- Page 5: contract position -----------------------------------------------
@@ -3657,7 +3654,7 @@ function _rptQBenchmarkPage(n, d, f) {
     '<h2>Site Energy Use Intensity</h2>' +
     _rptQPara(
       _rptQTerms(d).eui + ' All fuels. Each figure is the use of ' +
-        windowText + (winMonths ? ' (' + winMonths + ' months)' : '') + ' multiplied by 12 and divided by ' + (winMonths || 'the number of months') +
+        windowText + (winMonths ? ' (' + winMonths + _rptPluralize(winMonths, ' month{s}') + ')' : '') + ' multiplied by 12 and divided by ' + (winMonths || 'the number of months') +
         '. Baseline is the use of the same calendar months in the baseline year (' +
         _escHtml(d.project.blStart) +
         ' through ' +
@@ -3954,11 +3951,14 @@ function _rptQMonthChartSVG(panels, colors) {
 // Savings are the building parts the other pages print (f.parts). Actual cost = the utility bill amounts of the
 // building and fuel (the amounts the bills table prints). Baseline cost = actual cost + savings: the same
 // definition as the percent note (what the utility bills would have been with no savings), so each row adds across.
-function _rptQFuelDetailPage(n, d, f, kind) {
+// _rptQFuelDetailPages(n, d, f, kind): the Use Detail section of one fuel ('electric', 'gas', 'propane'): the chart and the
+// by-building table, then the table of its meters (each named by _rptMeterLabel). The meter table goes on a second page when
+// it does not fit under the first table (_rptQBodyFits). Returns { html, pageCount }.
+function _rptQFuelDetailPages(n, d, f, kind) {
   var K = {
-    electric: { com: 'Electric', title: 'Electricity Use Detail', head: 'Electricity by Building', unit: 'kWh', bl: 'kwhBl', cur: 'kwhCur', colors: { bl: 'var(--rpt-elec-bl)', cur: 'var(--rpt-elec-cur)' } },
-    gas: { com: 'Gas', title: 'Natural Gas Use Detail', head: 'Natural Gas by Building', unit: 'therms', bl: 'thermsBl', cur: 'thermsCur', colors: { bl: 'var(--rpt-gas-bl)', cur: 'var(--rpt-gas-cur)' } },
-    propane: { com: 'Propane', title: 'Propane Use Detail', head: 'Propane by Building', unit: 'gal', bl: 'galBl', cur: 'galCur', colors: { bl: 'var(--rpt-prop-bl)', cur: 'var(--rpt-prop-cur)' } },
+    electric: { com: 'Electric', title: 'Electricity Use Detail', head: 'Electricity by Building', metersHead: 'Electricity Meters', unit: 'kWh', bl: 'kwhBl', cur: 'kwhCur', colors: { bl: 'var(--rpt-elec-bl)', cur: 'var(--rpt-elec-cur)' } },
+    gas: { com: 'Gas', title: 'Natural Gas Use Detail', head: 'Natural Gas by Building', metersHead: 'Natural Gas Meters', unit: 'therms', bl: 'thermsBl', cur: 'thermsCur', colors: { bl: 'var(--rpt-gas-bl)', cur: 'var(--rpt-gas-cur)' } },
+    propane: { com: 'Propane', title: 'Propane Use Detail', head: 'Propane by Building', metersHead: 'Propane Meters', unit: 'gal', bl: 'galBl', cur: 'galCur', colors: { bl: 'var(--rpt-prop-bl)', cur: 'var(--rpt-prop-cur)' } },
   }[kind];
   var ql = f.qLabel;
   var blds = d.buildings.filter(function (b) {
@@ -3987,14 +3987,14 @@ function _rptQFuelDetailPage(n, d, f, kind) {
       t.cur += cur;
       t.kwBl += o.kwBl || 0;
       t.kwCur += o.kwCur || 0;
-      t.cBl += actual + sav;
+      t.cBl += o.costBl || 0; // the baseline-month cost of the meters, the figure the Financial Summary adds (collectReportData)
       t.cCur += actual;
       t.sav += sav;
       var ch = bl >= 10 || (kind === 'propane' && bl > 0) ? _rptQPct(((cur - bl) / bl) * 100) : '-';
       return (
         '<tr><td>' + _escHtml(b.name) + '</td><td class="rpt-n">' + _rptQN(bl) + '</td><td class="rpt-n">' + _rptQN(cur) + '</td><td class="rpt-n">' + ch + '</td>' +
         (kind === 'electric' ? '<td class="rpt-n">' + _rptQN(o.kwBl) + '</td><td class="rpt-n">' + _rptQN(o.kwCur) + '</td>' : '') +
-        '<td class="rpt-n">' + _fmtUSD(actual + sav, '$0') + '</td><td class="rpt-n">' + _fmtUSD(actual, '$0') + '</td>' + _rptQSavTd(sav) + '</tr>'
+        '<td class="rpt-n">' + _fmtUSD(o.costBl || 0, '$0') + '</td><td class="rpt-n">' + _fmtUSD(actual, '$0') + '</td>' + _rptQSavTd(sav) + '</tr>'
       );
     })
     .join('');
@@ -4005,12 +4005,6 @@ function _rptQFuelDetailPage(n, d, f, kind) {
     '<td class="rpt-n">' + _fmtUSD(t.cBl, '$0') + '</td><td class="rpt-n">' + _fmtUSD(t.cCur, '$0') + '</td>' + _rptQSavTd(t.sav) + '</tr>';
   var heads = ['Building', 'Baseline ' + K.unit, 'Actual ' + K.unit, 'Change percent'].concat(kind === 'electric' ? ['Baseline billed kW', 'Actual billed kW'] : [], ['Baseline cost', 'Actual cost', 'Savings']);
   var widths = kind === 'electric' ? _RPT_Q_W_FUEL_ELEC : _RPT_Q_W_FUEL;
-  var intro =
-    kind === 'electric'
-      ? 'The charts compare the baseline with actual electricity use by month; kWh bar labels are in thousands (k). The table gives kWh, billed kW and cost by building. Billed kW is the sum of the billed kW of the 3 months of ' + ql + '.'
-      : kind === 'gas'
-        ? 'The chart compares the baseline with actual natural gas use, in therms, by month. The table gives use and cost by building.'
-        : 'The table gives propane use, in gallons, and cost by building.';
   var names = blds.map(function (b) {
     return b.name;
   });
@@ -4019,12 +4013,38 @@ function _rptQFuelDetailPage(n, d, f, kind) {
       ? _rptQNote(_escHtml(_rptQListPlain(names)) + (names.length === 1 ? ' is the only building with a propane meter.' : ' have propane meters.'))
       : '';
   var body =
-    _rptQPara(intro) + chart + '<h2>' + K.head + ', ' + ql + '</h2>' + _rptQTable(widths, heads, rows, null, kind === 'electric' ? _RPT_Q_WDX_FUEL_ELEC : _RPT_Q_WDX_FUEL) +
-    (kind === 'propane' && _rptQHasCom(d, 'gas')
-      ? ''
-      : _rptQNote('Change percent = (actual use − baseline use) ÷ baseline use; a plus sign means more use than baseline. ' + _rptQSavingsRule() + ' Baseline cost is the actual cost plus savings.')) +
+    chart + '<h2>' + K.head + ', ' + ql + '</h2>' + _rptQTable(widths, heads, rows, null, kind === 'electric' ? _RPT_Q_WDX_FUEL_ELEC : _RPT_Q_WDX_FUEL) +
     only;
-  return rptPage(n, K.title, body, { data: d, letterhead: false, label: 'Page ' + n + ' - ' + K.title });
+  // The meters of this fuel: one row per meter, the meter named "<Utility type>-Acct#<account number>".
+  var mrows = '';
+  var mBills = 0;
+  var mUse = 0;
+  var mAmt = 0;
+  bg.order.forEach(function (k) {
+    var g = bg.groups[k];
+    if (g.commodity !== K.com) return;
+    mBills += g.bills;
+    mUse += g.use;
+    mAmt += g.shown;
+    mrows +=
+      '<tr><td>' + _escHtml(g.building) + '</td><td>' + _escHtml(_rptMeterLabel(g.commodity, g.account)) + '</td><td class="rpt-n">' + g.bills +
+      '</td><td class="rpt-n">' + _rptQN(g.use) + ' ' + _rptCommodityUnit(g.commodity, g.use) + '</td><td class="rpt-n">' + _fmtUSD(g.shown, '$0') + '</td></tr>';
+  });
+  var meters = '';
+  if (mrows) {
+    mrows += '<tr class="rpt-tot"><td colspan="2">Total</td><td class="rpt-n">' + mBills + '</td><td></td><td class="rpt-n">' + _fmtUSD(mAmt, '$0') + '</td></tr>';
+    meters = '<h2>' + K.metersHead + ', ' + ql + '</h2>' + _rptQTable([30, 29, 10, 17, 14], ['Building', 'Meter (account number)', 'Bills (count)', 'Use', 'Cost'], mrows, [1]);
+  }
+  var label = function (num, title) {
+    return { data: d, letterhead: false, label: 'Page ' + num + ' - ' + title };
+  };
+  if (!meters || _rptQBodyFits(_rptQFitTables(body + meters))) {
+    return { html: rptPage(n, K.title, body + meters, label(n, K.title)), pageCount: 1 };
+  }
+  return {
+    html: rptPage(n, K.title, body, label(n, K.title)) + '\n' + rptPage(n + 1, K.title + ' (continued)', meters, label(n + 1, K.title + ' (continued)')),
+    pageCount: 2,
+  };
 }
 
 // Appendix D, quarterly layout: the bills of the quarter by month, one row per bill (the bill's own commodity unit
@@ -4230,47 +4250,44 @@ function _rptQSub(key, html) {
 }
 
 function _rptQuarterReportHTML(d, s) {
-  // The page list of the presented Q1 and Q2 reports, in the same order: the cover and building status, the financial
-  // summary, savings performance, environmental impact, observations, the meter performance of each building, and the
-  // appendix. Operating hours and set points follow the observations. Every page starts a new page.
+  // One section table (REPORT_SECTIONS): each checked section prints its page(s), in the order of the table (the order of the
+  // preview sidebar), or its empty-state text. A section starts a new page. A section row with no qRender (a row that
+  // shares the page of another row, see sameAs) prints no page of its own.
   var pages = [];
-  var f = _rptQFacts(d);
-  var n = 1;
-  var tag = function (html, key) {
-    return html.replace(/<div class="rpt-page([^"]*)"/, '<div class="rpt-page$1" data-section="' + key + '"');
-  };
-  var on = function (key) {
-    return s[key] !== false;
-  };
-  var add = function (r, key) {
+  var c = { d: d, f: _rptQFacts(d), s: s, n: 1, letter: 'A', appMap: {} };
+  REPORT_SECTIONS.forEach(function (sec) {
+    if (!sec.qRender) return;
+    if (!(sec.qOn ? sec.qOn(s) : s[sec.key] !== false)) return;
+    var emptyPage = function (text) {
+      return { html: rptPage(c.n, sec.label, _rptQNote(_escHtml(text)), { data: d, letterhead: false, label: 'Page ' + c.n + ' - ' + sec.label }), pageCount: 1 };
+    };
+    var empty = sec.qEmpty ? sec.qEmpty(d) : null;
+    var r = empty ? emptyPage(empty) : sec.qRender(c);
+    // A checked section with nothing to print still prints its page, with the plain statement of the row (qNone).
+    if (!r && sec.qNone) r = emptyPage(sec.qNone(d));
     if (!r) return;
     if (typeof r === 'string') r = { html: r, pageCount: 1 };
-    pages.push(tag(r.html, key));
-    n += r.pageCount;
-  };
-  if (on('cover')) add(rptPageCover(n, d), 'cover');
-  if (on('financial')) add({ html: rptPageFinancial(n, d), pageCount: 1 }, 'financial');
-  if (on('savingsPerformance')) add(rptPageSavingsPerformance(n, d), 'savingsPerformance');
-  if (on('environmentalImpact')) add({ html: rptPageEnvironmentalImpact(n, d), pageCount: 1 }, 'environmentalImpact');
-  if (on('observations')) add(rptPageObservations(n, d), 'observations');
-  if (on('setpoints')) add(_rptQHoursPage(n, d), 'setpoints');
-  if (on('meterPerformance')) {
-    var mp = _rptMeterPerformancePages(d, n, true);
-    mp.pages.forEach(function (pg) {
-      pages.push(tag(pg.html, pg.key));
-    });
-    n += mp.pages.length;
-  }
-  var letter = 'A';
-  if (on('appendixA')) {
-    add(_rptQMethodPage(n, d, f, letter), 'appendixA');
-    letter = String.fromCharCode(letter.charCodeAt(0) + 1);
-  }
-  if (on('appendixB')) {
-    add(_rptQAppendixBPages(n, d, f, letter), 'appendixB');
-    letter = String.fromCharCode(letter.charCodeAt(0) + 1);
-  }
+    pages.push(r.tagged ? r.html : _rptQTagPage(r.html, sec.key));
+    c.n += r.pageCount;
+  });
   return _rptQNoBreakMinus(_injectPageNumbers(pages.join('\n')));
+}
+
+// _rptQTagPage(html, key): the page div carries the section key; the preview sidebar finds the page by it.
+function _rptQTagPage(html, key) {
+  return html.replace(/<div class="rpt-page([^"]*)"/, '<div class="rpt-page$1" data-section="' + key + '"');
+}
+
+// _rptQStdPage(r): a page of a section that was written for the standard report (rptPageApprovedChanges and others) in the
+// layout of the quarterly report: its tables fill the page width, and a header is centered with its unit on one line.
+function _rptQStdPage(r) {
+  if (typeof r === 'string') r = { html: r, pageCount: 1 };
+  var html = _rptQFitTables(r.html.replace(/(<table[^>]*?) style="font-size:10px"/g, '$1')).replace(/<th(\s[^>]*)?>([\s\S]*?)<\/th>/g, function (m, attrs, inner) {
+    attrs = attrs || '';
+    if (/style=/.test(attrs)) return m;
+    return '<th' + attrs + ' style="text-transform:none;text-align:center;vertical-align:middle">' + _rptHeadKeepUnits(inner) + '</th>';
+  });
+  return { html: html, pageCount: r.pageCount, tagged: r.tagged };
 }
 
 // _rptMeterPerformancePages(d, n, withBaseline): the Meter Performance pages, one per building, from the same
@@ -4475,12 +4492,6 @@ function _rptQMeasureH(html) {
     return null;
   }
 }
-function _rptQPageBodyOf(pageHtml) {
-  var at = pageHtml.lastIndexOf('<div class="rpt-page');
-  var seg = at >= 0 ? pageHtml.slice(at) : pageHtml;
-  var m = /<div class="rpt-body[^"]*">([\s\S]*)<\/div><div class="rpt-footer-label"/.exec(seg);
-  return m ? m[1] : '';
-}
 // _rptQEstH(html): a rough height in px when there is no DOM (node tests): 23px per table row, 36px per heading, 19px per text line.
 function _rptQEstH(html) {
   var b = html.replace(/<style[\s\S]*?<\/style>/g, '');
@@ -4491,8 +4502,6 @@ function _rptQEstH(html) {
   var lines = paras.reduce(function (s2, n) { return s2 + Math.ceil(n / 95); }, 0);
   return rows * 23 + heads * 36 + lines * 19 + (b.match(/<svg[ >]/g) || []).length * 140;
 }
-// _rptQJoinFits(prevHtml, nextHtml): true when the next section's body fits under the last page of the previous html.
-// The joined body is measured in the DOM; the budget is the content height of one page.
 // The tallest body (px, content only) a quarterly page holds above its footer line. _rptContentBudget keeps room for the
 // letterhead footer graphic, which the quarterly pages after the cover do not draw.
 // 850 = the page's footer line (922px from the page top: the "Page N of M" number and the label) minus the body top (60px
@@ -4504,23 +4513,7 @@ function _rptQBodyFits(bodyHtml) {
   if (h != null) return h <= RPT_Q_PAGE_BODY_PX;
   return _rptQEstH(bodyHtml) + 50 <= RPT_Q_PAGE_BODY_PX;
 }
-function _rptQJoinFits(prevHtml, nextHtml) {
-  var title = (/<div class="rpt-pg-title">([\s\S]*?)<\/div>/.exec(nextHtml) || [0, ''])[1];
-  var joined = _rptQPageBodyOf(prevHtml) + '<div style="margin-top:14px"><h2>' + title + '</h2>' + (_rptQPageBodyOf(nextHtml) || nextHtml) + '</div>';
-  return _rptQBodyFits(joined);
-}
 
-// _rptQJoinPages(prevHtml, nextHtml, key): the body of the next page, under its own title, inside the previous
-// page. The block carries data-subsection="key", so the preview sidebar can still show or hide it.
-function _rptQJoinPages(prevHtml, nextHtml, key) {
-  var title = (/<div class="rpt-pg-title">([\s\S]*?)<\/div>/.exec(nextHtml) || [0, ''])[1];
-  var body = (/<div class="rpt-body[^"]*">([\s\S]*)<\/div><div class="rpt-footer-label"/.exec(nextHtml) || [0, ''])[1];
-  var at = prevHtml.lastIndexOf('</div><div class="rpt-footer-label"');
-  if (at < 0 || !body) return prevHtml + String.fromCharCode(10) + nextHtml.replace(/<div class="rpt-page([^"]*)"/, '<div class="rpt-page$1" data-section="' + key + '"');
-  // The cover page body has 48px side padding of its own; a block joined under it takes the same padding.
-  var pad = prevHtml.indexOf('data-section="cover"') >= 0 ? ';padding:0 48px' : '';
-  return prevHtml.slice(0, at) + '<div style="margin-top:14px' + pad + '">' + _rptQSub(key, '<h2>' + title + '</h2>' + body) + '</div>' + prevHtml.slice(at);
-}
 
 // _rptQFitText(fit) - the model fit of one baseline model: R2, the number of baseline months and CV(RMSE), all three
 // from the fit object (computations/regression.js: r2, n, cvrmse). Appendix B prints it after each formula.
@@ -4638,7 +4631,7 @@ function _rptQAppendixBPages(n, d, f, letter) {
   // The tables are packed onto pages while the measured body still fits; a building's tables may continue on the next page
   // under its name and "(continued)", so no page is left part empty by a building that does not fit whole.
   var intro0 = _rptQPara(
-    'Appendix A gives the method. The kWh and therms baselines use the degree days of ' + (f.year - 1) + '; the billed kW baseline uses the degree days of ' + f.year + ', the year of the months reported. ' + _rptQChangeRule(),
+    'Appendix A gives the method. The kWh and therms baselines use the degree days of ' + (f.year - 1) + '; the billed kW baseline uses the degree days of ' + f.year + ', the year of the months reported.',
   );
   var unitHtml = function (u, starts) {
     var head = !u.name ? '' : u.first ? '<h2>' + _escHtml(u.name) + '</h2>' : starts ? '<h2>' + _escHtml(u.name) + ' (continued)</h2>' : '';
@@ -4668,7 +4661,6 @@ function _rptQAppendixCPage(n, d, f, letter) {
     _rptQPara('Degree days compare each day&#39;s average outdoor temperature with 60&deg;F. A day below 60&deg;F adds heating degree days (60 minus the average). A day above 60&deg;F adds cooling degree days (the average minus 60). Degree days add up day by day.') +
     '<h2>Degree Days by Month</h2>' +
     _rptQWeatherTable(d, f) +
-    _rptQNote('Bold rows are the months of ' + f.qLabel + '. The baseline year is ' + (f.year - 1) + '. A dash means the month has no data yet.') +
     _rptQDegreeDayNote(d);
   return rptPage(n, 'Appendix ' + letter + ': Weather Data', body, { data: d, letterhead: false, label: 'Page ' + n + ' - Appendix ' + letter });
 }
@@ -5372,7 +5364,7 @@ function rptPageCover(n, d) {
       const cardClass = _res.cls === 'rpt-g' ? 'rpt-ok' : _res.cls === 'rpt-o' ? 'rpt-warn' : '';
       const statusIcon = (_res.arrow ? _res.arrow + ' ' : '') + _escHtml(_res.word);
       const cardStyle = _res.cls === 'rpt-r' ? 'border-color:var(--rpt-red-light);' : '';
-      const valColor = _rptResultVar(_res, true);
+      const valColor = b.status === 'no_data' || b.status === 'no_contract' ? _rptResultVar(_res, true) : _rptSavVar(b.savings, true);
       const labelColor = _rptResultVar(_res, false);
       return (
         '<div class="rpt-status-card ' +
@@ -5466,7 +5458,7 @@ function rptPageCover(n, d) {
     '<div class="rpt-vs-box">' +
     '<div class="rpt-vs-side">' +
     '<div class="rpt-vs-val" style="color:' +
-    (_sav >= target ? 'var(--rpt-green-dark)' : 'var(--rpt-red)') +
+    _rptSavVar(_sav, true) +
     '" contenteditable="true">' +
     _fmtUSD(_sav, '$0') +
     '</div>' +
@@ -7226,7 +7218,27 @@ function rptPageObservations(n, d) {
   var _obsTokens = bldgSectionItems.map(function (html) {
     return { type: 'block', html: html, estH: 150 };
   });
-  var _obsChunks = _rptPaginateTokens(_obsTokens, _obsBase - OBS_FIRST_CHROME, _obsBase - OBS_CONT_CHROME);
+  // Real heights (no fixed 150px guess): each building block is measured in the DOM, and the last page also holds the
+  // Weather (and Next Quarter) text, so the page breaks only when the content truly does not fit.
+  var _obsTailHtml =
+    '<h2 contenteditable="true">Weather</h2>' +
+    weatherPara +
+    (_uq ? '' : '<h2 contenteditable="true">Next Quarter</h2>' + nextQPara);
+  var _obsTailH = _rptMeasureHtmlH(_obsTailHtml);
+  var _obsFirstH = _rptMeasureHtmlH(
+    '<h2 contenteditable="true">Building Performance</h2>' +
+      '<div style="font-size:14px;line-height:1.6;margin-bottom:8px" contenteditable="true">' + summaryPara + '</div>' +
+      (_uq ? '' : _rptQNote(_rptPctBasisText(d, 'period'))),
+  );
+  var _obsMeasured = _obsTailH != null && _obsFirstH != null;
+  _obsTokens.forEach(function (t) {
+    var mh = _obsMeasured ? _rptMeasureHtmlH(t.html) : null;
+    if (mh != null) t.estH = mh;
+  });
+  var _obsCap = Math.min(_obsBase, RPT_Q_PAGE_BODY_PX);
+  var _obsChunks = _obsMeasured
+    ? _rptPaginateWithTail(_obsTokens, _obsCap - _obsFirstH, _obsCap, _obsTailH)
+    : _rptPaginateTokens(_obsTokens, _obsBase - OBS_FIRST_CHROME, _obsBase - OBS_CONT_CHROME);
 
   var resultPages = [];
   var currentPageNum = n;
@@ -7906,7 +7918,7 @@ function _rptQYearToDatePage(n, d, f) {
     _rptQTable([46, 27, 27], ['Period', 'Savings measured', 'Savings billed'], rows) +
     _rptQNote(
       (earlier.length ? _escHtml(_rptQListPlain(earlier)) + (earlier.length > 1 ? ' are the figures' : ' is the figure') + ' reported in ' + (earlier.length > 1 ? 'those quarters' : 'that quarter') + '. ' : '') +
-        'The months of ' + f.qLabel + ' are on page 2. ' + _rptQSavingsRule(),
+        'The months of ' + f.qLabel + ' are on page 2.',
     );
   return rptPage(n, 'Year to Date', body, { data: d, letterhead: false, label: 'Page ' + n + ' - Year to Date' });
 }
@@ -8028,7 +8040,7 @@ function rptPageYearToDate(n, d) {
   var rollupLine =
     '<p style="font-size:13px;color:var(--rpt-page-text);margin-top:10px" contenteditable="true">' +
     ytdApprovedCount +
-    (ytdApprovedCount === 1 ? ' change approved year-to-date.' : ' changes approved year-to-date.') +
+    _rptPluralize(ytdApprovedCount, ' change{s} approved year-to-date.') +
     '</p>';
 
   var bodyHTML =
@@ -9059,7 +9071,7 @@ function _rptQShownCols(c) {
     cur: _rptApportion(c.map(function (x) { return x.cur; }), tot('cur')),
   };
 }
-function _rptQBuildingSummaryPage(n, d, b, f, extraHtml) {
+function _rptQBuildingSummaryPage(n, d, b, f) {
   var qLbl = _rptQuarterLabel(d.period.quarter, d.period.year);
   var parts = f.parts[b.id] || { electric: 0, gas: 0, propane: 0 };
   var fuels = [];
@@ -9117,24 +9129,24 @@ function _rptQBuildingSummaryPage(n, d, b, f, extraHtml) {
       .join('') +
     '</tr>';
   var t2 = _rptQTable(widths, heads, mrows);
-  var eui = b.eui || {};
+  // The quarter site EUI of the building: the baseline Q3 against the actual Q3 (kBtu per ft2 of the quarter, not annualized),
+  // computed once in collectReportData (b.euiQ, computeQuarterlyEUI).
+  var eui = b.euiQ || {};
   var euiCh = eui.baseline > 0 ? ((eui.current - eui.baseline) / eui.baseline) * 100 : 0;
   var t3 =
     b.sqft > 0 && eui.baseline > 0
-      ? _rptQTable(
+      ? '<div style="margin-top:12px"></div>' +
+        _rptQTable(
           [40, 20, 20, 20],
-          ['Site energy use intensity (kBtu/ft&sup2;/yr)', 'Baseline', 'Actual', 'Change'],
+          ['Site energy use intensity, ' + qLbl + ' (kBtu/ft&sup2;)', 'Baseline ' + qLbl, 'Actual ' + qLbl, 'Change'],
           '<tr><td>' + _escHtml(b.name) + '</td><td class="rpt-n">' + eui.baseline.toFixed(1) + '</td><td class="rpt-n">' + (eui.current || 0).toFixed(1) + '</td><td class="rpt-n">' + _rptQPct(euiCh) + '</td></tr>',
         )
       : '';
-  var euiNote = b.euiWindow
-    ? (d.buildings[0] && d.buildings[0].id === b.id ? _rptQTerms(d).eui + ' ' : '') + _rptQMonthYear(b.euiWindow.first) + ' through ' + _rptQMonthYear(b.euiWindow.last) + ' (' + b.euiWindow.months + ' months), annualized, against the same months of the baseline period.'
-    : '';
   var info = (b.sqft ? _rptQN(b.sqft) + ' ft&sup2;' : '') + (b.address ? (b.sqft ? '. ' : '') + _escHtml(b.address) : '');
   var h2 = function (t) {
     return '<h2 style="font-size:16px;margin:12px 0 4px">' + t + '</h2>';
   };
-  var body = (info ? _rptQPara(info) : '') + h2('Savings, ' + qLbl) + (fuels.length ? t1 + _rptQNote(_rptQChangeRule() + ' ' + _rptQSavingsRule()) : '') + h2('Monthly Use, ' + qLbl) + t2 + (t3 ? (euiNote ? _rptQNote(euiNote) : '') + t3 : '') + (extraHtml || '');
+  var body = (info ? _rptQPara(info) : '') + h2('Savings, ' + qLbl) + (fuels.length ? t1 : '') + h2('Monthly Use, ' + qLbl) + t2 + t3;
   return rptPage(n, _escHtml(b.name || 'Building') + ' &ndash; Building Summary', body, {
     data: d,
     letterhead: false,
@@ -9251,20 +9263,6 @@ function _rptQBaselineDataBody(b, d) {
   });
   var blNote = fixed ? 'A month with cost and no use is a fixed charge.' : '';
   return _rptQPara(sentence.join(' ')) + _rptQTable(widths, heads, rows) + (blNote ? _rptQNote(blNote) : '');
-}
-function _rptQBuildingPages(n, d, b) {
-  var f = d.__qFacts || (d.__qFacts = _rptQFacts(d));
-  var out = _rptQBuildingSummaryPage(n, d, b, f);
-  var bl = _rptQBaselineDataBody(b, d);
-  if (!bl) return { html: out, summaryPageCount: 1, meterPerfHTML: '' };
-  var one = _rptQBuildingSummaryPage(n, d, b, f, '<h2 style="font-size:16px;margin:12px 0 4px">Baseline Data</h2>' + bl);
-  if (_rptQBodyFits(_rptQPageBodyOf(one))) return { html: one, summaryPageCount: 1, meterPerfHTML: '' };
-  out += rptPage(n + 1, _escHtml(b.name || 'Building') + ' - Baseline Data', bl, {
-    data: d,
-    letterhead: false,
-    label: 'Page ' + (n + 1) + ' - ' + (b.name || 'Building') + ' Baseline Data',
-  });
-  return { html: out, summaryPageCount: 2, meterPerfHTML: '' };
 }
 function rptPageBuildingSummary(n, d, b) {
   const $n = function (v) {
@@ -13627,35 +13625,34 @@ function rptPageBoardSummary(n, d) {
 
 const REPORT_SECTIONS = [
   // key, label, group: the picker and the preview sidebar. qRender(c) / qOn(s) / qEmpty(d): the quarterly
-  // report layout (_rptQuarterReportHTML) reads the same rows, so a checked key cannot be skipped there.
-  // c = { d, f, s, n (page number), letter (next appendix letter), appMap }.
+  // report layout (_rptQuarterReportHTML) reads the same rows in this order, so a checked key cannot be skipped there.
+  // c = { d, f, s, n (page number), letter (next appendix letter), appMap }. qRender returns a page string, or
+  // { html, pageCount, tagged } (tagged: the html already carries data-section on each page), or null for no page.
+  // sameAs: the row has no page of its own; the preview sidebar shows the page of the named row.
   {
     key: 'cover',
     label: 'Cover Page',
     group: 'Main',
+    // The cover page carries the summary of the Board Executive Summary row.
+    qOn: function (s) {
+      return s.cover !== false || s.boardSummary !== false;
+    },
     qRender: function (c) {
-      return _rptQCoverPage(c.n, c.d, c.f, c.s);
+      return rptPageCover(c.n, c.d);
     },
   },
   {
     key: 'boardSummary',
     label: 'Board Executive Summary',
     group: 'Main',
-    // The summary text is part of the cover page (_rptQCoverPage, data-subsection="boardSummary"); this row only
-    // carries the picker toggle, so the quarterly layout prints no page for it.
-    qOn: function (s) {
-      return !!s.boardSummary;
-    },
-    qRender: function () {
-      return null;
-    },
+    sameAs: 'cover',
   },
   {
     key: 'financial',
     label: 'Financial Summary',
     group: 'Main',
     qRender: function (c) {
-      return _rptQResultsPage(c.n, c.d, c.f);
+      return rptPageFinancial(c.n, c.d);
     },
   },
   {
@@ -13663,16 +13660,15 @@ const REPORT_SECTIONS = [
     label: 'Savings Performance',
     group: 'Main',
     qRender: function (c) {
-      return _rptQEnergyPage(c.n, c.d, c.f);
+      return rptPageSavingsPerformance(c.n, c.d);
     },
   },
   {
     key: 'environmentalImpact',
     label: 'Environmental Impact',
     group: 'Main',
-    join: true,
     qRender: function (c) {
-      return _rptQEnvPage(c.n, c.d);
+      return rptPageEnvironmentalImpact(c.n, c.d);
     },
   },
   {
@@ -13680,37 +13676,29 @@ const REPORT_SECTIONS = [
     label: 'Observations & Recommendations',
     group: 'Main',
     qRender: function (c) {
-      // The findings and the contract projection share one page when both are checked.
-      if (c.s.contractProjection === false) return _rptQFindingsPage(c.n, c.d, c.f);
-      return rptPage(
-        c.n,
-        'Findings and Contract Totals',
-        _rptQSub('observations', _rptQFindingsBody(c.d, c.f)) + _rptQSub('contractProjection', _rptQContractBody(c.d, c.f)),
-        { data: c.d, letterhead: false, label: 'Page ' + c.n + ' - Findings and Contract Totals' },
-      );
+      return rptPageObservations(c.n, c.d);
     },
   },
   {
     key: 'approvedChanges',
     label: 'Approved Changes',
     group: 'Main',
-    join: true,
     qEmpty: function (d) {
       return (d.approvedChanges || []).length ? null : 'No approved changes in ' + _rptQuarterLabel(d.period.quarter, d.period.year) + '.';
     },
     qRender: function (c) {
-      return rptPageApprovedChanges(c.n, c.d);
+      return _rptQStdPage(rptPageApprovedChanges(c.n, c.d));
     },
   },
   {
     key: 'setpoints',
     label: 'BAS Set Points & Schedules',
     group: 'Main',
-    qEmpty: function (d) {
-      return _rptBasScheduleRows(d).length ? null : 'No set point or schedule data in ' + _rptQuarterLabel(d.period.quarter, d.period.year) + '.';
+    qNone: function (d) {
+      return 'No set point or schedule data in ' + _rptQuarterLabel(d.period.quarter, d.period.year) + '.';
     },
     qRender: function (c) {
-      return _rptQSchedulePage(c.n, c.d);
+      return _rptQHoursPage(c.n, c.d);
     },
   },
   {
@@ -13718,52 +13706,58 @@ const REPORT_SECTIONS = [
     label: 'Per-Building Summaries (all)',
     group: 'Buildings',
     qRender: function (c) {
-      var html = [];
-      var count = 0;
-      c.d.buildings.forEach(function (b) {
-        var r = rptPageBuildingSummary(c.n + count, c.d, b);
-        html.push(r.html.replace(/<div class="rpt-page([^"]*)"/, '<div class="rpt-page$1" data-section="buildingSummaries' + (count ? '-cont' : '') + '"'));
-        count += r.summaryPageCount;
+      var html = c.d.buildings.map(function (b, i) {
+        return _rptQTagPage(_rptQBuildingSummaryPage(c.n + i, c.d, b, c.f), 'buildingSummaries' + (i ? '-cont' : ''));
       });
-      return { html: html.join('\n'), pageCount: count, tagged: true };
+      return html.length ? { html: html.join('\n'), pageCount: html.length, tagged: true } : null;
     },
   },
   {
     key: 'meterPerformance',
     label: 'Per-Building Meter Performance',
     group: 'Buildings',
+    qNone: function (d) {
+      return 'No meter data in ' + _rptQuarterLabel(d.period.quarter, d.period.year) + '.';
+    },
     qRender: function (c) {
-      return _rptQMeterPage(c.n, c.d, c.f);
+      var mp = _rptMeterPerformancePages(c.d, c.n, true);
+      if (!mp.pages.length) return null;
+      return {
+        html: mp.pages
+          .map(function (pg) {
+            return _rptQTagPage(pg.html, pg.key);
+          })
+          .join('\n'),
+        pageCount: mp.pages.length,
+        tagged: true,
+      };
     },
   },
   {
     key: 'electricDetail',
     label: 'Electricity Use Detail',
     group: 'Commodity',
-    join: true,
     qEmpty: _rptQNoCom('electric', 'electricity'),
     qRender: function (c) {
-      return _rptQFuelDetailPage(c.n, c.d, c.f, 'electric');
+      return _rptQFuelDetailPages(c.n, c.d, c.f, 'electric');
     },
   },
   {
     key: 'gasDetail',
     label: 'Natural Gas Use Detail',
     group: 'Commodity',
-    join: true,
     qEmpty: _rptQNoCom('gas', 'gas'),
     qRender: function (c) {
-      return _rptQFuelDetailPage(c.n, c.d, c.f, 'gas');
+      return _rptQFuelDetailPages(c.n, c.d, c.f, 'gas');
     },
   },
   {
     key: 'propaneDetail',
     label: 'Propane Use Detail',
     group: 'Commodity',
-    join: true,
     qEmpty: _rptQNoCom('propane', 'propane'),
     qRender: function (c) {
-      return _rptQFuelDetailPage(c.n, c.d, c.f, 'propane');
+      return _rptQFuelDetailPages(c.n, c.d, c.f, 'propane');
     },
   },
   // fix/report-quarterly-restructure (2026-09-09), Part A: these three render together as the
@@ -13773,32 +13767,29 @@ const REPORT_SECTIONS = [
     label: 'Site Energy Use Intensity Benchmarking',
     group: 'Year-to-Date',
     qRender: function (c) {
-      return _rptQBenchmarkPage(c.n, c.d, c.f);
+      return _rptQStdPage(_rptQBenchmarkPage(c.n, c.d, c.f));
     },
   },
   {
     key: 'yearToDate',
     label: 'Year-to-Date Monthly Trend',
     group: 'Year-to-Date',
-    join: true,
     qRender: function (c) {
-      return rptPageYearToDate(c.n, c.d);
+      return _rptQStdPage(rptPageYearToDate(c.n, c.d));
     },
   },
   {
     key: 'contractProjection',
     label: 'Contract Projection',
     group: 'Year-to-Date',
-    // On the Findings page when the findings are checked.
     qRender: function (c) {
-      return c.s.observations === false ? _rptQContractPage(c.n, c.d, c.f) : null;
+      return _rptQContractPage(c.n, c.d, c.f);
     },
   },
   {
     key: 'appendixA',
     label: 'Appendix A: Normalization & Baseline',
     group: 'Appendices',
-    join: true,
     qRender: function (c) {
       var l = c.letter;
       c.letter = String.fromCharCode(l.charCodeAt(0) + 1);
@@ -13820,7 +13811,6 @@ const REPORT_SECTIONS = [
     key: 'appendixC',
     label: 'Appendix C: Weather Data',
     group: 'Appendices',
-    join: true,
     qRender: function (c) {
       var l = c.letter;
       c.appMap.weather = l;

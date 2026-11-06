@@ -125,7 +125,7 @@ const ok = (c, m) => {
     ok(out.sharedP.length === 0, '6 no shared paragraph above the table');
     ok(!out.noHistPage, '2 no record -> no table page');
     ok(!out.emptyPage, '2 record with no matching building -> no table page');
-    ok(out.pageCountNo === out.pageCountWith - 1, '2 no record: the hours page is dropped and no other page changes (' + out.pageCountNo + ' vs ' + out.pageCountWith + ')');
+    ok(out.pageCountNo === out.pageCountWith, '2 no record: the checked section still prints its page, with the no-data sentence and no table, and no other page changes (' + out.pageCountNo + ' vs ' + out.pageCountWith + ')');
     ok(!out.generic[0] && !out.generic[1], '3 generic recommendation text does not appear');
     ok(out.loadedOk && out.otherNull, '4 record loads from en_bas_schedhistory_<projectId>; another project gets none');
     ok(errs.length === 0, 'no page errors ' + errs.join('|'));

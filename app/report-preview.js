@@ -285,6 +285,11 @@ function _rebuildSidebar() {
     }
   }
 
+  // A section row with sameAs has no page of its own: it shows the page, the page number and the checkbox of that row.
+  REPORT_SECTIONS.forEach(function (sec) {
+    if (sec.sameAs && sectionPageMap[sec.sameAs]) sectionPageMap[sec.key] = sectionPageMap[sec.sameAs];
+  });
+
   // Build dynamic appendix letter map: assign sequential letters (A, B, C…) only to
   // appendix sections that were actually rendered (present in sectionPageMap), in
   // REPORT_SECTIONS order. This mirrors what _nextAppLtr() did during generation so
@@ -383,7 +388,16 @@ function _rebuildSidebar() {
 
 // Show or hide one sidebar section. A section that shares a page with another is a data-subsection block
 // inside that page: the block hides on its own, and the page hides only when every block on it is hidden.
+// _rptPageKeyOf(key): the key of the page a section row shows (REPORT_SECTIONS sameAs), or the key itself.
+function _rptPageKeyOf(key) {
+  var sec = REPORT_SECTIONS.filter(function (x) {
+    return x.key === key;
+  })[0];
+  return sec && sec.sameAs ? sec.sameAs : key;
+}
+
 function _setSectionVisible(key, visible) {
+  key = _rptPageKeyOf(key);
   var sub = document.querySelector('#rptPreviewPages [data-subsection="' + key + '"]');
   if (sub) {
     sub.style.display = visible ? '' : 'none';
@@ -403,6 +417,7 @@ function _setSectionVisible(key, visible) {
 }
 
 function _toggleSectionByKey(key) {
+  key = _rptPageKeyOf(key);
   var sub = document.querySelector('#rptPreviewPages [data-subsection="' + key + '"]');
   if (sub) {
     _setSectionVisible(key, sub.style.display === 'none' || sub.closest('.rpt-preview-page').style.display === 'none');
@@ -418,15 +433,23 @@ function _toggleSectionByKey(key) {
 }
 
 function _scrollToSection(key) {
+  key = _rptPageKeyOf(key);
   var subEl = document.querySelector('#rptPreviewPages [data-subsection="' + key + '"]');
   var page = subEl ? subEl.closest('.rpt-preview-page') : document.querySelector('#rptPreviewPages .rpt-preview-page[data-section="' + key + '"]');
   if (page) page.scrollIntoView({ behavior: 'smooth', block: 'start' });
 }
 
+// togglePreviewSection(idx, visible): shows or hides the page at idx and the pages that continue it (a page with no section
+// key of its own, or a key ending in -cont, belongs to the section page before it).
 function togglePreviewSection(idx, visible) {
   var pages = document.querySelectorAll('#rptPreviewPages .rpt-preview-page');
   if (pages[idx]) {
     pages[idx].style.display = visible ? '' : 'none';
+    for (var ci = idx + 1; ci < pages.length; ci++) {
+      var ck = pages[ci].getAttribute('data-section') || '';
+      if (!(/^page-\d+$/.test(ck) || /-cont$/.test(ck))) break;
+      pages[ci].style.display = visible ? '' : 'none';
+    }
   }
   _rebuildSidebar();
   _updatePageNumbers();

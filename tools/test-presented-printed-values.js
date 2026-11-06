@@ -51,6 +51,7 @@ const pre = [
   'function _rptYtdKicker(){ return ""; }',
   'function _rptContentBudget(){ return 100000; }',
   'function _rptPaginateTokens(t){ return [t]; }',
+  'function _rptMeasureHtmlH(){ return null; }', 'function _rptPaginateWithTail(t){ return [t]; }', 'var RPT_Q_PAGE_BODY_PX = 830;',
   'function _rptTextLineH(){ return 16; }',
   'function getUDBldgs(){ return BLDGS; }',
   'var BLDGS = [{ id: "b1", name: "Alpha School" }, { id: "b2", name: "Beta School" }];',
@@ -89,6 +90,8 @@ const fns = [
   
   '_rptResultOf',
   '_rptResultVar',
+  '_rptSavVar',
+  '_rptQSavCls',
   'rptPageCover',
   'rptPageFinancial',
   'rptPageSavingsPerformance',
