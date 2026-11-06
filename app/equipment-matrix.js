@@ -4473,6 +4473,21 @@ function emUpdateStickyOffsets() {
   styleEl.textContent = css;
 }
 
+/* A remote update of this project's matrix redraws the open page. chDropStoreCaches (below) marks the
+   project here while the matrix tab is open; the FIRST emRenderMatrix for the SAME project after that keeps
+   the view and clears the mark. A tab switch or a project change (chViewChanged, not sent by the refresh
+   redraw itself, see app/core.js) clears it too. No clock: a redraw held back by edit mode or a dialog still
+   keeps the view however long it waits. */
+var _emKeepViewOnce = null; // { pid }
+function _emTakeKeepView(pid) {
+  var k = _emKeepViewOnce;
+  _emKeepViewOnce = null;
+  return !!(k && String(k.pid) === String(pid));
+}
+if (typeof window.addEventListener === 'function') window.addEventListener('chViewChanged', function () {
+  if (!window._chRefreshing) _emKeepViewOnce = null;
+});
+
 function emRenderMatrix(container, data, pid) {
   window._emActivePid = pid;
   if (!data) {
@@ -4510,15 +4525,20 @@ function emRenderMatrix(container, data, pid) {
     return;
   }
 
+  // A redraw that follows a remote update of this same project keeps the user's view, edit mode, sort and
+  // column choices (see _emKeepViewOnce below). Any other render starts from the default view.
+  var _emKeepView = _emTakeKeepView(pid);
   _emFilters = { building: '', type: '', search: '' };
-  _emSortCol = null;
-  _emSortDir = 1;
-  _emHiddenGroups = { asset: true }; // asset columns (Serial#, Model#, Manufacturer, Size/Capacity) hidden by default
-  _emEditMode = false;
-  _emShowAllDynCols = false;
-  _emViewMode = 'audit';
-  _emOpenDrawers = new Set();
-  _emAllPointsOpen = new Set();
+  if (!_emKeepView) {
+    _emSortCol = null;
+    _emSortDir = 1;
+    _emHiddenGroups = { asset: true }; // asset columns (Serial#, Model#, Manufacturer, Size/Capacity) hidden by default
+    _emEditMode = false;
+    _emShowAllDynCols = false;
+    _emViewMode = 'audit';
+    _emOpenDrawers = new Set();
+    _emAllPointsOpen = new Set();
+  }
   var savedZoom = parseInt(DB.get('en_em_zoom', '100'), 10);
   _emZoomLevel = savedZoom >= 50 && savedZoom <= 150 ? savedZoom : 100;
   emInjectMatrixCSS();
@@ -4601,6 +4621,18 @@ function emRenderMatrix(container, data, pid) {
       sPTab('district', document.querySelector('.pdt[data-tab="district"]'));
     });
 
+  if (_emKeepView) {
+    // The toolbar was drawn from the defaults: put the kept view and edit mode on its buttons.
+    emSyncViewModeControls();
+    var _emEditBtn = document.getElementById('em-edit-mode-btn');
+    if (_emEditBtn && _emEditMode) {
+      _emEditBtn.textContent = 'Lock';
+      _emEditBtn.style.background = 'var(--accent)';
+      _emEditBtn.style.color = '#fff';
+    }
+    var _emDelBtn = document.getElementById('em-delete-all-btn');
+    if (_emDelBtn) _emDelBtn.style.display = _emEditMode ? '' : 'none';
+  }
   emRenderTable(data, _emFilters);
   // Apply persisted zoom (read only; saving happens only when the user clicks zoom)
   emApplyZoom();
@@ -24526,6 +24558,10 @@ if (typeof window.addEventListener === 'function') window.addEventListener('chDr
     })
   )
     return;
+  var _emTabEl = document.getElementById('ptab-eq-matrix');
+  if (window._emActivePid && document.getElementById('em-table-wrap') && _emTabEl && _emTabEl.classList.contains('active')) {
+    _emKeepViewOnce = { pid: window._emActivePid };
+  }
   _emSelfHealDone = {};
   _emRowByIdCache = {};
   _emDynPointFreqCache = null;

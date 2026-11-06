@@ -1788,7 +1788,7 @@ const DB = (() => {
   const USER_ACTION_MS = 120000;
   const FILE_ACTION_MS = 15 * 60000; // a file chosen or dropped: big imports run for minutes
   const NAV_SELECTOR =
-    '.nav-item, .sb-item, .pdt, .ptab, .sidebar a, [onclick^="sv("], [onclick^="sPTab("], [onclick^="openDetail("], [onclick^="showList("], [data-nav]';
+    '.nav-item, .sb-item, .pdt, .sidebar a, [onclick^="sv("], [onclick^="sPTab("], [onclick^="openDetail("], [onclick^="showList("], [data-nav]';
   let _userAction = null; // { at, ms, cause }
   let _gateUserAction = false; // true when a real page (DOM) is present, see _installActionTracker
   let _autoLocalCount = 0; // writes kept in this browser only because no user action caused them
@@ -1902,6 +1902,39 @@ const DB = (() => {
       return true;
     }
   }
+  // The ONE rule for a delete of a key this browser has no stamp for (Clear All Data removes keys that may not exist
+  // on the server; another user may have made one after this page loaded). Asks the server manifest (one fetch shared
+  // for 5 s, so one Clear All asks once). Returns 'drop' (no row, or already deleted: send nothing, a send would be
+  // answered 400 "no baseVersion"), 'send' (a row exists: its version is stamped, send the delete at it) or 'wait'
+  // (no answer: keep the delete queued and retry later, never a permanent failure).
+  let _delManifest = null; // { at, p }
+  async function _stampOrDropDelete(key) {
+    if (_replicaVersions[key]) return 'send';
+    const epoch = _identityEpoch; // a manifest belongs to the identity that asked for it
+    if (!_delManifest || _delManifest.epoch !== epoch || Date.now() - _delManifest.at > 5000) {
+      const p = _withAuthRetry(() => _fetchManifestWithTimeout(MANIFEST_TIMEOUT_MS));
+      _delManifest = { at: Date.now(), p, epoch };
+      p.catch(() => {
+        if (_delManifest && _delManifest.p === p) _delManifest = null;
+      });
+    }
+    let man;
+    try {
+      man = await _delManifest.p;
+    } catch (e) {
+      return 'wait';
+    }
+    if (!Array.isArray(man)) {
+      _delManifest = null; // not a manifest: do not reuse it
+      return 'wait';
+    }
+    if (epoch !== _identityEpoch) return 'wait'; // someone else is signed in now: this answer is not theirs
+    const wk = _wireKey(key);
+    const row = man.find((m) => m && m.key === wk);
+    if (!row || row.deleted) return 'drop';
+    _setSynced(key, { version: row.version, hash: row.hash || null });
+    return 'send';
+  }
   async function _writeOne(key, payload) {
     const mode = _backendMode();
     if (mode === 'off') {
@@ -1922,6 +1955,19 @@ const DB = (() => {
     if (!_hasFullPull()) {
       _enqueueWrite(key, payload);
       return;
+    }
+    // A delete of a key this browser never stamped: _stampOrDropDelete asks the server (one shared rule, also used by the drain).
+    if (payload.deleted && !_replicaVersions[key]) {
+      const d = await _stampOrDropDelete(key);
+      if (d === 'wait') {
+        _enqueueWrite(key, payload);
+        return;
+      }
+      if (d === 'drop') {
+        _syncQueue = _syncQueue.filter((e) => !(e.key === key && _entryOwnerKey(e.owner) === _entryOwnerKey(payload.owner)));
+        _persistSyncQueue();
+        return;
+      }
     }
     // A value the server already holds is not sent (opening a pane, a render
     // that re-saves, a migration that changes nothing).
@@ -1984,6 +2030,18 @@ const DB = (() => {
       const payload = entry.deleted
         ? { deleted: true, owner: entry.owner, cause: entry.cause }
         : { value: entry.value, owner: entry.owner, cause: entry.cause };
+      // A delete with no stamp: the shared rule decides (drop it, stamp it, or wait for an answer).
+      if (entry.deleted && !_replicaVersions[entry.key]) {
+        const d = await _stampOrDropDelete(entry.key);
+        if (epoch !== _identityEpoch) return;
+        if (d === 'drop') {
+          _queueFailures.delete(entry.key);
+          _syncQueue = _syncQueue.filter((e) => e.id !== entry.id);
+          _persistSyncQueue();
+          continue;
+        }
+        if (d === 'wait') return; // no answer: the rest would wait too; entries stay queued, retried next cycle, not a failure
+      }
       // _sendKvPut always reads baseVersion from the live _replicaVersions
       // map (not entry.baseVersion) — a real conflict still 409s honestly.
       let result;
