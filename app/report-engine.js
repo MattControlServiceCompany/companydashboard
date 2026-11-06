@@ -4218,7 +4218,7 @@ function _rptMeterPerformancePages(d, n, withBaseline) {
     var block =
       '<div style="page-break-inside:avoid;break-inside:avoid;margin-bottom:10px">' +
       '<div style="font-size:12px;font-weight:700;color:var(--rpt-blue);margin-bottom:3px;border-bottom:1px solid var(--rpt-blue-light);padding-bottom:2px">' +
-      (b.name || 'Building') +
+      _escHtml(b.name || 'Building') +
       '</div>' +
       r.meterPerfHTML +
       '</div>';
@@ -6212,7 +6212,7 @@ function rptPageEUI(n, d) {
         _rptPVn(d, 'eui rankings', b.id, '', '', 'rank', i + 1) +
         '</td>' +
         '<td contenteditable="true">' +
-        (b.name || '—') +
+        _escHtml(b.name || '—') +
         '</td>' +
         '<td contenteditable="true" style="overflow-wrap:normal;word-break:keep-all">' +
         (b.type || '—') +
@@ -6348,7 +6348,7 @@ function rptPageEUI(n, d) {
       return (
         '<div style="display:flex;align-items:center;gap:6px;margin-bottom:4px">' +
         '<div style="width:140px;text-align:right;font-size:10px;color:var(--rpt-page-text);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;flex-shrink:0">' +
-        (b.name || '—') +
+        _escHtml(b.name || '—') +
         '</div>' +
         '<div style="flex:1;height:18px;background:var(--rpt-progress-bg);border-radius:3px;position:relative">' +
         '<div style="width:' +
@@ -6404,7 +6404,7 @@ function rptPageEUI(n, d) {
       return (
         '<tr>' +
         '<td contenteditable="true">' +
-        (b.name || '—') +
+        _escHtml(b.name || '—') +
         '</td>' +
         '<td class="rpt-n" contenteditable="true">' +
         (bl > 0 ? bl.toFixed(1) : '—') +
@@ -6527,7 +6527,7 @@ function rptPageAuditSpend(n, d) {
       return (
         '<tr>' +
         '<td contenteditable="true">' +
-        (b.name || '—') +
+        _escHtml(b.name || '—') +
         '</td>' +
         '<td class="rpt-n" contenteditable="true">' +
         (b.hasSqft ? $n(b.sqft) : '—') +
@@ -6639,7 +6639,7 @@ function rptPageAuditEUI(n, d) {
         (i + 1) +
         '</td>' +
         '<td contenteditable="true">' +
-        (b.name || '—') +
+        _escHtml(b.name || '—') +
         '</td>' +
         '<td class="rpt-n" contenteditable="true">' +
         $n(b.sqft) +
@@ -6659,7 +6659,7 @@ function rptPageAuditEUI(n, d) {
         '<tr>' +
         '<td contenteditable="true">—</td>' +
         '<td contenteditable="true">' +
-        (b.name || '—') +
+        _escHtml(b.name || '—') +
         '</td>' +
         '<td class="rpt-n" contenteditable="true">' +
         (b.hasSqft ? $n(b.sqft) : '—') +
