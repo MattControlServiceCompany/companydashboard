@@ -548,6 +548,31 @@ const DB = (() => {
   function _hasQueuedWrite(key) {
     return !!_queuedEntryFor(key);
   }
+  // A shared key that holds another user's UNSENT edit (queued under its author). The signed-in user must not
+  // see it, upload it, or send it: this user's browser shows the server copy and the author's edit is re-sent
+  // when the author signs in again (2026-11-05 security review). One rule for the clear and the upload skip.
+  function _hasForeignQueuedWrite(key) {
+    if (_isPerUserKey(key)) return false;
+    const me = _myUserId();
+    return !!me && _syncQueue.some((e) => e.key === key && !_entryBelongsTo(e, me));
+  }
+  // Removes the local copy (page value, version stamp, merge base, stored value) of every shared key that holds
+  // another user's unsent edit. Runs when a verified user is signed in, whether or not the stored identity
+  // marker is blank (a sign-out blanks it, so the marker alone cannot tell that a different user arrived).
+  function _clearForeignQueuedSharedKeys(me) {
+    if (!me) return [];
+    const cleared = [];
+    _syncQueue.forEach((e) => {
+      if (_isPerUserKey(e.key) || _entryBelongsTo(e, me) || cleared.indexOf(e.key) !== -1) return;
+      cleared.push(e.key);
+      delete _cache[e.key];
+      delete _replicaVersions[e.key];
+      delete _syncBase[e.key];
+      _persistStamp(e.key);
+      _rawDelete(e.key);
+    });
+    return cleared;
+  }
   // THE "is a user edit of this key still unsaved" rule for hydration: a write waits in the queue, or one
   // is being sent right now (_writeBusy). Only such an edit can collide with newer server data. A local
   // copy that differs from the last synced copy with NO pending write was not made by a save (a page
@@ -2607,7 +2632,8 @@ const DB = (() => {
           value === undefined ||
           value === null ||
           _replicaVersions[localKey] ||
-          _hasQueuedWrite(localKey);
+          _hasQueuedWrite(localKey) ||
+          _hasForeignQueuedWrite(localKey);
         if (!skip) {
           let r;
           try {
@@ -2932,6 +2958,8 @@ const DB = (() => {
     // This user's own queued edits: back on the page, with their base version as the stamp. A sign-out removed the
     // stamp of a shared key that held an unsent edit; without it the edit would go out with no base and meet a 409.
     _reapplyQueuedPerUserValues(currentUid);
+    const foreign = _clearForeignQueuedSharedKeys(currentUid);
+    if (foreign.length) cleared = cleared.concat(foreign.filter((k) => cleared.indexOf(k) === -1));
     if (currentUid !== priorKnown) {
       _rawSet(LOCAL_IDENTITY_KEY, currentUid || '');
     }

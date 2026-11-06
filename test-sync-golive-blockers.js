@@ -3402,6 +3402,10 @@ await t("8n: a different user signs in: the signed-out edit is not sent and not 
   assert.strictEqual(L3.DB.getQueueDepth(), 1, "kept queued under its author");
   assert.notStrictEqual(L3.DB.get("en_budget_z"), "U-edit", "the new user sees the server copy, not the edit");
   assert.strictEqual(JSON.parse(S.ch_sync_queue)[0].owner.id, "u1");
+  assert.ok(!JSON.stringify(L3.DB.getConflictArchive()).includes("U-edit"), "not in the archive");
+  Object.keys(S).forEach((k) => {
+    if (k !== "ch_sync_queue") assert.ok(!String(S[k]).includes("U-edit"), "the author's edit is not stored for the new user under " + k);
+  });
   // the author signs in again on a new page: the edit goes out once
   puts.length = 0;
   const kv = async (u, o) => {
@@ -3415,6 +3419,46 @@ await t("8n: a different user signs in: the signed-out edit is not sent and not 
   await L4.A.signIn("u1@example.com", "pw");
   await tick(300);
   assert.strictEqual(puts.filter((p) => p.key === "en_budget_z" && p.value === "U-edit").length, 1, "sent once for the author");
+  assert.strictEqual(L4.DB.getQueueDepth(), 0);
+});
+await t("8p: edit made after a real sign-out (identity marker blank): another user never gets it; the author does", async () => {
+  const S = {};
+  const puts = [];
+  const kv = async (u, o) => {
+    if (!o || o.method !== "PUT") return ok([]);
+    const b = JSON.parse(o.body);
+    puts.push({ key: b.key, value: b.value });
+    return ok({ version: 1, hash: null, deleted: false });
+  };
+  const L1 = loadReal({ userId: "u1", store: S, tokenFetch: tokUser("u1"), kvFetch: kv });
+  await L1.DB.warmCache();
+  await tick(100);
+  await L1.A.signOut();
+  await tick(100);
+  L1.DB.set("en_budget_z", "U-edit");
+  await tick(60);
+  assert.strictEqual(JSON.parse(S.ch_sync_queue).length, 1, "edit queued while signed out");
+  assert.ok(!JSON.parse(S.ch_local_identity || "\"\""), "marker blank after sign-out: " + S.ch_local_identity);
+  puts.length = 0;
+  const L2 = loadReal({ store: S, sess: emptySess(), tokenFetch: tokUser("u2"), kvFetch: kv });
+  await L2.A.signIn("u2@example.com", "pw");
+  await tick(100);
+  // the next page load: B is already signed in when the app loads, so only the load-time check can see the change
+  const L3 = loadReal({ userId: "u2", store: S, tokenFetch: tokUser("u2"), kvFetch: kv });
+  await L3.DB.warmCache();
+  await tick(300);
+  assert.notStrictEqual(L3.DB.get("en_budget_z"), "U-edit", "B never sees A's unsent value");
+  assert.ok(!puts.some((p) => p.value === "U-edit"), "B never sends it");
+  assert.ok(!JSON.stringify(L3.DB.getConflictArchive()).includes("U-edit"), "not in the archive");
+  Object.keys(S).forEach((k) => {
+    if (k !== "ch_sync_queue") assert.ok(!String(S[k]).includes("U-edit"), "not stored for B under " + k);
+  });
+  assert.strictEqual(L3.DB.getQueueDepth(), 1, "still queued under A");
+  const L4 = loadReal({ store: S, sess: emptySess(), tokenFetch: tokUser("u1"), kvFetch: kv });
+  await L4.DB.warmCache();
+  await L4.A.signIn("u1@example.com", "pw");
+  await tick(300);
+  assert.strictEqual(puts.filter((p) => p.value === "U-edit").length, 1, "A gets it back and it is sent once");
   assert.strictEqual(L4.DB.getQueueDepth(), 0);
 });
 await t("8l: a load with no edit sends 0 PUT (reload and reopen)", async () => {

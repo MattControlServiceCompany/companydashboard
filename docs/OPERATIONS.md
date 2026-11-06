@@ -215,6 +215,11 @@ about 0.4 credits a day, and 0 for a hidden or closed tab. The text below about 
   DIFFERENT user signed in: the edit stays queued under its author, is never sent under the new identity, and the new user
   sees the server copy; it is sent when the author signs in again. Check: node test-sync-golive-blockers.js, tests 8m and 8n
   (a fake IndexedDB records that the sign-in page writes neither `ch_sync_queue` nor `ch_local_identity`), IDENTITY 2-3, 7d.
+  A sign-out blanks the stored identity marker, so the marker alone cannot show that a different user arrived. At every
+  load `_checkDurableIdentityMarker` calls `_clearForeignQueuedSharedKeys(currentUid)`: each shared key with a queue entry
+  owned by someone else is removed from `_cache`, `_replicaVersions`, `_syncBase` and storage (`_persistStamp`,
+  `_rawDelete`), so the signed-in user loads the server copy. `_uploadFirstConnect` skips such keys
+  (`_hasForeignQueuedWrite`). Check: test 8p (edit after a real sign-out, then another user loads, then the author returns).
 - Legacy utility blob (2026-10-21, app/utility-data.js), backend mode 'on' only (`_backendOn`); the GitHub site runs
   as before. `_legacyBlobToMigrate(customerId)` is the ONE rule for "copy the old `en_utility_<projectId>` blob into
   `en_utility_<customerId>`": the customer key does not exist at all (an existing blob, empty or not, is never
