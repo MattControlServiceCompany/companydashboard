@@ -1,6 +1,46 @@
 // computations/regression.js — Regression functions (canonical source)
 // Extracted from energy-department.html. No DOM dependencies.
 
+// ── The one CV(RMSE) ─────────────────────────────────────────────────────────
+// CV(RMSE) = sqrt(sum of squared residuals / (n - nParams)) / mean(actual). actual[] and predicted[] are the
+// monthly values the model is used for (one pair per baseline month); nParams = fitted coefficients
+// (2 for a line, 3 for the HDD+CDD fit). modelCvRmse (degree-day models) and fitKwCdd (billed kW) call this; the report prints what they return.
+// NMBE is not computed: the bias correction in computeMeterRegression sets sum(predicted) = sum(actual),
+// so NMBE is 0 by construction, and the kW line fit has no correction but its residuals also sum to 0.
+function cvRmse(actual, predicted, nParams) {
+  var n = actual.length;
+  if (n <= nParams) return null;
+  var mean =
+    actual.reduce(function (s, v) {
+      return s + v;
+    }, 0) / n;
+  if (!(mean > 0)) return null;
+  var ss = actual.reduce(function (s, v, i) {
+    return s + (v - predicted[i]) * (v - predicted[i]);
+  }, 0);
+  return Math.sqrt(ss / (n - nParams)) / mean;
+}
+
+// modelCvRmse(rows, fit, kind) - CV(RMSE) of a fitted degree-day model over the baseline rows it was fitted on. rows are
+// getNormRows rows (usage, normDays, hdd, cdd for the month); fit holds the coefficients the savings use (frozen or live):
+// {intercept, slope} for kind 'hdd' or 'cdd', {intercept, slopeHDD, slopeCDD} for kind 'dual'. Month prediction =
+// intercept x days + slope x degree days (the form computeMeterRegression fits). Rows are chosen as the fit chooses them.
+function modelCvRmse(rows, fit, kind) {
+  if (!fit || !rows) return null;
+  var use = rows.filter(function (r) {
+    return !r.partial && !r.zeroFill && r.normDays > 0 && (kind === 'dual' ? r.hdd != null && r.cdd != null : r[kind] != null);
+  });
+  var actual = use.map(function (r) {
+    return r.usage;
+  });
+  var pred = use.map(function (r) {
+    return kind === 'dual'
+      ? fit.intercept * r.normDays + fit.slopeHDD * r.hdd + fit.slopeCDD * r.cdd
+      : fit.intercept * r.normDays + fit.slope * r[kind];
+  });
+  return cvRmse(actual, pred, kind === 'dual' ? 3 : 2);
+}
+
 function olsRegressionDual(x1, x2, y) {
   var pts = x1
     .map(function (_, i) {
@@ -268,28 +308,34 @@ function fitKwCdd(blRows, bills) {
       // a baseline month with no weather is left out of the fit, never read as CDD 0
       return p.y > 0 && p.x != null && isFinite(p.x);
     });
-  if (pts.length < 3) return null;
-  var n = pts.length;
-  var mx =
-    pts.reduce(function (s, p) {
-      return s + p.x;
-    }, 0) / n;
-  var my =
-    pts.reduce(function (s, p) {
-      return s + p.y;
-    }, 0) / n;
-  var ssxx = pts.reduce(function (s, p) {
-    return s + (p.x - mx) * (p.x - mx);
-  }, 0);
-  var ssxy = pts.reduce(function (s, p) {
-    return s + (p.x - mx) * (p.y - my);
-  }, 0);
-  if (!(ssxx > 0)) return null;
-  var slope = ssxy / ssxx;
-  return { intercept: my - slope * mx, slope: slope, n: n };
+  // the one line fit (olsRegression) gives intercept, slope, r2 and n; null with fewer than 3 usable points
+  var reg = olsRegression(
+    pts.map(function (p) {
+      return p.x;
+    }),
+    pts.map(function (p) {
+      return p.y;
+    }),
+  );
+  if (!reg) return null;
+  return {
+    intercept: reg.intercept,
+    slope: reg.slope,
+    n: reg.n,
+    r2: reg.r2,
+    cvrmse: cvRmse(
+      pts.map(function (p) {
+        return p.y;
+      }),
+      pts.map(function (p) {
+        return reg.intercept + reg.slope * p.x;
+      }),
+      2,
+    ),
+  };
 }
 
-// fitKwCdd above is the fit alone ({intercept, slope, n} or null); getMeterSavings returns it as blKwFit so the
+// fitKwCdd above is the fit alone ({intercept, slope, n, r2, cvrmse} or null); getMeterSavings returns it as blKwFit so the
 // quarterly report prints the formula the kW dollars use (one fit, no second copy).
 function computeKwCddRegression(blRows, allRows, bills, incl) {
   var result = {};

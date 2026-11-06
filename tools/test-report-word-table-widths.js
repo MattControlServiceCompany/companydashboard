@@ -1,11 +1,11 @@
-// tools/test-report-word-table-widths.js: the Word (.docx) column widths of the quarterly report tables stay as in v2026.11.05.232.
+// tools/test-report-word-table-widths.js: the Word (.docx) column widths of the quarterly report tables stay as in v2026.11.05.232, except the Results table: its column "Savings target" is now "Allocated target" (2026-11-06), so its pinned widths are the new grid.
 // Run: CH_TMP_ROOT=<scratch> node tools/test-report-word-table-widths.js
 // Builds the quarterly report from SYNTHETIC data in headless bundled Chromium, translates its pages to Word XML with the
 // export's own functions, and compares each Building table's <w:tblGrid> with the pinned values. The PDF widths
 // (tools/test-report-table-fit.js) are separate: the Word widths come from data-dx-widths and data-dx-nw.
 'use strict';
 const EXPECTED = {
- "Building|Area (ft\u00b2)|Savings target|Savings measured|Percent|Result": "3132,948,1361,1711,909,2019",
+ "Building|Area (ft\u00b2)|Allocated target|Savings measured|Percent|Result": "3132,938,1481,1711,893,1925",
  "Building|Meter (account number)|Bills (count)|Use|Cost": "3133,2811,1160,1651,1325",
  "Building|Baseline kWh|Actual kWh|Change percent|Baseline billed kW|Actual billed kW|Baseline cost|Actual cost|Savings": "3135,939,877,795,861,743,939,931,860",
  "Building|Baseline therms|Actual therms|Change percent|Baseline cost|Actual cost|Savings": "3056,1267,1262,1078,1174,1168,1075",
