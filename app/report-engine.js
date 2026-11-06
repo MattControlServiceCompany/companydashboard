@@ -2189,7 +2189,7 @@ function _rptQHoursRows(d) {
   var start = yms[0] + '-01';
   var end = last + '-' + new Date(parseInt(last.slice(0, 4), 10), parseInt(last.slice(5, 7), 10), 0).getDate();
   var nDays = function (a, b) {
-    return Math.round((new Date(b + 'T00:00:00') - new Date(a + 'T00:00:00')) / 86400000) + 1;
+    return calcDays(a, b, true);
   };
   var inQuarter = function (e) {
     return e && e.kind !== 'baseline' && e.from && (e.to || end) >= start && e.from <= end;

@@ -165,6 +165,11 @@ function check(files) {
   const eui = files['computations/eui.js'];
   if (eui == null || !/\bfunction\s+computeKBtu\s*\(/.test(eui))
     bad.push('computations/eui.js does not define computeKBtu');
+  // One compiled pattern per function name (it was compiled again for every line of every file).
+  const REQUIRED_FUNC_RES = REQUIRED_FUNCS.map((n) => [
+    n,
+    new RegExp('\\bfunction\\s+' + n + '\\s*\\(|\\b' + n + '\\s*=\\s*function'),
+  ]);
   Object.keys(files).forEach((rel) => {
     if (rel === PHYSICS || isTestFile(rel)) return;
     const lines = files[rel].split(/\r?\n/);
@@ -173,8 +178,8 @@ function check(files) {
       if (/\btoKBtu\b/.test(line)) bad.push(at + 'toKBtu is deleted; use computeKBtu (computations/eui.js)');
       if (rel !== 'computations/eui.js' && /\bfunction\s+computeKBtu\s*\(|\bcomputeKBtu\s*=\s*function/.test(line))
         bad.push(at + 'second definition of computeKBtu (the one is in computations/eui.js)');
-      REQUIRED_FUNCS.forEach((n) => {
-        if (new RegExp('\\bfunction\\s+' + n + '\\s*\\(|\\b' + n + '\\s*=\\s*function').test(line))
+      REQUIRED_FUNC_RES.forEach(([n, re]) => {
+        if (re.test(line))
           bad.push(at + 'second definition of ' + n + ' (the one is in ' + PHYSICS + ')');
       });
       AFFINITY_RULES.concat(STATIC_RULES).forEach(([re, what]) => {

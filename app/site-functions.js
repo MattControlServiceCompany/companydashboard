@@ -2507,12 +2507,12 @@ async function siteResetAllMeterTableSettings() {
    site-ui.js delegates to this array and should NOT maintain its own copy.
 */
 var RELEASE_NOTES = [
-  { v: 'v2026.11.06.239', date: '2026-11-06', title: 'Louisburg Q3 quarterly report review fixes',
+  { v: 'v2026.11.06.239', date: '2026-11-06', title: 'Q3 quarterly report review fixes',
     items: [
-      { type: 'change', text: 'Reports > Quarterly report (Louisburg Q3): the Q2 layout is back, with the hero page first. Letterhead and footer now show on the site and in the PDF.' },
-      { type: 'fix', text: 'Reports > Quarterly report (Louisburg Q3): the Word download keeps the red and green colors, and the PDF download is sharper.' },
-      { type: 'feature', text: 'Reports > Quarterly report (Louisburg Q3): the report shows the quarter EUI and meter labels, and the baseline data tables are easier to read.' },
-      { type: 'fix', text: 'Reports > Quarterly report (Louisburg Q3): plural words are right (1 building, 2 buildings), and the wording for buildings that used more than baseline is clearer.' }
+      { type: 'change', text: 'Reports > Quarterly report (Q3): the Q2 layout is back, with the hero page first. Letterhead and footer now show on the site and in the PDF.' },
+      { type: 'fix', text: 'Reports > Quarterly report (Q3): the Word download keeps the red and green colors, and the PDF download is sharper.' },
+      { type: 'feature', text: 'Reports > Quarterly report (Q3): the report shows the quarter EUI and meter labels, and the baseline data tables are easier to read.' },
+      { type: 'fix', text: 'Reports > Quarterly report (Q3): plural words are right (1 building, 2 buildings), and the wording for buildings that used more than baseline is clearer.' }
     ]
   },
   { v: 'v2026.11.06.238', date: '2026-11-06', title: 'Equipment Matrix sync and storage fixes',

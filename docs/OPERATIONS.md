@@ -25,6 +25,7 @@ No secrets are in this file. Only env var NAMES are listed.
   How to check: `python scripts/stamp-version.py --check-refs` (exit 1 on any wrong hash; also run by `node scripts/ci-version-check.js`
   in the Release Checks workflow) and `node test-per-file-version-refs.js` (twice with no change = zero ref changes; one changed file
   = only the refs of that file change, one per page that loads it). `--refs-only` rewrites the hashes without a version change.
+- Gate speed (2026-11-06, branch 2026-11-06-q3-expert-fixes): `check` in tools/gate-single-physics.js compiles the REQUIRED_FUNCS patterns once per run (`REQUIRED_FUNC_RES`), not once per line. Same results, about half the time. The gate kills one feature test after 240 s (scripts/regression-gate.js `runTest`), and tools/test-physics-single-source.js runs the check about 30 times. Check: `node tools/test-physics-single-source.js` (56 passed).
 - Back/Forward after a release (2026-11-03, branch fix/2026-11-03-hard-refresh): app/report-engine.js (next to the `focus` handler in the init
   block) listens for `pageshow`. When `event.persisted` is true (Firefox page cache restore, old code still in memory) it runs
   `_checkForVersionUpdate()` at once, without the 60 s gap. That function makes one no-store GET of site-ui.js and compares CH_VERSION

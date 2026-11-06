@@ -85,6 +85,7 @@ const fns = [
   '_rptUnpresentedQuarter',
   '_rptMeasuredTotal',
   '_rptMeasuredPct',
+  '_rptPluralize',
   
   '_rptResultOf',
   '_rptResultVar',
