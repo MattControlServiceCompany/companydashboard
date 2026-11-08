@@ -680,6 +680,14 @@ No timer, env var, host or server change. Runs in the browser when a report rend
 - Word: `_docxRun` keeps U+2212 in one run (no `noBreakHyphen`). `_rptQNoBreakMinus` turns a hyphen before `$` or a digit into U+2212. `_rptQThSameCase` sets `text-transform:none` on every `<th>`.
 - Footer: label and "Page N of M" are both 14px; the page number sits 48px from the right edge, 6px from the bottom.
 
+## Q3 2026 report page layout, v2026.11.08.246 (2026-11-08, branch 2026-11-08-q3-v246-layout)
+
+No timer, env var, host or server change. Runs in the browser when a report renders or downloads. Check: `node tools/test-report-page-packing.js` (it fails on v245), then download PDF and Word and count 33 pages.
+- Building summary: `_rptQBuildingSummaryPage` (app/report-engine.js) wraps the whole body in one `data-unit="keep"` block. `_rptQPackRun` packs whole blocks: two to a page when `_rptQBodyFits`, else one. A block is never split.
+- Meter Performance heading: the `meterPerformance` row has `leadFirst: true`. `_rptQuarterReportHTML` gives the first meter block the section heading as its lead when it follows other blocks on a page. `_rptQPackRun` then marks that title as used, so the next meter page says "(continued)".
+- Electricity by Building header: `Baseline<br>billed<br>kW` and `Actual<br>billed<br>kW` (`_rptQFuelDetailPages`). The unit never breaks.
+- Year to Date: `rptPageYearToDate` prints "Q3 2026 savings not billed" (`_shortDisp` from `savingsNotBilledWithPresented`, computations/savings.js) above "Difference from the figures presented to the district". The Savings column adds to "Savings billed to date". Baseline and Actual cost cells are empty.
+
 ## 7. How to keep this file current
 
 Any commit that changes these facts must update this file in the same commit.

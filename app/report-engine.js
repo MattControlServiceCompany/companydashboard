@@ -3973,7 +3973,7 @@ function _rptQFuelDetailPages(n, d, f, kind) {
     '<tr class="rpt-tot"><td>Total</td><td class="rpt-n">' + _rptQN(t.bl) + '</td><td class="rpt-n">' + _rptQN(t.cur) + '</td><td class="rpt-n">' + totCh + '</td>' +
     (kind === 'electric' ? '<td class="rpt-n">' + _rptQN(t.kwBl) + '</td><td class="rpt-n">' + _rptQN(t.kwCur) + '</td>' : '') +
     '<td class="rpt-n">' + _fmtUSD(t.cBl, '$0') + '</td><td class="rpt-n">' + _fmtUSD(t.cCur, '$0') + '</td>' + _rptQSavTd(t.sav) + '</tr>';
-  var heads = ['Building', 'Baseline<br>' + K.unit, 'Actual<br>' + K.unit, 'Change<br>percent'].concat(kind === 'electric' ? ['Baseline<br>billed&nbsp;kW', 'Actual<br>billed&nbsp;kW'] : [], ['Baseline cost', 'Actual cost', 'Savings']);
+  var heads = ['Building', 'Baseline<br>' + K.unit, 'Actual<br>' + K.unit, 'Change<br>percent'].concat(kind === 'electric' ? ['Baseline<br>billed<br>kW', 'Actual<br>billed<br>kW'] : [], ['Baseline cost', 'Actual cost', 'Savings']);
   var widths = kind === 'electric' ? _RPT_Q_W_FUEL_ELEC : _RPT_Q_W_FUEL;
   var names = blds.map(function (b) {
     return b.name;
@@ -4331,10 +4331,12 @@ function _rptQPackRun(run, d, st, out) {
     if (cur && _rptQBodyFits(cur.html + wrap(u.key, u.lead + u.html))) {
       cur.html += wrap(u.key, u.lead + u.html);
       cur.keys.push(u.key);
+      // A heading printed in the page body names the unit's title: the next page of it is a "(continued)" page.
+      if (u.lead && u.title !== cur.u.title) cur.also.push(u.title);
     } else {
       // A page that opens with a sub-heading names its building again: "<name> (continued)".
       var lead = u.head === 'h3' && lastH2 ? '<h2>' + lastH2 + ' (continued)</h2>' : '';
-      cur = { html: wrap(u.key, (u.leadAlways ? u.lead : '') + lead + u.html), u: u, keys: [u.key] };
+      cur = { html: wrap(u.key, (u.leadAlways ? u.lead : '') + lead + u.html), u: u, keys: [u.key], also: [] };
       pages.push(cur);
     }
     if (own) lastH2 = own;
@@ -4344,6 +4346,9 @@ function _rptQPackRun(run, d, st, out) {
     st.total++;
     var again = !!st.titles[u.title];
     st.titles[u.title] = true;
+    pg.also.forEach(function (t) {
+      st.titles[t] = true;
+    });
     var title = again ? u.title + ' (continued)' : u.first || u.title;
     var key = st.keys[u.key] ? u.key + '-cont' : u.key;
     pg.keys.forEach(function (k) {
@@ -4396,7 +4401,8 @@ function _rptQuarterReportHTML(d, s) {
           var base = pt.packTitle || sec.packTitle || pt.title.replace(/ \(continued\)$/, '');
           _rptQUnits(pt.body).forEach(function (u, ui) {
             // leadTitle: the page title of the source page names the unit (a building summary has no other name).
-            var lead = ui === 0 && (sec.leadTitle || (!u.head && !u.keep)) ? '<h2>' + pt.title.replace(/ \(continued\)$/, '') + '</h2>' : '';
+            // leadFirst: the first block of the section carries the section heading, so a heading always precedes the first table.
+            var lead = ui === 0 && (sec.leadTitle || (sec.leadFirst && pt.packFirst && !/ \(continued\)$/.test(pt.title)) || (!u.head && !u.keep)) ? '<h2>' + pt.title.replace(/ \(continued\)$/, '') + '</h2>' : '';
             run.units.push({ html: u.html, lead: lead, leadAlways: !!sec.leadTitle, head: lead ? 'h2' : u.head, key: sec.key, title: base, first: pt.packFirst, label: pt.label });
           });
         });
@@ -8185,6 +8191,13 @@ function rptPageYearToDate(n, d) {
     }, 0);
     var _shortDisp = _nb.shortfall >= 0.5 ? Math.round(_nb.shortfall) : 0;
     var _presDisp = Math.round(_tSav) - _rowsRounded - _shortDisp;
+    // Q3 savings the contract does not bill (a quarter below its target bills $0): the row closes the Savings column
+    // to the last row. _shortDisp comes from savingsNotBilledWithPresented (the one rule for this gap).
+    if (_shortDisp)
+      _rows +=
+        '<tr><td colspan="3">' + (d.period && d.period.type === 'quarterly' ? _rptQuarterLabel(d.period.quarter, d.period.year) + ' savings not billed' : 'Savings not billed') + '</td>' +
+        _rptQSavTd(_shortDisp) +
+        '</tr>';
     if (_presDisp)
       _rows +=
         '<tr><td colspan="3">' + (d.printed ? 'Presented quarters (figures locked as presented)' : 'Difference from the figures presented to the district') + '</td>' +
@@ -9316,7 +9329,8 @@ function _rptQBuildingSummaryPage(n, d, b, f) {
   var h2 = function (t) {
     return '<h2 style="font-size:16px;margin:12px 0 4px">' + t + '</h2>';
   };
-  var body = (info ? _rptQPara(info) : '') + h2('Savings, ' + qLbl) + (fuels.length ? t1 : '') + h2('Monthly Use, ' + qLbl) + t2 + t3;
+  // data-unit="keep": the whole summary (address, Savings, Monthly Use, EUI) is one block; the packer (_rptQPackRun) never splits it.
+  var body = '<div data-unit="keep">' + (info ? _rptQPara(info) : '') + h2('Savings, ' + qLbl) + (fuels.length ? t1 : '') + h2('Monthly Use, ' + qLbl) + t2 + t3 + '</div>';
   return rptPage(n, _escHtml(b.name || 'Building') + ' &ndash; Building Summary', body, {
     data: d,
     letterhead: false,
@@ -13890,6 +13904,7 @@ const REPORT_SECTIONS = [
   {
     key: 'meterPerformance',
     flow: true,
+    leadFirst: true,
     label: 'Per-Building Meter Performance',
     group: 'Buildings',
     qNone: function (d) {

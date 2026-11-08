@@ -2507,6 +2507,14 @@ async function siteResetAllMeterTableSettings() {
    site-ui.js delegates to this array and should NOT maintain its own copy.
 */
 var RELEASE_NOTES = [
+  { v: 'v2026.11.08.246', date: '2026-11-08', title: 'Quarterly report: page layout',
+    items: [
+      { type: 'fix', text: 'Reports > Quarterly report, Building Summaries: each building summary (Savings, Monthly Use and Site EUI tables) stays on one page. Whole summaries are packed one or two to a page.' },
+      { type: 'fix', text: 'Reports > Quarterly report, Meter Performance: the section heading comes before the first meter table, and each building meter block stays whole.' },
+      { type: 'fix', text: 'Reports > Quarterly report, Electricity Use Detail: the billed kW column headers keep the unit kW on its own line in Word and PDF.' },
+      { type: 'fix', text: 'Reports > Quarterly report, Year-to-Date Monthly Trend: a new row, Q3 2026 savings not billed, makes the Savings column add up to Savings billed to date.' }
+    ]
+  },
   { v: 'v2026.11.08.245', date: '2026-11-08', title: 'Quarterly report: review fixes',
     items: [
       { type: 'fix', text: 'Reports > Quarterly report, Financial Summary, Savings Performance and Observations: percent of baseline cost is the savings divided by the baseline cost shown. The actual-cost-plus-savings denominator is removed.' },
