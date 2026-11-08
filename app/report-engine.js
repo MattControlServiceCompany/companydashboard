@@ -35,12 +35,17 @@ function _rptUnit(s) {
   return '<span style="text-transform:none">' + s + '</span>';
 }
 
-// _rptBillAmount(bill) - the ONE dollar amount of a bill in a report: the bill total (what the utility billed), the same
-// value the bills table, the meter tables and the percent base print. Actual cost on every page (Building Performance,
-// Financial Summary, the fuel detail pages) is the sum of this value over the bills of the period (2026-11-08: before,
-// electric and gas actual cost on the first pages summed the energy lines only and left out the customer charge, fees and tax).
-function _rptBillAmount(bill) {
-  return parseFloat(bill && bill.totalCost) || parseFloat(bill && bill.cost) || 0;
+// _rptBillAmount(bill, commodity) - the ONE dollar amount of a bill in a report: the ENERGY CHARGES of the bill, the same
+// basis as the baseline cost and as the presented Q1 and Q2 reports (Matt, 2026-11-08). Electric: kWh dollars + billed kW
+// dollars + facilities dollars (getBillKwhCost, getBillKwCost, getBillFacKWCost). Gas: the gas charge (getBillGasCost).
+// Propane: the delivered cost (the bill total; a delivery has no other charge). Customer charge, fees and tax are never
+// in it. Actual cost on every page (Building Performance, Financial Summary, the fuel detail pages, the meter tables,
+// Appendix D) is the sum of this value over the bills of the period.
+function _rptBillAmount(bill, commodity) {
+  if (!bill) return 0;
+  if (commodity === 'Electric') return getBillKwhCost(bill) + getBillKwCost(bill) + getBillFacKWCost(bill);
+  if (commodity === 'Gas') return getBillGasCost(bill);
+  return parseFloat(bill.totalCost) || parseFloat(bill.cost) || 0;
 }
 
 // _rptPropaneBlCostMap(pM, bills, blMonths) - the baseline month map of a propane meter with a price on every month that has
@@ -325,7 +330,7 @@ function collectReportData(projId, buildingIds, reportDateStr, reportType, selec
         kw: parseBillNumberOrZero(bill.billedKW) || parseBillNumberOrZero(bill.demandKW),
         therms: m.commodity === 'Gas' ? resolveGasUsageTherms(bill) : 0,
         gallons: parseFloat(bill.gallonsDelivered) || 0,
-        amount: _rptBillAmount(bill),
+        amount: _rptBillAmount(bill, m.commodity),
         billDate: bill.billDate || bill.end || '',
         pdfKey: bill.pdfKey || null,
         // Estimated rows (feat/estimate-missing-period, 2026-09-25): pass through so
@@ -486,8 +491,8 @@ function collectReportData(projId, buildingIds, reportDateStr, reportType, selec
             ? Math.max(...bfr.map((b2) => parseBillNumberOrZero(b2.billedKW) || parseBillNumberOrZero(b2.demandKW)))
             : 0;
           const blExpKW = _savRow.blExpKW || 0;
-          // Actual cost of the month = the bill totals (_rptBillAmount), the amounts the bills tables print.
-          const billedAmt = bfr.reduce((s, b2) => s + _rptBillAmount(b2), 0);
+          // Actual cost of the month = the energy charges of its bills (_rptBillAmount).
+          const billedAmt = bfr.reduce((s, b2) => s + _rptBillAmount(b2, 'Electric'), 0);
 
           // Always populate monthly map (full year for charts)
           if (!elecMonthly[r.ym])
@@ -513,7 +518,7 @@ function collectReportData(projId, buildingIds, reportDateStr, reportType, selec
           }
         } else if (isPropane) {
           // Actual cost of the month = the totals of the propane bills the month holds (_rptBillAmount).
-          const propBilledAmt = bills.filter((b2) => billMonth(b2, bills) === r.ym).reduce((s, b2) => s + _rptBillAmount(b2), 0);
+          const propBilledAmt = bills.filter((b2) => billMonth(b2, bills) === r.ym).reduce((s, b2) => s + _rptBillAmount(b2, 'Propane'), 0);
           // Always populate monthly map (full year for charts)
           if (!propaneMonthly[r.ym]) propaneMonthly[r.ym] = { bl: 0, cur: 0, blCost: 0, curCost: 0, savings: 0 };
           propaneMonthly[r.ym].bl += expUsage;
@@ -532,7 +537,7 @@ function collectReportData(projId, buildingIds, reportDateStr, reportType, selec
           }
         } else {
           const actTherms = actUsage;
-          const actThermCost = bfr.reduce((s, b2) => s + _rptBillAmount(b2), 0); // the bill totals, as for electricity
+          const actThermCost = bfr.reduce((s, b2) => s + _rptBillAmount(b2, 'Gas'), 0); // the gas charges
 
           // Always populate monthly map (full year for charts)
           if (!gasMonthly[r.ym]) gasMonthly[r.ym] = { bl: 0, cur: 0, blCost: 0, curCost: 0, savings: 0 };

@@ -42,7 +42,13 @@ function monthlyBills(kwhOrTherms, isElec) {
       if (isElec) {
         b.kwh = usage;
         b.demandKW = 50;
-      } else b.therms = usage;
+        // 2026-11-08: the bill total holds energy lines and other lines; the report cost is the energy lines only
+        b.onPeakCost = usage * 0.06;
+        b.customerCharge = usage * 0.04;
+      } else {
+        b.therms = usage;
+        b.gasCharge = usage * 0.08;
+      }
       bills.push(b);
       i++;
     }
@@ -663,13 +669,35 @@ console.log('\n--- 14. rounding, actual cost on every page, meter names, kW sepa
       if (dh && sh) assert(rowLast(sh, label) === rowLast(dh, b.name), b.name + ' ' + kind + ': Building Summary ' + rowLast(sh, label) + ' = detail table ' + rowLast(dh, b.name));
     });
   });
-  // 13b. one actual cost: every building's cost is the sum of its bills (the bills table amounts), whichever page prints it
+  // 13b. one actual cost = ENERGY CHARGES only (Matt 2026-11-08), the basis of the baseline cost and of the presented
+  //      Q1/Q2 reports: electric kWh + billed kW + facilities dollars, gas charge, propane delivered cost. A building's
+  //      actual cost on the first pages = the sum of its commodity costs on the meter pages = the sum of its bills.
+  const billRaw = {};
   q3.buildings.forEach((b) => {
     const billed = q3.rawBills.filter((r) => r.bid === b.id).reduce((s, r) => s + r.amount, 0);
     const fuels = ['electric', 'gas', 'propane'].reduce((s, k) => s + ((b[k] && b[k].costCur) || 0), 0);
-    assert(Math.abs(b.curCost - billed) < 1e-6, b.name + ': actual cost on the Financial Summary = the bills (' + b.curCost.toFixed(2) + ' = ' + billed.toFixed(2) + ')');
+    assert(Math.abs(b.curCost - billed) < 1e-6, b.name + ': actual cost on the Financial Summary = the energy charges of the bills (' + b.curCost.toFixed(2) + ' = ' + billed.toFixed(2) + ')');
     assert(Math.abs(fuels - billed) < 1e-6, b.name + ': the fuel actual costs add to the same total (' + fuels.toFixed(2) + ')');
     assert(flat.indexOf(usd(billed)) >= 0, b.name + ': the report prints ' + usd(billed));
+    billRaw[b.id] = billed;
+  });
+  const sumTotals = q3.buildings.reduce((s, b) => s + b.curCost, 0);
+  assert(Math.abs(q3.totals.curCost - sumTotals) < 1e-6, 'the site actual cost = the sum of the buildings (' + q3.totals.curCost.toFixed(2) + ')');
+  const bl1 = run(ctx, '_rptBillAmount');
+  assert(Math.abs(bl1({ totalCost: 100, onPeakCost: 60, customerCharge: 30, franchiseFee: 10 }, 'Electric') - 60) < 1e-9, 'electric: energy lines only (60 of a 100 bill)');
+  assert(Math.abs(bl1({ totalCost: 100, demandCharge: 20, onPeakCost: 50, facilitiesCharge: 5, customerCharge: 25 }, 'Electric') - 75) < 1e-9, 'electric: kWh + billed kW + facilities dollars (75)');
+  assert(Math.abs(bl1({ totalCost: 100, gasCharge: 70, therms: 50 }, 'Gas') - 70) < 1e-9, 'gas: the gas charge (70 of a 100 bill)');
+  assert(bl1({ totalCost: 200, gallonsDelivered: 100 }, 'Propane') === 200, 'propane: the delivered cost');
+  // the meter pages print the same energy-charge amounts: per building and commodity, the meter amounts add to the page 3 value
+  const fq2 = run(ctx, '_rptQFacts')(q3);
+  const bg2 = run(ctx, '_rptQBillGroups')(q3, fq2);
+  q3.buildings.forEach((b) => {
+    ['Electric', 'Gas', 'Propane'].forEach((c) => {
+      const kind = c.toLowerCase();
+      const meters = bg2.order.map((k) => bg2.groups[k]).filter((g) => g.building === b.name && g.commodity === c).reduce((s, g) => s + g.amount, 0);
+      const page3 = (b[kind] && b[kind].costCur) || 0;
+      assert(Math.abs(meters - page3) < 1e-6, b.name + ' ' + c + ': meter pages ' + meters.toFixed(2) + ' = Building Performance ' + page3.toFixed(2));
+    });
   });
   // 13c. a meter name is one line in the PDF (nowrap) and in Word (the nowrap cell widens the Word column)
   const meterHtml = run(ctx, '(function(d,f){ return _rptQMeterPage(6,d,f); })')(q3, fq);
