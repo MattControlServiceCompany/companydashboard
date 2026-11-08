@@ -5,6 +5,8 @@
 //   2. Rounding: building targets add to the total, month cells add to the quarter, one rule (_rptApportion).
 //   3. EUI period ends at the report quarter end, not at the newest bill month.
 //   4. Percent denominator = amount billed + savings, stated in the page note.
+//   5. (2026-11-08) Q3 Word review fixes: dollars rounded from their own value, one actual cost on every page,
+//      meter names on one line, thousands separators in the Baseline Data kW cells, propane baseline price.
 'use strict';
 
 const fs = require('fs');
@@ -360,7 +362,8 @@ const dp = pageData();
 const bp = dp.buildings[0];
 bp.savings = 3653.8; bp.electric.costSaved = 3294.4; bp.gas = { monthly: bp.electric.monthly, thermsBl: 1, thermsCur: 1, costSaved: 359.4 };
 const fp = run(ctx, '(function(d){ return _rptQFacts(d); })')(dp);
-assert(fp.parts.A.electric + fp.parts.A.gas + fp.parts.A.propane === 3654, 'fuel parts add to the building total: ' + [fp.parts.A.electric, fp.parts.A.gas, fp.parts.A.propane].join('+'));
+// Matt 2026-11-08: every printed dollar value is rounded from its own unrounded value (not apportioned to add up)
+assert(fp.parts.A.electric === 3294 && fp.parts.A.gas === 359 && fp.parts.A.total === 3654, 'fuel parts and total each rounded from their own value: ' + [fp.parts.A.electric, fp.parts.A.gas, fp.parts.A.total].join(', '));
 let energy, energyHtml = '';
 try {
   energyHtml = run(ctx, '(function(d,f){ return _rptQEnergyPage(3,d,f); })')(dp, fp);
@@ -370,7 +373,7 @@ try {
   energy = '';
 }
 const byFuel = run(ctx, '(function(d,f){ return _rptQByFuelTable(d,f); })')(dp, fp).replace(/<[^>]+>/g, ' ');
-assert(/\$3,295/.test(byFuel) && /\$359/.test(byFuel) && !/\$3,294/.test(byFuel), 'the fuel table prints the apportioned parts (3,295 and 359)');
+assert(/\$3,294/.test(byFuel) && /\$359/.test(byFuel) && /\$3,654/.test(byFuel) && !/\$3,295/.test(byFuel), 'the fuel table prints each part rounded from its own value (3,294 and 359) and the total from its own value (3,654)');
 assert(!/<table/.test(energyHtml) && /kWh charges/.test(energy) && /billed kW charges/.test(energy), 'page 3 has no table and splits the electricity dollars into kWh and billed kW parts');
 assert(/Percent saved = savings (÷|&divide;) baseline cost \(\$[\d,]+ this quarter\)\. Baseline cost is the actual cost plus savings\./.test(results) && !/what the utility bills would have been/.test(results), 'percent note states the denominator as baseline cost');
 
@@ -605,6 +608,91 @@ console.log('\n--- 13. model fit, wording, entered months, allocated target ---'
   ['weather normalized', 'Savings target', 'Saved, below target', "'Met target'", 'Savings if remaining targets are met'].forEach((w) =>
     assert(reSrc.indexOf(w) < 0, 'report-engine.js no longer contains "' + w + '"'),
   );
+}
+
+// 14. Q3 Word review fixes (Matt 2026-11-08): one rounding rule, one actual cost on every page, meter names on one line,
+//     thousands separators in the Baseline Data kW cells, a price on every propane baseline month that has gallons
+console.log('\n--- 14. rounding, actual cost on every page, meter names, kW separators, propane baseline price ---');
+{
+  const usd = (v) => run(ctx, '_fmtUSD')(v, '$0');
+  const rowLast = (html, label) => {
+    const esc = label.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    const m = new RegExp('<tr[^>]*><td[^>]*>' + esc + '[^<]*</td>(.*?)</tr>', 's').exec(html);
+    if (!m) return null;
+    const tds = Array.from(m[1].matchAll(/<td[^>]*>(.*?)<\/td>/gs));
+    return tds.length ? tds[tds.length - 1][1].replace(/<[^>]+>/g, '').trim() : null;
+  };
+  // 13a. the High School case of the review: electricity -2,678.37, gas -402.30, total -3,080.67
+  const dr = pageData();
+  const bh = dr.buildings[0];
+  bh.savings = -3080.67;
+  bh.electric.costSaved = -2678.37;
+  bh.electric.kwCostSaved = -92.54;
+  bh.gas = { monthly: bh.electric.monthly, thermsBl: 1, thermsCur: 1, costSaved: -402.3 };
+  const fr = run(ctx, '_rptQFacts')(dr);
+  assert(fr.parts.A.electric === -2678 && fr.parts.A.gas === -402 && fr.parts.A.total === -3081, 'each part rounded from its own value: electricity ' + fr.parts.A.electric + ', gas ' + fr.parts.A.gas + ', total ' + fr.parts.A.total);
+  assert(fr.parts.A.elecEnergy === -2586 && fr.parts.A.elecDemand === -93, 'the kWh and billed kW parts are each rounded from their own value: ' + fr.parts.A.elecEnergy + ', ' + fr.parts.A.elecDemand);
+  const rawElec = dr.buildings.reduce((s, b) => s + ((b.electric && b.electric.costSaved) || 0), 0);
+  assert(fr.partsTotal.electric === Math.round(rawElec), 'the site total of a fuel is the rounded sum of the unrounded values: ' + fr.partsTotal.electric + ' = round(' + rawElec.toFixed(2) + ')');
+  const sumPage = run(ctx, '_rptQBuildingSummaryPage');
+  let sumHtml = '';
+  try {
+    sumHtml = sumPage(1, dr, bh, fr);
+  } catch (e) {
+    console.log('ERR building summary page ' + String(e.stack).split(String.fromCharCode(10)).slice(0, 2).join(' / '));
+  }
+  const byFuelHtml = run(ctx, '_rptQByFuelTable')(dr, fr);
+  assert(/-\$2,678/.test(byFuelHtml.replace(/<[^>]+>/g, ' ')), 'Savings by building and utility prints electricity -$2,678 for the review case');
+  if (sumHtml) assert(rowLast(sumHtml, 'Electricity (kWh)') === '-$2,678', 'Building Summary electricity savings: ' + rowLast(sumHtml, 'Electricity (kWh)'));
+  // The Building Summary and the "by Building" table of every building print the same savings (collected data)
+  const fq = run(ctx, '_rptQFacts')(q3);
+  const detail = run(ctx, '_rptQFuelDetailPages');
+  q3.buildings.forEach((b) => {
+    ['electric', 'gas', 'propane'].forEach((kind, ki) => {
+      if (!b[kind] || !b[kind].monthly || !b[kind].monthly.length) return;
+      assert(fq.parts[b.id][kind] === Math.round(b[kind].costSaved), b.name + ' ' + kind + ' part = round of its own unrounded savings: ' + fq.parts[b.id][kind]);
+      let dh = '';
+      let sh = '';
+      try {
+        dh = detail(1, q3, fq, kind).html;
+        sh = sumPage(1, q3, b, fq);
+      } catch (e) {
+        console.log('ERR summary/detail ' + kind + ' ' + String(e.stack).split(String.fromCharCode(10)).slice(0, 2).join(' / '));
+      }
+      const label = ['Electricity (kWh)', 'Natural gas (therms)', 'Propane (gal)'][ki];
+      if (dh && sh) assert(rowLast(sh, label) === rowLast(dh, b.name), b.name + ' ' + kind + ': Building Summary ' + rowLast(sh, label) + ' = detail table ' + rowLast(dh, b.name));
+    });
+  });
+  // 13b. one actual cost: every building's cost is the sum of its bills (the bills table amounts), whichever page prints it
+  q3.buildings.forEach((b) => {
+    const billed = q3.rawBills.filter((r) => r.bid === b.id).reduce((s, r) => s + r.amount, 0);
+    const fuels = ['electric', 'gas', 'propane'].reduce((s, k) => s + ((b[k] && b[k].costCur) || 0), 0);
+    assert(Math.abs(b.curCost - billed) < 1e-6, b.name + ': actual cost on the Financial Summary = the bills (' + b.curCost.toFixed(2) + ' = ' + billed.toFixed(2) + ')');
+    assert(Math.abs(fuels - billed) < 1e-6, b.name + ': the fuel actual costs add to the same total (' + fuels.toFixed(2) + ')');
+    assert(flat.indexOf(usd(billed)) >= 0, b.name + ': the report prints ' + usd(billed));
+  });
+  // 13c. a meter name is one line in the PDF (nowrap) and in Word (the nowrap cell widens the Word column)
+  const meterHtml = run(ctx, '(function(d,f){ return _rptQMeterPage(6,d,f); })')(q3, fq);
+  const nNames = (meterHtml.match(/Acct#/g) || []).length;
+  const nNowrap = (meterHtml.match(/<td style="white-space:nowrap">[A-Za-z ]+-Acct#/g) || []).length;
+  assert(nNames > 0 && nNames === nNowrap, 'every meter name cell is white-space:nowrap (' + nNowrap + ' of ' + nNames + ')');
+  const detailMeters = detail(1, q3, fq, 'electric').html;
+  assert(/<td style="white-space:nowrap">Electricity-Acct#/.test(detailMeters), 'the meters under the fuel table also keep each name on one line');
+  const wM = run(ctx, '_RPT_Q_W_METERS');
+  assert(wM.reduce((s, v) => s + v, 0) === 100 && wM[1] >= 32, 'the meter name column is at least 32% of the meter table: ' + wM.join(','));
+  // 13d. Baseline Data kW cells use thousands separators (a total of 3,600.0 kW, not 3600.0)
+  run(ctx, "getUDBldg(" + PROJ + ", 'bB').meters[0].bills.forEach(function (b) { b.billedKW = 300; b.demandKW = 300; })");
+  const blHtml = run(ctx, '(function(){ return _buildBaselineDataHtml(getUDBldg(' + PROJ + ", 'bB'), " + PROJ + '); })')();
+  assert(/>3,600\.0</.test(blHtml) && !/>3600\.0</.test(blHtml), 'Baseline Data: the kW total prints 3,600.0');
+  // 13e. a propane baseline month with gallons and no cost is priced at the all-in $/gal of the baseline-year deliveries
+  const blBills = propaneBills();
+  const map = { 0: { gallons: 100, cost: 50 }, 6: { gallons: 20, cost: 0 }, 7: { gallons: 0, cost: 0 } };
+  const priced = run(ctx, '_rptPropaneBlCostMap')(map, blBills, BL_MONTHS);
+  assert(Math.abs(priced[6].cost - 40) < 1e-9, 'propane baseline: 20 gal x $2.00 = $40 (' + priced[6].cost + ')');
+  assert(priced[0].cost === 50 && priced[7].cost === 0, 'a month with a cost keeps it; a month with no gallons stays $0');
+  assert(map[6].cost === 0, 'the stored baseline map is not changed');
+  const none = run(ctx, '_rptPropaneBlCostMap')(map, [{ id: 'x', start: '2024-03-01', end: '2024-03-01', gallonsDelivered: 50 }], BL_MONTHS);
+  assert(none === map, 'no priced delivery in the baseline year: no rate is made up, the map is unchanged');
 }
 
 console.log('\n' + passed + ' passed, ' + failed + ' failed');

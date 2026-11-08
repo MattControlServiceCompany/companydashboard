@@ -682,6 +682,8 @@ function _buildBaselineDataHtml(b, projId) {
     }
   });
   if (totKwh === 0 && totTherms === 0 && totPropGal === 0) return '';
+  // kW with one decimal and thousands separators (the Baseline Data table: "5,737.7", never "5737.7").
+  const $k = (v) => (v || 0).toLocaleString('en-US', { minimumFractionDigits: 1, maximumFractionDigits: 1 });
   const $c = (n) =>
     n > 0 ? '$' + n.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : '—';
   return `<div class="card">
@@ -732,16 +734,16 @@ function _buildBaselineDataHtml(b, projId) {
                         (kwh ? Math.round(kwh).toLocaleString() : '—') +
                         '</td>' +
                         '<td style="text-align:right;font-family:var(--mono)">' +
-                        (kw ? kw.toFixed(1) : '—') +
+                        (kw ? $k(kw) : '—') +
                         '</td>' +
                         (hasBilledKW
                           ? '<td style="text-align:right;font-family:var(--mono)">' +
-                            (bilKW ? bilKW.toFixed(1) : '—') +
+                            (bilKW ? $k(bilKW) : '—') +
                             '</td>'
                           : '') +
                         (hasFacKW
                           ? '<td style="text-align:right;font-family:var(--mono)">' +
-                            (facKW ? facKW.toFixed(1) : '—') +
+                            (facKW ? $k(facKW) : '—') +
                             '</td>'
                           : '') +
                         '<td style="text-align:right;font-family:var(--mono)">' +
@@ -796,9 +798,9 @@ function _buildBaselineDataHtml(b, projId) {
                   ${
                     elecM
                       ? `<td style="text-align:right;font-family:var(--mono)">${totKwh ? Math.round(totKwh).toLocaleString() : '—'}</td>
-                  <td style="text-align:right;font-family:var(--mono)">${totKw ? totKw.toFixed(1) : '—'}</td>
-                  ${hasBilledKW ? `<td style="text-align:right;font-family:var(--mono)">${totBilledKW ? totBilledKW.toFixed(1) : '—'}</td>` : ''}
-                  ${hasFacKW ? `<td style="text-align:right;font-family:var(--mono)">${totFacKW ? totFacKW.toFixed(1) : '—'}</td>` : ''}
+                  <td style="text-align:right;font-family:var(--mono)">${totKw ? $k(totKw) : '—'}</td>
+                  ${hasBilledKW ? `<td style="text-align:right;font-family:var(--mono)">${totBilledKW ? $k(totBilledKW) : '—'}</td>` : ''}
+                  ${hasFacKW ? `<td style="text-align:right;font-family:var(--mono)">${totFacKW ? $k(totFacKW) : '—'}</td>` : ''}
                   <td style="text-align:right;font-family:var(--mono)">${totKwCost ? $c(totKwCost) : '—'}</td>
                   <td style="text-align:right;font-family:var(--mono)">${totKwhCost ? $c(totKwhCost) : '—'}</td>
                   <td style="text-align:right;font-family:var(--mono);color:var(--em)">${totElecCost ? $c(totElecCost) : '—'}</td>

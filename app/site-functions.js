@@ -2507,6 +2507,15 @@ async function siteResetAllMeterTableSettings() {
    site-ui.js delegates to this array and should NOT maintain its own copy.
 */
 var RELEASE_NOTES = [
+  { v: 'v2026.11.08.244', date: '2026-11-08', title: 'Quarterly report: one rounding rule, one actual cost',
+    items: [
+      { type: 'fix', text: 'Reports > Quarterly report, Building Summaries, Savings by building and utility, and the Use Detail pages: every dollar value is rounded from its own unrounded value. A building now prints the same electricity savings on every page. A row can differ from the sum of its parts by $1.' },
+      { type: 'fix', text: 'Reports > Quarterly report, Financial Summary and Building Performance: actual cost is the total of the utility bills, the same value the Use Detail and meter tables print. It had left out customer charges, fees and tax on the first pages.' },
+      { type: 'fix', text: 'Reports > Quarterly report, Use Detail meter tables (PDF and Word): a meter name stays on one line.' },
+      { type: 'fix', text: 'Reports > Quarterly report, Building Baseline Data: kW cells use thousands separators.' },
+      { type: 'fix', text: 'Reports > Quarterly report, Propane by Building and Building Baseline Data: a baseline month with gallons now has a baseline cost, gallons x the $/gal of the baseline-year deliveries (display only, savings unchanged).' }
+    ]
+  },
   { v: 'v2026.11.06.243', date: '2026-11-06', title: 'Quarterly report: tables share pages',
     items: [
       { type: 'fix', text: 'Reports > Quarterly report: after Observations, tables follow each other on the same page and a new page starts only when the next table does not fit. Building Summaries, Meter Performance, Use Detail, Year-to-Date and the Appendices each start on a new page. A 6-building report is 31 pages, down from 41.' }

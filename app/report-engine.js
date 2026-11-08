@@ -35,6 +35,34 @@ function _rptUnit(s) {
   return '<span style="text-transform:none">' + s + '</span>';
 }
 
+// _rptBillAmount(bill) - the ONE dollar amount of a bill in a report: the bill total (what the utility billed), the same
+// value the bills table, the meter tables and the percent base print. Actual cost on every page (Building Performance,
+// Financial Summary, the fuel detail pages) is the sum of this value over the bills of the period (2026-11-08: before,
+// electric and gas actual cost on the first pages summed the energy lines only and left out the customer charge, fees and tax).
+function _rptBillAmount(bill) {
+  return parseFloat(bill && bill.totalCost) || parseFloat(bill && bill.cost) || 0;
+}
+
+// _rptPropaneBlCostMap(pM, bills, blMonths) - the baseline month map of a propane meter with a price on every month that has
+// gallons (display only; the savings never read it). The baseline gallons of a month can come from the delivery spread or the
+// weather fit with no delivery cost in that month, so the cost reads $0. Such a month is priced at the all-in $/gal of the
+// baseline-year deliveries (getMonthBillRate, usage-weighted: whole delivered cost / gallons), cost = gallons x rate. A month
+// that has a cost keeps it. The input map is not changed (a contract baseline is stored once and is never written).
+// With no priced delivery in the baseline year, no rate exists and the map is returned as is.
+function _rptPropaneBlCostMap(pM, bills, blMonths) {
+  var blBills = (bills || []).filter(function (b) {
+    return (blMonths || []).indexOf(billMonth(b, bills)) >= 0;
+  });
+  var rate = getMonthBillRate(blBills, 'propane');
+  if (!(rate > 0)) return pM;
+  var out = {};
+  Object.keys(pM || {}).forEach(function (k) {
+    var v = pM[k];
+    out[k] = v && v.gallons > 0 && !(v.cost > 0) ? Object.assign({}, v, { cost: v.gallons * rate }) : v;
+  });
+  return out;
+}
+
 // -----------------------------------------------------------------------
 // collectReportData(projId, buildingIds, reportDateStr, reportType, selectedPeriod, meterIds)
 //
@@ -297,7 +325,7 @@ function collectReportData(projId, buildingIds, reportDateStr, reportType, selec
         kw: parseBillNumberOrZero(bill.billedKW) || parseBillNumberOrZero(bill.demandKW),
         therms: m.commodity === 'Gas' ? resolveGasUsageTherms(bill) : 0,
         gallons: parseFloat(bill.gallonsDelivered) || 0,
-        amount: parseFloat(bill.totalCost) || parseFloat(bill.cost) || 0,
+        amount: _rptBillAmount(bill),
         billDate: bill.billDate || bill.end || '',
         pdfKey: bill.pdfKey || null,
         // Estimated rows (feat/estimate-missing-period, 2026-09-25): pass through so
@@ -358,7 +386,9 @@ function collectReportData(projId, buildingIds, reportDateStr, reportType, selec
     bMeters.forEach(({ m, bills, incl, allRows, bl, blEnd, postRows }) => {
       commoditySet.add(m.commodity);
       const blRows = allRows.filter((r) => bl.months.includes(r.ym));
-      const { elecByMo: eM, gasByMo: gM, propaneByMo: pM, waterByMo: wM } = buildMoMap(m, blRows, bills, incl);
+      const _blMaps = buildMoMap(m, blRows, bills, incl);
+      const { elecByMo: eM, gasByMo: gM, waterByMo: wM } = _blMaps;
+      const pM = m.commodity === 'Propane' ? _rptPropaneBlCostMap(_blMaps.propaneByMo, bills, bl.months) : _blMaps.propaneByMo;
 
       const isElec = m.commodity === 'Electric';
       const isPropane = m.commodity === 'Propane';
@@ -456,11 +486,8 @@ function collectReportData(projId, buildingIds, reportDateStr, reportType, selec
             ? Math.max(...bfr.map((b2) => parseBillNumberOrZero(b2.billedKW) || parseBillNumberOrZero(b2.demandKW)))
             : 0;
           const blExpKW = _savRow.blExpKW || 0;
-          const kwhCostAmt = bfr.reduce((s, b2) => s + getBillKwhCost(b2), 0);
-          const kwCostAmt = bfr.reduce((s, b2) => s + getBillKwCost(b2), 0);
-          // getBillFacKWCost (computations/rates.js) — the ONE accessor for Facilities kW
-          // Cost (2026-09-23 single-source fix); never read b2.facKWCost/facilitiesCharge directly.
-          const facKWCostAmt = bfr.reduce((s, b2) => s + getBillFacKWCost(b2), 0);
+          // Actual cost of the month = the bill totals (_rptBillAmount), the amounts the bills tables print.
+          const billedAmt = bfr.reduce((s, b2) => s + _rptBillAmount(b2), 0);
 
           // Always populate monthly map (full year for charts)
           if (!elecMonthly[r.ym])
@@ -470,7 +497,7 @@ function collectReportData(projId, buildingIds, reportDateStr, reportType, selec
           elecMonthly[r.ym].kwBl += blExpKW;
           elecMonthly[r.ym].kwCur += actBilKW;
           elecMonthly[r.ym].blCost += blCostByCalMo[calMo] || 0;
-          elecMonthly[r.ym].curCost += kwhCostAmt + kwCostAmt + facKWCostAmt;
+          elecMonthly[r.ym].curCost += billedAmt;
           elecMonthly[r.ym].savings += totalCostSav;
 
           if (inPeriod) {
@@ -480,17 +507,19 @@ function collectReportData(projId, buildingIds, reportDateStr, reportType, selec
             elec.kwBl += blExpKW;
             elec.kwCur += actBilKW;
             elec.costBl += blCostByCalMo[calMo] || 0;
-            elec.costCur += kwhCostAmt + kwCostAmt + facKWCostAmt;
+            elec.costCur += billedAmt;
             elec.costSaved += totalCostSav;
             elec.kwCostSaved += _savRow.kwCostSav || 0;
           }
         } else if (isPropane) {
+          // Actual cost of the month = the totals of the propane bills the month holds (_rptBillAmount).
+          const propBilledAmt = bills.filter((b2) => billMonth(b2, bills) === r.ym).reduce((s, b2) => s + _rptBillAmount(b2), 0);
           // Always populate monthly map (full year for charts)
           if (!propaneMonthly[r.ym]) propaneMonthly[r.ym] = { bl: 0, cur: 0, blCost: 0, curCost: 0, savings: 0 };
           propaneMonthly[r.ym].bl += expUsage;
           propaneMonthly[r.ym].cur += actUsage;
           propaneMonthly[r.ym].blCost += blCostByCalMo[calMo] || 0;
-          propaneMonthly[r.ym].curCost += r.cost || 0;
+          propaneMonthly[r.ym].curCost += propBilledAmt;
           propaneMonthly[r.ym].savings += totalCostSav;
 
           if (inPeriod) {
@@ -498,15 +527,12 @@ function collectReportData(projId, buildingIds, reportDateStr, reportType, selec
             propane.galCur += actUsage;
             propane.galSaved += expUsage - actUsage;
             propane.costBl += blCostByCalMo[calMo] || 0;
-            propane.costCur += r.cost || 0;
+            propane.costCur += propBilledAmt;
             propane.costSaved += totalCostSav;
           }
         } else {
           const actTherms = actUsage;
-          const actThermCost = bfr.reduce(
-            (s, b2) => s + getBillGasCost(b2), // the ONE gas cost accessor (computations/rates.js)
-            0,
-          );
+          const actThermCost = bfr.reduce((s, b2) => s + _rptBillAmount(b2), 0); // the bill totals, as for electricity
 
           // Always populate monthly map (full year for charts)
           if (!gasMonthly[r.ym]) gasMonthly[r.ym] = { bl: 0, cur: 0, blCost: 0, curCost: 0, savings: 0 };
@@ -907,7 +933,7 @@ function collectReportData(projId, buildingIds, reportDateStr, reportType, selec
       const maps = buildMoMap(m, blR, bills, incl);
       if (m.commodity === 'Electric') Object.assign(bd.baselineMaps.elecByMo, maps.elecByMo);
       else if (m.commodity === 'Gas') Object.assign(bd.baselineMaps.gasByMo, maps.gasByMo);
-      else if (m.commodity === 'Propane') Object.assign(bd.baselineMaps.propaneByMo, maps.propaneByMo);
+      else if (m.commodity === 'Propane') Object.assign(bd.baselineMaps.propaneByMo, _rptPropaneBlCostMap(maps.propaneByMo, bills, bl.months));
       else if (m.commodity === 'Water') Object.assign(bd.baselineMaps.waterByMo, maps.waterByMo);
       blR.forEach((r) => {
         const typed = bills.some((bl2) => billMonth(bl2, bills) === r.ym && !billHasPdf(bl2));
@@ -2393,6 +2419,11 @@ function _rptMeterLabel(commodity, account) {
   var acct = account == null ? '' : String(account).trim();
   return acct ? type + '-Acct#' + acct : type;
 }
+// _rptMeterTd(commodity, account) - the table cell of a meter name: one line, never wrapped (white-space:nowrap; the .docx
+// writer reads it as data-dx-nw and widens the Word column to fit the name).
+function _rptMeterTd(commodity, account) {
+  return '<td style="white-space:nowrap">' + _escHtml(_rptMeterLabel(commodity, account)) + '</td>';
+}
 
 // _rptResultOf(b, d) - the ONE wording and colour for how a building did. The colour follows the sign of
 // the saving: a positive saving is never red. A result inside 1% of baseline is "On baseline".
@@ -2517,6 +2548,9 @@ function _rptQUnitSavTd(v) {
 }
 // Column widths (percent) of the quarterly tables whose cells hold long dates and numbers. A number or a date never
 // wraps (see .rpt-q-dense td.rpt-n); a building name wraps inside its own cell. tools/test-report-table-fit.js checks them.
+// Meter tables (Utility Bills and Use Detail, the meters under each fuel): the meter name column is wide enough for the longest
+// name ("Natural Gas-Acct#" and an account number) and the name cell never wraps (_rptMeterTd), in the PDF and in Word.
+var _RPT_Q_W_METERS = [28, 34, 9, 16, 13];
 var _RPT_Q_W_FUEL_ELEC = [19, 10, 10, 9, 9, 9, 12, 12, 10];
 var _RPT_Q_W_FUEL = [26, 14, 14, 12, 12, 12, 10];
 var _RPT_Q_W_BILLS = [19, 12, 15, 14, 8, 9, 23];
@@ -2713,10 +2747,9 @@ function _rptQDegreeDayNote(d) {
 }
 
 // _rptQElecEnergyDollars(b, f) - the dollars of a building's electricity energy use against baseline: the electricity
-// savings as printed on page 3 (f.parts, whole dollars) less the demand part (kwCostSaved, rounded). Positive = saved.
+// savings less the demand part, both unrounded, rounded once (f.parts[id].elecEnergy). Positive = saved.
 function _rptQElecEnergyDollars(b, f) {
-  var e = b.electric || {};
-  return f.parts[b.id].electric - Math.round(e.kwCostSaved || 0);
+  return f.parts[b.id].elecEnergy;
 }
 
 // _rptQFlatText(b) - the facts for a building inside 1% of baseline in cost: the dollars, and, when electricity use
@@ -2812,9 +2845,12 @@ function _rptQFacts(d) {
       });
     });
   }
-  // The fuel parts as printed: each building's electric, gas and propane savings are whole dollars that add to
-  // its quarter figure (same rule as the months above), so a building's rows on the fuel tables add to its total.
+  // The fuel parts as printed (Matt, 2026-11-08): every dollar value is rounded from its own unrounded value, once. A
+  // building's electricity, gas and propane parts, its total, and the total of the site for each fuel are each
+  // Math.round of their own sum; no printed value is a total less another printed value. A row can differ from the
+  // sum of its printed parts by $1.
   var parts = {};
+  var raw = { electric: 0, gas: 0, propane: 0, total: 0, elecEnergy: 0, elecDemand: 0 };
   d.buildings.forEach(function (b) {
     var vals = ['electric', 'gas', 'propane'].map(function (k) {
       return (b[k] && b[k].costSaved) || 0;
@@ -2822,13 +2858,26 @@ function _rptQFacts(d) {
     var sumVals = vals.reduce(function (s, v) {
       return s + v;
     }, 0);
-    var whole =
-      Math.abs(sumVals - (b.savings || 0)) < 1
-        ? _rptApportion(vals, b.savings || 0)
-        : vals.map(function (v) {
-            return Math.round(v);
-          });
-    parts[b.id] = { electric: whole[0], gas: whole[1], propane: whole[2] };
+    var own = Math.abs(sumVals - (b.savings || 0)) < 1 ? b.savings || 0 : sumVals; // the building's own unrounded savings
+    var kwPart = (b.electric && b.electric.kwCostSaved) || 0;
+    parts[b.id] = {
+      electric: Math.round(vals[0]),
+      gas: Math.round(vals[1]),
+      propane: Math.round(vals[2]),
+      total: Math.round(own),
+      elecEnergy: Math.round(vals[0] - kwPart),
+      elecDemand: Math.round(kwPart),
+    };
+    raw.electric += vals[0];
+    raw.gas += vals[1];
+    raw.propane += vals[2];
+    raw.total += own;
+    raw.elecEnergy += vals[0] - kwPart;
+    raw.elecDemand += kwPart;
+  });
+  var partsTotal = {};
+  Object.keys(raw).forEach(function (k) {
+    partsTotal[k] = Math.round(raw[k]);
   });
   var months = yms.map(function (ym) {
     var sav = 0;
@@ -2884,6 +2933,7 @@ function _rptQFacts(d) {
     months: months,
     shown: shown,
     parts: parts,
+    partsTotal: partsTotal,
     wxMonths: wxMonths,
     cddBl: d.weather && d.weather.totals ? d.weather.totals.cddBl : null,
     cddCur: d.weather && d.weather.totals ? d.weather.totals.cddCur : null,
@@ -3124,24 +3174,18 @@ function _rptQEnvPage(n, d) {
 }
 
 function _rptQFuelTotals(d, f) {
-  var t = { electric: 0, gas: 0, propane: 0 };
-  d.buildings.forEach(function (b) {
-    ['electric', 'gas', 'propane'].forEach(function (k) {
-      t[k] += f.parts[b.id][k] || 0;
-    });
-  });
-  return t;
+  return f.partsTotal;
 }
-// Savings by building and utility. Every row adds across; the columns add to the quarter total.
+// Savings by building and utility. Each value is rounded from its own unrounded value (_rptQFacts).
 function _rptQByFuelTable(d, f) {
   var tot = _rptQFuelTotals(d, f);
   var rows = d.buildings
     .map(function (b) {
       var p = f.parts[b.id];
-      return '<tr><td>' + _escHtml(b.name) + '</td>' + _rptQSavTd(p.electric) + _rptQSavTd(p.gas) + _rptQSavTd(p.propane) + _rptQSavTd(p.electric + p.gas + p.propane) + '</tr>';
+      return '<tr><td>' + _escHtml(b.name) + '</td>' + _rptQSavTd(p.electric) + _rptQSavTd(p.gas) + _rptQSavTd(p.propane) + _rptQSavTd(p.total) + '</tr>';
     })
     .join('');
-  rows += '<tr class="rpt-tot"><td>Total</td>' + _rptQSavTd(tot.electric) + _rptQSavTd(tot.gas) + _rptQSavTd(tot.propane) + _rptQSavTd(tot.electric + tot.gas + tot.propane) + '</tr>';
+  rows += '<tr class="rpt-tot"><td>Total</td>' + _rptQSavTd(tot.electric) + _rptQSavTd(tot.gas) + _rptQSavTd(tot.propane) + _rptQSavTd(tot.total) + '</tr>';
   return _rptQTable([34, 17, 17, 16, 16], ['Building', 'Electricity', 'Natural gas', 'Propane', 'Total'], rows);
 }
 
@@ -3335,14 +3379,11 @@ function _rptQEnergyPage(n, d, f) {
     if (below.length) out += (above.length ? ' ' : ' ') + _rptQList(below) + ' used ' + _rptQN(bSum) + ' therms less.';
     return out;
   })();
-  var eWorth = d.buildings.reduce(function (s0, b) {
-    return s0 + _rptQElecEnergyDollars(b, f);
-  }, 0);
-  var eTotal = d.buildings.reduce(function (s0, b) {
-    return s0 + f.parts[b.id].electric;
-  }, 0);
-  // Electricity dollars = the kWh part + the billed kW part (the same split getMeterSavings makes: kwCostSaved).
-  var kwPart = eTotal - eWorth;
+  // Electricity dollars = the kWh part + the billed kW part (the same split getMeterSavings makes: kwCostSaved); each is
+  // rounded from its own unrounded sum (_rptQFacts partsTotal).
+  var eWorth = f.partsTotal.elecEnergy;
+  var eTotal = f.partsTotal.electric;
+  var kwPart = f.partsTotal.elecDemand;
   var body =
     _rptQPara(
       'Electricity use was ' + _rptQN(Math.abs(f.kwhDiff)) + ' kWh (' + _rptQPct(Math.abs(f.kwhPct)).replace('+', '') + ') ' + (f.kwhDiff > 0 ? 'more than' : 'less than') + ' baseline. ' +
@@ -3799,8 +3840,9 @@ function _rptQSchedulePage(n, d) {
 
 // Bills the quarter used, grouped by meter (one row per meter). A meter with a baseline and no bill in the quarter
 // is listed with 0 bills, 0 use and $0 (its baseline still counts in the savings), so every meter that is in the
-// savings is in every table that lists meters. amount = exact dollars; shown = whole dollars that add to the total
-// (_rptApportion), the one figure every page prints for that meter.
+// savings is in every table that lists meters. amount = exact dollars; shown = whole dollars
+// (Math.round of its own amount), the one figure every page prints for that meter. A total is the rounded sum of the
+// exact amounts, never a sum of rounded amounts.
 function _rptQBillGroups(d, f) {
   var groups = {};
   var order = [];
@@ -3841,23 +3883,21 @@ function _rptQBillGroups(d, f) {
   var total = order.reduce(function (s, k) {
     return s + groups[k].amount;
   }, 0);
-  var shown = _rptApportion(
-    order.map(function (k) {
-      return groups[k].amount;
-    }),
-    total,
-  );
+  var shown = order.map(function (k) {
+    return Math.round(groups[k].amount); // each meter rounded from its own amount
+  });
   order.forEach(function (k, i) {
     groups[k].shown = shown[i];
   });
   return { order: order, groups: groups, total: Math.round(total) };
 }
 
-// The amount of the bills of one building and commodity ('Electric', 'Gas', 'Propane'): the sum of its meters' shown amounts.
+// The amount of the bills of one building and commodity ('Electric', 'Gas', 'Propane'): the exact sum of its meters' amounts
+// (a table prints it rounded once, with _fmtUSD).
 function _rptQBilledOf(bg, building, commodity) {
   return bg.order.reduce(function (s, k) {
     var g = bg.groups[k];
-    return g.building === building && g.commodity === commodity ? s + g.shown : s;
+    return g.building === building && g.commodity === commodity ? s + g.amount : s;
   }, 0);
 }
 
@@ -3869,14 +3909,14 @@ function _rptQMeterPage(n, d, f) {
       var g = bg.groups[k];
       totBills += g.bills;
       return (
-        '<tr><td>' + _escHtml(g.building) + '</td><td>' +
-        _escHtml(_rptMeterLabel(g.commodity, g.account)) + '</td><td class="rpt-n">' + g.bills + '</td><td class="rpt-n">' +
+        '<tr><td>' + _escHtml(g.building) + '</td>' +
+        _rptMeterTd(g.commodity, g.account) + '<td class="rpt-n">' + g.bills + '</td><td class="rpt-n">' +
         _rptQN(g.use) + ' ' + _rptCommodityUnit(g.commodity, g.use) + '</td><td class="rpt-n">' + _fmtUSD(g.shown, '$0') + '</td></tr>'
       );
     })
     .join('');
   billRows += '<tr class="rpt-tot"><td colspan="2">Total</td><td class="rpt-n">' + totBills + '</td><td></td><td class="rpt-n">' + _fmtUSD(bg.total, '$0') + '</td></tr>';
-  var t2 = _rptQTable([30, 29, 10, 17, 14], ['Building', 'Meter (account number)', 'Bills (count)', 'Use', 'Cost'], billRows, [1]);
+  var t2 = _rptQTable(_RPT_Q_W_METERS, ['Building', 'Meter (account number)', 'Bills (count)', 'Use', 'Cost'], billRows, [1]);
   return rptPage(n, 'Utility Bills and Use Detail', t2, { data: d, letterhead: false, label: 'Page ' + n + ' - Utility Bills and Use Detail' });
 }
 
@@ -3976,7 +4016,7 @@ function _rptQFuelDetailPages(n, d, f, kind) {
   // Propane has one meter and one value: the table gives it, so there is no chart.
   var chart = kind === 'propane' ? '' : '<div style="margin:2px 0 6px">' + _rptQMonthChartSVG(panels, K.colors) + '</div>';
   var bg = _rptQBillGroups(d, f);
-  var t = { bl: 0, cur: 0, kwBl: 0, kwCur: 0, cBl: 0, cCur: 0, sav: 0 };
+  var t = { bl: 0, cur: 0, kwBl: 0, kwCur: 0, cBl: 0, cCur: 0, sav: f.partsTotal[kind] };
   var rows = blds
     .map(function (b) {
       var o = b[kind];
@@ -3990,7 +4030,6 @@ function _rptQFuelDetailPages(n, d, f, kind) {
       t.kwCur += o.kwCur || 0;
       t.cBl += o.costBl || 0; // the baseline-month cost of the meters, the figure the Financial Summary adds (collectReportData)
       t.cCur += actual;
-      t.sav += sav;
       var ch = bl >= 10 || (kind === 'propane' && bl > 0) ? _rptQPct(((cur - bl) / bl) * 100) : '-';
       return (
         '<tr><td>' + _escHtml(b.name) + '</td><td class="rpt-n">' + _rptQN(bl) + '</td><td class="rpt-n">' + _rptQN(cur) + '</td><td class="rpt-n">' + ch + '</td>' +
@@ -4026,15 +4065,15 @@ function _rptQFuelDetailPages(n, d, f, kind) {
     if (g.commodity !== K.com) return;
     mBills += g.bills;
     mUse += g.use;
-    mAmt += g.shown;
+    mAmt += g.amount;
     mrows +=
-      '<tr><td>' + _escHtml(g.building) + '</td><td>' + _escHtml(_rptMeterLabel(g.commodity, g.account)) + '</td><td class="rpt-n">' + g.bills +
+      '<tr><td>' + _escHtml(g.building) + '</td>' + _rptMeterTd(g.commodity, g.account) + '<td class="rpt-n">' + g.bills +
       '</td><td class="rpt-n">' + _rptQN(g.use) + ' ' + _rptCommodityUnit(g.commodity, g.use) + '</td><td class="rpt-n">' + _fmtUSD(g.shown, '$0') + '</td></tr>';
   });
   var meters = '';
   if (mrows) {
     mrows += '<tr class="rpt-tot"><td colspan="2">Total</td><td class="rpt-n">' + mBills + '</td><td></td><td class="rpt-n">' + _fmtUSD(mAmt, '$0') + '</td></tr>';
-    meters = '<h2>' + K.metersHead + ', ' + ql + '</h2>' + _rptQTable([30, 29, 10, 17, 14], ['Building', 'Meter (account number)', 'Bills (count)', 'Use', 'Cost'], mrows, [1]);
+    meters = '<h2>' + K.metersHead + ', ' + ql + '</h2>' + _rptQTable(_RPT_Q_W_METERS, ['Building', 'Meter (account number)', 'Bills (count)', 'Use', 'Cost'], mrows, [1]);
   }
   var label = function (num, title) {
     return { data: d, letterhead: false, label: 'Page ' + num + ' - ' + title };
@@ -4141,27 +4180,23 @@ function _rptQAppendixDPages(n, d, f, letter) {
       shownKw.set(r, apk[j]);
     });
   });
-  var allAmt = _rptApportion(
-    allB.map(function (b) {
-      return b.amount || 0;
-    }),
-    allB.reduce(function (s0, b) {
-      return s0 + (b.amount || 0);
-    }, 0),
-  );
-  var ai = 0;
   var grand = 0,
     count = 0;
   f.yms.forEach(function (ym) {
     var bills = byMonth[ym] || [];
     var label = _rptQMonthName(ym) + ' ' + ym.slice(0, 4);
-    var amounts = bills.map(function () {
-      return allAmt[ai++];
+    // Each bill is rounded from its own amount; a month total is the rounded sum of the exact amounts (never a sum of rounded bills).
+    var amounts = bills.map(function (b) {
+      return Math.round(b.amount || 0);
     });
-    var mTot = amounts.reduce(function (s, v) {
-      return s + v;
+    var mTot = Math.round(
+      bills.reduce(function (s, b) {
+        return s + (b.amount || 0);
+      }, 0),
+    );
+    grand += bills.reduce(function (s, b) {
+      return s + (b.amount || 0);
     }, 0);
-    grand += mTot;
     count += bills.length;
     flush();
     if (used + 28 + 40 + ROW * 2 > BUDGET) newPage();
@@ -4202,7 +4237,7 @@ function _rptQAppendixDPages(n, d, f, letter) {
         none
           .map(function (k) {
             var g = bg.groups[k];
-            return '<tr><td>' + _escHtml(g.building) + '</td><td>' + _escHtml(_rptMeterLabel(g.commodity, g.account)) + '</td><td class="rpt-n">0</td><td class="rpt-n">$0</td></tr>';
+            return '<tr><td>' + _escHtml(g.building) + '</td>' + _rptMeterTd(g.commodity, g.account) + '<td class="rpt-n">0</td><td class="rpt-n">$0</td></tr>';
           })
           .join(''),
         [1],
@@ -9250,7 +9285,7 @@ function _rptQShownCols(c) {
 }
 function _rptQBuildingSummaryPage(n, d, b, f) {
   var qLbl = _rptQuarterLabel(d.period.quarter, d.period.year);
-  var parts = f.parts[b.id] || { electric: 0, gas: 0, propane: 0 };
+  var parts = f.parts[b.id] || { electric: 0, gas: 0, propane: 0, total: 0 };
   var fuels = [];
   if (b.electric && b.electric.monthly && b.electric.monthly.length)
     fuels.push({ k: 'electric', name: 'Electricity (kWh)', o: b.electric, bl: b.electric.kwhBl, cur: b.electric.kwhCur, usd: parts.electric });
@@ -9258,10 +9293,9 @@ function _rptQBuildingSummaryPage(n, d, b, f) {
     fuels.push({ k: 'gas', name: 'Natural gas (therms)', o: b.gas, bl: b.gas.thermsBl, cur: b.gas.thermsCur, usd: parts.gas });
   if (b.propane && b.propane.monthly && b.propane.monthly.length)
     fuels.push({ k: 'propane', name: 'Propane (gal)', o: b.propane, bl: b.propane.galBl, cur: b.propane.galCur, usd: parts.propane });
-  var totUsd = 0;
+  var totUsd = parts.total || 0;
   var rows = fuels
     .map(function (x) {
-      totUsd += x.usd;
       var ch = x.bl >= 10 || (x.k === 'propane' && x.bl > 0) ? _rptQPct(((x.cur - x.bl) / x.bl) * 100) : '-';
       return '<tr><td>' + x.name + '</td><td class="rpt-n">' + _rptQN(x.bl) + '</td><td class="rpt-n">' + _rptQN(x.cur) + '</td><td class="rpt-n">' + _rptQSignedN(Math.round(x.cur) - Math.round(x.bl)) + '</td><td class="rpt-n">' + ch + '</td>' + _rptQSavTd(x.usd) + '</tr>';
     })
