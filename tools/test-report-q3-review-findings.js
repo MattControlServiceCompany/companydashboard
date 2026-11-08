@@ -777,6 +777,20 @@ console.log('\n--- 15. Baseline Data average price uses billed usage ---');
   assert(tot.indexOf('$0.1000') >= 0 && tot.indexOf('$8.00') >= 0 && tot.indexOf('$1.050') >= 0 && tot.indexOf('$0.131') < 0, 'TOTAL row divides by billed kWh, billed kW and billed therms (105 / 100 therms = $1.050): ' + JSON.stringify(tot));
 }
 
+// 16. v248 (Matt 2026-11-08): the gas usage column holds weather-normalized therms, so its header says so (like "Normalized kWh")
+console.log('\n--- 16. Baseline Data gas column header ---');
+{
+  run(ctx, 'var _hvlRealMonthly16 = _hvlMonthlyBaseline; _hvlMonthlyBaseline = function () { return { elecM: {}, gasM: {}, propaneM: null, pByMo: {}, eByMo: {}, gByMo: { 0: { therms: 65, thermsPredicted: 455, cost: 51.88 } } }; }');
+  let html16 = '';
+  try {
+    html16 = run(ctx, '(function(){ return _buildBaselineDataHtml({ id: "x", name: "T", sqft: 1000, meters: [] }, ' + PROJ + '); })')();
+  } finally {
+    run(ctx, '_hvlMonthlyBaseline = _hvlRealMonthly16');
+  }
+  assert(/>Normalized therms<\/th><th[^>]*>Average \$\/Therm</.test(html16), 'gas column header says "Normalized therms"');
+  assert(!/>Therms<\/th>/.test(html16), 'no plain "Therms" gas header');
+}
+
 console.log('\n' + passed + ' passed, ' + failed + ' failed');
 process.exit(failed ? 1 : 0);
 

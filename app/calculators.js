@@ -736,7 +736,7 @@ function _buildBaselineDataHtml(b, projId, opts) {
                 <tr>
                   <th style="width:80px">Month</th>
                   ${elecM ? '<th style="text-align:right">Normalized kWh</th><th style="text-align:right">Actual kW</th>' + (hasBilledKW ? '<th style="text-align:right">Billed kW</th>' : '') + (hasFacKW ? '<th style="text-align:right">Facilities kW</th>' : '') + '<th style="text-align:right">kW Cost</th><th style="text-align:right">kWh Cost</th><th style="text-align:right">Electric Cost</th><th style="text-align:right">Average $/kWh</th><th style="text-align:right">Average $/kW</th><th style="text-align:right">Load Factor</th>' : ''}
-                  ${gasM ? '<th style="border-left:2px solid var(--border2);text-align:right">Therms</th><th style="text-align:right">Average $/Therm</th><th style="text-align:right">Gas Cost</th>' : ''}
+                  ${gasM ? '<th style="border-left:2px solid var(--border2);text-align:right">Normalized therms</th><th style="text-align:right">Average $/Therm</th><th style="text-align:right">Gas Cost</th>' : ''}
                   ${propaneM ? '<th style="border-left:2px solid var(--border2);text-align:right">Propane Gal</th><th style="text-align:right">Average $/Gal</th><th style="text-align:right">Propane Cost</th>' : ''}
                   <th style="text-align:right;border-left:2px solid var(--border2)">Total Utility</th>
                 </tr>
