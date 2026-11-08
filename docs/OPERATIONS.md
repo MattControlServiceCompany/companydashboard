@@ -688,6 +688,13 @@ No timer, env var, host or server change. Runs in the browser when a report rend
 - Electricity by Building header: `Baseline<br>billed<br>kW` and `Actual<br>billed<br>kW` (`_rptQFuelDetailPages`). The unit never breaks.
 - Year to Date: `rptPageYearToDate` prints "Q3 2026 savings not billed" (`_shortDisp` from `savingsNotBilledWithPresented`, computations/savings.js) above "Difference from the figures presented to the district". The Savings column adds to "Savings billed to date". Baseline and Actual cost cells are empty.
 
+## Q3 2026 report gas cost, Baseline Data prices, summary spacing, v2026.11.08.247 (2026-11-08, branch 2026-11-08-q3-v247-gas-packing)
+
+No timer, env var, host or server change. Runs in the browser. Check: `node tools/test-gas-cost-single-source.js`, `node tools/test-report-q3-review-findings.js` (section 15) and `node tools/test-report-page-packing.js`. The last two fail on v246.
+- Zero therms = zero gas energy cost: `getBillGasCostOrNull` (computations/rates.js, about line 130) returns 0 for a bill with no gas charge and zero therms. Before, it returned the bill total, which is the $23.33 base charge. A bill with positive therms and no gas charge still returns the bill total. Every reader (report engine `_rptBillAmount`, Baseline Data, rates, flags, roll-ups) calls this one function. Savings do not move: the savings rate uses bills with therms above 0 only.
+- Baseline Data (`_buildBaselineDataHtml`, app/calculators.js, about line 667): Average $/kWh = kWh cost / billed kWh, Average $/kW = kW cost / billed kW, Average $/therm = gas cost / billed therms, in the month rows and the TOTAL row. The Normalized kWh and Therms columns stay normalized. A zero divisor prints a dash.
+- Building Summary spacing (`_rptQBuildingSummaryPage`, app/report-engine.js): heading margins 4px 0 2px, EUI gap 4px, and the block class `rpt-q-tight` (energy-department.html) sets table cell padding 1px top and bottom. The lead heading that `_rptQuarterReportHTML` adds for a `leadTitle` section uses margin 4px 0 2px. Two summaries fit one page (814 of 830px in the test).
+
 ## 7. How to keep this file current
 
 Any commit that changes these facts must update this file in the same commit.

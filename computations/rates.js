@@ -121,7 +121,7 @@ function getBillTaxCost(bill) {
 // 2026-10-05, and often equal to the whole bill total or stale after a modal edit) is never read.
 // Fallback: when the bill has NO gas charge at all but does carry gas usage, the whole bill
 // total (totalCost / TotalCurrentCharges / TotalAmountDue) is the only gas dollar figure on the
-// bill, so that is returned. A bill with no gas usage never gets a gas cost from its total
+// bill, so that is returned. A bill with zero therms and no gas charge returns 0 (its total is the base charge). A bill with no gas usage never gets a gas cost from its total
 // (this accessor also runs for Water/Sewer meters inside the shared non-electric branches).
 // Returns null when the bill has neither (missing is not 0). getBillGasCost returns 0 instead.
 // Every reader — flag rule (app/bill-analysis.js), savings (computations/savings.js), rates
@@ -131,9 +131,10 @@ function getBillGasCostOrNull(bill) {
   if (!bill) return null;
   var v = billValueOrNull(bill.gasCharge, bill.GasCharge);
   if (v === null) {
-    var hasUsage =
-      typeof resolveGasUsageThermsOrNull === 'function' ? resolveGasUsageThermsOrNull(bill) !== null : false;
-    if (!hasUsage) return null;
+    var usage = typeof resolveGasUsageThermsOrNull === 'function' ? resolveGasUsageThermsOrNull(bill) : null;
+    if (usage === null) return null;
+    // Zero therms = zero gas energy cost. The whole-bill total of such a bill is the base charge only.
+    if (usage <= 0) return 0;
     v = billValueOrNull(bill.totalCost, bill.TotalCurrentCharges, bill.TotalAmountDue);
   }
   return parseBillNumber(v);

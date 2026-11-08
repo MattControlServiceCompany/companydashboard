@@ -92,7 +92,13 @@ assert(
   cost({ TotalAmountDue: '120.00', NaturalGasMMbtu: '2' }) === 120,
   'blank GasCharge + MMBtu usage: TotalAmountDue',
 );
-assert(cost({ totalCost: '120.00', therms: '0' }) === 120, 'usage of 0 is still usage: total');
+assert(cost({ totalCost: '120.00', therms: '0' }) === 0, 'zero therms and no gas charge: gas energy cost 0, never the bill total');
+assert(
+  cost({ totalCost: '23.33', customerCharge: '23.33', naturalGasTherms: '0', fuelAdjustment: '0' }) === 0 &&
+    costOrNull({ totalCost: '23.33', customerCharge: '23.33', naturalGasTherms: '0' }) === 0,
+  'zero-therm bill that holds only the 23.33 base charge: gas energy cost 0',
+);
+assert(cost({ totalCost: '120.00', therms: '5' }) === 120, 'positive therms and no gas charge: the bill total is still the fallback');
 assert(
   costOrNull({ totalCost: '120.00', waterUsage: '3000', waterCharge: '90.00' }) === null,
   'water bill: no gas usage, no gas cost',

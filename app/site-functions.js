@@ -2507,6 +2507,13 @@ async function siteResetAllMeterTableSettings() {
    site-ui.js delegates to this array and should NOT maintain its own copy.
 */
 var RELEASE_NOTES = [
+  { v: 'v2026.11.08.247', date: '2026-11-08', title: 'Quarterly report: gas cost, price columns, summary spacing',
+    items: [
+      { type: 'fix', text: 'Gas cost: a gas bill with zero therms now counts $0 of gas energy cost. The monthly base charge is no longer counted as gas energy. Savings do not change.' },
+      { type: 'fix', text: 'Project > Baseline Data and the report Baseline Data pages: Average $/therm, Average $/kW and Average $/kWh now divide cost by the billed usage, not the weather-normalized usage.' },
+      { type: 'fix', text: 'Reports > Quarterly report, Building Summaries: spacing inside each summary is tighter, so two summaries fit one page again in PDF and Word.' }
+    ]
+  },
   { v: 'v2026.11.08.246', date: '2026-11-08', title: 'Quarterly report: page layout',
     items: [
       { type: 'fix', text: 'Reports > Quarterly report, Building Summaries: each building summary (Savings, Monthly Use and Site EUI tables) stays on one page. Whole summaries are packed one or two to a page.' },

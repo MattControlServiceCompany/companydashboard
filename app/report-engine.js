@@ -4402,7 +4402,7 @@ function _rptQuarterReportHTML(d, s) {
           _rptQUnits(pt.body).forEach(function (u, ui) {
             // leadTitle: the page title of the source page names the unit (a building summary has no other name).
             // leadFirst: the first block of the section carries the section heading, so a heading always precedes the first table.
-            var lead = ui === 0 && (sec.leadTitle || (sec.leadFirst && pt.packFirst && !/ \(continued\)$/.test(pt.title)) || (!u.head && !u.keep)) ? '<h2>' + pt.title.replace(/ \(continued\)$/, '') + '</h2>' : '';
+            var lead = ui === 0 && (sec.leadTitle || (sec.leadFirst && pt.packFirst && !/ \(continued\)$/.test(pt.title)) || (!u.head && !u.keep)) ? '<h2' + (sec.leadTitle ? ' style="margin:4px 0 2px"' : '') + '>' + pt.title.replace(/ \(continued\)$/, '') + '</h2>' : '';
             run.units.push({ html: u.html, lead: lead, leadAlways: !!sec.leadTitle, head: lead ? 'h2' : u.head, key: sec.key, title: base, first: pt.packFirst, label: pt.label });
           });
         });
@@ -9318,7 +9318,7 @@ function _rptQBuildingSummaryPage(n, d, b, f) {
   var euiCh = eui.baseline > 0 ? ((eui.current - eui.baseline) / eui.baseline) * 100 : 0;
   var t3 =
     b.sqft > 0 && eui.baseline > 0
-      ? '<div style="margin-top:12px"></div>' +
+      ? '<div style="margin-top:4px"></div>' +
         _rptQTable(
           [40, 20, 20, 20],
           ['Site energy use intensity, ' + qLbl + ' (kBtu/ft&sup2;)', 'Baseline ' + qLbl, 'Actual ' + qLbl, 'Change'],
@@ -9327,10 +9327,10 @@ function _rptQBuildingSummaryPage(n, d, b, f) {
       : '';
   var info = (b.sqft ? _rptQN(b.sqft) + ' ft&sup2;' : '') + (b.address ? (b.sqft ? '. ' : '') + _escHtml(b.address) : '');
   var h2 = function (t) {
-    return '<h2 style="font-size:16px;margin:12px 0 4px">' + t + '</h2>';
+    return '<h2 style="font-size:16px;margin:4px 0 2px">' + t + '</h2>';
   };
   // data-unit="keep": the whole summary (address, Savings, Monthly Use, EUI) is one block; the packer (_rptQPackRun) never splits it.
-  var body = '<div data-unit="keep">' + (info ? _rptQPara(info) : '') + h2('Savings, ' + qLbl) + (fuels.length ? t1 : '') + h2('Monthly Use, ' + qLbl) + t2 + t3 + '</div>';
+  var body = '<div data-unit="keep" class="rpt-q-tight">' + (info ? _rptQPara(info) : '') + h2('Savings, ' + qLbl) + (fuels.length ? t1 : '') + h2('Monthly Use, ' + qLbl) + t2 + t3 + '</div>';
   return rptPage(n, _escHtml(b.name || 'Building') + ' &ndash; Building Summary', body, {
     data: d,
     letterhead: false,

@@ -2402,6 +2402,12 @@
         padding-bottom: 2px;
         line-height: 1.25;
       }
+      /* Building Summary block: tighter cell padding so two 3-fuel summaries fit one page (v247). */
+      .rpt-q-tight .rpt-q-dense th,
+      .rpt-q-tight .rpt-q-dense td {
+        padding-top: 1px;
+        padding-bottom: 1px;
+      }
       .rpt-table tr:nth-child(even) td {
         background: var(--rpt-table-stripe);
       }
@@ -16653,7 +16659,7 @@
     <script src="computations/fan-savings.js?v=0f553805"></script>
     <script src="computations/equipment-features.js?v=99949103"></script>
     <script src="computations/cost-lines.js?v=9f195d0d"></script>
-    <script src="computations/rates.js?v=1e41c275"></script>
+    <script src="computations/rates.js?v=6e79ea66"></script>
     <script src="computations/regression.js?v=e321587c"></script>
     <script src="computations/normalization.js?v=f4fd5ca3"></script>
     <script src="computations/weather-refresh.js?v=d5c94aeb"></script>
@@ -16716,7 +16722,7 @@
     <script src="app/docx-skeleton.js?v=939b4e69"></script>
     <script src="app/docx-writer.js?v=27f9e932"></script>
     <script src="app/meeting-export.js?v=3a99c987"></script>
-    <script src="app/report-engine.js?v=38fd0a00"></script>
+    <script src="app/report-engine.js?v=943b4bfc"></script>
     <script src="app/report-printed.js?v=9212dd7b"></script>
     <script src="app/report-engine-woodland.js?v=ff6ebd7c"></script>
     <script src="app/report-preview.js?v=fc2af226"></script>
@@ -16724,7 +16730,7 @@
     <script src="app/presented-savings.js?v=644877c3"></script>
     <script src="app/data/bas-weather-bins.js?v=44a36437"></script>
     <script src="app/calc-autofill.js?v=7e902f22"></script>
-    <script src="app/calculators.js?v=b8366d11"></script>
+    <script src="app/calculators.js?v=ed463c13"></script>
     <script src="app/ecm-calculators.js?v=e8f1254f"></script>
     <script src="app/equipment-matrix.js?v=05218862"></script>
     <!-- soo-generator.js (SOO Phase 1, item 3f1415af): reads points/config flags via the
@@ -16749,7 +16755,7 @@
     <script src="app/agreement-engine.js?v=5589d907"></script>
 
     <script src="app/restore-merge.js?v=8ace765e"></script>
-    <script src="app/site-functions.js?v=9fb60d9d"></script>
+    <script src="app/site-functions.js?v=ece0ed93"></script>
     <script>
       /* -- DRAG-TO-RESIZE PANELS -- */
       (function () {

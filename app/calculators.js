@@ -678,6 +678,9 @@ function _buildBaselineDataHtml(b, projId, opts) {
   // Detect whether Billed kW / Facilities kW data exists
   const hasBilledKW = Object.values(eByMo).some((v) => (v.billedKW || 0) > 0);
   const hasFacKW = Object.values(eByMo).some((v) => (v.facKW || 0) > 0);
+  // Average $ per unit divides cost by the BILLED quantity (kWh, kW, Therms), never by the weather-normalized one.
+  let totBilledKwh = 0,
+    totBilledTherms = 0;
   let totKwh = 0,
     totKw = 0,
     totBilledKW = 0,
@@ -694,6 +697,7 @@ function _buildBaselineDataHtml(b, projId, opts) {
     const eb = eByMo[i];
     if (eb) {
       totKwh += eb.kwhPredicted || 0;
+      totBilledKwh += eb.kwh || 0;
       const kwVal = eb.demandKW || 0;
       if (kwVal > 0) {
         totKw += kwVal;
@@ -708,6 +712,7 @@ function _buildBaselineDataHtml(b, projId, opts) {
     const gb = gByMo[i];
     if (gb) {
       totTherms += gb.thermsPredicted || 0;
+      totBilledTherms += gb.therms || 0;
     }
     totGasCost += gasCostOf(i);
     const pb = pByMo[i];
@@ -748,13 +753,13 @@ function _buildBaselineDataHtml(b, projId, opts) {
                   const kwCost = eb.kwCost || 0;
                   const kwhCost = eb.energyCost || 0;
                   const eCost = elecCostOf(i);
-                  const avgKwh = kwh > 0 && kwhCost > 0 ? kwhCost / kwh : 0;
-                  const avgKw = kw > 0 && kwCost > 0 ? kwCost / kw : 0;
+                  const avgKwh = (eb.kwh || 0) > 0 && kwhCost > 0 ? kwhCost / eb.kwh : 0;
+                  const avgKw = bilKW > 0 && kwCost > 0 ? kwCost / bilKW : 0;
                   const days = eb.normDays || 30;
                   const lf = kw > 0 && kwh > 0 ? kwh / (kw * 24 * days) : 0;
                   const therms = gb.thermsPredicted || 0;
                   const gCost = gasCostOf(i);
-                  const avgTherm = therms > 0 && gCost > 0 ? gCost / therms : 0;
+                  const avgTherm = (gb.therms || 0) > 0 && gCost > 0 ? gCost / gb.therms : 0;
                   const propGal = pb.gallons || 0;
                   const pCost = propCostOf(i);
                   const avgPropGal = propGal > 0 && pCost > 0 ? pCost / propGal : 0;
@@ -839,15 +844,15 @@ function _buildBaselineDataHtml(b, projId, opts) {
                   <td style="text-align:right;font-family:var(--mono)">${totKwCost ? $c(totKwCost) : '—'}</td>
                   <td style="text-align:right;font-family:var(--mono)">${totKwhCost ? $c(totKwhCost) : '—'}</td>
                   <td style="text-align:right;font-family:var(--mono);color:var(--em)">${totElecCost ? $c(totElecCost) : '—'}</td>
-                  <td style="text-align:right;font-family:var(--mono);font-size:11px">${totKwh > 0 && totKwhCost > 0 ? '$' + (totKwhCost / totKwh).toFixed(4) : '—'}</td>
-                  <td style="text-align:right;font-family:var(--mono);font-size:11px">${totKw > 0 && totKwCost > 0 ? '$' + (totKwCost / totKw).toFixed(2) : '—'}</td>
+                  <td style="text-align:right;font-family:var(--mono);font-size:11px">${totBilledKwh > 0 && totKwhCost > 0 ? '$' + (totKwhCost / totBilledKwh).toFixed(4) : '—'}</td>
+                  <td style="text-align:right;font-family:var(--mono);font-size:11px">${totBilledKW > 0 && totKwCost > 0 ? '$' + (totKwCost / totBilledKW).toFixed(2) : '—'}</td>
                   <td></td>`
                       : ''
                   }
                   ${
                     gasM
                       ? `<td style="border-left:2px solid var(--border2);text-align:right;font-family:var(--mono)">${totTherms ? Math.round(totTherms).toLocaleString() : '—'}</td>
-                  <td style="text-align:right;font-family:var(--mono);font-size:11px">${totTherms > 0 && totGasCost > 0 ? '$' + (totGasCost / totTherms).toFixed(3) : '—'}</td>
+                  <td style="text-align:right;font-family:var(--mono);font-size:11px">${totBilledTherms > 0 && totGasCost > 0 ? '$' + (totGasCost / totBilledTherms).toFixed(3) : '—'}</td>
                   <td style="text-align:right;font-family:var(--mono);color:var(--em)">${totGasCost ? $c(totGasCost) : '—'}</td>`
                       : ''
                   }

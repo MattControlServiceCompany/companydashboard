@@ -120,8 +120,9 @@ const ok = (c, m) => {
           const last = trs[trs.length - 1];
           ytd = { sum: trs.slice(0, -1).reduce((a, tr) => a + num(tr), 0), last: num(last), labels: trs.map((tr) => tr.cells[0].textContent) };
         });
+        const sumH = allH2.filter((h) => /^Monthly Use/.test(h.textContent)).map((h) => _rptQMeasureH(h.closest('[data-unit="keep"]').outerHTML));
         host.remove();
-        return { pages, html, sumBlocks, mBlocks: mBlocks.length, meterHeadOk, meterHeadCount, kwLines, ytd, sumPages: allH2.filter((h) => /^Monthly Use/.test(h.textContent)).map(pageOf) };
+        return { sumH, pages, html, sumBlocks, mBlocks: mBlocks.length, meterHeadOk, meterHeadCount, kwLines, ytd, sumPages: allH2.filter((h) => /^Monthly Use/.test(h.textContent)).map(pageOf) };
       };
       const r = analyse(on);
       const packed = r.pages.filter((p) => p.keys.length);
@@ -156,6 +157,8 @@ const ok = (c, m) => {
       d.buildings = savedBlds;
       out.meterHead2 = r2.meterHeadOk && r2.meterHeadCount === 1;
       out.sumBlocks = r.sumBlocks;
+      out.sumPages = r.sumPages;
+      out.sumH = r.sumH;
       out.mBlocks = r.mBlocks;
       out.meterHeadOk = r.meterHeadOk;
       out.meterHeadCount = r.meterHeadCount;
@@ -172,6 +175,13 @@ const ok = (c, m) => {
     ok(res.low.length === 0, 'no page that is not the last of its group is under half full: ' + res.low.join(' | '));
     ok(res.unmade.length === 0, 'unchecking a section removes its blocks and leaves no empty page: ' + res.unmade.join(','));
     ok(res.sumBlocks.length === 6 && res.sumBlocks.every(Boolean), 'each building summary (Savings, Monthly Use, EUI tables) is one block: ' + res.sumBlocks.join(','));
+    {
+      const perPage = {};
+      res.sumPages.forEach((pg) => (perPage[pg] = (perPage[pg] || 0) + 1));
+      const counts = Object.values(perPage);
+      ok(counts.length === 3 && counts.every((c) => c === 2), 'six 3-fuel building summaries sit two to a page on three pages: ' + JSON.stringify(perPage));
+    }
+    console.log('summary block heights (px): ' + JSON.stringify(res.sumH) + ', page body budget ' + res.budget);
     ok(res.mBlocks === 6 && res.meterHeadOk && res.meterHeadCount === 1, 'the Meter Performance heading is on the page of the first meter block, once: blocks ' + res.mBlocks + ', ok ' + res.meterHeadOk + ', count ' + res.meterHeadCount);
     ok(res.meterHead2, 'the Meter Performance heading precedes the first meter block when it follows a building summary on the page');
     ok(res.kwLines.length > 0 && res.kwLines.every((l) => l === 'kW'), 'billed kW header units are on a line of their own: ' + JSON.stringify(res.kwLines));

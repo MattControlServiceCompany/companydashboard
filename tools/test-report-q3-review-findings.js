@@ -754,6 +754,29 @@ console.log('\n--- 14. v245 review fixes ---');
 }
 
 
+// 15. v247 (Matt 2026-11-08): the Baseline Data "Average $" columns divide cost by the BILLED quantity
+console.log('\n--- 15. Baseline Data average price uses billed usage ---');
+{
+  // stub the monthly baseline: billed kWh 1000 (normalized 2000), billed kW 50 (actual kW 40), billed therms 100 (normalized 500)
+  run(ctx, 'var _hvlRealMonthly = _hvlMonthlyBaseline; _hvlMonthlyBaseline = function () { return { elecM: {}, gasM: {}, propaneM: null, pByMo: {},' +
+    ' eByMo: { 0: { kwh: 1000, kwhPredicted: 2000, demandKW: 40, billedKW: 50, facKW: 0, kwCost: 400, energyCost: 100, totalCost: 500 } },' +
+    ' gByMo: { 0: { therms: 100, thermsPredicted: 500, cost: 80 }, 1: { therms: 0, thermsPredicted: 300, cost: 25 } } }; }');
+  let html = '';
+  try {
+    html = run(ctx, '(function(){ return _buildBaselineDataHtml({ id: "x", name: "T", sqft: 1000, meters: [] }, ' + PROJ + '); })')();
+  } finally {
+    run(ctx, '_hvlMonthlyBaseline = _hvlRealMonthly');
+  }
+  const rows = (html.match(/<tr[\s\S]*?<\/tr>/g) || []).map((r) => (r.match(/<td[^>]*>([\s\S]*?)<\/td>/g) || []).map((c) => c.replace(/<[^>]+>/g, '').trim()));
+  const jan = rows.find((r) => r[0] === 'Jan') || [], feb = rows.find((r) => r[0] === 'Feb') || [], tot = rows.find((r) => r[0] === 'TOTAL') || [];
+  if (process.env.DBG) console.log('DBG15', JSON.stringify({ jan, feb, tot }));
+  assert(jan.indexOf('$0.1000') >= 0 && !jan.some((c) => c === '$0.0500'), 'Jan Average $/kWh = 100 / billed 1,000 kWh = $0.1000 (not / normalized 2,000)');
+  assert(jan.indexOf('$8.00') >= 0 && !jan.some((c) => c === '$10.00'), 'Jan Average $/kW = 400 / billed 50 kW = $8.00 (not / actual 40 kW)');
+  assert(jan.indexOf('$0.800') >= 0 && !jan.some((c) => c === '$0.160'), 'Jan Average $/therm = 80 / billed 100 therms = $0.800 (not / normalized 500)');
+  assert(feb.length > 0 && !feb.some((c) => /^\$0\.0[0-9]{2}$|^\$0\.083$/.test(c)) && feb.filter((c) => c === '—').length >= 2, 'Feb with 0 billed therms and $25 shows a dash for Average $/therm');
+  assert(tot.indexOf('$0.1000') >= 0 && tot.indexOf('$8.00') >= 0 && tot.indexOf('$1.050') >= 0 && tot.indexOf('$0.131') < 0, 'TOTAL row divides by billed kWh, billed kW and billed therms (105 / 100 therms = $1.050): ' + JSON.stringify(tot));
+}
+
 console.log('\n' + passed + ' passed, ' + failed + ' failed');
 process.exit(failed ? 1 : 0);
 
