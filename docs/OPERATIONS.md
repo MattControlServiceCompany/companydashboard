@@ -453,6 +453,7 @@ The app Restore path (6c) is on main only, not in stable (v87), until the Nov 2 
   at 500 ms, so a Windows EPERM or EBUSY (a browser still holds a file) is retried before it fails. `tools/test-ocr-hidden-tab.js` also needs
   `CH_PDFJS_CACHE`: a folder with `pdf.min.js` and `pdf.worker.min.js` (pdf.js 3.11.174, saved once from cdnjs; the test never downloads and
   never writes into that folder).
+  Keep the `CH_TMP_ROOT` path short (2026-11-08): the browser profile is `<root>/<tag>/<tag>-<task>-profile-<ms>-<pid>`. When that path is about 180 characters or more (for example a root inside a long dated worktree folder), Chromium cannot store page data on Windows (path limit 260), and `tools/test-matrix-sync-write-and-view.js` fails with `waiting for locator('#em-raw-btn')` while it passes alone. Use a short root such as `<context dir>	emp\<date>-g`. Check: the same test passes with a short root and fails with a long root.
   Temp-leak guard: the gate needs `CH_TMP_ROOT`. It makes a run tag `ch-gate-<pid>-<start ms>`, makes ONE run folder `<CH_TMP_ROOT>/<tag>`,
   sets `CH_TMP_ROOT` to that run folder for every child test, and passes the tag in the env var `CH_GATE_TAG`. `tools/launch-browser.js`
   (`launchBrowser(task, opts)`) puts the profile in the run folder (`<tag>-<task>-profile-...`) and `ctx.close()` there also deletes the
