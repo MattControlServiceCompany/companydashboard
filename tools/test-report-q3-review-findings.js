@@ -208,6 +208,7 @@ function buildCtx() {
   [
     'lib/date-helpers.js',
     'lib/formatting.js',
+    'lib/perf-table.js',
     'computations/regression.js',
     'computations/physics.js', 'computations/rates.js',
     'computations/normalization.js',
@@ -319,7 +320,7 @@ assert(beta.propane.galBl > 0 && beta.propane.galCur === 0, 'propane baseline ga
 console.log('\n--- 4. percent base = amount billed + savings ---');
 q2.buildings.forEach((b) => {
   const billed = q2.rawBills.filter((r) => r.bid === b.id).reduce((s, r) => s + r.amount, 0);
-  assert(Math.abs(b.pctBase - (billed + b.savings)) < 1e-6, b.name + ': pctBase = billed ' + billed.toFixed(2) + ' + savings ' + b.savings.toFixed(2));
+  assert(Math.abs(b.pctBase - b.blCost) < 1e-6, b.name + ': pctBase = the baseline cost ' + b.blCost.toFixed(2) + ' (billed ' + billed.toFixed(2) + ')');
 });
 assert(Math.abs(q2.totals.pctBase - q2.buildings.reduce((s, b) => s + b.pctBase, 0)) < 1e-6, 'total pctBase = sum of building pctBase');
 
@@ -361,8 +362,8 @@ const targets = d.buildings.map((b) => run(ctx, '(function(d,b){ return _rptBuil
 assert(targets.reduce((s, v) => s + v, 0) === 100 && targets.every(Number.isInteger), 'building targets are whole dollars that add to the total target: ' + targets.join('+'));
 const appt = run(ctx, '_rptApportion')([1.4, 1.4, 1.2], 4);
 assert(appt.join(',') === '2,1,1' && appt.reduce((s, v) => s + v, 0) === 4, '_rptApportion adds to the rounded total: ' + appt.join(','));
-assert(['2026-07', '2026-08', '2026-09'].every((ym) => Number.isInteger(f.shown.A[ym])) && f.shown.A['2026-07'] + f.shown.A['2026-08'] + f.shown.A['2026-09'] === Math.round(d.buildings[0].savings), 'month cells are whole dollars that add to the building quarter figure: ' + ['2026-07', '2026-08', '2026-09'].map((ym) => f.shown.A[ym]).join('+'));
-assert(f.months.reduce((s, m) => s + m.sav, 0) === f.rowsMeasured && !/rounded once from the unrounded value|differ from a total by/.test(results), 'month totals add to the quarter total, and the page carries no rounding note');
+assert(['2026-07', '2026-08', '2026-09'].every((ym) => Math.abs(f.shown.A[ym] - 0.4) < 1e-9), 'each month keeps its own exact value (0.4); a cell prints round(exact), no forced sum');
+assert(!/rounded once from the unrounded value|differ from a total by/.test(results), 'the results page carries no rounding note');
 // fuel parts add to the building total (the Middle School case: electric 3294.4 + gas 359.4, total 3653.8)
 const dp = pageData();
 const bp = dp.buildings[0];
@@ -381,7 +382,7 @@ try {
 const byFuel = run(ctx, '(function(d,f){ return _rptQByFuelTable(d,f); })')(dp, fp).replace(/<[^>]+>/g, ' ');
 assert(/\$3,294/.test(byFuel) && /\$359/.test(byFuel) && /\$3,654/.test(byFuel) && !/\$3,295/.test(byFuel), 'the fuel table prints each part rounded from its own value (3,294 and 359) and the total from its own value (3,654)');
 assert(!/<table/.test(energyHtml) && /kWh charges/.test(energy) && /billed kW charges/.test(energy), 'page 3 has no table and splits the electricity dollars into kWh and billed kW parts');
-assert(/Percent saved = savings (÷|&divide;) baseline cost \(\$[\d,]+ this quarter\)\. Baseline cost is the actual cost plus savings\./.test(results) && !/what the utility bills would have been/.test(results), 'percent note states the denominator as baseline cost');
+assert(/Percent saved = savings (÷|&divide;) baseline cost \(\$[\d,]+ this quarter\)./.test(results) && !/what the utility bills would have been/.test(results), 'percent note states the denominator as baseline cost');
 
 // decision 1: utility invoices are "Utility bills"; "billed" is for contract savings
 let meterPg = '';
@@ -450,30 +451,8 @@ console.log('\n--- 11. Manager decisions 1-7 ---');
 // 12. Final pass (2026-11-05): controlled rounding (A), billing period (B), state name (C), sign rules (F), Year to Date (K)
 console.log('\n--- 12. controlled rounding, billing period, state name, sign rules, Year to Date ---');
 {
-  // A. _rptControlledRound: every cell is its floor or ceiling, rows and columns add to their targets
-  const cr = run(ctx, '_rptControlledRound');
-  const ap = run(ctx, '_rptApportion');
-  let seed = 7;
-  const rnd = () => ((seed = (seed * 1103515245 + 12345) & 0x7fffffff) / 0x7fffffff);
-  let allOk = true;
-  for (let t = 0; t < 300 && allOk; t++) {
-    const R = 2 + Math.floor(rnd() * 6), C = 2 + Math.floor(rnd() * 4);
-    const m = Array.from({ length: R }, () => Array.from({ length: C }, () => (rnd() - 0.5) * 20000));
-    const rowT = m.map((r) => Math.round(r.reduce((s, v) => s + v, 0)));
-    const total = rowT.reduce((s, v) => s + v, 0);
-    const colT = ap(m[0].map((_, j) => m.reduce((s, r) => s + r[j], 0)), total);
-    const g = cr(m, rowT, colT);
-    if (!g) continue;
-    const cellsOk = g.every((r, i) => r.every((v, j) => v === Math.floor(m[i][j]) || v === Math.ceil(m[i][j])));
-    const rowsOk = g.every((r, i) => r.reduce((s, v) => s + v, 0) === rowT[i]);
-    const colsOk = colT.every((c, j) => g.reduce((s, r) => s + r[j], 0) === c);
-    if (!(cellsOk && rowsOk && colsOk)) allOk = false;
-  }
-  assert(allOk, 'controlled rounding: cells are floor or ceiling, every row and column foots (300 random tables)');
-  const q3 = [[3805.4, -2280.2, -4606.2], [3502.1, 343.4, -1860.5], [2387.0, 329.4, -663.4], [-142.3, -546.2, -504.6], [-1983.3, -2896.8, -1430.9], [479.3, -243.0, -186.4]];
-  const rowT = q3.map((r) => Math.round(r.reduce((s, v) => s + v, 0)));
-  const colT = ap([8047.92, -5293.42, -9250.03], -6496);
-  assert(colT.join(',') === '8048,-5294,-9250', 'month totals apportioned from the true values: ' + colT.join(','));
+  // A. (Matt 2026-11-08) every month cell is the whole-dollar rounding of its own exact value; no forced sum
+  assert(typeof _rptControlledRoundGone === 'undefined' && run(ctx, "typeof _rptControlledRound") === 'undefined', '_rptControlledRound is removed');
   // B. Appendix D prints the billing period from the stored start and end, never a bare dash
   const apD = run(ctx, '(function(d,f){ return _rptQAppendixDPages(7,d,f,"D"); })')(
     { buildings: [], rawBills: [
@@ -649,7 +628,7 @@ console.log('\n--- 14. rounding, actual cost on every page, meter names, kW sepa
   }
   const byFuelHtml = run(ctx, '_rptQByFuelTable')(dr, fr);
   assert(/-\$2,678/.test(byFuelHtml.replace(/<[^>]+>/g, ' ')), 'Savings by building and utility prints electricity -$2,678 for the review case');
-  if (sumHtml) assert(rowLast(sumHtml, 'Electricity (kWh)') === '-$2,678', 'Building Summary electricity savings: ' + rowLast(sumHtml, 'Electricity (kWh)'));
+  if (sumHtml) assert(rowLast(sumHtml, 'Electricity use (kWh)') === '-$2,586' && rowLast(sumHtml, 'Electricity demand (billed kW)') === '-$93', 'Building Summary electricity is two rows, use -$2,586 and demand -$93: ' + rowLast(sumHtml, 'Electricity use (kWh)') + ' / ' + rowLast(sumHtml, 'Electricity demand (billed kW)'));
   // The Building Summary and the "by Building" table of every building print the same savings (collected data)
   const fq = run(ctx, '_rptQFacts')(q3);
   const detail = run(ctx, '_rptQFuelDetailPages');
@@ -665,8 +644,8 @@ console.log('\n--- 14. rounding, actual cost on every page, meter names, kW sepa
       } catch (e) {
         console.log('ERR summary/detail ' + kind + ' ' + String(e.stack).split(String.fromCharCode(10)).slice(0, 2).join(' / '));
       }
-      const label = ['Electricity (kWh)', 'Natural gas (therms)', 'Propane (gal)'][ki];
-      if (dh && sh) assert(rowLast(sh, label) === rowLast(dh, b.name), b.name + ' ' + kind + ': Building Summary ' + rowLast(sh, label) + ' = detail table ' + rowLast(dh, b.name));
+      const label = ['Electricity use (kWh)', 'Natural gas (therms)', 'Propane (gal)'][ki];
+      if (dh && sh && kind !== 'electric') assert(rowLast(sh, label) === rowLast(dh, b.name), b.name + ' ' + kind + ': Building Summary ' + rowLast(sh, label) + ' = detail table ' + rowLast(dh, b.name));
     });
   });
   // 13b. one actual cost = ENERGY CHARGES only (Matt 2026-11-08), the basis of the baseline cost and of the presented
@@ -722,6 +701,58 @@ console.log('\n--- 14. rounding, actual cost on every page, meter names, kW sepa
   const none = run(ctx, '_rptPropaneBlCostMap')(map, [{ id: 'x', start: '2024-03-01', end: '2024-03-01', gallonsDelivered: 50 }], BL_MONTHS);
   assert(none === map, 'no priced delivery in the baseline year: no rate is made up, the map is unchanged');
 }
+
+
+// 14. v245 review fixes (Matt 2026-11-08): D1 month rounding, D2 percent base, D3 true month savings, D4 footing,
+//     D6 baseline energy cost, L1 dials, L2 two electricity rows, L3 district wording
+console.log('\n--- 14. v245 review fixes ---');
+{
+  // D1: a month prints round(its own exact value): -5293.41 prints $5,293, not $5,294
+  const dm = pageData();
+  dm.buildings.forEach((b, i) => {
+    b.electric.monthly.forEach((m, k) => (m.savings = i === 0 ? [8047.92, -5293.41, -9250.03][k] : 0));
+    b.savings = i === 0 ? -6495.52 : 0;
+  });
+  const fm = run(ctx, '_rptQFacts')(dm);
+  const coverH = run(ctx, '(function(d,f){ return _rptQCoverPage(1,d,f); })')(dm, fm).replace(/<[^>]+>/g, ' ');
+  assert(/5,293/.test(coverH) && !/5,294/.test(coverH), 'D1: August prints 5,293 (exact 5,293.41), never 5,294');
+  // D2: percent of baseline cost = savings / the baseline cost printed
+  q2.buildings.forEach((b) => assert(Math.abs(b.pctBase - b.blCost) < 1e-6, 'D2: ' + b.name + ' percent denominator is its baseline cost'));
+  assert(!/actual cost plus savings|billed cost plus savings/i.test(flat), 'D2: no page names the old denominator');
+  // D3: every month row carries the formula savings apart from a pinned override
+  const mo = q3.buildings.find((b) => b.electric && b.electric.monthly.length).electric.monthly;
+  assert(mo.every((m) => typeof m.formulaSav === 'number'), 'D3: each month carries formulaSav (the contract formula result)');
+  // D4: a dollar column total in a meter table is the sum of the cents printed above it
+  const money = (t) => { const x = /^[-\u2212]?\$([\d,]+\.\d\d)$/.exec(t.trim()); return x ? (/^[-\u2212]/.test(t.trim()) ? -1 : 1) * parseFloat(x[1].replace(/,/g, '')) : null; };
+  let tabs = 0, tabsOk = 0;
+  const mp = run(ctx, '(function(){ var m = getUDBldg(' + PROJ + ", 'bA').meters[0]; return buildMeterPerfTableHTML(m, m.bills, true, { mode: 'report', filterYMs: ['2025-01', '2025-02', '2025-03'] }).html; })")();
+  if (process.env.DBG) console.log('DBG', mp.length, mp.replace(/<[^>]+>/g,'|').replace(/\|+/g,'|').slice(0,600));
+  [mp].forEach((tb) => {
+    const rows = (tb.match(/<tr[\s\S]*?<\/tr>/g) || []).map((r) => (r.match(/<td[^>]*>([\s\S]*?)<\/td>/g) || []).map((c) => c.replace(/<[^>]+>/g, '')));
+    const body = rows.filter((r) => r.length > 3);
+    if (body.length < 3) return;
+    const tot = body[body.length - 1], data = body.slice(0, -1);
+    for (let c = 1; c < tot.length; c++) {
+      const tv = money(tot[c]);
+      if (tv === null || !data.every((r) => money(r[c]) !== null)) continue;
+      tabs++;
+      if (Math.abs(data.reduce((a, r) => a + money(r[c]), 0) - tv) < 0.005) tabsOk++;
+    }
+  });
+  assert(tabs > 0 && tabs === tabsOk, 'D4: every dollar total in the meter tables foots to its rows (' + tabsOk + ' of ' + tabs + ')');
+  // D6: the report Baseline Data cost is the energy charges (a bill total of 1000 holds 600 of energy lines)
+  const blSite = run(ctx, '(function(){ return _buildBaselineDataHtml(getUDBldg(' + PROJ + ", 'bA'), " + PROJ + '); })')();
+  const blRep = run(ctx, '(function(){ return _buildBaselineDataHtml(getUDBldg(' + PROJ + ", 'bA'), " + PROJ + ', { report: true }); })')();
+    assert(/\$600\.00</.test(blRep) && !/\$1,000\.00</.test(blRep) && /\$1,000\.00</.test(blSite), 'D6: the report Baseline Data month cost is the energy charges ($600 of a $1,000 bill)');
+  // L1: dials say what changed
+  assert(/Energy Use Change/i.test(flat) && /Site EUI Change/i.test(flat), 'L1: dial labels are Energy Use Change and Site EUI Change');
+  // L2: electricity is two rows in the Building Summary
+  const sumH2 = run(ctx, '_rptQBuildingSummaryPage')(1, q3, q3.buildings[0], run(ctx, '_rptQFacts')(q3)).replace(/<[^>]+>/g, ' ');
+  assert(/Electricity use \(kWh\)/.test(sumH2) && /Electricity demand \(billed kW\)/.test(sumH2), 'L2: Building Summary has an electricity use row and a demand row');
+  // L3: the district, not the client
+  assert(/District share/.test(results + contract) && !/Client share|Client Net|the client/.test(flat + results + contract), 'L3: District share and District net wording, no "client"');
+}
+
 
 console.log('\n' + passed + ' passed, ' + failed + ' failed');
 process.exit(failed ? 1 : 0);

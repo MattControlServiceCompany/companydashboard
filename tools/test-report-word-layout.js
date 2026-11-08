@@ -141,10 +141,9 @@ function rest() {
 
   console.log('\n--- 8. minus sign in a Word run ---');
   {
-    const run = sb._docxRun({ text: 'Savings were \u2011$6,496 and \u20115 units' });
-    assert(!/\u2011/.test(run), 'no U+2011 character in a Word run');
-    assert((run.match(/<w:noBreakHyphen\/>/g) || []).length === 2, 'each U+2011 becomes a <w:noBreakHyphen/>');
-    assert(/<w:t xml:space="preserve">\$6,496 and <\/w:t>/.test(run), 'the digits after the minus stay in the run text');
+    const run = sb._docxRun({ text: 'Savings were \u2212$6,496 and \u22125 units' });
+    assert((run.match(/\u2212/g) || []).length === 2, 'the minus sign (U+2212) is kept in the Word run text');
+    assert(!/noBreakHyphen/.test(run) && /Savings were \u2212\$6,496 and \u22125 units/.test(run), 'one run, no no-break-hyphen element');
     const plain = sb._docxRun({ text: 'a - b \u2212 c' });
     assert(!/noBreakHyphen/.test(plain) && /\u2212/.test(plain), 'a plain hyphen and a real minus (U+2212) are not changed');
   }

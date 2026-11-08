@@ -678,6 +678,8 @@ function getMeterSavings(m, bills, incl, projId, bldgId, opts) {
       kwRate: moKwRate,
       kwCostSav: hasContract ? kwCostSav : 0,
       savings: hasContract ? finalCostSav : 0,
+      // The month by the contract formula, before any pinned override (display of a month; a pin is never read here).
+      formulaSavings: hasContract ? totalCostSav : 0,
       pinned: hasContract && _costOvr != null,
       rateIncomplete: hasContract && flagIncomplete,
       rateReason: hasContract && flagIncomplete ? _rateReason : "",
@@ -738,6 +740,7 @@ function getMeterSavings(m, bills, incl, projId, bldgId, opts) {
           kwRate: 0,
           kwCostSav: 0,
           savings: val,
+          formulaSavings: 0,
           pinned: true,
           rateIncomplete: false,
           rateReason: "",

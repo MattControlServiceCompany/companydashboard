@@ -5,12 +5,12 @@
 // (tools/test-report-table-fit.js) are separate. The export sets data-dx-live-widths on every page, so the Word widths follow the widths the live page shows (data-dx-w), raised to the whole-word minimums.
 'use strict';
 const EXPECTED = {
- "Building|Square|||Feet|Baseline|||Cost|Projected|||Cost|Actual|||Cost|Q2 2025|||Savings Measured|Percent of|||Baseline Cost|Status": "1713,1008,1109,1311,1109,1210,1109,1511",
- "Quarter|Baseline|||kWh|Actual|||kWh|Baseline|||Therms|Actual|||Therms|Baseline|||Gallons|Actual|||Gallons|Baseline|||Cost|Actual|||Cost|Savings|||Measured": "1010,1031,927,1031,938,1031,1004,1031,926,1151",
- "Period|kWh|kW|Therms|Propane|||Gallons|Cost|Site EUI|||kBtu/ft\u00b2| (Q2 2025)|Savings vs|||Baseline": "1311,1210,1008,1109,1210,1210,1814,1208",
- "Building|Year|kWh|kW|Therms|Propane Gallons|Cost|Site EUI|||kBtu/ft\u00b2| (Q2 2025)": "2554,1100,649,496,948,1979,690,1664",
- "Month|Days|BL Therms|Act Therms|Therms Saved|%|$/therm|Therm Sav $": "1260,1260,1260,1260,1260,1260,1260,1260",
- "Month|Days|BL Gal|Act Gal|Gal Saved|%|$/Gallon|Gallon Sav $": "1260,1260,1260,1260,1260,1260,1260,1260",
+ "Building|Square|||Feet|Baseline|||Cost|Projected|||Cost|Actual|||Cost|Q2 2025|||Savings Measured|Percent of|||Baseline Cost|Status": "2218,907,1008,1109,1008,1210,1109,1511",
+ "Quarter|Baseline|||kWh|Actual|||kWh|Baseline|||Therms|Actual|||Therms|Baseline|||Gallons|Actual|||Gallons|Baseline|||Cost|Actual|||Cost|Savings|||Measured": "907,1008,1008,1008,1008,1008,1008,1008,1008,1109",
+ "Period|kWh|kW|Therms|Propane|||Gallons|Cost|Site EUI, Q2 2025|||(kBtu/ft\u00b2)|Savings vs|||Baseline": "1349,892,484,792,1551,770,2391,1851",
+ "Building|Year|kWh|kW|Therms|Propane Gallons|Cost|Site EUI, Q2 2025|||(kBtu/ft\u00b2)": "2720,1170,690,496,892,1711,650,1751",
+ "Month|Days|Baseline|||Therms|Actual|||Therms|Therms|||saved|Saved|||%|$/therm|Therm\u00a0$|||saved": "1260,1260,1260,1260,1260,1260,1260,1260",
+ "Month|Days|Baseline|||Gal|Actual|||Gal|Gal|||saved|Saved|||%|$/Gallon|Gallon\u00a0$|||saved": "1260,1260,1260,1260,1260,1260,1260,1260",
  "Month|Cooling degree days |(2025)|Baseline billed |kW|Actual billed |kW|Change |kW": "2418,2218,1814,1814,1816"
 };
 const path = require('path');
@@ -67,6 +67,7 @@ const fixture = { en_projects: [{ id: PROJ, name: 'Synthetic District', client: 
       }
       return { tables, pages: pages.length };
     }, [PROJ, fixture]);
+    if (process.env.DUMPW) console.log(JSON.stringify(res.tables.map((t) => [t.head, t.grid.replace(/w:w="/g, '').replace(/"/g, '')])));
     let fails = 0;
     for (const k of Object.keys(EXPECTED)) {
       const t = res.tables.find((x) => x.head === k);

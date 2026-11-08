@@ -635,10 +635,45 @@ function _hvlGasHeatShare(projId, bldgId) {
   return { pct: fallbackPct, source: 'default', totalGas, heatingTherms: totalGas * (fallbackPct / 100) };
 }
 
-function _buildBaselineDataHtml(b, projId) {
+// _bdBaselineEnergyCost(projId, b) - the baseline cost of each calendar month (0-11) by fuel, ENERGY CHARGES only: the same
+// charge set as the actual cost of a report (_rptBillAmount in app/report-engine.js: electricity = kWh + billed kW + facilities
+// kW dollars, gas = gas charge, propane = delivery cost, a baseline month with gallons and no cost priced at the baseline-year
+// $/gal). Summed over the meters the baseline includes. The report's Building Baseline Data page reads it (opts.report).
+function _bdBaselineEnergyCost(projId, b) {
+  const out = { elec: {}, gas: {}, propane: {} };
+  const meters = ((b && b.meters) || []).filter(
+    (m) => !(projId && typeof isBaselineExcluded === 'function' && isBaselineExcluded(projId, m.id)),
+  );
+  const wx = typeof getWeatherForBuilding === 'function' && projId ? getWeatherForBuilding(projId, b.id).byYm : {};
+  meters.forEach((m) => {
+    const months = (m.baseline && m.baseline.months) || [];
+    if (months.length < 3) return;
+    let byMo;
+    if (m.commodity === 'Electric' || m.commodity === 'Gas') {
+      byMo = _rptBaselineBillCostByCalMo(m, m.bills || [], months);
+    } else if (m.commodity === 'Propane') {
+      const pm = _rptPropaneBlCostMap(_hvlMeterMoMap(m, wx).map.propaneByMo || {}, m.bills || [], months);
+      byMo = {};
+      Object.keys(pm).forEach((mo) => (byMo[mo] = pm[mo].cost || 0));
+    } else return;
+    const dst = m.commodity === 'Electric' ? out.elec : m.commodity === 'Gas' ? out.gas : out.propane;
+    Object.keys(byMo).forEach((mo) => (dst[mo] = (dst[mo] || 0) + byMo[mo]));
+  });
+  return out;
+}
+
+// opts.report (the quarterly report): costs are energy charges only (_bdBaselineEnergyCost) and a usage cell shows its value
+// (0 included) when its month has a cost, so no dash stands beside a number.
+function _buildBaselineDataHtml(b, projId, opts) {
   if (!b) return '';
   const sqft = parseInt(b.sqft) || 0;
   const { elecM, gasM, propaneM, eByMo, gByMo, pByMo } = _hvlMonthlyBaseline(projId, b);
+  const rpt = !!(opts && opts.report);
+  const ec = rpt ? _bdBaselineEnergyCost(projId, b) : null;
+  const elecCostOf = (i) => (ec ? ec.elec[i] || 0 : (eByMo[i] || {}).totalCost || 0);
+  const gasCostOf = (i) => (ec ? ec.gas[i] || 0 : (gByMo[i] || {}).cost || 0);
+  const propCostOf = (i) => (ec ? ec.propane[i] || 0 : (pByMo[i] || {}).cost || 0);
+  const numOrZero = (v, cost, txt) => (v ? txt : rpt && cost > 0 ? '0' : '—');
 
   // Detect whether Billed kW / Facilities kW data exists
   const hasBilledKW = Object.values(eByMo).some((v) => (v.billedKW || 0) > 0);
@@ -668,18 +703,18 @@ function _buildBaselineDataHtml(b, projId) {
       totFacKW += eb.facKW || 0;
       totKwCost += eb.kwCost || 0;
       totKwhCost += eb.energyCost || 0;
-      totElecCost += eb.totalCost || 0;
     }
+    totElecCost += elecCostOf(i);
     const gb = gByMo[i];
     if (gb) {
       totTherms += gb.thermsPredicted || 0;
-      totGasCost += gb.cost || 0;
     }
+    totGasCost += gasCostOf(i);
     const pb = pByMo[i];
     if (pb) {
       totPropGal += pb.gallons || 0;
-      totPropCost += pb.cost || 0;
     }
+    totPropCost += propCostOf(i);
   });
   if (totKwh === 0 && totTherms === 0 && totPropGal === 0) return '';
   // kW with one decimal and thousands separators (the Baseline Data table: "5,737.7", never "5737.7").
@@ -712,16 +747,16 @@ function _buildBaselineDataHtml(b, projId) {
                   const facKW = eb.facKW || 0;
                   const kwCost = eb.kwCost || 0;
                   const kwhCost = eb.energyCost || 0;
-                  const eCost = eb.totalCost || 0;
+                  const eCost = elecCostOf(i);
                   const avgKwh = kwh > 0 && kwhCost > 0 ? kwhCost / kwh : 0;
                   const avgKw = kw > 0 && kwCost > 0 ? kwCost / kw : 0;
                   const days = eb.normDays || 30;
                   const lf = kw > 0 && kwh > 0 ? kwh / (kw * 24 * days) : 0;
                   const therms = gb.thermsPredicted || 0;
-                  const gCost = gb.cost || 0;
+                  const gCost = gasCostOf(i);
                   const avgTherm = therms > 0 && gCost > 0 ? gCost / therms : 0;
                   const propGal = pb.gallons || 0;
-                  const pCost = pb.cost || 0;
+                  const pCost = propCostOf(i);
                   const avgPropGal = propGal > 0 && pCost > 0 ? pCost / propGal : 0;
                   const moTotal = eCost + gCost + pCost;
                   return (
@@ -731,7 +766,7 @@ function _buildBaselineDataHtml(b, projId) {
                     '</td>' +
                     (elecM
                       ? '<td style="text-align:right;font-family:var(--mono)">' +
-                        (kwh ? Math.round(kwh).toLocaleString() : '—') +
+                        numOrZero(kwh, eCost, Math.round(kwh).toLocaleString()) +
                         '</td>' +
                         '<td style="text-align:right;font-family:var(--mono)">' +
                         (kw ? $k(kw) : '—') +
@@ -767,7 +802,7 @@ function _buildBaselineDataHtml(b, projId) {
                       : '') +
                     (gasM
                       ? '<td style="border-left:2px solid var(--border2);text-align:right;font-family:var(--mono)">' +
-                        (therms ? Math.round(therms).toLocaleString() : '—') +
+                        numOrZero(therms, gCost, Math.round(therms).toLocaleString()) +
                         '</td>' +
                         '<td style="text-align:right;font-family:var(--mono);font-size:11px">' +
                         (avgTherm ? '$' + avgTherm.toFixed(3) : '—') +
@@ -778,7 +813,7 @@ function _buildBaselineDataHtml(b, projId) {
                       : '') +
                     (propaneM
                       ? '<td style="border-left:2px solid var(--border2);text-align:right;font-family:var(--mono)">' +
-                        (propGal ? Math.round(propGal).toLocaleString() : '—') +
+                        numOrZero(propGal, pCost, Math.round(propGal).toLocaleString()) +
                         '</td>' +
                         '<td style="text-align:right;font-family:var(--mono);font-size:11px">' +
                         (avgPropGal ? '$' + avgPropGal.toFixed(3) : '—') +

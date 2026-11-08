@@ -41,6 +41,6 @@ ok(/Percent saved = savings (÷|&divide;) baseline cost/.test(a), 'annual Financ
 ok(!/Annualized/.test(a), 'annual CSC table has no Annualized column');
 ok(/3-Year Total/.test(a), 'annual CSC table keeps 3-Year Total');
 ok(/<h2>Quarterly Savings vs Baseline<\/h2>/.test(q), 'quarterly heading unchanged');
-ok(/>Quarter</.test(q) && /Annualized/.test(q) && /3-Year Total/.test(q), 'quarterly columns unchanged');
+ok(/>Quarter</.test(q) && /Year 1/.test(q) && /3-Year Total/.test(q), 'quarterly columns unchanged');
 console.log(fails ? 'FAILED ' + fails : 'ALL PASSED');
 process.exit(fails ? 1 : 0);

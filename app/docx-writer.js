@@ -120,15 +120,7 @@ function _docxRun(opts) {
   var lines = text.split('\n');
   var body = lines
     .map(function (line, i) {
-      // U+2011 (no-break hyphen) is the report's marker for a minus sign that must stay with its number (_rptQNoBreakMinus,
-      // app/report-engine.js). Word draws the U+2011 character as a raised bar in Arial. Word's own <w:noBreakHyphen/>
-      // element draws a normal hyphen that never breaks from its number.
-      var t = line
-        .split('‑')
-        .map(function (part) {
-          return '<w:t xml:space="preserve">' + _docxEscapeXml(part) + '</w:t>';
-        })
-        .join('<w:noBreakHyphen/>');
+      var t = '<w:t xml:space="preserve">' + _docxEscapeXml(line) + '</w:t>';
       return (i > 0 ? '<w:br/>' : '') + t;
     })
     .join('');

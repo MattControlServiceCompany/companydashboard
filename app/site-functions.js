@@ -2507,6 +2507,16 @@ async function siteResetAllMeterTableSettings() {
    site-ui.js delegates to this array and should NOT maintain its own copy.
 */
 var RELEASE_NOTES = [
+  { v: 'v2026.11.08.245', date: '2026-11-08', title: 'Quarterly report: review fixes',
+    items: [
+      { type: 'fix', text: 'Reports > Quarterly report, Financial Summary, Savings Performance and Observations: percent of baseline cost is the savings divided by the baseline cost shown. The actual-cost-plus-savings denominator is removed.' },
+      { type: 'fix', text: 'Reports > Quarterly report, cover and Year to Date: each month prints the rounding of its own value; a pinned month override no longer changes the month rows of Year to Date. Dials say Energy Use Change and Site EUI Change.' },
+      { type: 'fix', text: 'Reports > Quarterly report, Building Summaries: electricity is two rows, use (kWh) and demand (billed kW), each with its change and savings.' },
+      { type: 'fix', text: 'Reports > Quarterly report, Meter Performance: one column set for every electricity meter, kW with one decimal, whole-word headers, and dollar totals that add up to their rows.' },
+      { type: 'fix', text: 'Reports > Quarterly report, Building Baseline Data: costs are energy charges only, the same basis as the actual cost. Word now prints the kWh/ft² summary lines.' },
+      { type: 'fix', text: 'Reports > Quarterly report: District wording for the district, one name for each utility, subscripts in pollutant names, one minus sign in PDF and Word, footer page number in the margin.' }
+    ]
+  },
   { v: 'v2026.11.08.244', date: '2026-11-08', title: 'Quarterly report: one rounding rule, one actual cost',
     items: [
       { type: 'fix', text: 'Reports > Quarterly report, Building Summaries, Savings by building and utility, and the Use Detail pages: every dollar value is rounded from its own unrounded value. A building now prints the same electricity savings on every page. A row can differ from the sum of its parts by $1.' },

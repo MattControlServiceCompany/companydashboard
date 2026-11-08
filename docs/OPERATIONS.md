@@ -669,6 +669,17 @@ No timer, env var, host or server change. Runs in the browser when a report rend
 - Check: `node tools/test-report-pdf-letterhead-footer.js` clicks the real Download PDF button, renders the saved file with pdftoppm and fails when the letterhead (page 1) or the wave footer (page 1, page 2, last page) is missing or when pdftotext returns no footer text. Also `node tools/test-docx-class-colors.js`, `node tools/test-report-q3-review-findings.js`, `node tools/test-report-schedule-table.js`, `node tools/test-report-word-table-widths.js`, `node tools/test-report-escape.js`.
 - Not yet removed: the v235 page functions (`_rptQCoverPage`, `_rptQResultsPage` and the other `_rptQ...Page` functions) and the `qRender` fields of `REPORT_SECTIONS` have no caller in the report; some tests still read them.
 
+## Q3 2026 report review fixes, v2026.11.08.245 (2026-11-08, branch 2026-11-08-q3-v245-review-fixes)
+
+No timer, env var, host or server change. Runs in the browser when a report renders or downloads. Check: `node tools/test-report-q3-review-findings.js` (section 14), `node tools/test-report-word-layout.js`, then download PDF and Word and count 31 pages.
+- Rounding: every printed value is `Math.round` of its own exact value; a total rounds the exact sum. A month can differ from the quarter total by $1. `_rptApportion` is not used on month cells of the report pages and `_rptControlledRound` is deleted (app/report-engine.js: `_rptQFacts`, `_rptQShownCols`, Appendix B).
+- Percent of baseline cost: `bldgPctBase` = the building baseline cost shown (`collectReportData`). The "actual plus savings" denominator and its note are removed.
+- Baseline cost: `_rptBaselineBillCostByCalMo(m, bills, blMonths)` sums `_rptBillAmount` (energy charges only) over the baseline bills by calendar month; `collectReportData` and the Baseline Data page (`_bdBaselineEnergyCost`, app/calculators.js, `_buildBaselineDataHtml(b, projId, { report: true })`) both use it.
+- Year to Date: `getMeterSavings` (computations/savings.js) rows carry `formulaSavings` (the contract formula result; 0 for a pinned override row). The month rows of `rptPageYearToDate` print `trueSav`, so a pinned month override does not change the month. The pin itself is not edited.
+- Meter table (lib/perf-table.js, `mode: 'report'`): one column set for every electricity meter (Actual kW is the billed kW), kW with one decimal, whole-word two-line headers, and a dollar column total that is the sum of the cent values printed above it.
+- Word: `_docxRun` keeps U+2212 in one run (no `noBreakHyphen`). `_rptQNoBreakMinus` turns a hyphen before `$` or a digit into U+2212. `_rptQThSameCase` sets `text-transform:none` on every `<th>`.
+- Footer: label and "Page N of M" are both 14px; the page number sits 48px from the right edge, 6px from the bottom.
+
 ## 7. How to keep this file current
 
 Any commit that changes these facts must update this file in the same commit.
