@@ -2507,6 +2507,11 @@ async function siteResetAllMeterTableSettings() {
    site-ui.js delegates to this array and should NOT maintain its own copy.
 */
 var RELEASE_NOTES = [
+  { v: 'v2026.11.09.257', date: '2026-11-09', title: 'Quarterly report: Appendix A fits one page in Word',
+    items: [
+      { type: 'fix', text: 'Reports > Quarterly report, Appendix A: shorter wording of the allocated target, degree days and negative savings entries, so the page stays one page in the Word file.' }
+    ]
+  },
   { v: 'v2026.11.09.256', date: '2026-11-09', title: 'Quarterly report: totals add from the rows shown',
     items: [
       { type: 'fix', text: 'Reports > Quarterly report: every total row of a use or cost column now equals the sum of the rows printed above it (Financial Summary, Savings Performance, Building Summaries, Meter Performance, Electricity and Natural Gas Use Detail, Appendix B). The totals keep their values; only a month or a building row can move by 1.' },

@@ -2788,7 +2788,7 @@ function _rptQTerms(d) {
     measured: 'Savings measured is, for each month, the baseline use minus the actual use, times the rate of that month, added over the months.',
     billed: 'Savings billed is the amount invoiced under the contract.',
     target: 'Allocated target is the savings the contract sets for the quarter.',
-    degreeDays: 'Cooling degree days measure how hot the weather is. Heating degree days measure how cold it is. Each day is measured against ' + WX_DD_BASE_F + '&deg;F.',
+    degreeDays: 'Cooling and heating degree days measure how hot and how cold the weather is, against ' + WX_DD_BASE_F + '&deg;F.',
     billedKw: 'Billed kW is the demand, in kW, that the utility bills for the month.',
     facilitiesKw: 'Facilities kW is the demand, in kW, on which the utility bills the facilities charge.',
     normalized: 'Normalized use is the use that the weather model of the meter gives for the month, not the billed use.',
@@ -2800,7 +2800,7 @@ function _rptQTerms(d) {
     actualCost: 'Actual cost is the energy charges billed in ' + (d.period && d.period.year ? d.period.year : 0) + '.',
     targetCost: 'Target cost is the baseline cost less the allocated target.',
     belowTarget: 'Below Target means the savings measured are below the allocated target.',
-    negative: 'A negative savings value means more cost than the baseline.',
+    negative: 'A negative value means more cost than the baseline.',
     sign: 'Use change is actual minus baseline use: a plus is more use. Saved is baseline minus actual use: a plus is less use.',
     actualKw: 'Actual kW is the highest demand the meter measured in the month.',
     kwCost: '$/billed kW (kW cost per billed kW) is the kW cost divided by billed kW.',
@@ -4277,7 +4277,7 @@ function _rptQMethodPage(n, d, f, letter) {
     li('<strong>Baseline model.</strong> A weather model is fitted to the use of each electricity and gas meter from ' + _escHtml(d.project.blStart) + ' through ' + _escHtml(d.project.blEnd) + '. Operating hours and set points are not adjusted.') +
     li('<strong>Weather.</strong> ' + _rptQWeatherMethod(d, f)) +
     li('<strong>Savings.</strong> ' + _rptQSavingsFormula()) +
-    li('<strong>Allocated target.</strong> A quarter' + apos + 's allocated target is the projected savings of the selected energy conservation measures for the months of that quarter. A building' + apos + 's target is its share of that amount, in proportion to its baseline cost.') +
+    li('<strong>Allocated target.</strong> The projected savings of the selected energy conservation measures for the quarter' + apos + 's months. A building' + apos + 's target is its share, in proportion to its baseline cost.') +
     li('<strong>Contract totals.</strong> Year ' + d.contract.currentYear + ' = savings billed to date plus the remaining allocated targets. Later years = the Year ' + d.contract.currentYear + ' contract target at the ' + _escHtml(d.contract.escalation || 0) + '% annual energy cost escalation stated in the Agreement.') +
     li('<strong>Annualized EUI.</strong> The use of the months reported to date &times; 12 &divide; the number of those months. The baseline covers the same calendar months of ' + (d.period.year - 1) + '.') +
     (_rptQMedianText(d) ? li('<strong>National median.</strong> ' + _rptQMedianText(d).replace(/National median, /g, '')) : '') +

@@ -1321,7 +1321,7 @@ No timer, no env var, no host change. It runs in the browser when a report previ
 - Electricity Use Detail: the Electricity by Building table (`data-rpt-small`, app/report-engine.js:4057) prints at 10px (rule `.rpt-q-dense[data-rpt-small]` in energy-department.html) and `_RPT_Q_W_FUEL_ELEC` (app/report-engine.js:2579) gives the Building column 29 percent, so school names stay on one line. tools/test-report-table-fit.js sets the same attribute.
 - Check: `node tools/test-report-table-fit.js`, `node tools/test-report-q3-review-findings.js`, `node tools/test-report-word-table-widths.js`.
 
-## Quarterly report: totals add from the rows shown (2026-11-09, version v2026.11.09.256)
+## Quarterly report: totals add from the rows shown (2026-11-09, versions v2026.11.09.256 and .257)
 
 No timer, no env var, no host change. It runs in the browser when a report preview or a Word export is built. No savings formula, stored bill value or cost basis changes. A presented (frozen) report keeps its printed figures. Every total keeps its true value (the rounded exact sum); only a row can print one unit (0.1 kW in the meter tables) different from its own rounding.
 
