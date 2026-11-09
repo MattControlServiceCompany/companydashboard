@@ -2567,6 +2567,13 @@ function _rptQChangeTd(v) {
   var r = Math.round(v || 0);
   return '<td class="rpt-n ' + (r > 0 ? 'rpt-r' : r < 0 ? 'rpt-g' : '') + '">' + _rptQSignedN(r) + '</td>';
 }
+// A use change percent cell (v256): the ONE colour of a use change percent on every page: red when use is above baseline
+// (a plus), green when below (a minus), plain at 0.0% and for a dash. pct = the exact percent, or null for a dash.
+function _rptQChangePctTd(pct) {
+  if (pct == null) return '<td class="rpt-n">-</td>';
+  var r = Number(Math.abs(pct).toFixed(1));
+  return '<td class="rpt-n ' + (r > 0 ? (pct > 0 ? 'rpt-r' : 'rpt-g') : '') + '">' + _rptQPct(pct) + '</td>';
+}
 // A saved-use cell (kWh, therms, gal): a plain number, green when saved and red when over baseline.
 function _rptQUnitSavTd(v) {
   return '<td class="rpt-n ' + _rptQSavCls(v) + '">' + _rptQN(v) + '</td>';
@@ -2639,26 +2646,19 @@ function _rptBilledToDate(contract, q) {
   }, 0);
 }
 
-// _rptApportion(values, total) - whole numbers for `values` that add to Math.round(total): each value is
-// rounded down, then the units still owed go to the largest fractions (ties: first). The ONE rounding rule
-// for rows that must add to a total; nothing is adjusted by hand.
-function _rptApportion(values, total) {
-  var want = Math.round(total || 0);
-  var fl = values.map(function (v) {
-    return Math.floor(v || 0);
-  });
-  var left = want - fl.reduce(function (s, v) {
-    return s + v;
-  }, 0);
-  var order = values
-    .map(function (v, i) {
-      return { i: i, f: (v || 0) - fl[i] };
-    })
-    .sort(function (a, c) {
-      return c.f - a.f || a.i - c.i;
-    });
-  for (var k = 0; k < Math.abs(left) && order.length; k++) fl[order[left > 0 ? k % order.length : order.length - 1 - (k % order.length)].i] += left > 0 ? 1 : -1;
-  return fl;
+// _rptBldgCostShown(d, b, key) - the whole dollars printed for the baseline cost (key 'blCost') or the actual cost
+// (key 'curCost') of building b (v256): the buildings are apportioned to the rounded exact sum (_rptShownRows), so the building
+// rows of Financial Summary, Savings Performance and the building sentences add to the total row, which keeps its true value.
+// A report already presented keeps each building at its own rounded value. The ONE value of a building cost on every page.
+function _rptBldgCostShown(d, b, key) {
+  if (!_rptUnpresentedQuarter(d)) return b[key] || 0;
+  var sh = _rptShownRows(
+    d.buildings.map(function (x) {
+      return x[key] || 0;
+    }),
+  );
+  var i = d.buildings.indexOf(b);
+  return i >= 0 ? sh[i] : b[key] || 0;
 }
 
 // _rptMonthsShown(trueByYm, repQ, repTotal) - the whole-dollar value printed for each month (Matt, 2026-11-08, v252): the
@@ -2788,12 +2788,12 @@ function _rptQTerms(d) {
     measured: 'Savings measured is, for each month, the baseline use minus the actual use, times the rate of that month, added over the months.',
     billed: 'Savings billed is the amount invoiced under the contract.',
     target: 'Allocated target is the savings the contract sets for the quarter.',
-    degreeDays: 'Degree days measure the weather: cooling degree days how hot and heating degree days how cold, each day against ' + WX_DD_BASE_F + '&deg;F.',
+    degreeDays: 'Cooling degree days measure how hot the weather is. Heating degree days measure how cold it is. Each day is measured against ' + WX_DD_BASE_F + '&deg;F.',
     billedKw: 'Billed kW is the demand, in kW, that the utility bills for the month.',
     facilitiesKw: 'Facilities kW is the demand, in kW, on which the utility bills the facilities charge.',
     normalized: 'Normalized use is the use that the weather model of the meter gives for the month, not the billed use.',
     loadFactor: 'Load factor is the normalized kWh divided by the highest demand measured in the month, in kW, times the hours of the month.',
-    eui: 'Energy use intensity (EUI) is the energy use per square foot, in kBtu per square foot. An annual EUI covers a year. A quarterly EUI covers only the quarter and is not annualized. Site EUI is the EUI at the building, from the utility meters, not weather-adjusted.',
+    eui: 'Energy use intensity (EUI) is the energy use per square foot, in kBtu per square foot. A quarterly EUI covers only the quarter and is not annualized. Site EUI: the baseline uses the weather-model use at the ' + ((d.period && d.period.year ? d.period.year : 0) - 1) + ' weather; the actual uses the billed use.',
     units: 'kWh is the unit of electricity use. kW is the unit of electricity demand. A therm is 100,000 Btu of natural gas. gal is a gallon of propane delivered. kBtu/ft&sup2; is a thousand Btu for each square foot of floor area.',
     setPoint: 'A set point is the temperature that the control system holds in a space. Acct# is the account number of the utility meter on the bill.',
     baselineCost: 'Baseline cost is the ' + ((d.period && d.period.year ? d.period.year : 0) - 1) + ' use at ' + ((d.period && d.period.year ? d.period.year : 0) - 1) + ' rates.',
@@ -2806,6 +2806,8 @@ function _rptQTerms(d) {
     kwCost: '$/billed kW (kW cost per billed kW) is the kW cost divided by billed kW.',
     totalUtility: 'Total utility is electric plus gas or propane cost.',
     occupied: 'Occupied hours are the hours each week that the building is scheduled for use.',
+    share: 'Control Service Company (' + _escHtml(d.contract && d.contract.cscPct) + '%) and District share (' + _escHtml(d.contract && d.contract.clientPct) + '%) split it under the Agreement.',
+    baseCols: 'Billed kWh and billed therms are the amounts on the ' + ((d.period && d.period.year ? d.period.year : 0) - 1) + ' bills. kW cost, facilities kW cost, kWh cost, electric cost and gas cost are the charges on them. Average $/therm is gas cost over therms. Savings, % of baseline cost is savings measured over baseline cost.',
   };
 }
 function _rptQTermsText(d) {
@@ -3602,7 +3604,7 @@ function _rptQWeatherTable(d, f) {
   }
   return _rptQTable(
     [28, 18, 18, 18, 18],
-    ['Month', 'Heating degree days ' + py + ' (baseline)', 'Heating degree days ' + yr, 'Cooling degree days ' + py + ' (baseline)', 'Cooling degree days ' + yr],
+    ['Month', 'Heating degree days (' + py + ')', 'Heating degree days (' + yr + ')', 'Cooling degree days (' + py + ')', 'Cooling degree days (' + yr + ')'],
     rows,
   );
 }
@@ -3656,11 +3658,9 @@ function _rptQBenchmarkPage(n, d, f) {
         bl.toFixed(1) +
         '</td><td class="rpt-n">' +
         cur.toFixed(1) +
-        '</td><td class="rpt-n ' +
-        (Math.abs(ch) < 1 ? '' : ch < 0 ? 'rpt-g' : 'rpt-r') +
-        '">' +
-        _rptQPct(ch) +
-        '</td><td class="rpt-n">' +
+        '</td>' +
+        _rptQChangePctTd(ch) +
+        '<td class="rpt-n">' +
         (b.eui.cbecs > 0 ? b.eui.cbecs.toFixed(1) : '') +
         '</td></tr>'
       );
@@ -3676,11 +3676,9 @@ function _rptQBenchmarkPage(n, d, f) {
     tBl.toFixed(1) +
     '</td><td class="rpt-n">' +
     tCur.toFixed(1) +
-    '</td><td class="rpt-n ' +
-    (Math.abs(tCh) < 1 ? '' : tCh < 0 ? 'rpt-g' : 'rpt-r') +
-    '">' +
-    _rptQPct(tCh) +
-    '</td><td class="rpt-n"></td></tr>';
+    '</td>' +
+    _rptQChangePctTd(tCh) +
+    '<td class="rpt-n"></td></tr>';
   // The headers name the months behind each value (Matt, 2026-11-08): the actual months of the year to date and the same
   // calendar months of the baseline year, both annualized (use x 12 / months). The definitions are in Appendix A.
   var blYear = (String(d.project.blEnd || '').match(/\d{4}/) || [''])[0] || String(f.year - 1);
@@ -3700,7 +3698,7 @@ function _rptQBenchmarkPage(n, d, f) {
     ],
     rows,
   );
-  var body = '<h2>Site EUI, annualized (not weather-adjusted)</h2>' + t1;
+  var body = '<h2>Site EUI, annualized</h2>' + t1;
   return rptPage(n, 'Energy Use Intensity', body, { data: d, letterhead: false, label: 'Page ' + n + ' - Energy Use Intensity' });
 }
 
@@ -3959,9 +3957,9 @@ function _rptQMonthChartSVG(panels, colors) {
       blTot += r.bl;
       curTot += r.cur;
     });
-    // The value on each bar rounds so that the bars add to the total in the legend (_rptApportion, the one rounding rule for rows that add to a total).
-    var blShown = _rptApportion(p.rows.map(function (r) { return r.bl; }), blTot);
-    var curShown = _rptApportion(p.rows.map(function (r) { return r.cur; }), curTot);
+    // The value on each bar rounds so that the bars add to the total in the legend (_rptShownRows, the one rounding rule for rows that add to a total).
+    var blShown = _rptShownRows(p.rows.map(function (r) { return r.bl; }));
+    var curShown = _rptShownRows(p.rows.map(function (r) { return r.cur; }));
     out += '<text x="' + x0 + '" y="14" font-size="13" font-weight="700" fill="var(--rpt-page-text)">' + p.title + '</text>';
     p.rows.forEach(function (r, i) {
       var cx = x0 + slot * (i + 0.5);
@@ -4017,8 +4015,18 @@ function _rptQFuelDetailPages(n, d, f, kind) {
   var totLabel = { electric: 'Electricity total', gas: 'Natural gas total', propane: 'Propane total' }[kind];
   var bg = _rptQBillGroups(d, f);
   var t = { bl: 0, cur: 0, kwBl: 0, kwCur: 0, cBl: 0, cCur: 0, sav: f.partsTotal[kind] };
+  // Every rounded column is printed through _rptShownRows, so the building rows add to the total row.
+  var colOf = function (fn) {
+    return _rptShownRows(blds.map(fn));
+  };
+  var shBl = colOf(function (b) { return b[kind][K.bl] || 0; });
+  var shCur = colOf(function (b) { return b[kind][K.cur] || 0; });
+  var shKwBl = colOf(function (b) { return b[kind].kwBl || 0; });
+  var shKwCur = colOf(function (b) { return b[kind].kwCur || 0; });
+  var shCBl = colOf(function (b) { return b[kind].costBl || 0; });
+  var shCCur = colOf(function (b) { return _rptQBilledOf(bg, b.name, K.com); });
   var rows = blds
-    .map(function (b) {
+    .map(function (b, bi) {
       var o = b[kind];
       var bl = o[K.bl] || 0,
         cur = o[K.cur] || 0;
@@ -4030,17 +4038,17 @@ function _rptQFuelDetailPages(n, d, f, kind) {
       t.kwCur += o.kwCur || 0;
       t.cBl += o.costBl || 0; // the baseline-month cost of the meters, the figure the Financial Summary adds (collectReportData)
       t.cCur += actual;
-      var ch = bl >= 10 || (kind === 'propane' && bl > 0) ? _rptQPct(((cur - bl) / bl) * 100) : '-';
+      var ch = _rptQChangePctTd(bl >= 10 || (kind === 'propane' && bl > 0) ? ((cur - bl) / bl) * 100 : null);
       return (
-        '<tr><td>' + _escHtml(b.name) + '</td><td class="rpt-n">' + _rptQN(bl) + '</td><td class="rpt-n">' + _rptQN(cur) + '</td><td class="rpt-n">' + ch + '</td>' +
-        (kind === 'electric' ? '<td class="rpt-n">' + _rptQN(o.kwBl) + '</td><td class="rpt-n">' + _rptQN(o.kwCur) + '</td>' : '') +
-        '<td class="rpt-n">' + _fmtUSD(o.costBl || 0, '$0') + '</td><td class="rpt-n">' + _fmtUSD(actual, '$0') + '</td>' + _rptQSavTd(sav) + '</tr>'
+        '<tr><td>' + _escHtml(b.name) + '</td><td class="rpt-n">' + _rptQN(shBl[bi]) + '</td><td class="rpt-n">' + _rptQN(shCur[bi]) + '</td>' + ch +
+        (kind === 'electric' ? '<td class="rpt-n">' + _rptQN(shKwBl[bi]) + '</td><td class="rpt-n">' + _rptQN(shKwCur[bi]) + '</td>' : '') +
+        '<td class="rpt-n">' + _fmtUSD(shCBl[bi], '$0') + '</td><td class="rpt-n">' + _fmtUSD(shCCur[bi], '$0') + '</td>' + _rptQSavTd(sav) + '</tr>'
       );
     })
     .join('');
-  var totCh = t.bl >= 10 || (kind === 'propane' && t.bl > 0) ? _rptQPct(((t.cur - t.bl) / t.bl) * 100) : '-';
+  var totCh = _rptQChangePctTd(t.bl >= 10 || (kind === 'propane' && t.bl > 0) ? ((t.cur - t.bl) / t.bl) * 100 : null);
   rows +=
-    '<tr class="rpt-tot"><td>' + totLabel + '</td><td class="rpt-n">' + _rptQN(t.bl) + '</td><td class="rpt-n">' + _rptQN(t.cur) + '</td><td class="rpt-n">' + totCh + '</td>' +
+    '<tr class="rpt-tot"><td>' + totLabel + '</td><td class="rpt-n">' + _rptQN(t.bl) + '</td><td class="rpt-n">' + _rptQN(t.cur) + '</td>' + totCh +
     (kind === 'electric' ? '<td class="rpt-n">' + _rptQN(t.kwBl) + '</td><td class="rpt-n">' + _rptQN(t.kwCur) + '</td>' : '') +
     '<td class="rpt-n">' + _fmtUSD(t.cBl, '$0') + '</td><td class="rpt-n">' + _fmtUSD(t.cCur, '$0') + '</td>' + _rptQSavTd(t.sav) + '</tr>';
   var uh = kind === 'propane' ? 'delivered (gal)' : K.unit;
@@ -4265,7 +4273,7 @@ function _rptQMethodPage(n, d, f, letter) {
   var t = _rptQTerms(d);
   var body =
     '<h2>Method</h2>' +
-    '<ul style="margin:2px 0 4px 20px;padding:0;font-size:13px;line-height:1.35">' +
+    '<ul style="margin:2px 0 4px 20px;padding:0;font-size:13px;line-height:1.3">' +
     li('<strong>Baseline model.</strong> A weather model is fitted to the use of each electricity and gas meter from ' + _escHtml(d.project.blStart) + ' through ' + _escHtml(d.project.blEnd) + '. Operating hours and set points are not adjusted.') +
     li('<strong>Weather.</strong> ' + _rptQWeatherMethod(d, f)) +
     li('<strong>Savings.</strong> ' + _rptQSavingsFormula()) +
@@ -4275,8 +4283,8 @@ function _rptQMethodPage(n, d, f, letter) {
     (_rptQMedianText(d) ? li('<strong>National median.</strong> ' + _rptQMedianText(d).replace(/National median, /g, '')) : '') +
     '</ul>' +
     '<h2>Terms</h2>' +
-    '<ul style="margin:2px 0 4px 20px;padding:0;font-size:13px;line-height:1.35">' +
-    [t.baseline, [t.measured, t.negative, t.sign].join(' '), [t.baselineCost, t.actualCost, t.targetCost, t.belowTarget].join(' '), [t.billed, t.target].join(' '), t.degreeDays, [t.billedKw, t.actualKw, t.facilitiesKw].join(' '), [t.kwCost, t.totalUtility].join(' '), [t.normalized, t.loadFactor].join(' '), t.eui, t.units, [t.setPoint, t.occupied].join(' ')].map(li).join('') +
+    '<ul style="margin:2px 0 4px 20px;padding:0;font-size:13px;line-height:1.3">' +
+    [t.baseline, [t.measured, t.negative, t.sign].join(' '), [t.baselineCost, t.actualCost, t.targetCost, t.belowTarget].join(' '), [t.billed, t.share].join(' '), t.degreeDays, [t.billedKw, t.actualKw, t.facilitiesKw].join(' '), [t.kwCost, t.totalUtility, t.normalized, t.loadFactor].join(' '), t.eui, [t.units, t.baseCols, t.setPoint, t.occupied].join(' ')].map(li).join('') +
     li('Contract period: ' + _rptContractPeriodText(d) + '. Contract time elapsed: ' + _rptContractProgressText(d) + '.') +
     '</ul>';
   var title = (letter ? 'Appendix ' + letter + ': ' : '') + 'How Savings Are Measured';
@@ -4822,12 +4830,15 @@ function _rptQBilledKwBlock(b, f, wx, term) {
     .join('');
   var tb = 0,
     tc = 0;
+  // The months as printed: apportioned to the rounded sum (_rptShownRows), so they add to the Total row.
+  var shBl = _rptShownRows(mon.map(function (m) { return m.kwBl; }));
+  var shCur = _rptShownRows(mon.map(function (m) { return m.kwCur; }));
   var rows = mon
-    .map(function (m) {
+    .map(function (m, i) {
       tb += m.kwBl;
       tc += m.kwCur;
       var w = wx[m.month] || {};
-      return '<tr><td>' + _rptQMonthName(m.month) + '</td><td class="rpt-n">' + (w.cddCur == null ? '-' : _rptQN(w.cddCur)) + '</td><td class="rpt-n">' + _rptQN(m.kwBl) + '</td><td class="rpt-n">' + _rptQN(m.kwCur) + '</td>' + _rptQChangeTd(_rptUseChange(m.kwBl, m.kwCur)) + '</tr>';
+      return '<tr><td>' + _rptQMonthName(m.month) + '</td><td class="rpt-n">' + (w.cddCur == null ? '-' : _rptQN(w.cddCur)) + '</td><td class="rpt-n">' + _rptQN(shBl[i]) + '</td><td class="rpt-n">' + _rptQN(shCur[i]) + '</td>' + _rptQChangeTd(_rptUseChange(shBl[i], shCur[i])) + '</tr>';
     })
     .join('');
   rows += '<tr class="rpt-tot"><td>Total</td><td></td><td class="rpt-n">' + _rptQN(tb) + '</td><td class="rpt-n">' + _rptQN(tc) + '</td>' + _rptQChangeTd(_rptUseChange(tb, tc)) + '</tr>';
@@ -4872,15 +4883,18 @@ function _rptQAppendixBPages(n, d, f, letter) {
       // difference (actual minus baseline), the meter tables' Saved with its sign turned.
       var tb = 0,
         tc = 0;
+      // The same printed months as the building summary page (_rptQShownCols), so a month reads the same on every page.
+      var sh = _rptQShownCols(_rptQMonthCols(b[c[1]], f.yms));
       var rows = mon
         .map(function (m) {
           var w = wx[m.month] || {};
+          var mi = f.yms.indexOf(m.month);
           tb += m.bl;
           tc += m.cur;
           return (
             '<tr><td>' + _rptQMonthName(m.month) + '</td><td class="rpt-n">' + calDaysInMonth(m.month) + '</td><td class="rpt-n">' +
             (w.hddBl == null ? '-' : _rptQN(w.hddBl)) + '</td><td class="rpt-n">' + (w.cddBl == null ? '-' : _rptQN(w.cddBl)) + '</td><td class="rpt-n">' +
-            _rptQN(m.bl) + '</td><td class="rpt-n">' + _rptQN(m.cur) + '</td>' + _rptQChangeTd(_rptUseChange(m.bl, m.cur)) + '</tr>'
+            _rptQN(sh.bl[mi]) + '</td><td class="rpt-n">' + _rptQN(sh.cur[mi]) + '</td>' + _rptQChangeTd(_rptUseChange(sh.bl[mi], sh.cur[mi])) + '</tr>'
           );
         })
         .join('');
@@ -5897,8 +5911,16 @@ function rptPageFinancial(n, d) {
   // -- Building Performance table --
   const qTarget = d.contract.quarterlyTargets[q - 1] || 0;
   const totBlCostForPct = d.totals.blCost || 1;
+  // The target cost of each building as printed: apportioned to the rounded total (_rptShownRows) in a report not yet presented.
+  const projShown = _rptUnpresentedQuarter(d)
+    ? _rptShownRows(
+        d.buildings.map(function (x) {
+          return x.blCost - (qTarget > 0 ? qTarget * (x.blCost / totBlCostForPct) : 0);
+        }),
+      )
+    : null;
   const bRows = d.buildings
-    .map(function (b) {
+    .map(function (b, bIdx) {
       // Problem 3 (2026-09-24, fix/report-headers-and-empty-period): 'no_data' renders its own
       // plain, non-judgmental label -- never the on_track/near_target/below_target red-amber-
       // green triangle language, which asserts a performance result this row has no bills to
@@ -5920,13 +5942,13 @@ function rptPageFinancial(n, d) {
         $n(b.sqft) +
         '</td>' +
         '<td class="rpt-n" contenteditable="true">' +
-        _fmtUSD(b.blCost, '$0') +
+        _fmtUSD(_rptBldgCostShown(d, b, 'blCost'), '$0') +
         '</td>' +
         '<td class="rpt-n" contenteditable="true">' +
-        _fmtUSD(bldgProjCost, '$0') +
+        _fmtUSD(projShown ? projShown[bIdx] : bldgProjCost, '$0') +
         '</td>' +
         '<td class="rpt-n" contenteditable="true">' +
-        _fmtUSD(b.curCost, '$0') +
+        _fmtUSD(_rptBldgCostShown(d, b, 'curCost'), '$0') +
         '</td>' +
         '<td class="rpt-n ' +
         saveClass +
@@ -6032,7 +6054,7 @@ function rptPageFinancial(n, d) {
     '<td contenteditable="true">' +
     (_uq ? 'Total savings' : qLabel + ' Actual Savings') +
     '</td>' +
-    '<td class="rpt-n rpt-g" contenteditable="true">' +
+    '<td class="rpt-n ' + (_uq ? _rptQSavCls(d.totals.savings) : 'rpt-g') + '" contenteditable="true">' +
     _fmtUSD(d.totals.savings, '$0') +
     '</td>' +
     (pw.isAnnual ? '' : '<td class="rpt-n" contenteditable="true">' + _fmtUSD(annSavings, '$0') + '</td>') +
@@ -6052,11 +6074,11 @@ function rptPageFinancial(n, d) {
     _fmtUSD(yrTotalCsc, '$0') +
     '</td>' +
     '</tr>' +
-    '<tr class="rpt-tot">' +
+    '<tr' + (_uq ? '' : ' class="rpt-tot"') + '>' +
     '<td contenteditable="true">' + (_uq ? 'District net (' : 'Client Net (') +
     _escHtml(d.contract.clientPct) +
     '%)</td>' +
-    '<td class="rpt-n rpt-g" contenteditable="true">' +
+    '<td class="rpt-n ' + (_uq ? _rptQSavCls(clientAmt) : 'rpt-g') + '" contenteditable="true">' +
     _fmtUSD(clientAmt, '$0') +
     '</td>' +
     (pw.isAnnual ? '' : '<td class="rpt-n" contenteditable="true">' + _fmtUSD(clientAnnAmt, '$0') + '</td>') +
@@ -6398,14 +6420,14 @@ function rptPageSavingsPerformance(n, d) {
   var annTableBody = blRow + curRow;
 
   const annTable =
-    '<table class="rpt-table" contenteditable="true" style="width:100%;table-layout:fixed">' +
+    '<table class="rpt-table" contenteditable="true" style="' + (_uq ? 'font-size:10px;' : '') + 'width:100%;table-layout:fixed">' +
     '<thead><tr style="text-align:center;white-space:normal;word-wrap:normal;word-break:keep-all;overflow-wrap:normal;hyphens:none;line-height:1.2">' +
     '<th style="width:18%">Period</th>' +
     '<th class="rpt-n" style="width:12%">' +
     _rptUnit('kWh') +
     '</th>' +
     '<th class="rpt-n" style="width:10%">' +
-    (_uq ? 'Billed kW<br>(sum of<br>months)' : _rptUnit('kW')) +
+    (_uq ? 'Billed kW<br>(sum of<br>3 months)' : _rptUnit('kW')) +
     '</th>' +
     '<th class="rpt-n" style="width:9%">Therms</th>' +
     '<th class="rpt-n" style="width:9%">' + (_uq ? 'Propane<br>delivered<br>(gal)' : 'Propane<br>Gallons') + '</th>' +
@@ -6463,7 +6485,7 @@ function rptPageSavingsPerformance(n, d) {
         $n(b.propane.galBl) +
         '</td>' +
         '<td class="rpt-n" contenteditable="true">' +
-        _fmtUSD(b.blCost, '$0') +
+        _fmtUSD(_rptBldgCostShown(d, b, 'blCost'), '$0') +
         '</td>' +
         '<td class="rpt-n" contenteditable="true">' +
         blEUI +
@@ -6473,7 +6495,7 @@ function rptPageSavingsPerformance(n, d) {
         rowBg +
         '">' +
         /* name <td> omitted -- rowspan="2" on row 1 covers column 1 for this building */
-        '<td contenteditable="true" style="white-space:nowrap;color:var(--rpt-blue);font-weight:600">' +
+        '<td contenteditable="true" style="white-space:nowrap;' + (_uq ? '' : 'color:var(--rpt-blue);font-weight:600') + '">' +
         curYrLabel +
         '</td>' +
         '<td class="rpt-n" contenteditable="true">' +
@@ -6489,7 +6511,7 @@ function rptPageSavingsPerformance(n, d) {
         $n(b.propane.galCur) +
         '</td>' +
         '<td class="rpt-n" contenteditable="true">' +
-        _fmtUSD(b.curCost, '$0') +
+        _fmtUSD(_rptBldgCostShown(d, b, 'curCost'), '$0') +
         '</td>' +
         '<td class="rpt-n ' +
         (_uq ? savingsSignColor(-euiChange, 1, 'rpt-g', 'rpt-r', '') : savingsSignColor(euiChange, 1, 'rpt-g', 'rpt-r', '')) +
@@ -6513,7 +6535,7 @@ function rptPageSavingsPerformance(n, d) {
     '<th class="rpt-n">' +
     _rptUnit('kWh') +
     '</th>' +
-    '<th class="rpt-n">' + (_uq ? 'Billed kW<br>(sum of<br>months)' : 'kW') + '</th>' +
+    '<th class="rpt-n">' + (_uq ? 'Billed kW<br>(sum of<br>3 months)' : 'kW') + '</th>' +
     '<th class="rpt-n">Therms</th>' +
     '<th class="rpt-n">' + (_uq ? 'Propane delivered (gal)' : 'Propane Gallons') + '</th>' +
     '<th class="rpt-n">' + (_uq ? _rptCostHeads(d).both : 'Cost') + '</th>' +
@@ -7382,9 +7404,9 @@ function rptPageObservations(n, d) {
             (rawSav < 0 ? '−' : '') +
             $p(Math.abs(rawSavPct)) +
             '). Baseline cost ' +
-            _fmtUSD(b.blCost, '$0') +
+            _fmtUSD(_rptBldgCostShown(d, b, 'blCost'), '$0') +
             ' (2025 rates); actual cost ' +
-            _fmtUSD(b.curCost, '$0') +
+            _fmtUSD(_rptBldgCostShown(d, b, 'curCost'), '$0') +
             ' (2026 rates). ' +
             strongWeak
           : _escHtml(b.name) +
@@ -7393,9 +7415,9 @@ function rptPageObservations(n, d) {
         ' savings (' +
         _fmtUSD(rawSav, '$0') +
         ' saved) against a baseline cost of ' +
-        _fmtUSD(b.blCost, '$0') +
+        _fmtUSD(_rptBldgCostShown(d, b, 'blCost'), '$0') +
         ', with actual costs at ' +
-        _fmtUSD(b.curCost, '$0') +
+        _fmtUSD(_rptBldgCostShown(d, b, 'curCost'), '$0') +
         '. ' +
         strongWeak;
       rec = !_uq && _res.key === 'met' ? 'Continue current operating strategy. Monitor for seasonal load shifts entering the next quarter.' : '';
@@ -9366,9 +9388,9 @@ function _rptQSignedN(v) {
   var r = Math.round(v || 0);
   return (r > 0 ? '+' : r < 0 ? '-' : '') + Math.abs(r).toLocaleString('en-US');
 }
-// The monthly use of one fuel of a building as printed: cols = [{has, bl, cur}] per month; shown = Math.round of each
-// month's own value (Matt, 2026-11-08), the same value the meter tables and Appendix B print. A total is the Math.round
-// of the exact sum, never a sum of rounded months.
+// The monthly use of one fuel of a building as printed: cols = [{has, bl, cur}] per month; shown = the months of each
+// series apportioned to its rounded exact sum (_rptShownRows, Matt 2026-11-09), the same value the meter tables and Appendix B
+// print. A total is the Math.round of the exact sum, so the printed months add to it.
 function _rptQMonthCols(o, yms) {
   return yms.map(function (ym) {
     var m = ((o && o.monthly) || []).filter(function (x) {
@@ -9379,8 +9401,8 @@ function _rptQMonthCols(o, yms) {
 }
 function _rptQShownCols(c) {
   return {
-    bl: c.map(function (x) { return Math.round(x.bl); }),
-    cur: c.map(function (x) { return Math.round(x.cur); }),
+    bl: _rptShownRows(c.map(function (x) { return x.bl; })),
+    cur: _rptShownRows(c.map(function (x) { return x.cur; })),
   };
 }
 function _rptQBuildingSummaryPage(n, d, b, f) {
@@ -9400,8 +9422,8 @@ function _rptQBuildingSummaryPage(n, d, b, f) {
     sumRows.splice(1, 0, { k: 'elecKw', name: 'Electricity demand (billed&nbsp;kW, sum of ' + (d.period.yearMonths || []).length + '&nbsp;months)', bl: b.electric.kwBl, cur: b.electric.kwCur, usd: parts.elecDemand || 0 });
   var rows = sumRows
     .map(function (x) {
-      var ch = x.bl >= 10 || ((x.k === 'propane' || x.k === 'elecKw') && x.bl > 0) ? _rptQPct(((x.cur - x.bl) / x.bl) * 100) : '-';
-      return '<tr><td>' + x.name + '</td><td class="rpt-n">' + _rptQN(x.bl) + '</td><td class="rpt-n">' + _rptQN(x.cur) + '</td><td class="rpt-n">' + _rptQSignedN(_rptUseChange(x.bl, x.cur)) + '</td><td class="rpt-n">' + ch + '</td>' + _rptQSavTd(x.usd) + '</tr>';
+      var ch = _rptQChangePctTd(x.bl >= 10 || ((x.k === 'propane' || x.k === 'elecKw') && x.bl > 0) ? ((x.cur - x.bl) / x.bl) * 100 : null);
+      return '<tr><td>' + x.name + '</td><td class="rpt-n">' + _rptQN(x.bl) + '</td><td class="rpt-n">' + _rptQN(x.cur) + '</td><td class="rpt-n">' + _rptQSignedN(_rptUseChange(x.bl, x.cur)) + '</td>' + ch + _rptQSavTd(x.usd) + '</tr>';
     })
     .join('');
   rows += '<tr class="rpt-tot"><td>Total</td><td></td><td></td><td></td><td></td>' + _rptQSavTd(totUsd) + '</tr>';
@@ -9456,7 +9478,7 @@ function _rptQBuildingSummaryPage(n, d, b, f) {
         _rptQTable(
           [40, 20, 20, 20],
           ['Site EUI, ' + qLbl + ' (kBtu/ft&sup2;, quarter)', 'Baseline ' + qLbl, 'Actual ' + qLbl, 'Use change (%)'],
-          '<tr><td>' + _escHtml(b.name) + '</td><td class="rpt-n">' + eui.baseline.toFixed(1) + '</td><td class="rpt-n">' + (eui.current || 0).toFixed(1) + '</td><td class="rpt-n">' + _rptQPct(euiCh) + '</td></tr>',
+          '<tr><td>' + _escHtml(b.name) + '</td><td class="rpt-n">' + eui.baseline.toFixed(1) + '</td><td class="rpt-n">' + (eui.current || 0).toFixed(1) + '</td>' + _rptQChangePctTd(euiCh) + '</tr>',
         )
       : '';
   var info = (b.sqft ? _rptQN(b.sqft) + ' ft&sup2;' : '') + (b.address ? (b.sqft ? ', ' : '') + _escHtml(b.address) : '');

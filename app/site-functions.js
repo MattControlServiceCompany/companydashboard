@@ -2507,6 +2507,14 @@ async function siteResetAllMeterTableSettings() {
    site-ui.js delegates to this array and should NOT maintain its own copy.
 */
 var RELEASE_NOTES = [
+  { v: 'v2026.11.09.256', date: '2026-11-09', title: 'Quarterly report: totals add from the rows shown',
+    items: [
+      { type: 'fix', text: 'Reports > Quarterly report: every total row of a use or cost column now equals the sum of the rows printed above it (Financial Summary, Savings Performance, Building Summaries, Meter Performance, Electricity and Natural Gas Use Detail, Appendix B). The totals keep their values; only a month or a building row can move by 1.' },
+      { type: 'fix', text: 'Reports > Quarterly report, Appendix A: Site EUI states that the baseline uses the weather-model use and the actual uses the billed use; new entries for the contract share and the Baseline Data columns; one definition of the allocated target; degree days read as full sentences.' },
+      { type: 'fix', text: 'Reports > Quarterly report, Energy Use Intensity page: the heading reads "Site EUI, annualized". Weather Data page: one form of the degree-day column names. Billed kW headers read "(sum of 3 months)".' },
+      { type: 'fix', text: 'Reports > Quarterly report: the use change percent is red when use is above baseline and green when below, on every page. Financial Summary: $0 prints black and the District net row is a normal row. Savings Performance: the Actual rows are plain black and the table text size matches the other tables.' }
+    ]
+  },
   { v: 'v2026.11.09.255', date: '2026-11-09', title: 'Quarterly report: heading and column fixes',
     items: [
       { type: 'fix', text: 'Reports > Quarterly report, Contract to Date and Totals page: the page heading no longer repeats as a table heading.' },

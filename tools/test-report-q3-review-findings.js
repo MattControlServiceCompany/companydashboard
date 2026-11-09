@@ -817,7 +817,7 @@ console.log('\n--- 17. v250 display fixes (v249 reviews) ---');
   assert(/Math\.round\(\(d\.savings \|\| 0\) \* 100\) - fl\[0\] - fl\[1\]/.test(pt17), 'meter table kWh $ and kW $ cents are apportioned to the Total $');
   const T17 = run(ctx, '_rptQTerms')({ project: { blStart: 'January 2025', blEnd: 'December 2025' }, period: { year: 2026 } });
   assert(/^Facilities kW is /.test(T17.facilitiesKw) && /^Normalized use is /.test(T17.normalized) && /^Load factor is /.test(T17.loadFactor), 'Appendix A defines Facilities kW, Normalized use and Load factor');
-  assert(/An annual EUI covers a year\. A quarterly EUI covers only the quarter and is not annualized\./.test(T17.eui), 'the EUI term states the quarter and annual forms');
+  assert(/A quarterly EUI covers only the quarter and is not annualized. Site EUI:/.test(T17.eui) && /Site EUI: the baseline uses the weather-model use at the 2025 weather; the actual uses the billed use\./.test(T17.eui), 'the EUI term states the quarter and annualized forms and the baseline/actual split (v256)');
   assert(!/_rptQLaterYears|Degree days compare each day/.test(re17), 'no explanation prose left on the contract totals or the weather appendix page');
 }
 
@@ -848,7 +848,7 @@ console.log('\n--- 19. v252 release: Q3 2026 report fixes ---');
   assert((re19.match(/_rptCostHeads\(d\)/g) || []).length >= 8, 'pages 3, 4, 5, 21, 22 and 23 take their cost headers from _rptCostHeads');
   // Labels
   assert(/Propane delivered \(gal\)/.test(re19) && /Propane Gal\(lons\)\?/.test(re19), 'propane headers read "Propane delivered (gal)"');
-  assert(/Site EUI, annualized \(not weather-adjusted\)/.test(re19) && /National median<br>\(12-month,<br>kBtu\/ft&sup2;\/yr\)/.test(re19), 'p23 EUI table labels');
+  assert(/<h2>Site EUI, annualized<\/h2>/.test(re19) && /National median<br>\(12-month,<br>kBtu\/ft&sup2;\/yr\)/.test(re19), 'p23 EUI table labels');
   assert(/white-space:nowrap">' \+ shortMo\(first\)/.test(re19), 'p23 EUI header month range does not break at the dash');
   assert(/Electricity demand \(billed&nbsp;kW, sum of /.test(re19) && /wxYear \? BR \+ '\(' \+ wxYear \+ BR \+ 'weather\)'/.test(pt19), 'kW row and meter table labels');
   const T19 = run(ctx, '_rptQTerms')({ project: { blStart: 'January 2025', blEnd: 'December 2025' }, period: { year: 2026 } });
