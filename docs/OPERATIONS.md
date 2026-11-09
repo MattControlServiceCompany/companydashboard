@@ -1292,3 +1292,13 @@ No timer, no env var, no host change. All of it runs in the browser when a repor
 - Page 23 bottom rows: Measured Q1+Q2, Measured Q3, Total measured, then billed to date, difference (measured minus billed) and Savings billed to date.
 - Appendix A: Terms add the units, set point, Acct# and Site EUI (`_rptQTerms`, app/report-engine.js). The text does not spell out "kilowatt" (a standing rule of `tools/test-report-units-no-next-steps.js`).
 - Check: `node tools/test-report-q3-review-findings.js` (section 19), `node tools/test-report-page-packing.js`, `node tools/test-report-word-table-widths.js`, `node tools/test-report-table-fit.js`. In the report preview: 31 pages, page 22 holds the gas and propane tables, page 1 months add to -$6,496.
+
+## Quarterly report: use change equals the printed numbers (2026-11-08, version v2026.11.08.253)
+
+No timer, no env var, no host change. It runs in the browser when a report preview or a Word export is built. No savings formula, stored bill value or cost basis changes. A presented (frozen) report keeps its printed figures.
+
+- Use change (`_rptUseChange`, app/report-engine.js:2696): the printed actual minus the printed baseline, each as `Math.round` of its own value (the same rounding as `_rptQN`). Building Summary, the fuel total line, the kW table and Appendix B call it, in month rows and in Total rows (pass the total baseline and total actual). This replaces the v252 rule (rounded exact difference), which could differ by 1 from the two numbers beside it.
+- Meter tables (lib/perf-table.js, report mode, not a presented report): the saved column (`kWh saved`, `Therms saved`, `gal saved`) is printed baseline minus printed actual per month; the Total row is the printed total baseline minus the printed total actual. The percent stays from the exact values. The tab (site) table keeps the exact value.
+- Year-to-Date (app/report-engine.js, Total measured block): the billed figure is one row, "Savings billed to date (Q1+Q2, presented to the district)", under "Difference (measured minus billed)".
+- Appendix A Terms: "Contract time elapsed". Degree Days table: an empty cell is an em dash. Summary by Building (page 5): fixed layout with widths (colgroup and `data-dx-widths`), Period cells do not wrap.
+- Check: `node tools/test-report-q3-review-findings.js` (section 20: example cells and a scan of every change column), `node tools/test-report-page-packing.js`, `node tools/test-report-word-table-widths.js`. In the preview: an example month of gas: baseline 536, actual 809, change +273; an example Total row: 167,676, 229,993, +62,317.

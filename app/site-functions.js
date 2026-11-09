@@ -2507,6 +2507,13 @@ async function siteResetAllMeterTableSettings() {
    site-ui.js delegates to this array and should NOT maintain its own copy.
 */
 var RELEASE_NOTES = [
+  { v: 'v2026.11.08.253', date: '2026-11-08', title: 'Quarterly report: use change fixes',
+    items: [
+      { type: 'fix', text: 'Reports > Quarterly report, Building Summary, Meter Performance and Appendix B pages: every use change equals the actual use minus the baseline use printed beside it, in each month and in each Total row.' },
+      { type: 'fix', text: 'Reports > Quarterly report, Year-to-Date page: the billed to date figure prints once, with the difference above it.' },
+      { type: 'fix', text: 'Reports > Quarterly report, Savings Performance page: the Period names in the Summary by Building table stay on one line. The Degree Days table prints a long dash in empty cells.' }
+    ]
+  },
   { v: 'v2026.11.08.252', date: '2026-11-08', title: 'Quarterly report: Q3 2026 review fixes',
     items: [
       { type: 'fix', text: 'Reports > Quarterly report, Cover and Year-to-Date pages: the three months add to the quarter total. Use changes print the same on every page.' },

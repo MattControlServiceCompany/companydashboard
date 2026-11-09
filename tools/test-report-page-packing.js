@@ -139,7 +139,7 @@ const ok = (c, m) => {
         if (nx && groupOf[nx.keys[0]] === groupOf[p.keys[0]]) {
           // The packer measures the page and the unit together (margins collapse) and adds the heading of the unit (lead) when the unit
           // follows other units; the check measures them together and keeps 8px for that heading.
-          if (_rptQMeasureH(p.bodyHtml + nx.firstHtml) <= RPT_Q_PAGE_BODY_PX - 8) out.waste.push(p.title + ' then ' + nx.title);
+          if (_rptQMeasureH(p.bodyHtml + (/^(<div[^>]*>)?<h[1-6][ >]/.test(nx.firstHtml) ? '' : '<h2>' + nx.title + '</h2>') + nx.firstHtml) <= RPT_Q_PAGE_BODY_PX - 8) out.waste.push(p.title + ' then ' + nx.title);
           if (p.h < RPT_Q_PAGE_BODY_PX / 2) out.low.push(p.title + ' ' + Math.round(p.h));
         }
       });

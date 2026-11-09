@@ -841,7 +841,7 @@ console.log('\n--- 19. v252 release: Q3 2026 report fixes ---');
   // Months add to the quarter total (one rule)
   const ms = run(ctx, '_rptMonthsShown')({ '2026-07': 8047.92, '2026-08': -5293.41, '2026-09': -9250.03 }, 3, -6496);
   assert(ms['2026-07'] === 8048 && ms['2026-08'] === -5294 && ms['2026-09'] === -9250 && ms['2026-07'] + ms['2026-08'] + ms['2026-09'] === -6496, 'the three printed months add to the quarter total -6,496 (one apportion rule)');
-  assert(run(ctx, '_rptUseChange')(100.4, 162.7) === 62 && run(ctx, '_rptUseChange')(0, 5) === 5, 'one use change rule: the rounded exact difference');
+  assert(run(ctx, '_rptUseChange')(100.4, 162.7) === 63 && run(ctx, '_rptUseChange')(0, 5) === 5, 'one use change rule: the printed actual minus the printed baseline (v253)');
   // One cost header source
   const ch = run(ctx, '_rptCostHeads')({ project: { blEnd: 'December 2025' }, period: { year: 2026 } });
   assert(/^Baseline cost<br>\(2025&nbsp;rates\)$/.test(ch.bl) && /^Actual cost<br>\(2026&nbsp;rates\)$/.test(ch.cur) && /^Savings measured<br>\(2026&nbsp;rates\)$/.test(ch.sav), 'cost headers name the rate year, from one function');
@@ -858,6 +858,51 @@ console.log('\n--- 19. v252 release: Q3 2026 report fixes ---');
   // Equivalents from the EPA calculator table
   assert(/EQUIV_SOURCE/.test(pol19) && /1 \/ 4\.29/.test(pol19) && /1 \/ 0\.43/.test(pol19) && /1 \/ 7\.45/.test(pol19) && /1 \/ 0\.022/.test(pol19), 'p6 equivalents use the EPA Calculations and References factors from one table');
   assert(/_RPT_Q_W_FUEL = \[25, /.test(re19), 'fuel detail tables give the Building column 25% or more');
+}
+
+console.log('\n--- 20. v253 release: every printed change equals printed actual minus printed baseline ---');
+{
+  const re20 = fs.readFileSync(path.join(REPO, 'app', 'report-engine.js'), 'utf8');
+  const uc = run(ctx, '_rptUseChange');
+  // The v253 example cells (fractions chosen so the shown values round as in the Q3 2026 report)
+  assert(uc(536.4, 808.6) === 273, 'p26 building 1 gas July 536 -> 809 prints +273');
+  assert(uc(1210.6, 1213.5) === 3, 'p27 building 2 gas August 1,211 -> 1,214 prints +3');
+  assert(uc(66874.6, 92390.4) === 25515, 'p27 building 2 kWh September 66,875 -> 92,390 prints +25,515');
+  assert(uc(43.4, 54.4) === 11 && uc(44.4, 58.6) === 15, 'p29 building 4 kW August 43 -> 54 prints +11; September 44 -> 59 prints +15');
+  assert(uc(129.4, 163.6) === 35, 'p29 building 4 kW total 129 -> 164 prints +35');
+  assert(uc(167675.6, 229992.5) === 62317, 'p29/p11/p14 building 5 kWh total 167,676 -> 229,993 prints +62,317');
+  assert(uc(781.7, 913.3) === 131, 'p30/p11 building 5 kW total 782 -> 913 prints +131');
+  // Every table of the generated report: change = shown actual - shown baseline ("saved" = baseline - actual)
+  const num = (t) => {
+    const x = String(t).replace(/<[^>]+>/g, '').replace(/&minus;|\u2212/g, '-').replace(/&nbsp;|\u00a0|[$,+\s]/g, '').replace(/&mdash;|\u2014/g, '');
+    return /^-?\d+(\.\d+)?$/.test(x) ? Number(x) : null;
+  };
+  const head = (t) => String(t).replace(/<br\s*\/?>/gi, ' ').replace(/<[^>]+>/g, '').replace(/&nbsp;|\u00a0/g, ' ').replace(/\s+/g, ' ').trim();
+  let checked = 0;
+  const bad = [];
+  (allHtml.match(/<table[\s\S]*?<\/table>/g) || []).forEach((tb) => {
+    const ths = (tb.match(/<th[\s\S]*?<\/th>/g) || []).map(head);
+    const bi = ths.findIndex((h) => /^Baseline (kWh|therms|gal|billed kW)/i.test(h) || /^Baseline$/i.test(h));
+    const ai = ths.findIndex((h) => /^Actual( |$)/.test(h) && !/cost/i.test(h));
+    const ci = ths.findIndex((h) => /^Use change( kWh| therms| gal| kW)?$/.test(h) || /^(kWh|Therms|gal|kW) saved$/i.test(h));
+    if (bi < 0 || ai < 0 || ci < 0) return;
+    const saved = /saved$/i.test(ths[ci]);
+    (tb.match(/<tr[\s\S]*?<\/tr>/g) || []).forEach((tr) => {
+      if (/<th/.test(tr)) return;
+      const cells = tr.match(/<td[\s\S]*?<\/td>/g) || [];
+      const b = num(cells[bi]), a = num(cells[ai]), c = num(cells[ci]);
+      if (b == null || a == null || c == null) return;
+      checked++;
+      if (c !== (saved ? b - a : a - b)) bad.push(head(cells[0]) + ': ' + b + ' ' + a + ' ' + c);
+    });
+  });
+  assert(checked >= 20, 'the change check read the Building Summary, meter and Appendix B rows (' + checked + ' rows)');
+  assert(bad.length === 0, 'every printed change equals the printed actual minus the printed baseline' + (bad.length ? ': ' + bad.slice(0, 5).join(' | ') : ''));
+  const sp20 = flat.replace(/\s+/g, ' ');
+  assert(!/Q1\+Q2 billed \(presented to the district\)/.test(sp20), 'p23: the billed figure is not printed twice (one row, on the last line)');
+  assert(/Contract time elapsed: \d+% of the contract period/.test(sp20), 'p25 Terms: "Contract time elapsed"');
+  assert(/white-space:nowrap;color:var\(--rpt-page-text\)/.test(re20) && /table-layout:fixed' : ''\) \+ '"' \+ \(_uq \? ' data-dx-widths="16,17,10,9,9,13,14,12"'/.test(re20), 'p5: the Period cells never wrap and the Period column has width');
+  assert(/\(x == null \? '&mdash;' : _rptQN\(x\)\)/.test(re20), 'p31 Degree Days: an empty cell is an em dash');
 }
 
 console.log('\n' + passed + ' passed, ' + failed + ' failed');

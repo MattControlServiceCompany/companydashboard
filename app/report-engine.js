@@ -2689,10 +2689,12 @@ function _rptMonthsShown(trueByYm, repQ, repTotal) {
   return out;
 }
 
-// _rptUseChange(bl, cur) - the ONE printed use change (v252): the whole number nearest to the exact difference (actual minus baseline).
-// A building page, a fuel total and the Appendix B tables print the same change for the same use (not a difference of two rounded values).
+// _rptUseChange(bl, cur) - the ONE printed use change (v253): the printed actual minus the printed baseline, each printed as
+// Math.round of its own value (_rptQN). So every change in the report equals the two numbers beside it, in a month row and in a
+// total row (pass the total baseline and actual). The use-change percent keeps the exact values.
+// The meter tables (lib/perf-table.js, report mode) apply the same rule to their saved column.
 function _rptUseChange(bl, cur) {
-  return Math.round((cur || 0) - (bl || 0));
+  return Math.round(cur || 0) - Math.round(bl || 0);
 }
 
 // _rptCostHeads(d) - the ONE source of the cost column names of the quarterly report (v252): the rate year in each name.
@@ -3358,7 +3360,7 @@ function _rptQEnergyPage(n, d, f) {
   var t = _rptQTerms(d);
   // Natural gas in total, with the buildings above and below baseline named (computed from the building rows).
   var gasWord = (function () {
-    var th = d.totals.thermsCur - d.totals.thermsBl;
+    var th = _rptUseChange(d.totals.thermsBl, d.totals.thermsCur);
     if (!(d.totals.thermsBl > 0) && !(d.totals.thermsCur > 0)) return '';
     var above = [],
       below = [],
@@ -3574,7 +3576,7 @@ function _rptQWeatherTable(d, f) {
       '</td>' +
       v
         .map(function (x) {
-          return '<td class="rpt-n">' + (x == null ? '-' : _rptQN(x)) + '</td>';
+          return '<td class="rpt-n">' + (x == null ? '&mdash;' : _rptQN(x)) + '</td>';
         })
         .join('') +
       '</tr>';
@@ -4256,7 +4258,7 @@ function _rptQMethodPage(n, d, f, letter) {
     '<h2>Terms</h2>' +
     '<ul style="margin:2px 0 4px 20px;padding:0;font-size:13px;line-height:1.35">' +
     [t.baseline, t.measured, t.billed, t.target, t.degreeDays, t.billedKw, t.facilitiesKw, t.normalized, t.loadFactor, t.eui, t.units, t.setPoint].map(li).join('') +
-    li('Contract period: ' + _rptContractPeriodText(d) + '. Contract progress: ' + _rptContractProgressText(d) + '.') +
+    li('Contract period: ' + _rptContractPeriodText(d) + '. Contract time elapsed: ' + _rptContractProgressText(d) + '.') +
     '</ul>';
   var title = (letter ? 'Appendix ' + letter + ': ' : '') + 'How Savings Are Measured';
   return rptPage(n, title, body, { data: d, letterhead: false, label: 'Page ' + n + ' - Method' });
@@ -6425,7 +6427,7 @@ function rptPageSavingsPerformance(n, d) {
         '" contenteditable="true">' +
         _escHtml(b.name || '—') +
         '</td>' +
-        '<td contenteditable="true" style="color:var(--rpt-page-text)">' +
+        '<td contenteditable="true" style="white-space:nowrap;color:var(--rpt-page-text)">' +
         blYearLabel +
         '</td>' +
         '<td class="rpt-n" contenteditable="true">' +
@@ -6451,7 +6453,7 @@ function rptPageSavingsPerformance(n, d) {
         rowBg +
         '">' +
         /* name <td> omitted -- rowspan="2" on row 1 covers column 1 for this building */
-        '<td contenteditable="true" style="color:var(--rpt-blue);font-weight:600">' +
+        '<td contenteditable="true" style="white-space:nowrap;color:var(--rpt-blue);font-weight:600">' +
         curYrLabel +
         '</td>' +
         '<td class="rpt-n" contenteditable="true">' +
@@ -6483,7 +6485,8 @@ function rptPageSavingsPerformance(n, d) {
     .join('');
 
   const bldgTable =
-    '<table class="rpt-table" contenteditable="true" style="font-size:10px">' +
+    '<table class="rpt-table' + (_uq ? ' rpt-table-wrap' : '') + '" contenteditable="true" style="font-size:10px' + (_uq ? ';width:100%;table-layout:fixed' : '') + '"' + (_uq ? ' data-dx-widths="16,17,10,9,9,13,14,12"' : '') + '>' +
+    (_uq ? '<colgroup>' + [16, 17, 10, 9, 9, 13, 14, 12].map(function (w) { return '<col style="width:' + w + '%">'; }).join('') + '</colgroup>' : '') +
     '<thead><tr>' +
     '<th>Building</th>' +
     '<th>' + (_uq ? 'Period' : 'Year') + '</th>' +
@@ -8316,11 +8319,9 @@ function rptPageYearToDate(n, d) {
         _rows += _lineRow('Measured ' + _rptQuarterLabel(_repQ, periodYear).replace(' ' + periodYear, ''), _rowsRounded - _billedRows);
       }
       _rows += _totalRow('Total measured, ' + _rangeText, _rowsRounded);
-      if (_diff) {
-        _rows += _lineRow(_qsText + ' billed (presented to the district)', _billedQ);
-        _rows += _lineRow('Difference (measured minus billed), ' + _qsText, _diff);
-      }
-      _rows += '<tr class="rpt-tot"><td colspan="3">Savings billed to date</td>' + _rptQSavTd(_tSav) + '</tr>';
+      // The billed figure is printed once (v253), on the last row.
+      if (_diff) _rows += _lineRow('Difference (measured minus billed), ' + _qsText, _diff);
+      _rows += '<tr class="rpt-tot"><td colspan="3">Savings billed to date' + (_diff ? ' (' + _qsText + ', presented to the district)' : '') + '</td>' + _rptQSavTd(_tSav) + '</tr>';
     }
     trendTable =
       '<table class="rpt-table" style="font-size:10px"><thead><tr><th>Month</th><th class="rpt-n">' + (d.printed ? 'Baseline Cost' : _rptCostHeads(d).bl) + '</th><th class="rpt-n">' + (d.printed ? 'Actual Cost' : _rptCostHeads(d).cur) + '</th><th class="rpt-n">' + (d.printed ? 'Savings $' : _rptCostHeads(d).sav) + '</th></tr></thead><tbody>' +
