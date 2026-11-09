@@ -595,6 +595,9 @@ console.log('\n--- 13. model fit, wording, entered months, allocated target ---'
   // Old wording is gone from the whole quarterly report text (all sections) and from the report source (release notes keep their history)
   assert(!/weather[- ](adjusted|normali[sz]ed)/i.test(flat.replace(/not weather-adjusted/g, '')), 'the quarterly report, all sections, has no "weather-adjusted" or "weather normalized"');
   const reSrc = fs.readFileSync(path.join(REPO, 'app/report-engine.js'), 'utf8');
+  // Baseline cost = baseline use at the baseline-year rates, never the baseline-year bill amounts (Matt, 2026-11-09)
+  const _crd = reSrc.slice(reSrc.indexOf('function collectReportData'), reSrc.indexOf('function collectReportData') + 40000);
+  assert(/blCostOf = \(ym\) => _rptBaselineCostOfRow\(/.test(_crd) && !/_rptBaselineBillCostByCalMo\(/.test(_crd), 'report baseline cost is _rptBaselineCostOfRow (baseline use x baseline-year rate), never the baseline-year bill amounts');
   ['weather normalized', 'Savings target', 'Saved, below target', "'Met target'", 'Savings if remaining targets are met'].forEach((w) =>
     assert(reSrc.indexOf(w) < 0, 'report-engine.js no longer contains "' + w + '"'),
   );

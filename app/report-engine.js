@@ -75,6 +75,34 @@ function _rptBaselineBillCostByCalMo(m, bills, blMonths) {
   return out;
 }
 
+// _rptBaselineCostOfRow(m, bills, blMonths, row, ym) - the baseline cost of one report month of a meter: the baseline use of
+// the month (row = its getMeterSavings row: expUsage, blExpKW) at the baseline-year rate of the same calendar month
+// (getMonthBillRate over the baseline-year bills of that month). Electric adds baseline kW x the baseline-year kW rate on the
+// kW basis of the report month (kwBasisForYm), so it prices the same kW the savings compare. A month with no rate of its own
+// uses the rate of the whole baseline year. Display only: the savings never read it, and the baseline-year bill amounts are
+// never used (Matt, 2026-11-09: "We should not be looking at the 2025 bills actual cost ever").
+function _rptBaselineCostOfRow(m, bills, blMonths, row, ym) {
+  var mo = ym.split('-')[1];
+  var blYms = (blMonths || []).filter(function (x) {
+    return x.split('-')[1] === mo;
+  });
+  var inMonths = function (yms) {
+    return (bills || []).filter(function (b) {
+      return yms.indexOf(billMonth(b, bills)) >= 0;
+    });
+  };
+  var moBills = inMonths(blYms);
+  var yrBills = inMonths(blMonths || []);
+  var rateOf = function (type) {
+    return getMonthBillRate(moBills, type) || getMonthBillRate(yrBills, type) || 0;
+  };
+  var use = row.expUsage || 0;
+  if (m.commodity === 'Electric') return use * rateOf('kwh') + (row.blExpKW || 0) * rateOf(kwBasisForYm(ym) === 'actual' ? 'kwTotal' : 'kw');
+  if (m.commodity === 'Gas') return use * rateOf('gas');
+  if (m.commodity === 'Propane') return use * rateOf('propane');
+  return 0;
+}
+
 // _rptPropaneBlCostMap(pM, bills, blMonths) - the baseline month map of a propane meter with a price on every month that has
 // gallons (display only; the savings never read it). The baseline gallons of a month can come from the delivery spread or the
 // weather fit with no delivery cost in that month, so the cost reads $0. Such a month is priced at the all-in $/gal of the
@@ -453,15 +481,6 @@ function collectReportData(projId, buildingIds, reportDateStr, reportType, selec
         });
       }
 
-      // Baseline cost by calendar month (display only; the savings never read it): the energy charges of the baseline-year
-      // bills, the same charge set as the actual cost (_rptBillAmount). Propane keeps its month map (_rptPropaneBlCostMap).
-      const blCostByCalMo = isPropane
-        ? Object.keys(pM).reduce((o, mo) => {
-            o[mo] = pM[mo].cost || 0;
-            return o;
-          }, {})
-        : _rptBaselineBillCostByCalMo(m, bills, bl.months);
-
       // Actual cost savings + per-ym unit savings from single source of truth
       const meterSav = getMeterSavings(m, bills, incl, projId, b.id);
       const meterSavByYM = meterSav.byYM;
@@ -470,6 +489,10 @@ function collectReportData(projId, buildingIds, reportDateStr, reportType, selec
       meterSav.rows.forEach((row) => {
         meterRowByYM[row.ym] = row;
       });
+      // Baseline cost of a month (display only; the savings never read it): the baseline use of the month (the same row the
+      // savings use) at the baseline-year rates of the same calendar month (_rptBaselineCostOfRow). Never the baseline-year bill
+      // amounts (Matt, 2026-11-09).
+      const blCostOf = (ym) => _rptBaselineCostOfRow(m, bills, bl.months, meterRowByYM[ym] || {}, ym);
 
       // Process post-baseline rows within the reporting period
       postRows.forEach((r) => {
@@ -507,7 +530,7 @@ function collectReportData(projId, buildingIds, reportDateStr, reportType, selec
           elecMonthly[r.ym].cur += actKwh;
           elecMonthly[r.ym].kwBl += blExpKW;
           elecMonthly[r.ym].kwCur += actBilKW;
-          elecMonthly[r.ym].blCost += blCostByCalMo[calMo] || 0;
+          elecMonthly[r.ym].blCost += blCostOf(r.ym);
           elecMonthly[r.ym].curCost += billedAmt;
           elecMonthly[r.ym].savings += totalCostSav;
           elecMonthly[r.ym].formulaSav += _savRow.formulaSavings != null ? _savRow.formulaSavings : totalCostSav;
@@ -518,7 +541,7 @@ function collectReportData(projId, buildingIds, reportDateStr, reportType, selec
             elec.kwhSaved += expUsage - actKwh;
             elec.kwBl += blExpKW;
             elec.kwCur += actBilKW;
-            elec.costBl += blCostByCalMo[calMo] || 0;
+            elec.costBl += blCostOf(r.ym);
             elec.costCur += billedAmt;
             elec.costSaved += totalCostSav;
             elec.kwCostSaved += _savRow.kwCostSav || 0;
@@ -530,7 +553,7 @@ function collectReportData(projId, buildingIds, reportDateStr, reportType, selec
           if (!propaneMonthly[r.ym]) propaneMonthly[r.ym] = { bl: 0, cur: 0, blCost: 0, curCost: 0, savings: 0, formulaSav: 0 };
           propaneMonthly[r.ym].bl += expUsage;
           propaneMonthly[r.ym].cur += actUsage;
-          propaneMonthly[r.ym].blCost += blCostByCalMo[calMo] || 0;
+          propaneMonthly[r.ym].blCost += blCostOf(r.ym);
           propaneMonthly[r.ym].curCost += propBilledAmt;
           propaneMonthly[r.ym].savings += totalCostSav;
           propaneMonthly[r.ym].formulaSav += _savRow.formulaSavings != null ? _savRow.formulaSavings : totalCostSav;
@@ -539,7 +562,7 @@ function collectReportData(projId, buildingIds, reportDateStr, reportType, selec
             propane.galBl += expUsage;
             propane.galCur += actUsage;
             propane.galSaved += expUsage - actUsage;
-            propane.costBl += blCostByCalMo[calMo] || 0;
+            propane.costBl += blCostOf(r.ym);
             propane.costCur += propBilledAmt;
             propane.costSaved += totalCostSav;
           }
@@ -551,7 +574,7 @@ function collectReportData(projId, buildingIds, reportDateStr, reportType, selec
           if (!gasMonthly[r.ym]) gasMonthly[r.ym] = { bl: 0, cur: 0, blCost: 0, curCost: 0, savings: 0, formulaSav: 0 };
           gasMonthly[r.ym].bl += expUsage;
           gasMonthly[r.ym].cur += actTherms;
-          gasMonthly[r.ym].blCost += blCostByCalMo[calMo] || 0;
+          gasMonthly[r.ym].blCost += blCostOf(r.ym);
           gasMonthly[r.ym].curCost += actThermCost;
           gasMonthly[r.ym].savings += totalCostSav;
           gasMonthly[r.ym].formulaSav += _savRow.formulaSavings != null ? _savRow.formulaSavings : totalCostSav;
@@ -560,7 +583,7 @@ function collectReportData(projId, buildingIds, reportDateStr, reportType, selec
             gas.thermsBl += expUsage;
             gas.thermsCur += actTherms;
             gas.thermsSaved += expUsage - actTherms;
-            gas.costBl += blCostByCalMo[calMo] || 0;
+            gas.costBl += blCostOf(r.ym);
             gas.costCur += actThermCost;
             gas.costSaved += totalCostSav;
           }
@@ -2933,7 +2956,7 @@ function _rptQTerms(d) {
     eui: 'Energy use intensity (EUI) is the energy use in kBtu per square foot. A quarterly EUI covers only the quarter and is not annualized. For Site EUI, the baseline uses the weather-model use at the ' + ((d.period && d.period.year ? d.period.year : 0) - 1) + ' weather and the actual uses the billed use.',
     units: 'The unit kWh is electricity use, kW is electricity demand, a therm is 100,000 Btu of natural gas, and gal is a gallon of propane delivered. kBtu/ft&sup2; is a thousand Btu for each square foot of floor area.',
     setPoint: 'A set point is the temperature the control system holds in a space. Acct# is the account number of the utility meter on the bill.',
-    baselineCost: 'Baseline cost is the sum of the energy charges billed for the same months of ' + ((d.period && d.period.year ? d.period.year : 0) - 1) + '.',
+    baselineCost: 'Baseline cost is the baseline use (with baseline kW) at the rates of the same months of ' + ((d.period && d.period.year ? d.period.year : 0) - 1) + '.',
     actualCost: 'Actual cost is the same sum for ' + (d.period && d.period.year ? d.period.year : 0) + '.',
     targetCost: 'Target cost is baseline cost less the allocated target.',
     belowTarget: 'Below Target means the savings measured are below the allocated target.',
@@ -4150,8 +4173,7 @@ function _rptQMonthChartSVG(panels, colors) {
 
 // Electric, gas and propane detail pages (quarterly layout): a chart of the months and a table by building.
 // Savings are the building parts the other pages print (f.parts). Actual cost = the utility bill amounts of the
-// building and fuel (the amounts the bills table prints). Baseline cost = actual cost + savings: the same
-// definition as the percent note (what the utility bills would have been with no savings), so each row adds across.
+// building and fuel (the amounts the bills table prints). Baseline cost = baseline use at the baseline-year rates (_rptBaselineCostOfRow).
 // _rptQFuelDetailPages(n, d, f, kind): the Use Detail section of one fuel ('electric', 'gas', 'propane'): the chart and the
 // by-building table, then the table of its meters (each named by _rptMeterLabel). The meter table goes on a second page when
 // it does not fit under the first table (_rptQBodyFits). Returns { html, pageCount }.

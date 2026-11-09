@@ -2507,6 +2507,11 @@ async function siteResetAllMeterTableSettings() {
    site-ui.js delegates to this array and should NOT maintain its own copy.
 */
 var RELEASE_NOTES = [
+  { v: 'v2026.11.09.262', date: '2026-11-09', title: 'Quarterly report: baseline cost at baseline use',
+    items: [
+      { type: 'fix', text: 'Reports > Quarterly report: baseline cost is the baseline use and baseline kW at the rates of the same months of 2025, not the 2025 bill amounts. The savings do not change.' }
+    ]
+  },
   { v: 'v2026.11.09.261', date: '2026-11-09', title: 'Quarterly report: Q3 2026 kW savings on Actual kW',
     items: [
       { type: 'fix', text: 'Reports > Quarterly report, Q3 2026 on: kW savings compare the baseline kW with the Actual kW of each bill. The baseline kW uses the cooling degree days of the same month of 2025. The kW rate adds the demand, TDC and facilities charges, each over its own kW. Q1 and Q2 do not change.' },
