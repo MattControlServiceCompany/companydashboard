@@ -2956,7 +2956,7 @@ function _rptQTerms(d) {
     eui: 'Energy use intensity (EUI) is the energy use in kBtu per square foot. A quarterly EUI covers only the quarter and is not annualized. For Site EUI, the baseline uses the weather-model use at the ' + ((d.period && d.period.year ? d.period.year : 0) - 1) + ' weather and the actual uses the billed use.',
     units: 'The unit kWh is electricity use, kW is electricity demand, a therm is 100,000 Btu of natural gas, and gal is a gallon of propane delivered. kBtu/ft&sup2; is a thousand Btu for each square foot of floor area.',
     setPoint: 'A set point is the temperature the control system holds in a space. Acct# is the account number of the utility meter on the bill.',
-    baselineCost: 'Baseline cost is the baseline use (with baseline kW) at the rates of the same months of ' + ((d.period && d.period.year ? d.period.year : 0) - 1) + '.',
+    baselineCost: 'Baseline cost is the baseline use and kW at the rates of the same months of ' + ((d.period && d.period.year ? d.period.year : 0) - 1) + '.',
     actualCost: 'Actual cost is the same sum for ' + (d.period && d.period.year ? d.period.year : 0) + '.',
     targetCost: 'Target cost is baseline cost less the allocated target.',
     belowTarget: 'Below Target means the savings measured are below the allocated target.',
