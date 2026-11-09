@@ -264,9 +264,10 @@ const loadFixture = (shiftYears, costFactor) => {
 };
 const baseYear = Number(BASE_JSON.match(/"baseline":\{"months":\["(\d{4})/)[1]);
 const eachMonth = (d, fn) => d.buildings.forEach((b) => fuels.forEach((k) => ((b[k] && b[k].monthly) || []).filter((m) => d.period.yearMonths.indexOf(m.month) >= 0).forEach((m) => fn(b, k, m))));
-const baseCost = (c, b, k, calMo) => {
+// Baseline-year rate of a calendar month: the building's baseline-month bills of that month, read by getMonthBillRate.
+const baseRate = (c, b, k, calMo) => {
   const com = k === 'electric' ? 'Electric' : k === 'gas' ? 'Gas' : 'Propane';
-  return run(c, '(function(){var ub=getUDBldg(' + PROJ + ',"' + b.id + '");var t=0;ub.meters.forEach(function(m){if(m.commodity!=="' + com + '"||m.baselineInclude===false)return;(m.baseline.months||[]).forEach(function(ym){if(ym.slice(5,7)!=="' + calMo + '")return;(m.bills||[]).forEach(function(bl){if(billMonth(bl,m.bills)!==ym)return;t+=parseFloat(bl.totalCost)||0;});});});return t;})()');
+  return run(c, '(function(){var ub=getUDBldg(' + PROJ + ',"' + b.id + '");var bs=[];ub.meters.forEach(function(m){if(m.commodity!=="' + com + '"||m.baselineInclude===false)return;(m.baseline.months||[]).forEach(function(ym){if(ym.slice(5,7)!=="' + calMo + '")return;(m.bills||[]).forEach(function(bl){if(billMonth(bl,m.bills)===ym)bs.push(bl);});});});return getMonthBillRate(bs,"' + k + '");})()');
 };
 let nonZero = 0;
 [0, 2].forEach((shift) => {
@@ -300,25 +301,25 @@ let nonZero = 0;
     assert(Math.abs(a.buildings.reduce((s, b) => s + b.savings, 0) - b2.buildings.reduce((s, b) => s + b.savings, 0)) <= 0.005, 'total savings unchanged when baseline bill costs x3');
     assert(n > 0, 'months checked: ' + n);
   });
-  console.log('\n--- (b) baseline cost = cost of the baseline-month bills of that calendar month' + tag + ' ---');
+  console.log('\n--- (b) baseline cost = baseline use x the baseline-year rate of that calendar month' + tag + ' ---');
   // Propane has its own baseline-cost rule (delivery based); it is checked only for the sum rule below.
   [[ctxA, A], [ctxB, B]].forEach(([c, set], ci) => {
     set.forEach((d, i) => {
       let n = 0, bad = 0;
       eachMonth(d, (b, k, m) => {
         if (k === 'propane') return;
-        const want = k === 'gas' ? baseCost(c, b, k, m.month.slice(5, 7)) : null;
+        const want = k === 'gas' ? m.bl * baseRate(c, b, k, m.month.slice(5, 7)) : null;
         if (want == null) return;
         n++;
-        if (Math.abs(m.blCost - want) > 0.01) { bad++; console.log('  FAIL ' + b.name + ' ' + k + ' ' + m.month + ': baseline cost ' + m.blCost + ' vs baseline-month bills ' + want); }
+        if (Math.abs(m.blCost - want) > 0.01) { bad++; console.log('  FAIL ' + b.name + ' ' + k + ' ' + m.month + ': baseline cost ' + m.blCost + ' vs baseline use x baseline-year rate ' + want); }
       });
-      assert(bad === 0 && n > 0, (ci ? 'baseline costs x3, ' : '') + 'Q' + (i + 1) + ': gas baseline cost of every month = the baseline-month bill cost (' + n + ' building-months)');
+      assert(bad === 0 && n > 0, (ci ? 'baseline costs x3, ' : '') + 'Q' + (i + 1) + ': gas baseline cost of every month = baseline use x baseline-year rate (' + n + ' building-months)');
       d.buildings.forEach((b) => assert(Math.abs(b.blCost - fuels.reduce((s, k) => s + (b[k] ? b[k].monthly.filter((m) => d.period.yearMonths.indexOf(m.month) >= 0).reduce((t, m) => t + m.blCost, 0) : 0), 0)) <= 0.01, b.name + ': building baseline cost = its months added'));
       assert(Math.abs(d.totals.blCost - d.buildings.reduce((s, b) => s + b.blCost, 0)) <= 0.01, 'Q' + (i + 1) + ': total baseline cost = the buildings added');
     });
   });
   const sumBl = (set) => set[1].buildings.reduce((s, b) => s + b.gas.costBl, 0);
-  assert(sumBl(B) > 2.9 * sumBl(A) && sumBl(B) < 3.1 * sumBl(A), 'the displayed baseline cost follows the baseline-month bills (x3 in, x3 out)');
+  assert(sumBl(B) > 2.9 * sumBl(A) && sumBl(B) < 3.1 * sumBl(A), 'the displayed baseline cost follows the baseline-year rate (bill costs x3 in, x3 out)');
 });
 assert(nonZero > 0, 'the fixture has months with savings other than $0 (' + nonZero + ')');
 

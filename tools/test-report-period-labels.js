@@ -21,6 +21,9 @@ vm.createContext(ctx);
 ['_rptUnit', '_rptQuarterLabel', '_rptPeriodWords', '_rptContractProjection', '_rptBldgCostShown', '_rptQSavCls', '_rptPctBasisText', '_rptCostHeads', '_rptQNote', '_rptBilledToDate', '_rptBuildingTarget', '_rptResultKind', '_rptUnpresentedQuarter', '_rptMeasuredTotal', '_rptMeasuredPct', '_rptResultOf', '_rptResultVar', 'rptPageFinancial', '_rptCountWord', '_rptEuiPct', '_rptShown', '_rptShownCompute', '_rptShownUse', '_rptShownMonthUse', '_rptShownPortfolio', '_rptShownMeterUse', '_rptShownMonthSum', '_rptShownCost', '_rptShownCostColumn', '_rptShownBaselineMonths'].forEach((n) => vm.runInContext(grab(n), ctx));
 vm.runInContext("var _RPT_SHOWN_FUELS = [{ k: 'electric', com: 'Electric', series: { bl: ['kwhBl', 'bl'], cur: ['kwhCur', 'cur'], kwBl: ['kwBl', 'kwBl'], kwCur: ['kwCur', 'kwCur'] } }, { k: 'gas', com: 'Gas', series: { bl: ['thermsBl', 'bl'], cur: ['thermsCur', 'cur'] } }, { k: 'propane', com: 'Propane', series: { bl: ['galBl', 'bl'], cur: ['galCur', 'cur'] } }]; var _rptShownMemo = typeof WeakMap === 'function' ? new WeakMap() : null;", ctx);
 
+// The Savings to Date vs Projected table needs the full report data; tools/test-report-q3-review-findings.js checks it on real data.
+vm.runInContext("function _rptQFacts() { return {}; } function _rptQSavingsToDateTable() { return '<table></table>'; }", ctx);
+
 function data(type) {
   const b = { name: 'Bldg A', sqft: 1000, blCost: 1000, curCost: 800, savings: 200, savingsPct: 20, status: 'on_track' };
   return {
@@ -42,6 +45,7 @@ ok(/Percent saved = savings (÷|&divide;) baseline cost/.test(a), 'annual Financ
 ok(!/Annualized/.test(a), 'annual CSC table has no Annualized column');
 ok(/3-Year Total/.test(a), 'annual CSC table keeps 3-Year Total');
 ok(/<h2>Quarterly Use and Cost vs Baseline<\/h2>/.test(q), 'quarterly heading names use and cost (quarter not presented)');
+ok(/<h2>Savings to Date vs Projected<\/h2>/.test(q), 'quarterly Financial Summary prints Savings to Date vs Projected (quarter not presented)');
 ok(/>Quarter</.test(q) && /Year 1/.test(q) && /3-Year total/.test(q), 'quarterly columns: Quarter, Year 1, 3-Year total');
 console.log(fails ? 'FAILED ' + fails : 'ALL PASSED');
 process.exit(fails ? 1 : 0);
