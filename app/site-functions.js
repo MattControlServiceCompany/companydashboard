@@ -2507,6 +2507,15 @@ async function siteResetAllMeterTableSettings() {
    site-ui.js delegates to this array and should NOT maintain its own copy.
 */
 var RELEASE_NOTES = [
+  { v: 'v2026.11.08.252', date: '2026-11-08', title: 'Quarterly report: Q3 2026 review fixes',
+    items: [
+      { type: 'fix', text: 'Reports > Quarterly report, Cover and Year-to-Date pages: the three months add to the quarter total. Use changes print the same on every page.' },
+      { type: 'fix', text: 'Reports > Quarterly report, Savings Performance page: the monthly cost chart scales to its largest value and the actual bars are navy.' },
+      { type: 'fix', text: 'Reports > Quarterly report, Environmental Impact page: the equivalents use the current EPA Greenhouse Gas Equivalencies Calculator factors, and the source line names them.' },
+      { type: 'fix', text: 'Reports > Quarterly report: cost columns name their rate year, propane columns read "Propane delivered (gal)", and the Appendix A terms define the units.' },
+      { type: 'fix', text: 'Reports > Quarterly report, Use Detail pages: the Building column is wider. The Year-to-Date rows add line by line to the total.' }
+    ]
+  },
   { v: 'v2026.11.08.251', date: '2026-11-08', title: 'Quarterly report: small display fixes',
     items: [
       { type: 'fix', text: 'Reports > Quarterly report, Energy Use Intensity page: the line "No approved changes in 2026." under the Year-to-Date table is gone (the Approved Changes page states it).' },

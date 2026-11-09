@@ -149,21 +149,22 @@ var EGRID_FACTORS = {
   WY: { co2: 1.8203, ch4: 0.000195, n2o: 0.000028, so2: 0.001113, nox: 0.0012 },
 };
 
-// Equivalency factors: per metric ton CO2-equivalent
-// Source: EPA Greenhouse Gas Equivalencies Calculator (updated to 2023 values)
-// https://www.epa.gov/energy/greenhouse-gas-equivalencies-calculator
+// Equivalency factors: per metric ton CO2-equivalent. ONE table. Source: EPA Greenhouse Gas Equivalencies Calculator,
+// "Calculations and References" (https://www.epa.gov/energy/greenhouse-gas-equivalencies-calculator-calculations-and-references,
+// page last updated August 4, 2026; read 2026-11-08). Each factor is 1 / (metric tons CO2e of one unit) as the page states it.
+var EQUIV_SOURCE = 'EPA Greenhouse Gas Equivalencies Calculator, Calculations and References (page updated August 4, 2026)';
 var EQUIV_PER_MT_CO2E = {
-  carsRemoved: 1 / 4.65, // EPA 2023: 4.65 MT CO2e/vehicle/year (was 5.23, older EPA value)
-  gallonsGasoline: 1 / 0.00889, // EPA current: unchanged
-  tankerTrucks: 1 / 74.89,
-  barrelsOil: 2.11,
-  households: 1 / 7.46, // EPA 2023: 7.46 MT CO2e/household (was 7.7, older EPA value)
-  treeSeedlings: 17, // EPA current: ~17 trees/MT (was 23, older EPA value)
-  acresForest: 1.099, // EPA current: 1.099 acres/MT (0.91 MT/acre/yr); was 0.0074 which was erroneous
-  railcarsCoal: 0.0046,
-  tonsRecycled: 1 / 2.97,
-  propaneCylinders: 1 / 0.054,
-  coalPlants: 1 / 3850479,
+  carsRemoved: 1 / 4.29, // 4.29 metric tons CO2e per gasoline passenger vehicle per year
+  gallonsGasoline: 1 / 0.008887, // 8.887e-3 metric tons CO2 per gallon of gasoline
+  tankerTrucks: 1 / 75.54, // 75.54 metric tons CO2 per tanker truck (8,500 gal) of gasoline
+  barrelsOil: 1 / 0.43, // 0.43 metric tons CO2 per barrel of oil
+  households: 1 / 7.45, // 7.45 metric tons CO2 per home per year of energy use
+  treeSeedlings: 1 / 0.06, // 0.060 metric ton CO2 per urban tree seedling grown for 10 years
+  acresForest: 1 / 1.0, // 1.00 metric ton CO2 per acre of U.S. forest per year
+  railcarsCoal: 1 / 180.4, // 180.4 metric tons CO2 per railcar of coal
+  tonsRecycled: 1 / 2.83, // 2.83 metric tons CO2e per ton of waste recycled instead of landfilled
+  propaneCylinders: 1 / 0.022, // 0.022 metric ton CO2 per 16 lb propane cylinder for a home barbecue
+  coalPlants: 1 / 3790003.72, // 3,790,003.72 metric tons CO2 per coal-fired power plant per year
 };
 
 // GWP (Global Warming Potential, 100-year) multipliers for CO2-equivalent.
@@ -179,11 +180,11 @@ function emissionsChangeText(avoided) {
   if (!v) return '0';
   return (v > 0 ? '+' : '-') + Math.abs(v).toLocaleString('en-US');
 }
-// "Energy use compared with baseline: electricity +107,310 kWh, natural gas -222 therms, propane -24 gal".
+// "Energy use changed against baseline: electricity +107,310 kWh, natural gas -222 therms, propane -24 gal".
 // Inputs are the SAVED amounts (positive = less use), so the shown sign is the use change.
 function energyUseChangeLine(kwhSaved, thermsSaved, galSaved) {
   return (
-    'Energy use compared with baseline: electricity ' + emissionsChangeText(kwhSaved) + ' kWh, natural gas ' +
+    'Energy use changed against baseline: electricity ' + emissionsChangeText(kwhSaved) + ' kWh, natural gas ' +
     emissionsChangeText(thermsSaved) + ' therms, propane ' + emissionsChangeText(galSaved) + ' gal'
   );
 }

@@ -1278,3 +1278,17 @@ No timer, no env var, no host change. All of it runs in the browser when a repor
 - Baseline Data (app/calculators.js:858, :869): an empty average price cell prints a dash, never "n/a".
 - Word (app/docx-writer.js:1971, `_docxColumnMinWidths`): a no-break space joins two words into one piece, so "billed kW" keeps its width. The Electricity by Building table carries `data-dx-fscale="0.95"` (app/report-engine.js:3972) so every column fits at the minimum widths.
 - Check: `node tools/test-report-q3-review-findings.js` (section 18), `node tools/test-report-page-packing.js`, `node tools/test-report-word-table-widths.js`. In Word: page 21 header "Baseline billed kW" is on two lines, none ends in "k".
+
+## Quarterly report: Q3 2026 report fixes (2026-11-08, version v2026.11.08.252)
+
+No timer, no env var, no host change. All of it runs in the browser when a report preview or a Word export is built. No savings formula, stored bill value or cost basis changes. A presented (frozen) report keeps its old branches.
+
+- Printed months (`_rptMonthsShown`, app/report-engine.js:2668): the months of one quarter are apportioned (`_rptApportion`, largest fraction first) to the quarter total, so the months on pages 1 and 23 add to the printed quarter (Q3 -$6,496 = $8,048 - $5,294 - $9,250). This replaces the "each month is its own round" rule of v245 for the unpresented quarter.
+- Use change (`_rptUseChange`, :2694): the rounded exact difference (actual minus baseline). Building Summary, fuel detail and Appendix B call it, so one use prints one change on every page.
+- Cost column names (`_rptCostHeads`, :2701): the rate year is in the name ("Baseline cost (2025 rates)", "Actual cost (2026 rates)", "Savings measured (2026 rates)"). Pages 3, 4, 5, 21, 22 and 23 call it. No second copy of these words.
+- Propane headers: `_rptQThSameCase` (:4475) writes "Propane delivered (gal)" for any "Propane Gal" header (Building Summary, Baseline Data, fuel detail).
+- Equivalents (computations/pollution.js:155): `EQUIV_PER_MT_CO2E` holds the factors of the EPA Greenhouse Gas Equivalencies Calculator "Calculations and References" page (updated August 4, 2026); `EQUIV_SOURCE` is the text printed on page 6. The count is the metric tons of CO2e times the factor, rounded up (existing rule).
+- Fuel detail widths: `_RPT_Q_W_FUEL`, `_RPT_Q_W_FUEL_ELEC`, `_RPT_Q_W_METERS` (:2578-2580) and the Word widths `_RPT_Q_WDX_*` give the Building column room. `tools/test-report-word-table-widths.js` pins the Word widths.
+- Page 23 bottom rows: Measured Q1+Q2, Measured Q3, Total measured, then billed to date, difference (measured minus billed) and Savings billed to date.
+- Appendix A: Terms add the units, set point, Acct# and Site EUI (`_rptQTerms`, app/report-engine.js). The text does not spell out "kilowatt" (a standing rule of `tools/test-report-units-no-next-steps.js`).
+- Check: `node tools/test-report-q3-review-findings.js` (section 19), `node tools/test-report-page-packing.js`, `node tools/test-report-word-table-widths.js`, `node tools/test-report-table-fit.js`. In the report preview: 31 pages, page 22 holds the gas and propane tables, page 1 months add to -$6,496.

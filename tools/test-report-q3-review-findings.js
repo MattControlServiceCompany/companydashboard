@@ -432,7 +432,7 @@ console.log('\n--- 11. Manager decisions 1-7 ---');
   assert(/The billed kW baseline of a month is the meter's model of billed kW on cooling degree days, evaluated at the cooling degree days of the month reported/.test(sp), 'Appendix A states the kW method (cooling degree days of the month reported)');
   assert(!/that month's weather/.test(sp), 'the wrong "that month\'s weather" wording is gone');
   assert(/Baseline is the \d{4} use in the same month/.test(sp) && /Savings billed is the amount invoiced under the contract/.test(sp), 'page 1 defines baseline and savings billed in plain words');
-  assert(/it comes from the weather model of the meter, [A-Za-z]+ \d{4} through [A-Za-z]+ \d{4}, at the \d{4} weather \(billed kW: the weather of the month reported\)\./.test(sp) && !/weather normalized|weather-adjusted|adjusted for weather/.test(sp), 'baseline term: "a weather model of the use of the meter, <start> through <end>, evaluated at the <year> weather"; the words "weather normalized" and "weather-adjusted" are gone');
+  assert(/it comes from the weather model of the meter, [A-Za-z]+ \d{4} through [A-Za-z]+ \d{4}, at the \d{4} weather \(billed kW: the weather of the month reported\)\./.test(sp) && !/weather normalized|adjusted for weather/.test(sp) && !/weather-adjusted/.test(sp.replace(/not weather-adjusted/g, '')), 'baseline term: "a weather model of the use of the meter, <start> through <end>, evaluated at the <year> weather"; the words "weather normalized" and "weather-adjusted" are gone');
   assert(/Billed kW is the demand, in kW, that the utility bills for the month\./.test(sp) && !/highest power draw/.test(sp), 'billed kW term: "the demand, in kW, that the utility bills for the month"');
   assert(!/(Baseline|Actual) kW|peak demand/i.test(sp), 'no "Baseline kW", "Actual kW" or "peak demand" label');
   assert(!/rounded once from the unrounded value|differ from a total by/.test(sp), 'page 2 carries no rounding note (controlled rounding)');
@@ -575,7 +575,7 @@ console.log('\n--- 13. model fit, wording, entered months, allocated target ---'
   const dC = pageData();
   dC.buildings.forEach((b) => { b.type = 'K-12 School'; b.eui = { baseline: 50, current: 48, cbecs: 48.5 }; });
   const benchK = plain(run(ctx, '_rptQMethodPage')(10, dC, f, 'A'));
-  assert(/National median, K-12 schools: 48\.5 kBtu\/ft²\/yr, from the U\.S\. Energy Information Administration 2012 Commercial Buildings Energy Consumption Survey \(CBECS\), as published in the ENERGY STAR Portfolio Manager U\.S\. national median table/.test(benchK), 'benchmark note names the 2012 CBECS and the ENERGY STAR table for K-12 at 48.5: ' + benchK.slice(benchK.indexOf('National median'), benchK.indexOf('National median') + 260));
+  assert(/National median\. K-12 schools: 48\.5 kBtu\/ft²\/yr, from the U\.S\. Energy Information Administration 2012 Commercial Buildings Energy Consumption Survey \(CBECS\), as published in the ENERGY STAR Portfolio Manager U\.S\. national median table/.test(benchK), 'benchmark note names the 2012 CBECS and the ENERGY STAR table for K-12 at 48.5: ' + benchK.slice(benchK.indexOf('National median'), benchK.indexOf('National median') + 260));
   dC.buildings.forEach((b) => { b.type = 'Office Building'; b.eui = { baseline: 50, current: 48, cbecs: 52.9 }; });
   const benchO = plain(run(ctx, '_rptQMethodPage')(10, dC, f, 'A'));
   assert(!/2012/.test(benchO) && /\(CBECS\)/.test(benchO), 'no survey year is printed for a value whose edition is not confirmed');
@@ -589,7 +589,7 @@ console.log('\n--- 13. model fit, wording, entered months, allocated target ---'
   assert(!/entered/i.test(plain(run(ctx, '_rptQBaselineDataBody')(bData, d))), 'Baseline Data: nothing is marked when every bill has a bill file');
 
   // Old wording is gone from the whole quarterly report text (all sections) and from the report source (release notes keep their history)
-  assert(!/weather[- ](adjusted|normali[sz]ed)/i.test(flat), 'the quarterly report, all sections, has no "weather-adjusted" or "weather normalized"');
+  assert(!/weather[- ](adjusted|normali[sz]ed)/i.test(flat.replace(/not weather-adjusted/g, '')), 'the quarterly report, all sections, has no "weather-adjusted" or "weather normalized"');
   const reSrc = fs.readFileSync(path.join(REPO, 'app/report-engine.js'), 'utf8');
   ['weather normalized', 'Savings target', 'Saved, below target', "'Met target'", 'Savings if remaining targets are met'].forEach((w) =>
     assert(reSrc.indexOf(w) < 0, 'report-engine.js no longer contains "' + w + '"'),
@@ -629,7 +629,7 @@ console.log('\n--- 14. rounding, actual cost on every page, meter names, kW sepa
   }
   const byFuelHtml = run(ctx, '_rptQByFuelTable')(dr, fr);
   assert(/-\$2,678/.test(byFuelHtml.replace(/<[^>]+>/g, ' ')), 'Savings by building and utility prints electricity -$2,678 for the review case');
-  if (sumHtml) assert(rowLast(sumHtml, 'Electricity use (kWh)') === '-$2,586' && rowLast(sumHtml, 'Electricity demand (billed kW)') === '-$93', 'Building Summary electricity is two rows, use -$2,586 and demand -$93: ' + rowLast(sumHtml, 'Electricity use (kWh)') + ' / ' + rowLast(sumHtml, 'Electricity demand (billed kW)'));
+  if (sumHtml) assert(rowLast(sumHtml, 'Electricity use (kWh)') === '-$2,586' && rowLast(sumHtml, 'Electricity demand (billed') === '-$93', 'Building Summary electricity is two rows, use -$2,586 and demand -$93: ' + rowLast(sumHtml, 'Electricity use (kWh)') + ' / ' + rowLast(sumHtml, 'Electricity demand (billed kW, sum of 3 months)'));
   // The Building Summary and the "by Building" table of every building print the same savings (collected data)
   const fq = run(ctx, '_rptQFacts')(q3);
   const detail = run(ctx, '_rptQFuelDetailPages');
@@ -645,7 +645,7 @@ console.log('\n--- 14. rounding, actual cost on every page, meter names, kW sepa
       } catch (e) {
         console.log('ERR summary/detail ' + kind + ' ' + String(e.stack).split(String.fromCharCode(10)).slice(0, 2).join(' / '));
       }
-      const label = ['Electricity use (kWh)', 'Natural gas (therms)', 'Propane (gal)'][ki];
+      const label = ['Electricity use (kWh)', 'Natural gas (therms)', 'Propane delivered (gal)'][ki];
       if (dh && sh && kind !== 'electric') assert(rowLast(sh, label) === rowLast(dh, b.name), b.name + ' ' + kind + ': Building Summary ' + rowLast(sh, label) + ' = detail table ' + rowLast(dh, b.name));
     });
   });
@@ -687,7 +687,7 @@ console.log('\n--- 14. rounding, actual cost on every page, meter names, kW sepa
   const detailMeters = detail(1, q3, fq, 'electric').html;
   assert(/<td style="white-space:nowrap">Electricity - Acct#/.test(detailMeters), 'the meters under the fuel table also keep each name on one line');
   const wM = run(ctx, '_RPT_Q_W_METERS');
-  assert(wM.reduce((s, v) => s + v, 0) === 100 && wM[1] >= 32, 'the meter name column is at least 32% of the meter table: ' + wM.join(','));
+  assert(wM.reduce((s, v) => s + v, 0) === 100 && wM[1] >= 30 && wM[0] >= 28, 'the meter name column is at least 30% and the building column 28% of the meter table: ' + wM.join(','));
   // 13d. Baseline Data kW cells use thousands separators (a total of 3,600.0 kW, not 3600.0)
   run(ctx, "getUDBldg(" + PROJ + ", 'bB').meters[0].bills.forEach(function (b) { b.billedKW = 300; b.demandKW = 300; })");
   const blHtml = run(ctx, '(function(){ return _buildBaselineDataHtml(getUDBldg(' + PROJ + ", 'bB'), " + PROJ + '); })')();
@@ -716,7 +716,7 @@ console.log('\n--- 14. v245 review fixes ---');
   });
   const fm = run(ctx, '_rptQFacts')(dm);
   const coverH = run(ctx, '(function(d,f){ return _rptQCoverPage(1,d,f); })')(dm, fm).replace(/<[^>]+>/g, ' ');
-  assert(/5,293/.test(coverH) && !/5,294/.test(coverH), 'D1: August prints 5,293 (exact 5,293.41), never 5,294');
+  assert(/8,048/.test(coverH) && /5,294/.test(coverH) && /9,250/.test(coverH) && !/5,293/.test(coverH), 'D1: the three months print 8,048, -5,294 and -9,250, which add to the quarter total -6,496 (largest remainder)');
   // D2: percent of baseline cost = savings / the baseline cost printed
   q2.buildings.forEach((b) => assert(Math.abs(b.pctBase - b.blCost) < 1e-6, 'D2: ' + b.name + ' percent denominator is its baseline cost'));
   assert(!/actual cost plus savings|billed cost plus savings/i.test(flat), 'D2: no page names the old denominator');
@@ -749,7 +749,7 @@ console.log('\n--- 14. v245 review fixes ---');
   assert(/Electricity Use Change/i.test(flat) && /Site EUI Change/i.test(flat), 'L1: dial labels are Electricity Use Change and Site EUI Change');
   // L2: electricity is two rows in the Building Summary
   const sumH2 = run(ctx, '_rptQBuildingSummaryPage')(1, q3, q3.buildings[0], run(ctx, '_rptQFacts')(q3)).replace(/<[^>]+>/g, ' ');
-  assert(/Electricity use \(kWh\)/.test(sumH2) && /Electricity demand \(billed kW\)/.test(sumH2), 'L2: Building Summary has an electricity use row and a demand row');
+  assert(/Electricity use \(kWh\)/.test(sumH2) && /Electricity demand \(billed(&nbsp;| )kW, sum of 3(&nbsp;| )months\)/.test(sumH2), 'L2: Building Summary has an electricity use row and a demand row');
   // L3: the district, not the client
   assert(/District share/.test(results + contract) && !/Client share|Client Net|the client/.test(flat + results + contract), 'L3: District share and District net wording, no "client"');
 }
@@ -808,7 +808,7 @@ console.log('\n--- 17. v250 display fixes (v249 reviews) ---');
   const pt17 = fs.readFileSync(path.join(REPO, 'lib', 'perf-table.js'), 'utf8');
   const po17 = fs.readFileSync(path.join(REPO, 'computations', 'pollution.js'), 'utf8');
   const thCase = run(ctx, '_rptQThSameCase')('<th>Baseline Cost</th><th>Propane Gal</th><th>$/Gallon</th><th>Gal<br>saved</th><th>Load Factor</th><th>Total Utility</th><th>Percent of<br>Baseline Cost</th>').replace(/ style="[^"]*"/g, '');
-  assert(/>Baseline cost</.test(thCase) && />Propane gal</.test(thCase) && />\$\/gal</.test(thCase) && />gal<br>saved</.test(thCase) && />Load factor</.test(thCase) && />Total utility</.test(thCase) && />Percent of<br>baseline cost</.test(thCase), 'one header case: sentence case, "gal" in one form: ' + thCase);
+  assert(/>Baseline cost</.test(thCase) && />Propane delivered \(gal\)</.test(thCase) && />\$\/gal</.test(thCase) && />gal<br>saved</.test(thCase) && />Load factor</.test(thCase) && />Total utility</.test(thCase) && />Percent of<br>baseline cost</.test(thCase), 'one header case: sentence case, "gal" in one form: ' + thCase);
   assert(/tankerTrucks: Math\.floor\(mt \* eq\.tankerTrucks\)/.test(po17) && /railcarsCoal: Math\.floor\(mt \* eq\.railcarsCoal\)/.test(po17) && /coalPlants: Math\.floor\(mt \* eq\.coalPlants\)/.test(po17), 'tanker truck, railcar and power plant never round up from below 1');
   const envFn = re17.slice(re17.indexOf('function rptPageEnvironmentalImpact'), re17.indexOf('function rptPageObservations'));
   assert(!/deforestation|_eqYrSuffix/.test(envFn) && /of U\.S\. forest in one year/.test(envFn), 'p6 equivalents: forest carbon wording, no "this quarter" on an annual EPA basis');
@@ -831,6 +831,33 @@ console.log('\n--- 18. v251 display fixes ---');
   assert(!/'n\/a'/.test(ca18.slice(ca18.indexOf('avgTherm ?'), ca18.indexOf('avgPropGal ?') + 200)), 'Baseline Data: empty average price cells are a dash, not n/a');
   assert(/lead2\[2\] === title/.test(re18), 'a packed page whose first heading equals the page title prints it once');
   assert(/split\(\/\[\^\\S\\u00a0\]\+\//.test(fs.readFileSync(path.join(REPO, 'app', 'docx-writer.js'), 'utf8')) && /data-dx-fscale="0\.95"/.test(re18), 'Word: a no-break space keeps "billed kW" whole when the column widths are set, and the electricity by building table has room for it');
+}
+
+console.log('\n--- 19. v252 release: Q3 2026 report fixes ---');
+{
+  const re19 = fs.readFileSync(path.join(REPO, 'app', 'report-engine.js'), 'utf8');
+  const pt19 = fs.readFileSync(path.join(REPO, 'lib', 'perf-table.js'), 'utf8');
+  const pol19 = fs.readFileSync(path.join(REPO, 'computations', 'pollution.js'), 'utf8');
+  // Months add to the quarter total (one rule)
+  const ms = run(ctx, '_rptMonthsShown')({ '2026-07': 8047.92, '2026-08': -5293.41, '2026-09': -9250.03 }, 3, -6496);
+  assert(ms['2026-07'] === 8048 && ms['2026-08'] === -5294 && ms['2026-09'] === -9250 && ms['2026-07'] + ms['2026-08'] + ms['2026-09'] === -6496, 'the three printed months add to the quarter total -6,496 (one apportion rule)');
+  assert(run(ctx, '_rptUseChange')(100.4, 162.7) === 62 && run(ctx, '_rptUseChange')(0, 5) === 5, 'one use change rule: the rounded exact difference');
+  // One cost header source
+  const ch = run(ctx, '_rptCostHeads')({ project: { blEnd: 'December 2025' }, period: { year: 2026 } });
+  assert(/^Baseline cost<br>\(2025&nbsp;rates\)$/.test(ch.bl) && /^Actual cost<br>\(2026&nbsp;rates\)$/.test(ch.cur) && /^Savings measured<br>\(2026&nbsp;rates\)$/.test(ch.sav), 'cost headers name the rate year, from one function');
+  assert((re19.match(/_rptCostHeads\(d\)/g) || []).length >= 8, 'pages 3, 4, 5, 21, 22 and 23 take their cost headers from _rptCostHeads');
+  // Labels
+  assert(/Propane delivered \(gal\)/.test(re19) && /Propane Gal\(lons\)\?/.test(re19), 'propane headers read "Propane delivered (gal)"');
+  assert(/Site EUI, annualized \(not weather-adjusted\)/.test(re19) && /National median<br>\(12-month,<br>kBtu\/ft&sup2;\/yr\)/.test(re19), 'p23 EUI table labels');
+  assert(/white-space:nowrap">' \+ shortMo\(first\)/.test(re19), 'p23 EUI header month range does not break at the dash');
+  assert(/Electricity demand \(billed&nbsp;kW, sum of /.test(re19) && /wxYear \? BR \+ '\(' \+ wxYear \+ BR \+ 'weather\)'/.test(pt19), 'kW row and meter table labels');
+  const T19 = run(ctx, '_rptQTerms')({ project: { blStart: 'January 2025', blEnd: 'December 2025' }, period: { year: 2026 } });
+  assert(/kWh is the unit of electricity use/.test(T19.units) && /kW is the unit of electricity demand/.test(T19.units) && !/kilowatt/i.test(T19.units) && /therm is/i.test(T19.units) && /gal is a gallon/.test(T19.units) && /kBtu\/ft/.test(T19.units) && /set point/i.test(T19.setPoint) && /Acct#/.test(T19.setPoint) && /Site EUI/.test(T19.eui), 'Appendix A defines kWh, kW, therm, gal, kBtu/ft2, set point, Acct# and Site EUI');
+  assert(/replace\(\/National median, \/g, ''\)/.test(re19), 'Appendix A National median label is not repeated in its text');
+  assert(/<p style="font-size:9\.5px;margin:6px 0 0">/.test(re19), 'the Baseline Data summary line has the table text size');
+  // Equivalents from the EPA calculator table
+  assert(/EQUIV_SOURCE/.test(pol19) && /1 \/ 4\.29/.test(pol19) && /1 \/ 0\.43/.test(pol19) && /1 \/ 7\.45/.test(pol19) && /1 \/ 0\.022/.test(pol19), 'p6 equivalents use the EPA Calculations and References factors from one table');
+  assert(/_RPT_Q_W_FUEL = \[25, /.test(re19), 'fuel detail tables give the Building column 25% or more');
 }
 
 console.log('\n' + passed + ' passed, ' + failed + ' failed');

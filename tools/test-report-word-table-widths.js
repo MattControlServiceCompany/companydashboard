@@ -5,12 +5,12 @@
 // (tools/test-report-table-fit.js) are separate. The export sets data-dx-live-widths on every page, so the Word widths follow the widths the live page shows (data-dx-w), raised to the whole-word minimums.
 'use strict';
 const EXPECTED = {
- "Building|Square|||feet|Baseline|||cost|Target|||cost|Actual|||cost|Q2 2025|||Savings measured|Percent of|||baseline cost|Status": "2218,907,1008,1109,1008,1210,1109,1511",
- "Quarter|Baseline|||kWh|Actual|||kWh|Baseline|||therms|Actual|||therms|Baseline|||gal|Actual|||gal|Baseline|||cost|Actual|||cost|Savings|||measured": "907,1008,1008,1008,1008,1008,1008,1008,1008,1109",
- "Period|kWh|Billed |kW|||(sum of|||months)|Therms|Propane|||gal|Cost|Site EUI, Q2 2025|||(kBtu/ft²)|Savings, % of|||baseline cost": "1814,1210,1210,907,907,1210,1511,1311",
- "Building|Period|kWh|Billed |kW|||(sum of|||months)|Therms|Propane gal|Cost|Site EUI, Q2 2025|||(kBtu/ft²)": "2597,1395,661,1014,854,1235,650,1674",
+ "Building|Square|||feet|Baseline cost|||(2024 rates)|Target|||cost|Actual cost|||(2025 rates)|Q2 2025|||Savings measured|||(2025 rates)|Percent of|||baseline cost|Status": "2163,889,1121,1063,1121,1201,1082,1440",
+ "Quarter|Baseline|||kWh|Actual|||kWh|Baseline|||therms|Actual|||therms|Baseline|||gal|Actual|||gal|Baseline cost|||(2024 rates)|Actual cost|||(2025 rates)|Savings measured|||(2025 rates)": "886,986,956,986,964,986,953,1121,1121,1121",
+ "Period|kWh|Billed |kW|||(sum of|||months)|Therms|Propane|||delivered|||(gal)|Cost|||(baseline 2024|||rates; actual 2025|||rates)|Site EUI, Q2 2025|||(kBtu/ft²)|Savings, % of|||baseline cost": "1793,1196,998,899,911,1495,1495,1293",
+ "Building|Period|kWh|Billed |kW|||(sum of|||months)|Therms|Propane delivered (gal)|Cost|||(baseline 2024|||rates; actual 2025|||rates)|Site EUI, Q2 2025|||(kBtu/ft²)": "2136,1151,579,842,771,1807,1415,1379",
  "Month|Days|Baseline|||therms|Actual|||therms|Therms|||saved|Saved|||%|$/therm|Therm $|||saved": "1260,1260,1260,1260,1260,1260,1260,1260",
- "Month|Days|Baseline|||gal|Actual|||gal|gal|||saved|Saved|||%|$/gal|gal $|||saved": "1260,1260,1260,1260,1260,1260,1260,1260",
+ "Month|Days|Baseline|||delivered|||gal|Actual|||delivered|||gal|gal|||saved|Saved|||%|$/gal|gal $|||saved": "1260,1260,1260,1260,1260,1260,1260,1260",
  "Month|Cooling degree days |(2025)|Baseline billed |kW|Actual billed |kW|Use change |kW": "2418,2218,1814,1814,1816"
 };
 const path = require('path');

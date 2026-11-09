@@ -72,7 +72,7 @@ function red0() { return calc(10000, 0, 0); }
 // synthetic reduction: 10,000 kWh saved -> fewer emissions, minus sign, equivalents shown
 const red = calc(10000, 0, 0);
 ok(chg(red.pollutants.co2) === '-7,282' && red.co2eMT > 0 && red.equivalents.carsRemoved > 0, 'reduction: CO2 change -7,282 (minus = fewer), equivalents shown');
-ok(vm.runInContext('energyUseChangeLine', sb)(-107310, 222, 24) === 'Energy use compared with baseline: electricity +107,310 kWh, natural gas -222 therms, propane -24 gal', 'energy use line');
+ok(vm.runInContext('energyUseChangeLine', sb)(-107310, 222, 24) === 'Energy use changed against baseline: electricity +107,310 kWh, natural gas -222 therms, propane -24 gal', 'energy use line');
 ok(vm.runInContext('EMISSIONS_SIGN_NOTE', sb) === 'A plus sign means more emissions than baseline.', 'sign note text');
 
 // removed rows

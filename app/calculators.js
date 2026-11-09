@@ -858,7 +858,7 @@ function _buildBaselineDataHtml(b, projId, opts) {
                         (avgTherm ? '$' + avgTherm.toFixed(3) : rpt && (gb.therms || 0) > 0 ? '$0.000' : '—') +
                         '</td>' +
                         '<td style="text-align:right;font-family:var(--mono);font-weight:600">' +
-                        (gCost ? $c(gCost) : rpt && (gb.therms > 0 || typeof gb.thermsPredicted === 'number') ? '$0.00' : '—') +
+                        (gCost ? $c(gCost) : rpt && gb.therms > 0 ? '$0.00' : '—') +
                         '</td>'
                       : '') +
                     (propaneM
@@ -866,10 +866,10 @@ function _buildBaselineDataHtml(b, projId, opts) {
                         numOrZero(propGal, pCost, Math.round(propGal).toLocaleString()) +
                         '</td>' +
                         '<td style="text-align:right;font-family:var(--mono);font-size:11px">' +
-                        (avgPropGal ? '$' + avgPropGal.toFixed(3) : '—') +
+                        (avgPropGal ? '$' + avgPropGal.toFixed(3) : rpt && propGal > 0 ? '$0.000' : '—') +
                         '</td>' +
                         '<td style="text-align:right;font-family:var(--mono);font-weight:600">' +
-                        (pCost ? $c(pCost) : rpt && typeof pb.gallons === 'number' ? '$0.00' : '—') +
+                        (pCost ? $c(pCost) : rpt && propGal > 0 ? '$0.00' : '—') +
                         '</td>'
                       : '') +
                     (showTotalUtility

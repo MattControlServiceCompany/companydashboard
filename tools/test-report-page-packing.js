@@ -78,6 +78,8 @@ const ok = (c, m) => {
             keys: subs.map((c) => c.getAttribute('data-subsection')),
             h: body ? _rptQMeasureH(body.innerHTML) : 0,
             firstUnitH: subs.length ? _rptQMeasureH(subs[0].outerHTML) : 0,
+            bodyHtml: body ? body.innerHTML : '',
+            firstHtml: subs.length ? subs[0].outerHTML : '',
             empty: body ? body.textContent.trim() === '' : false,
           };
         });
@@ -111,15 +113,16 @@ const ok = (c, m) => {
         let ytd = null;
         host.querySelectorAll('table').forEach((t) => {
           const hs = [...t.querySelectorAll('th')].map((x) => x.textContent);
-          if (hs.indexOf('Savings measured ($)') < 0) return;
+          if (!hs.some((h) => /^Savings measured/.test(h)) || !hs.some((h) => /^Month/.test(h))) return;
           const num = (tr) => {
             const c = tr.cells[tr.cells.length - 1].textContent.replace(/[\s$,]/g, '').replace(/−/g, '-');
             return Number(c);
           };
           const trs = [...t.querySelectorAll('tbody tr')];
           const ti = trs.findIndex((tr) => /^Total/.test(tr.cells[0].textContent));
+          const mi = trs.findIndex((tr) => /^Measured /.test(tr.cells[0].textContent));
           const last = trs[ti];
-          ytd = { sum: trs.slice(0, ti).reduce((a, tr) => a + num(tr), 0), last: num(last), labels: trs.map((tr) => tr.cells[0].textContent) };
+          ytd = { sum: trs.slice(0, mi >= 0 ? mi : ti).reduce((a, tr) => a + num(tr), 0), last: num(last), labels: trs.map((tr) => tr.cells[0].textContent) };
         });
         const sumH = allH2.filter((h) => /^Monthly Use/.test(h.textContent)).map((h) => _rptQMeasureH(h.closest('[data-unit="keep"]').outerHTML));
         host.remove();
@@ -134,7 +137,9 @@ const ok = (c, m) => {
         if (p.h > RPT_Q_PAGE_BODY_PX) out.over.push(i);
         const nx = packed[i + 1];
         if (nx && groupOf[nx.keys[0]] === groupOf[p.keys[0]]) {
-          if (p.h + nx.firstUnitH <= RPT_Q_PAGE_BODY_PX) out.waste.push(p.title + ' then ' + nx.title);
+          // The packer measures the page and the unit together (margins collapse) and adds the heading of the unit (lead) when the unit
+          // follows other units; the check measures them together and keeps 8px for that heading.
+          if (_rptQMeasureH(p.bodyHtml + nx.firstHtml) <= RPT_Q_PAGE_BODY_PX - 8) out.waste.push(p.title + ' then ' + nx.title);
           if (p.h < RPT_Q_PAGE_BODY_PX / 2) out.low.push(p.title + ' ' + Math.round(p.h));
         }
       });
@@ -186,7 +191,7 @@ const ok = (c, m) => {
     ok(res.mBlocks === 6 && res.meterHeadOk && res.meterHeadCount === 1, 'the Meter Performance heading is on the page of the first meter block, once: blocks ' + res.mBlocks + ', ok ' + res.meterHeadOk + ', count ' + res.meterHeadCount);
     ok(res.meterHead2, 'the Meter Performance heading precedes the first meter block when it follows a building summary on the page');
     ok(res.kwLines.length > 0 && res.kwLines.every((l) => l !== 'kW'), 'no billed kW header leaves the unit alone on a line: ' + JSON.stringify(res.kwLines));
-    ok(res.ytd && res.ytd.sum === res.ytd.last && res.ytd.labels.some((l) => /measured savings \(not billed\)/.test(l)), 'the Year-to-Date Savings column adds to its Total row: ' + JSON.stringify(res.ytd));
+    ok(res.ytd && res.ytd.sum === res.ytd.last && res.ytd.labels.some((l) => /^Difference \(measured minus billed\)/.test(l)), 'the Year-to-Date Savings column adds to its Total row: ' + JSON.stringify(res.ytd));
     ok(res.pageNums.every((n, i) => n === i + 1) && res.pageNums.length === res.total, 'the page numbers run 1 to ' + res.total);
     ok(errs.length === 0, 'no page errors' + (errs.length ? ': ' + errs[0] : ''));
   } finally {
