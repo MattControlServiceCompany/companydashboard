@@ -8,7 +8,7 @@ const EXPECTED = {
  "Building|Area|||(ft²)|Baseline cost|||(2024 rates)|Target|||cost|Actual cost|||(2025 rates)|Q2 2025|||Savings measured|||(2025 rates)|Savings, %|||of baseline cost|Status": "2611,791,1121,881,1121,1121,1083,1351",
  "Quarter|Baseline|||kWh|Actual|||kWh|Baseline|||therms|Actual|||therms|Baseline|||gal|Actual|||gal|Baseline cost|||(2024 rates)|Actual cost|||(2025 rates)|Savings measured|||(2025 rates)": "886,986,956,986,964,986,953,1121,1121,1121",
  "Period|kWh|Billed |kW|||(sum of|||3 months)|Therms|Propane|||delivered|||(gal)|Cost|||(2024 / 2025 rates)|Site EUI, Q2 2025|||(kBtu/ft²)|Savings, %|||of baseline cost": "1793,1196,998,899,911,1496,1495,1292",
- "Building|Period|kWh|Billed |kW|||(sum of|||3 months)|Therms|Propane delivered (gal)|Cost|||(2024 / 2025 rates)|Site EUI, Q2 2025|||(kBtu/ft²)": "2016,1412,1008,1210,806,1008,1412,1208",
+ "Building|Period|kWh|Billed |kW|||(sum of|||3 months)|Therms|Propane delivered (gal)|Cost|||(2024 / 2025 rates)|Site EUI, Q2 2025|||(kBtu/ft²)": "2461,1313,881,1179,771,911,1384,1180",
  "Month|Days|Baseline|||therms|Actual|||therms|Therms|||saved|Saved|||%|$/therm|Therm $|||saved": "1260,1260,1260,1260,1260,1260,1260,1260",
  "Month|Days|Baseline|||delivered|||gal|Actual|||delivered|||gal|gal|||saved|Saved|||%|$/gal|gal $|||saved": "1260,1260,1260,1260,1260,1260,1260,1260",
  "Month|Cooling degree days |(2025)|Baseline billed |kW|Actual billed |kW|Use change |kW": "2418,2218,1814,1814,1816"

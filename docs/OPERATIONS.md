@@ -1339,3 +1339,12 @@ No timer, no env var, no host change. It runs in the browser when a report previ
 - Every page and chart reads the registry (`_rptShownUse`, `_rptShownMonthUse`, `_rptShownCost`, `_rptShownCostColumn`). The Baseline Data pages (`_buildBaselineDataHtml`, app/calculators.js) and the meter tables (`buildMeterPerfTableHTML`, lib/perf-table.js) take the registry months through `opts.fixed` and `opts.shownUse`.
 - Quarterly Site EUI prints with 2 decimals (`_rptEuiPct` computes the use change (%) from the printed values).
 - Check: `node tools/test-report-totals-add.js` (section 3b: the tiers add, and a figure on two pages is one value), `node tools/test-report-word-table-widths.js`, `node tools/test-report-table-fit.js`.
+
+## Quarterly report: contract target row and Appendix A terms (2026-11-09, version v2026.11.09.259)
+
+No timer, no env var, no host change. No savings formula, stored bill value or cost basis changes.
+
+- `_rptYear1Target(d)` (app/report-engine.js) is the one Year 1 contract target (sum of the four quarterly targets). The Contract to Date table row and the Appendix A Contract totals bullet both read it.
+- Appendix A Terms (`_rptQTerms`): `target` is the allocated target definition again, `measured` has the billed kW term, `negative` names the rates of the month reported. Passenger cars on Environmental Impact use 4.29 t CO2e per vehicle (`EQUIV_PER_MT_CO2E.carsRemoved`, pollution.js); 34.135 t gives 8.
+- Savings Performance Building column is 25% wide so each name is one line in Word (Word widths pinned in tools/test-report-word-table-widths.js).
+- Check: `node tools/test-report-q3-review-findings.js`, `node tools/test-report-word-table-widths.js`, `node tools/test-report-totals-add.js`. Appendix A must stay on one page: measure with the packer (RPT_Q_PAGE_BODY_PX) and in the Word render.

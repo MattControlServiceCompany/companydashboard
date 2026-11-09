@@ -2507,6 +2507,11 @@ async function siteResetAllMeterTableSettings() {
    site-ui.js delegates to this array and should NOT maintain its own copy.
 */
 var RELEASE_NOTES = [
+  { v: 'v2026.11.09.259', date: '2026-11-09', title: 'Quarterly report: contract target row and Appendix A terms',
+    items: [
+      { type: 'fix', text: 'Reports > Quarterly report, Contract to Date: a Year 1 contract target row (the sum of the four quarterly allocated targets), so the Year 2 target follows from a printed figure. Appendix A defines the allocated target again, adds the billed kW term to savings measured, and states the sign rule at the rates of the month reported. Wider Building column on Savings Performance. One heading colour on Environmental Impact.' }
+    ]
+  },
   { v: 'v2026.11.09.258', date: '2026-11-09', title: 'Quarterly report: one printed value for each figure',
     items: [
       { type: 'fix', text: 'Reports > Quarterly report: a figure that shows on two pages now prints the same number on both (Financial Summary, Savings Performance, Building Summaries, Baseline Data, Meter Performance, Electricity and Natural Gas Use Detail, Appendix B). Cost goes from the portfolio to the buildings to the fuels. Baseline use goes from the building year to the quarter and its months. Every total keeps its value.' },

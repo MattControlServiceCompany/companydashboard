@@ -428,11 +428,11 @@ console.log('\n--- 11. Manager decisions 1-7 ---');
 {
   const sp = flat.replace(/\s+/g, ' ');
   assert(!/Electric Consumption|Consumption Detail|Utility bill amount|Commodity/.test(sp), 'no "Consumption", "Utility bill amount" or "Commodity" in the report');
-  assert(/The kWh and therms baseline of a month is the weather model of the meter evaluated at the heating and cooling degree days \(base [^)]*\) of the same month of [0-9]{4}\./.test(sp), 'Appendix A states the kWh and therms method (baseline-year weather)');
-  assert(/The billed kW baseline of a month is the meter's model of billed kW on cooling degree days, evaluated at the cooling degree days of the month reported/.test(sp), 'Appendix A states the kW method (cooling degree days of the month reported)');
+  assert(/The kWh and therms baseline of a month is the weather model of the meter at the heating and cooling degree days \(base [^)]*\) of the same month of [0-9]{4}\./.test(sp), 'Appendix A states the kWh and therms method (baseline-year weather)');
+  assert(/The billed kW baseline of a month is the model of billed kW on cooling degree days, at those of the month reported/.test(sp), 'Appendix A states the kW method (cooling degree days of the month reported)');
   assert(!/that month's weather/.test(sp), 'the wrong "that month\'s weather" wording is gone');
   assert(/Baseline is the \d{4} use in the same month/.test(sp) && /Savings billed is the amount invoiced under the Agreement/.test(sp), 'page 1 defines baseline and savings billed in plain words');
-  assert(/it comes from the weather model of the meter, [A-Za-z]+ \d{4} through [A-Za-z]+ \d{4}, at the \d{4} weather \(billed kW: the weather of the month reported\)\./.test(sp) && !/weather normalized|adjusted for weather/.test(sp) && !/weather-adjusted/.test(sp.replace(/not weather-adjusted/g, '')), 'baseline term: "a weather model of the use of the meter, <start> through <end>, evaluated at the <year> weather"; the words "weather normalized" and "weather-adjusted" are gone');
+  assert(/it comes from the weather model of the meter at the \d{4} weather \(billed kW: the weather of the month reported\)\./.test(sp) && !/weather normalized|adjusted for weather/.test(sp) && !/weather-adjusted/.test(sp.replace(/not weather-adjusted/g, '')), 'baseline term: "a weather model of the use of the meter, <start> through <end>, evaluated at the <year> weather"; the words "weather normalized" and "weather-adjusted" are gone');
   assert(/Billed kW is the demand, in kW, that the utility bills for the month\./.test(sp) && !/highest power draw/.test(sp), 'billed kW term: "the demand, in kW, that the utility bills for the month"');
   assert(!/(Baseline|Actual) kW|peak demand/i.test(sp), 'no "Baseline kW", "Actual kW" or "peak demand" label');
   assert(!/rounded once from the unrounded value|differ from a total by/.test(sp), 'page 2 carries no rounding note (controlled rounding)');
@@ -478,7 +478,7 @@ console.log('\n--- 12. controlled rounding, billing period, state name, sign rul
   const ctTable = (ctHtml.match(/<table[\s\S]*?<\/table>/) || [''])[0];
   const ctHead = (ctTable.match(/<th[\s\S]*?<\/th>/g) || []).map((h) => h.replace(/<[^>]+>/g, '').trim());
   assert(ctHead.length === 3 && /^Contract year/.test(ctHead[0]) && ctHead[1] === 'Allocated target' && ctHead[2] === 'Savings billed', 'Contract to Date table has three columns: year, Allocated target, Savings billed: ' + JSON.stringify(ctHead));
-  assert((ctTable.match(/<tr/g) || []).length === 6 && (ctTable.match(/<tr[^>]*>(?:(?!<\/tr>)[\s\S])*?<\/tr>/g) || []).every((tr) => (tr.match(/<t[dh]/g) || []).length === 3), 'Contract to Date table keeps header, Q1 to Q4 and the Through row, every row has 3 cells');
+  assert((ctTable.match(/<tr/g) || []).length === 7 && (ctTable.match(/<tr[^>]*>(?:(?!<\/tr>)[\s\S])*?<\/tr>/g) || []).every((tr) => (tr.match(/<t[dh]/g) || []).length === 3), 'Contract to Date table keeps header, Q1 to Q4, the Through row and the Year 1 contract target row, every row has 3 cells');
   const fl2 = flat.replace(/\s+/g, ' ');
   assert(!/Actual minus baseline/.test(fl2) && !/Change = actual use minus baseline use|plus means|minus means/.test(fl2), 'building pages: no sign explanation note under the tables (no "Actual minus baseline" column)');
   // K. Year to Date: Q1, Q2, Q3 in order, then Total; no blank cell
@@ -541,7 +541,7 @@ console.log('\n--- 13. model fit, wording, entered months, allocated target ---'
   // Terms: points 3, 15, 22 (page 1 and Appendix A use the same term strings)
   const dT = { project: { blStart: 'January 2025', blEnd: 'December 2025' }, period: { year: 2026 } };
   const T = run(ctx, '_rptQTerms')(dT);
-  assert(T.baseline === 'Baseline is the 2025 use in the same month. For an electricity or gas meter it comes from the weather model of the meter, January 2025 through December 2025, at the 2025 weather (billed kW: the weather of the month reported).', 'baseline term states the weather model and the 2025 weather: ' + T.baseline);
+  assert(T.baseline === 'Baseline is the 2025 use in the same month. For an electricity or gas meter it comes from the weather model of the meter at the 2025 weather (billed kW: the weather of the month reported).', 'baseline term states the weather model and the 2025 weather: ' + T.baseline);
   assert(T.billed === 'Savings billed is the amount invoiced under the Agreement.', 'billed term gets no new sentence');
   assert(/^Allocated target is /.test(T.target) && !T.fit, 'target term is "Allocated target"; no new fit term');
   const p1Terms = run(ctx, '_rptQTermsText')(dT);
@@ -570,14 +570,14 @@ console.log('\n--- 13. model fit, wording, entered months, allocated target ---'
   const ctPage = plain(run(ctx, '_rptQContractPage')(5, d, f));
   assert(/Contract Totals/.test(ctPage) && /Billed to date plus contract targets/.test(ctPage) && !/Projection|projected|if remaining targets are met|Savings target/.test(ctPage), 'contract page: "Billed to date plus contract targets", no projection wording');
   const mPage = plain(run(ctx, '_rptQMethodPage')(5, d, f, 'A'));
-  assert(/contract target at the 3\.5% annual energy cost escalation stated in the Agreement/.test(mPage) && !/escalated 3\.5% a year/.test(ctPage + mPage) && !/escalation stated in the Agreement/.test(ctPage), 'Appendix A (not the contract page) attributes the 3.5% to the Agreement');
+  assert(/later years escalate it 3\.5% a year, as the Agreement states/.test(mPage) && !/escalation stated in the Agreement/.test(mPage) && !/escalation stated in the Agreement/.test(ctPage), 'Appendix A (not the contract page) attributes the 3.5% to the Agreement');
   assert(/Allocated target/.test(ctPage), 'contract page: column "Allocated target"');
 
   // CBECS edition (point 13): printed for a K-12 school at 48.5 only
   const dC = pageData();
   dC.buildings.forEach((b) => { b.type = 'K-12 School'; b.eui = { baseline: 50, current: 48, cbecs: 48.5 }; });
   const benchK = plain(run(ctx, '_rptQMethodPage')(10, dC, f, 'A'));
-  assert(/National median\. K-12 schools: 48\.5 kBtu\/ft²\/yr, from the U\.S\. Energy Information Administration 2012 Commercial Buildings Energy Consumption Survey \(CBECS\), as published in the ENERGY STAR Portfolio Manager U\.S\. national median table/.test(benchK), 'benchmark note names the 2012 CBECS and the ENERGY STAR table for K-12 at 48.5: ' + benchK.slice(benchK.indexOf('National median'), benchK.indexOf('National median') + 260));
+  assert(/National median\. The national median for K-12 schools is 48\.5 kBtu\/ft²\/yr, from the U\.S\. Energy Information Administration 2012 Commercial Buildings Energy Consumption Survey \(CBECS\), as published in the ENERGY STAR Portfolio Manager U\.S\. national median table/.test(benchK), 'benchmark note names the 2012 CBECS and the ENERGY STAR table for K-12 at 48.5: ' + benchK.slice(benchK.indexOf('National median'), benchK.indexOf('National median') + 260));
   dC.buildings.forEach((b) => { b.type = 'Office Building'; b.eui = { baseline: 50, current: 48, cbecs: 52.9 }; });
   const benchO = plain(run(ctx, '_rptQMethodPage')(10, dC, f, 'A'));
   assert(!/2012/.test(benchO) && /\(CBECS\)/.test(benchO), 'no survey year is printed for a value whose edition is not confirmed');
@@ -819,7 +819,7 @@ console.log('\n--- 17. v250 display fixes (v249 reviews) ---');
   assert(/Math\.round\(\(d\.savings \|\| 0\) \* 100\) - fl\[0\] - fl\[1\]/.test(pt17), 'meter table kWh $ and kW $ cents are apportioned to the Total $');
   const T17 = run(ctx, '_rptQTerms')({ project: { blStart: 'January 2025', blEnd: 'December 2025' }, period: { year: 2026 } });
   assert(/^Facilities kW is /.test(T17.facilitiesKw) && /^Normalized use is /.test(T17.normalized) && /^Load factor is /.test(T17.loadFactor), 'Appendix A defines Facilities kW, Normalized use and Load factor');
-  assert(/A quarterly EUI covers only the quarter and is not annualized. Site EUI:/.test(T17.eui) && /Site EUI: the baseline uses the weather-model use at the 2025 weather; the actual uses the billed use\./.test(T17.eui), 'the EUI term states the quarter and annualized forms and the baseline/actual split (v256)');
+  assert(/A quarterly EUI covers only the quarter and is not annualized. For Site EUI,/.test(T17.eui) && /For Site EUI, the baseline uses the weather-model use at the 2025 weather and the actual uses the billed use\./.test(T17.eui), 'the EUI term states the quarter and annualized forms and the baseline/actual split (v256)');
   assert(!/_rptQLaterYears|Degree days compare each day/.test(re17), 'no explanation prose left on the contract totals or the weather appendix page');
 }
 
@@ -854,8 +854,8 @@ console.log('\n--- 19. v252 release: Q3 2026 report fixes ---');
   assert(/white-space:nowrap">' \+ shortMo\(first\)/.test(re19), 'p23 EUI header month range does not break at the dash');
   assert(/Electricity demand \(billed&nbsp;kW, sum of /.test(re19) && /wxYear \? BR \+ '\(' \+ wxYear \+ BR \+ 'weather\)'/.test(pt19), 'kW row and meter table labels');
   const T19 = run(ctx, '_rptQTerms')({ project: { blStart: 'January 2025', blEnd: 'December 2025' }, period: { year: 2026 } });
-  assert(/The unit kWh is electricity use/.test(T19.units) && /The unit kW is electricity demand/.test(T19.units) && !/kilowatt/i.test(T19.units) && /therm is/i.test(T19.units) && /The unit gal is a gallon/.test(T19.units) && /kBtu\/ft/.test(T19.units) && /set point/i.test(T19.setPoint) && /Acct#/.test(T19.setPoint) && /Site EUI/.test(T19.eui), 'Appendix A defines kWh, kW, therm, gal, kBtu/ft2, set point, Acct# and Site EUI');
-  assert(/replace\(\/National median, \/g, ''\)/.test(re19), 'Appendix A National median label is not repeated in its text');
+  assert(/The unit kWh is electricity use/.test(T19.units) && /kW is electricity demand/.test(T19.units) && !/kilowatt/i.test(T19.units) && /therm is/i.test(T19.units) && /gal is a gallon/.test(T19.units) && /kBtu\/ft/.test(T19.units) && /set point/i.test(T19.setPoint) && /Acct#/.test(T19.setPoint) && /Site EUI/.test(T19.eui), 'Appendix A defines kWh, kW, therm, gal, kBtu/ft2, set point, Acct# and Site EUI');
+  assert(/replace\(\/National median, \(\[\^:\]\*\): \/g, 'The national median for \$1 is '\)/.test(re19), 'Appendix A National median label is not repeated in its text');
   assert(/<p style="font-size:9\.5px;margin:6px 0 0">/.test(re19), 'the Baseline Data summary line has the table text size');
   // Equivalents from the EPA calculator table
   assert(/EQUIV_SOURCE/.test(pol19) && /1 \/ 4\.29/.test(pol19) && /1 \/ 0\.43/.test(pol19) && /1 \/ 7\.45/.test(pol19) && /1 \/ 0\.022/.test(pol19), 'p6 equivalents use the EPA Calculations and References factors from one table');
@@ -903,7 +903,7 @@ console.log('\n--- 20. v253 release: every printed change equals printed actual 
   const sp20 = flat.replace(/\s+/g, ' ');
   assert(!/Q1\+Q2 billed \(presented to the district\)/.test(sp20), 'p23: the billed figure is not printed twice (one row, on the last line)');
   assert(/Contract time elapsed: \d+% of the contract period/.test(sp20), 'p25 Terms: "Contract time elapsed"');
-  assert(/white-space:nowrap;color:var\(--rpt-page-text\)/.test(re20) && /table-layout:fixed' : ''\) \+ '"' \+ \(_uq \? ' data-dx-widths="20,14,10,12,8,10,14,12"'/.test(re20), 'p5: the Period cells never wrap and the Period column has width');
+  assert(/white-space:nowrap;color:var\(--rpt-page-text\)/.test(re20) && /table-layout:fixed' : ''\) \+ '"' \+ \(_uq \? ' data-dx-widths="25,12,9,12,7,9,14,12"'/.test(re20), 'p5: the Period cells never wrap and the Period column has width');
   assert(/\(x == null \? '&mdash;' : _rptQN\(x\)\)/.test(re20), 'p31 Degree Days: an empty cell is an em dash');
 }
 

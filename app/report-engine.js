@@ -2922,34 +2922,39 @@ function _rptQFlatText(b) {
 function _rptQTerms(d) {
   return {
     baseline:
-      'Baseline is the ' + ((d.period && d.period.year ? d.period.year : 0) - 1) + ' use in the same month. For an electricity or gas meter it comes from the weather model of the meter, ' +
-      _escHtml(d.project.blStart) + ' through ' + _escHtml(d.project.blEnd) + ', at the ' + ((d.period && d.period.year ? d.period.year : 0) - 1) +
+      'Baseline is the ' + ((d.period && d.period.year ? d.period.year : 0) - 1) + ' use in the same month. For an electricity or gas meter it comes from the weather model of the meter at the ' + ((d.period && d.period.year ? d.period.year : 0) - 1) +
       ' weather (billed kW: the weather of the month reported).',
-    measured: 'Savings measured is, for each month, the baseline use minus the actual use, times the rate of that month, added over the months.',
+    measured: 'Savings measured is the baseline use minus the actual use, times the rate of the month, plus the baseline billed kW minus the actual billed kW, times the demand rate, added over the months.',
     billed: 'Savings billed is the amount invoiced under the Agreement.',
     savTarget: 'Savings vs target is the savings measured as a percent of the allocated target.',
-    target: 'Allocated target is the savings the contract sets for the quarter.',
+    target: 'Allocated target is the projected savings of the selected energy conservation measures for the quarter' + "'" + 's months.',
     degreeDays: 'Heating and cooling degree days measure how cold and how hot the weather is, against ' + WX_DD_BASE_F + '&deg;F.',
     billedKw: 'Billed kW is the demand, in kW, that the utility bills for the month.',
-    facilitiesKw: 'Facilities kW is the demand, in kW, on which the utility bills the facilities charge.',
+    facilitiesKw: 'Facilities kW is the demand, in kW, on which the facilities charge is billed.',
     normalized: 'Normalized use is the use that the weather model of the meter gives for the month, not the billed use.',
     loadFactor: 'Load factor is the normalized kWh divided by the highest demand measured in the month, in kW, times the hours of the month.',
-    eui: 'Energy use intensity (EUI) is the energy use per square foot, in kBtu per square foot. A quarterly EUI covers only the quarter and is not annualized. Site EUI: the baseline uses the weather-model use at the ' + ((d.period && d.period.year ? d.period.year : 0) - 1) + ' weather; the actual uses the billed use.',
-    units: 'The unit kWh is electricity use. The unit kW is electricity demand. A therm is 100,000 Btu of natural gas. The unit gal is a gallon of propane delivered. kBtu/ft&sup2; is a thousand Btu for each square foot of floor area.',
-    setPoint: 'A set point is the temperature that the control system holds in a space. Acct# is the account number of the utility meter on the bill.',
-    baselineCost: 'Baseline cost is the energy charges billed for the same months of ' + ((d.period && d.period.year ? d.period.year : 0) - 1) + '.',
-    actualCost: 'Actual cost is the sum of the energy charges billed in ' + (d.period && d.period.year ? d.period.year : 0) + '.',
-    targetCost: 'Target cost is the baseline cost less the allocated target.',
+    eui: 'Energy use intensity (EUI) is the energy use in kBtu per square foot. A quarterly EUI covers only the quarter and is not annualized. For Site EUI, the baseline uses the weather-model use at the ' + ((d.period && d.period.year ? d.period.year : 0) - 1) + ' weather and the actual uses the billed use.',
+    units: 'The unit kWh is electricity use, kW is electricity demand, a therm is 100,000 Btu of natural gas, and gal is a gallon of propane delivered. kBtu/ft&sup2; is a thousand Btu for each square foot of floor area.',
+    setPoint: 'A set point is the temperature the control system holds in a space. Acct# is the account number of the utility meter on the bill.',
+    baselineCost: 'Baseline cost is the sum of the energy charges billed for the same months of ' + ((d.period && d.period.year ? d.period.year : 0) - 1) + '.',
+    actualCost: 'Actual cost is the same sum for ' + (d.period && d.period.year ? d.period.year : 0) + '.',
+    targetCost: 'Target cost is baseline cost less the allocated target.',
     belowTarget: 'Below Target means the savings measured are below the allocated target.',
-    negative: 'A negative value means more cost than the baseline.',
+    negative: 'A negative value means the actual use cost more than the baseline use, both at the rates of the month reported.',
     sign: 'Use change is actual minus baseline use: a plus is more use. Saved is baseline minus actual use: a plus is less use.',
     actualKw: 'Actual kW is the highest demand the meter measured in the month.',
     kwCost: '$/billed kW is the kW cost divided by billed kW. $/kW (meter pages) is the rate per billed kW of the month reported.',
     totalUtility: 'Total utility is electric plus gas or propane cost.',
     occupied: 'Occupied hours are the hours each week that the building is scheduled for use.',
-    share: 'Control Service Company (' + _escHtml(d.contract && d.contract.cscPct) + '%) and District share (' + _escHtml(d.contract && d.contract.clientPct) + '%) split it under the Agreement.',
+    share: 'Control Service Company (' + _escHtml(d.contract && d.contract.cscPct) + '%) and District share (' + _escHtml(d.contract && d.contract.clientPct) + '%) split it.',
     baseCols: 'Billed kWh and billed therms are the amounts on the ' + ((d.period && d.period.year ? d.period.year : 0) - 1) + ' bills. kW cost, facilities kW cost, kWh cost, electric cost and gas cost are the charges on them. Average $/therm is gas cost over therms. Savings, % of baseline cost is savings measured over baseline cost.',
   };
+}
+// _rptYear1Target(d): the Year 1 contract target = the sum of the four quarterly allocated targets (one value for the
+// Contract to Date table and Appendix A).
+function _rptYear1Target(d) {
+  var qT = d.contract.quarterlyTargets || [0, 0, 0, 0];
+  return (qT[0] || 0) + (qT[1] || 0) + (qT[2] || 0) + (qT[3] || 0);
 }
 function _rptQTermsText(d) {
   var t = _rptQTerms(d);
@@ -2959,8 +2964,8 @@ function _rptQTermsText(d) {
 function _rptQWeatherMethod(d, f) {
   var py = f.year - 1;
   return (
-    'The kWh and therms baseline of a month is the weather model of the meter evaluated at the heating and cooling degree days (base ' + WX_DD_BASE_F + '&deg;F) of the same month of ' + py + '. ' +
-    'The billed kW baseline of a month is the meter' + "'" + 's model of billed kW on cooling degree days, evaluated at the cooling degree days of the month reported; a meter with no such model uses the billed kW of the same month of ' + py + '.'
+    'The kWh and therms baseline of a month is the weather model of the meter at the heating and cooling degree days (base ' + WX_DD_BASE_F + '&deg;F) of the same month of ' + py + '. ' +
+    'The billed kW baseline of a month is the model of billed kW on cooling degree days, at those of the month reported; a meter with no such model uses the billed kW of the same month of ' + py + '.'
   );
 }
 // _rptQSavingsFormula() - the ONE statement of the savings formula (page 2 and Appendix A print it).
@@ -3674,6 +3679,7 @@ function _rptQContractBody(d, f) {
   qRows +=
     '<tr class="rpt-tot"><td>Through ' + _rptQuarterLabel(f.q, f.year) + '</td><td class="rpt-n">' + _fmtUSD(tT, '$0') + '</td><td class="rpt-n">' + _fmtUSD(tB, '$0') + '</td></tr>';
   for (var i2 = f.q; i2 < 4; i2++) qRows += qRow(i2, false);
+  qRows += '<tr><td>Year ' + d.contract.currentYear + ' contract target</td><td class="rpt-n">' + _fmtUSD(_rptYear1Target(d), '$0') + '</td><td class="rpt-n"></td></tr>';
   var t1 = _rptQTable([58, 21, 21], ['Contract year ' + d.contract.currentYear, 'Allocated target', 'Savings billed'], qRows);
 
   // Projection - the one shared projection
@@ -4434,7 +4440,7 @@ function _rptQAppendixDPages(n, d, f, letter) {
 
 function _rptQMethodPage(n, d, f, letter) {
   var li = function (t) {
-    return '<li style="margin-bottom:1px">' + t + '</li>';
+    return '<li>' + t + '</li>';
   };
   var apos = "'";
   var t = _rptQTerms(d);
@@ -4445,13 +4451,13 @@ function _rptQMethodPage(n, d, f, letter) {
     li('<strong>Weather.</strong> ' + _rptQWeatherMethod(d, f)) +
     li('<strong>Savings.</strong> ' + _rptQSavingsFormula()) +
     li('<strong>Building target.</strong> A building' + apos + 's target is its share of the allocated target, in proportion to its baseline cost.') +
-    li('<strong>Contract totals.</strong> Year ' + d.contract.currentYear + ' = savings billed to date plus the remaining allocated targets. Later years = the Year ' + d.contract.currentYear + ' contract target at the ' + _escHtml(d.contract.escalation || 0) + '% annual energy cost escalation stated in the Agreement.') +
+    li('<strong>Contract totals.</strong> Year ' + d.contract.currentYear + ' is savings billed to date plus the remaining targets. The Year ' + d.contract.currentYear + ' contract target, ' + _fmtUSD(_rptYear1Target(d), '$0') + ', is the sum of the four quarterly allocated targets; later years escalate it ' + _escHtml(d.contract.escalation || 0) + '% a year, as the Agreement states.') +
     li('<strong>Site EUI, annualized.</strong> Annualized use is the use of the months reported to date &times; 12 &divide; the number of those months. The baseline covers the same calendar months of ' + (d.period.year - 1) + '.') +
-    (_rptQMedianText(d) ? li('<strong>National median.</strong> ' + _rptQMedianText(d).replace(/National median, /g, '')) : '') +
+    (_rptQMedianText(d) ? li('<strong>National median.</strong> ' + _rptQMedianText(d).replace(/National median, ([^:]*): /g, 'The national median for $1 is ')) : '') +
     '</ul>' +
     '<h2>Terms</h2>' +
     '<ul style="margin:2px 0 4px 20px;padding:0;font-size:13px;line-height:1.3">' +
-    [t.baseline, [t.measured, t.negative, t.sign].join(' '), [t.baselineCost, t.actualCost, t.targetCost, t.belowTarget].join(' '), [t.billed, t.share, t.savTarget].join(' '), t.degreeDays, [t.billedKw, t.actualKw, t.facilitiesKw].join(' '), [t.kwCost, t.totalUtility, t.normalized, t.loadFactor].join(' '), t.eui, [t.units, t.baseCols, t.setPoint, t.occupied].join(' ')].map(li).join('') +
+    [t.baseline, [t.measured, t.negative, t.sign].join(' '), [t.target, t.baselineCost, t.actualCost, t.targetCost, t.belowTarget].join(' '), [t.billed, t.share, t.savTarget].join(' '), t.degreeDays, [t.billedKw, t.actualKw, t.facilitiesKw].join(' '), [t.kwCost, t.totalUtility, t.normalized, t.loadFactor].join(' '), t.eui, [t.units, t.baseCols, t.setPoint, t.occupied].join(' ')].map(li).join('') +
     li('Contract period: ' + _rptContractPeriodText(d) + '. Contract time elapsed: ' + _rptContractProgressText(d) + '.') +
     '</ul>';
   var title = (letter ? 'Appendix ' + letter + ': ' : '') + 'How Savings Are Measured';
@@ -6714,8 +6720,8 @@ function rptPageSavingsPerformance(n, d) {
     .join('');
 
   const bldgTable =
-    '<table class="rpt-table' + (_uq ? ' rpt-table-wrap' : '') + '" contenteditable="true" style="font-size:10px' + (_uq ? ';width:100%;table-layout:fixed' : '') + '"' + (_uq ? ' data-dx-widths="20,14,10,12,8,10,14,12"' : '') + '>' +
-    (_uq ? '<colgroup>' + [20, 14, 10, 12, 8, 10, 14, 12].map(function (w) { return '<col style="width:' + w + '%">'; }).join('') + '</colgroup>' : '') +
+    '<table class="rpt-table' + (_uq ? ' rpt-table-wrap' : '') + '" contenteditable="true" style="font-size:10px' + (_uq ? ';width:100%;table-layout:fixed' : '') + '"' + (_uq ? ' data-dx-widths="25,12,9,12,7,9,14,12"' : '') + '>' +
+    (_uq ? '<colgroup>' + [25, 12, 9, 12, 7, 9, 14, 12].map(function (w) { return '<col style="width:' + w + '%">'; }).join('') + '</colgroup>' : '') +
     '<thead><tr>' +
     '<th>Building</th>' +
     '<th>' + (_uq ? 'Period' : 'Year') + '</th>' +
@@ -7429,9 +7435,9 @@ function rptPageEnvironmentalImpact(n, d) {
     ((d.period && d.period.label) || 'the reporting period') +
     (d.period && d.period.type === 'quarterly'
       ? _annualize
-        ? ' — quarterly savings, annualized (×4) to estimate a full-year impact.'
-        : ' — quarterly total, not annualized.'
-      : ' — full reporting-year total.') +
+        ? '&nbsp;— quarterly savings, annualized (×4) to estimate a full-year impact.'
+        : '&nbsp;— quarterly total, not annualized.'
+      : '&nbsp;— full reporting-year total.') +
     '</div>' +
     '<div style="display:flex;flex-direction:column;gap:10px">' +
     '<div style="padding:4px 0;text-align:center">' +
@@ -7439,7 +7445,7 @@ function rptPageEnvironmentalImpact(n, d) {
     polLines +
     '</div>' +
     '<div style="padding:4px 0;text-align:center">' +
-    '<div style="font-size:13px;font-weight:700;color:' + (_added ? 'var(--rpt-red)' : 'var(--rpt-bl-green)') + ';text-transform:uppercase;letter-spacing:0.04em;margin-bottom:8px">Real-World Equivalents</div>' +
+    '<div style="font-size:13px;font-weight:700;color:var(--rpt-blue);text-transform:uppercase;letter-spacing:0.04em;margin-bottom:8px">Real-World Equivalents</div>' +
     eqLines +
     '</div>' +
     '</div>' +
