@@ -340,11 +340,102 @@ assert(flat.indexOf('$' + nf(q.totals.blCost)) >= 0, 'the baseline cost total pr
 const bl = run(ctx, '(function(d){ return d.buildings.map(function (b) { return _rptBldgCostShown(d, b, "blCost"); }); })')(q);
 assert(sum(bl) === Math.round(q.totals.blCost), 'baseline cost by building adds to the total: ' + Array.from(bl).join('+'));
 
+console.log('\n--- 3b. one printed value per figure on every page (v258) ---');
+// The registry (_rptShown): portfolio -> buildings -> months, and portfolio -> buildings -> fuels, each level adds to its parent.
+const reg = run(ctx, '(function(d){ var R = _rptShown(d); var out = { use: {}, cost: R.cost, ct: R.costTotal }; Object.keys(R.use).forEach(function (k) { out.use[k] = {}; Object.keys(R.use[k]).forEach(function (s) { var o = R.use[k][s]; out.use[k][s] = { total: o.total, b: Object.keys(o.b).map(function (id) { var r = o.b[id]; return { total: r.total, m: Object.keys(r.m).map(function (ym) { return r.m[ym]; }) }; }) }; }); }); return JSON.parse(JSON.stringify(out)); })')(q);
+let tiers = 0;
+Object.keys(reg.use).forEach((k) =>
+  Object.keys(reg.use[k]).forEach((sk) => {
+    const o = reg.use[k][sk];
+    tiers++;
+    assert(sum(o.b.map((r) => r.total)) === o.total, k + ' ' + sk + ': the building figures add to the portfolio figure ' + o.total);
+    assert(o.b.every((r) => sum(r.m) === r.total), k + ' ' + sk + ': the months of every building add to its building figure');
+  }),
+);
+assert(tiers >= 4, 'the use series were checked (' + tiers + ')');
+['bl', 'cur'].forEach((c) => {
+  const ids = Object.keys(reg.cost[c]);
+  assert(sum(ids.map((id) => reg.cost[c][id].total)) === reg.ct[c], c + ' cost: the building figures add to the portfolio total $' + reg.ct[c]);
+  assert(ids.every((id) => reg.cost[c][id].electric + reg.cost[c][id].gas + reg.cost[c][id].propane === reg.cost[c][id].total), c + ' cost: the fuels of every building add to its building figure');
+});
+// The printed pages: one value per (building, fuel, series, month) on every page that shows it. A table belongs to the
+// building named last before it on its page.
+const cellBr = (c) => cellText(c.replace(/<br\s*\/?>/gi, ' '));
+const MONTHS = ['jan', 'feb', 'mar', 'apr', 'may', 'jun', 'jul', 'aug', 'sep', 'oct', 'nov', 'dec'];
+const bnames = q.buildings.map((b) => b.name);
+const seen = {};
+const pagesHtml = allHtml.split(/<div class="rpt-page/).slice(1);
+const SERIES = [
+  [/^(Electricity baseline \(kWh\)|Baseline kWh)$/i, 'kwh-bl'],
+  [/^(Electricity actual \(kWh\)|Actual kWh)$/i, 'kwh-cur'],
+  [/^(Natural gas baseline \(therms\)|Baseline therms)$/i, 'th-bl'],
+  [/^(Natural gas actual \(therms\)|Actual therms)$/i, 'th-cur'],
+  [/^Propane delivered baseline \(gal\)|^Baseline delivered gal$/i, 'gal-bl'],
+  [/^Propane delivered actual \(gal\)|^Actual delivered gal$/i, 'gal-cur'],
+];
+const owner = (before) => {
+  const plain = cellBr(before);
+  let best = null;
+  bnames.forEach((n) => {
+    const i = plain.lastIndexOf(n);
+    if (i >= 0 && (!best || i > best.i)) best = { n, i };
+  });
+  return best && best.n;
+};
+pagesHtml.forEach((pg, pi) => {
+  const re = /<table[\s\S]*?<\/table>/g;
+  let m;
+  while ((m = re.exec(pg))) {
+    const bld = owner(pg.slice(0, m.index));
+    if (!bld) continue;
+    const rows = (m[0].match(/<tr[\s\S]*?<\/tr>/g) || []).map((r) => (r.match(/<t[dh][\s\S]*?<\/t[dh]>/g) || []).map(cellBr));
+    const heads = rows[0] || [];
+    rows.slice(1).forEach((r) => {
+      const mi = MONTHS.indexOf((r[0] || '').slice(0, 3).toLowerCase());
+      if (mi < 0 || !/^[A-Za-z]+( \d{4})?$/.test(r[0])) return;
+      heads.forEach((h, c) => {
+        const ser = SERIES.filter((x) => x[0].test(h))[0];
+        const nv = numOf(r[c] || '');
+        if (!ser || !nv) return;
+        const key = bld + '|' + ser[1] + '|' + mi;
+        (seen[key] = seen[key] || { vals: new Set(), pages: new Set() }).vals.add(nv.v);
+        seen[key].pages.add(pi);
+      });
+    });
+  }
+});
+const keys = Object.keys(seen);
+const multi = keys.filter((k) => seen[k].pages.size >= 2);
+const diff = keys.filter((k) => seen[k].vals.size > 1);
+assert(multi.length >= 6, 'figures shown on two or more pages were compared (' + multi.length + ' of ' + keys.length + ')');
+assert(diff.length === 0, 'every figure reads the same on every page' + (diff.length ? ': ' + diff.slice(0, 5).map((k) => k + '=' + Array.from(seen[k].vals).join('/')).join('; ') : ''));
+// The cost of a building: the fuel pages add to the building figure of the Financial Summary.
+const costByFuel = {};
+(allHtml.match(/<table[\s\S]*?<\/table>/g) || []).forEach((t) => {
+  const rows = (t.match(/<tr[\s\S]*?<\/tr>/g) || []).map((r) => (r.match(/<t[dh][\s\S]*?<\/t[dh]>/g) || []).map(cellBr));
+  const heads = rows[0] || [];
+  const ci = heads.findIndex((h) => /^Baseline cost/i.test(h));
+  if (ci < 0 || heads[0] !== 'Building') return;
+  const isFuel = heads.some((h) => /^(Baseline|Actual) (kWh|therms|delivered)/i.test(h));
+  rows.slice(1).forEach((r) => {
+    if (bnames.indexOf(r[0]) < 0) return;
+    const nv = numOf(r[ci] || '');
+    if (!nv) return;
+    const e = (costByFuel[r[0]] = costByFuel[r[0]] || { fuel: 0, whole: new Set() });
+    if (isFuel) e.fuel += nv.v;
+    else e.whole.add(nv.v);
+  });
+});
+const names = Object.keys(costByFuel).filter((n) => costByFuel[n].whole.size > 0);
+assert(names.length >= 1, 'a building cost shown on the Financial Summary pages was found (' + names.length + ')');
+assert(names.every((n) => costByFuel[n].whole.size === 1), 'the baseline cost of a building is one value on every page');
+assert(names.every((n) => costByFuel[n].fuel === 0 || Array.from(costByFuel[n].whole)[0] === costByFuel[n].fuel), 'the baseline cost of a building = the sum of its fuel rows on the fuel pages');
+
 console.log('\n--- 4. the same helper everywhere ---');
 const eng = fs.readFileSync(path.join(REPO, 'app/report-engine.js'), 'utf8');
 const lib = fs.readFileSync(path.join(REPO, 'lib/perf-table.js'), 'utf8');
 assert(/function _rptApportion\(/.test(fs.readFileSync(path.join(REPO, 'lib/formatting.js'), 'utf8')) && !/function _rptApportion\(/.test(eng), '_rptApportion is defined once, in lib/formatting.js');
-assert(/_rptShownRows\(/.test(lib) && (eng.match(/_rptShownRows\(/g) || []).length >= 8, 'the meter tables and the report pages print rounded columns through _rptShownRows');
+assert(/_rptShownRows\(/.test(lib) && /_rptShown\(d\)/.test(eng) && (eng.match(/_rptShownUse\(/g) || []).length >= 8, 'the meter tables use _rptShownRows and the report pages print the figures of _rptShown');
 
 console.log('\n' + passed + ' passed, ' + failed + ' failed');
 process.exit(failed ? 1 : 0);

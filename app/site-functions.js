@@ -2507,6 +2507,12 @@ async function siteResetAllMeterTableSettings() {
    site-ui.js delegates to this array and should NOT maintain its own copy.
 */
 var RELEASE_NOTES = [
+  { v: 'v2026.11.09.258', date: '2026-11-09', title: 'Quarterly report: one printed value for each figure',
+    items: [
+      { type: 'fix', text: 'Reports > Quarterly report: a figure that shows on two pages now prints the same number on both (Financial Summary, Savings Performance, Building Summaries, Baseline Data, Meter Performance, Electricity and Natural Gas Use Detail, Appendix B). Cost goes from the portfolio to the buildings to the fuels. Baseline use goes from the building year to the quarter and its months. Every total keeps its value.' },
+      { type: 'fix', text: 'Reports > Quarterly report: Site EUI of the quarter prints with 2 decimals, so the use change (%) follows from the printed values. The Savings Summary sentence lists the savings of each month. Appendix A defines savings vs target and the baseline cost. Wider Building columns on Savings Performance and the meter tables. Clearer column names on the Financial Summary and the propane table.' }
+    ]
+  },
   { v: 'v2026.11.09.257', date: '2026-11-09', title: 'Quarterly report: Appendix A fits one page in Word',
     items: [
       { type: 'fix', text: 'Reports > Quarterly report, Appendix A: shorter wording of the allocated target, degree days and negative savings entries, so the page stays one page in the Word file.' }

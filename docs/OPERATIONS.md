@@ -1330,3 +1330,12 @@ No timer, no env var, no host change. It runs in the browser when a report previ
 - Use change colour: `_rptQChangePctTd` (:2572) is the one cell for a use change percent (red above baseline, green below, plain at 0.0% and dashes). Pages 5 (EUI cell has its own text), 9-11, 21, 22 and 23 call it.
 - Appendix A (`_rptQTerms`, :2782): Terms add the contract share (`share`) and the Baseline Data columns (`baseCols`), carry one definition of the allocated target (the Method bullet), and state the Site EUI split (baseline = weather-model use, actual = billed use). The Method and Terms lists use line-height 1.3 so Appendix A stays on one page.
 - Check: `node tools/test-report-totals-add.js` (scans every total row of a generated report), `node tools/test-report-q3-review-findings.js`, `node tools/test-report-word-table-widths.js`, `node tools/test-presented-printed-values.js`. Not covered: gas savings by building (exact dollar savings, +/-$1) and the all-buildings rows of the by-building tables against the building pages (each adds to its own total).
+
+## Quarterly report: one printed value for each figure (2026-11-09, version v2026.11.09.258)
+
+No timer, no env var, no host change. It runs in the browser when a report preview or a Word export is built. No savings formula, stored bill value or cost basis changes. A presented (frozen) report keeps its plain rounding.
+
+- `_rptShown(d)` (app/report-engine.js) computes the printed whole numbers once for each report data object (WeakMap memo). Use series: portfolio, buildings, months. Cost: portfolio, buildings, fuels. Each level adds to its parent (largest remainder, `_rptApportion` in lib/formatting.js).
+- Every page and chart reads the registry (`_rptShownUse`, `_rptShownMonthUse`, `_rptShownCost`, `_rptShownCostColumn`). The Baseline Data pages (`_buildBaselineDataHtml`, app/calculators.js) and the meter tables (`buildMeterPerfTableHTML`, lib/perf-table.js) take the registry months through `opts.fixed` and `opts.shownUse`.
+- Quarterly Site EUI prints with 2 decimals (`_rptEuiPct` computes the use change (%) from the printed values).
+- Check: `node tools/test-report-totals-add.js` (section 3b: the tiers add, and a figure on two pages is one value), `node tools/test-report-word-table-widths.js`, `node tools/test-report-table-fit.js`.

@@ -431,7 +431,7 @@ console.log('\n--- 11. Manager decisions 1-7 ---');
   assert(/The kWh and therms baseline of a month is the weather model of the meter evaluated at the heating and cooling degree days \(base [^)]*\) of the same month of [0-9]{4}\./.test(sp), 'Appendix A states the kWh and therms method (baseline-year weather)');
   assert(/The billed kW baseline of a month is the meter's model of billed kW on cooling degree days, evaluated at the cooling degree days of the month reported/.test(sp), 'Appendix A states the kW method (cooling degree days of the month reported)');
   assert(!/that month's weather/.test(sp), 'the wrong "that month\'s weather" wording is gone');
-  assert(/Baseline is the \d{4} use in the same month/.test(sp) && /Savings billed is the amount invoiced under the contract/.test(sp), 'page 1 defines baseline and savings billed in plain words');
+  assert(/Baseline is the \d{4} use in the same month/.test(sp) && /Savings billed is the amount invoiced under the Agreement/.test(sp), 'page 1 defines baseline and savings billed in plain words');
   assert(/it comes from the weather model of the meter, [A-Za-z]+ \d{4} through [A-Za-z]+ \d{4}, at the \d{4} weather \(billed kW: the weather of the month reported\)\./.test(sp) && !/weather normalized|adjusted for weather/.test(sp) && !/weather-adjusted/.test(sp.replace(/not weather-adjusted/g, '')), 'baseline term: "a weather model of the use of the meter, <start> through <end>, evaluated at the <year> weather"; the words "weather normalized" and "weather-adjusted" are gone');
   assert(/Billed kW is the demand, in kW, that the utility bills for the month\./.test(sp) && !/highest power draw/.test(sp), 'billed kW term: "the demand, in kW, that the utility bills for the month"');
   assert(!/(Baseline|Actual) kW|peak demand/i.test(sp), 'no "Baseline kW", "Actual kW" or "peak demand" label');
@@ -439,8 +439,10 @@ console.log('\n--- 11. Manager decisions 1-7 ---');
   assert(!/Lower is better/.test(sp), '"Lower is better" is removed');
   assert(!/credit/i.test(sp.replace(/Control Service Company/g, '')), 'no "credit" wording about propane');
   const termFn = run(ctx, '(function (v, label, first, digits) { var dg = digits || 2; var a = Math.abs(v).toFixed(dg); return (first ? (v < 0 ? "-" : "") : v < 0 ? " - " : " + ") + a + " &times; " + label; })');
+  const kwB = { id: 1, meterDetails: [{ commodity: 'Electric', account: 'X1', kwFit: { intercept: 100, slope: 0.25, n: 12, r2: 0.5, cvrmse: 0.1 } }], electric: { monthly: [{ month: '2026-07', kwBl: 120.4, kwCur: 110.2 }] } };
   const kwBlock = run(ctx, '_rptQBilledKwBlock')(
-    { meterDetails: [{ commodity: 'Electric', account: 'X1', kwFit: { intercept: 100, slope: 0.25, n: 12, r2: 0.5, cvrmse: 0.1 } }], electric: { monthly: [{ month: '2026-07', kwBl: 120.4, kwCur: 110.2 }] } },
+    { buildings: [kwB], period: { year: 2026, yearMonths: ['2026-07'] }, project: {} },
+    kwB,
     { yms: ['2026-07'], year: 2026 },
     { '2026-07': { cddCur: 600 } },
     termFn,
@@ -540,12 +542,12 @@ console.log('\n--- 13. model fit, wording, entered months, allocated target ---'
   const dT = { project: { blStart: 'January 2025', blEnd: 'December 2025' }, period: { year: 2026 } };
   const T = run(ctx, '_rptQTerms')(dT);
   assert(T.baseline === 'Baseline is the 2025 use in the same month. For an electricity or gas meter it comes from the weather model of the meter, January 2025 through December 2025, at the 2025 weather (billed kW: the weather of the month reported).', 'baseline term states the weather model and the 2025 weather: ' + T.baseline);
-  assert(T.billed === 'Savings billed is the amount invoiced under the contract.', 'billed term gets no new sentence');
+  assert(T.billed === 'Savings billed is the amount invoiced under the Agreement.', 'billed term gets no new sentence');
   assert(/^Allocated target is /.test(T.target) && !T.fit, 'target term is "Allocated target"; no new fit term');
   const p1Terms = run(ctx, '_rptQTermsText')(dT);
   assert(!/billed at \$0/.test(p1Terms) && /Allocated target/.test(p1Terms), 'page 1 definitions carry "Allocated target" and no new sentence');
   const methodHtml = plain(run(ctx, '_rptQMethodPage')(9, d, f, 'A'));
-  assert(!/billed at \$0/.test(methodHtml) && /Allocated target\./.test(methodHtml) && !/Savings target/.test(methodHtml), 'Appendix A: "Allocated target", no "Savings target", no new sentence');
+  assert(!/billed at \$0/.test(methodHtml) && /Building target./.test(methodHtml) && !/Savings target/.test(methodHtml), 'Appendix A: "Allocated target", no "Savings target", no new sentence');
 
   // Results words (point 22)
   const rk = run(ctx, '_rptResultKind');
@@ -852,7 +854,7 @@ console.log('\n--- 19. v252 release: Q3 2026 report fixes ---');
   assert(/white-space:nowrap">' \+ shortMo\(first\)/.test(re19), 'p23 EUI header month range does not break at the dash');
   assert(/Electricity demand \(billed&nbsp;kW, sum of /.test(re19) && /wxYear \? BR \+ '\(' \+ wxYear \+ BR \+ 'weather\)'/.test(pt19), 'kW row and meter table labels');
   const T19 = run(ctx, '_rptQTerms')({ project: { blStart: 'January 2025', blEnd: 'December 2025' }, period: { year: 2026 } });
-  assert(/kWh is the unit of electricity use/.test(T19.units) && /kW is the unit of electricity demand/.test(T19.units) && !/kilowatt/i.test(T19.units) && /therm is/i.test(T19.units) && /gal is a gallon/.test(T19.units) && /kBtu\/ft/.test(T19.units) && /set point/i.test(T19.setPoint) && /Acct#/.test(T19.setPoint) && /Site EUI/.test(T19.eui), 'Appendix A defines kWh, kW, therm, gal, kBtu/ft2, set point, Acct# and Site EUI');
+  assert(/The unit kWh is electricity use/.test(T19.units) && /The unit kW is electricity demand/.test(T19.units) && !/kilowatt/i.test(T19.units) && /therm is/i.test(T19.units) && /The unit gal is a gallon/.test(T19.units) && /kBtu\/ft/.test(T19.units) && /set point/i.test(T19.setPoint) && /Acct#/.test(T19.setPoint) && /Site EUI/.test(T19.eui), 'Appendix A defines kWh, kW, therm, gal, kBtu/ft2, set point, Acct# and Site EUI');
   assert(/replace\(\/National median, \/g, ''\)/.test(re19), 'Appendix A National median label is not repeated in its text');
   assert(/<p style="font-size:9\.5px;margin:6px 0 0">/.test(re19), 'the Baseline Data summary line has the table text size');
   // Equivalents from the EPA calculator table

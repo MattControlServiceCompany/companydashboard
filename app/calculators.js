@@ -753,6 +753,33 @@ function _buildBaselineDataHtml(b, projId, opts) {
     totPropCost += propCostOf(i);
     pPropCost += r2(propCostOf(i));
   });
+  // The whole numbers printed for the Normalized kWh, Normalized therms and Propane Gal columns. Report (v258): the months that the
+  // quarter report prints on its building pages (opts.fixed: { kwh|therms|gal: { calMonth: { shown, exact } } }) keep that printed
+  // value, and the other months are apportioned to the rest of the printed total, so the total row still adds and a month reads
+  // the same on every page. Anywhere else: Math.round of each month, as before.
+  const shownMonths = (exactOf, fixedMap) => {
+    const ex = MO_SHORT.map((_, i) => exactOf(i));
+    const base = ex.map((v) => Math.round(v || 0));
+    const fx = Object.keys(fixedMap || {})
+      .map(Number)
+      .filter((i) => ex[i] != null && Math.abs((ex[i] || 0) - fixedMap[i].exact) < 0.5);
+    if (!rpt || !fx.length) return base;
+    const total = base.reduce((a, v) => a + v, 0);
+    const fixedSum = fx.reduce((a, i) => a + fixedMap[i].shown, 0);
+    const rest = ex.map((_, i) => i).filter((i) => !fx.includes(i) && (ex[i] || 0) !== 0);
+    const ap = _rptApportion(
+      rest.map((i) => ex[i]),
+      total - fixedSum,
+    );
+    const out = base.slice();
+    fx.forEach((i) => (out[i] = fixedMap[i].shown));
+    rest.forEach((i, j) => (out[i] = ap[j]));
+    return out;
+  };
+  const fixedOpt = (opts && opts.fixed) || {};
+  const kwhShown = shownMonths((i) => (eByMo[i] || {}).kwhPredicted || 0, fixedOpt.kwh);
+  const thermsShown = shownMonths((i) => (gByMo[i] || {}).thermsPredicted || 0, fixedOpt.therms);
+  const galShown = shownMonths((i) => (pByMo[i] || {}).gallons || 0, fixedOpt.gal);
   const pTotalUtility = r2(pElecCost + pGasCost + pPropCost);
   // The report table has the billed quantity and the facilities cost beside the normalized one, so every average and
   // every Electric Cost can be checked from the columns printed; a building with only electricity has no Total Utility column.
@@ -807,7 +834,7 @@ function _buildBaselineDataHtml(b, projId, opts) {
                     '</td>' +
                     (elecM
                       ? '<td style="text-align:right;font-family:var(--mono)">' +
-                        numOrZero(kwh, eCost, Math.round(kwh).toLocaleString()) +
+                        numOrZero(kwh, eCost, kwhShown[i].toLocaleString()) +
                         '</td>' +
                         (rpt
                           ? '<td style="text-align:right;font-family:var(--mono)">' +
@@ -851,7 +878,7 @@ function _buildBaselineDataHtml(b, projId, opts) {
                       : '') +
                     (gasM
                       ? '<td style="border-left:2px solid var(--border2);text-align:right;font-family:var(--mono)">' +
-                        (typeof gb.thermsPredicted === 'number' ? Math.round(therms).toLocaleString() : '—') +
+                        (typeof gb.thermsPredicted === 'number' ? thermsShown[i].toLocaleString() : '—') +
                         '</td>' +
                         (rpt ? '<td style="text-align:right;font-family:var(--mono)">' + numOrZero(gb.therms, gCost, Math.round(gb.therms || 0).toLocaleString()) + '</td>' : '') +
                         '<td style="text-align:right;font-family:var(--mono);font-size:11px">' +
@@ -863,7 +890,7 @@ function _buildBaselineDataHtml(b, projId, opts) {
                       : '') +
                     (propaneM
                       ? '<td style="border-left:2px solid var(--border2);text-align:right;font-family:var(--mono)">' +
-                        numOrZero(propGal, pCost, Math.round(propGal).toLocaleString()) +
+                        numOrZero(propGal, pCost, galShown[i].toLocaleString()) +
                         '</td>' +
                         '<td style="text-align:right;font-family:var(--mono);font-size:11px">' +
                         (avgPropGal ? '$' + avgPropGal.toFixed(3) : rpt && propGal > 0 ? '$0.000' : '—') +

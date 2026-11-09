@@ -78,6 +78,18 @@ const fns = [
   '_rptPeriodWords',
   '_rptContractProgressPct',
   '_rptBldgCostShown',
+  '_rptCountWord',
+  '_rptEuiPct',
+  '_rptShown',
+  '_rptShownCompute',
+  '_rptShownUse',
+  '_rptShownMonthUse',
+  '_rptShownPortfolio',
+  '_rptShownMeterUse',
+  '_rptShownMonthSum',
+  '_rptShownCost',
+  '_rptShownCostColumn',
+  '_rptShownBaselineMonths',
   '_rptQChangePctTd',
   '_rptQPct',
   '_rptPctBasisText',
@@ -108,6 +120,7 @@ const utilFns = ['_fixISO', '_parseISO', 'calcDays'].map((f) => loadFn(REPO + '/
 vm.runInContext(
   [pre]
     .concat(utilFns)
+    .concat(["var _RPT_SHOWN_FUELS = [{ k: 'electric', com: 'Electric', series: { bl: ['kwhBl', 'bl'], cur: ['kwhCur', 'cur'], kwBl: ['kwBl', 'kwBl'], kwCur: ['kwCur', 'kwCur'] } }, { k: 'gas', com: 'Gas', series: { bl: ['thermsBl', 'bl'], cur: ['thermsCur', 'cur'] } }, { k: 'propane', com: 'Propane', series: { bl: ['galBl', 'bl'], cur: ['galCur', 'cur'] } }]; var _rptShownMemo = typeof WeakMap === 'function' ? new WeakMap() : null;"])
     .concat(files.map(rd))
     .concat(fns.map((f) => loadFn(REP, f)))
     .join('\n\n'),
