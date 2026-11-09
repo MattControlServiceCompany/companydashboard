@@ -82,5 +82,15 @@ ok(!('pm10' in e.pollutants) && !('voc_oz' in e.pollutants) && !('co_oz' in e.po
 const line = vm.runInContext('emissionsSourceLine', sb)('KS');
 ok(/eGRID2023 \(rev 2\), Kansas \(electricity\)/.test(line) && /GHG Emission Factors Hub/.test(line), 'source line names eGRID2023 rev 2, the state name Kansas and the GHG Hub: ' + line);
 
+// Equivalents come from the printed CO2 pounds (v254): 75,255 lb / 2,204.6 = 34.135 t, each rounded to the nearest whole number.
+const eqOf = vm.runInContext('_equivalentsOf', sb);
+const e75 = eqOf(75255 / 2204.6);
+ok(e75.carsRemoved === 8 && e75.gallonsGasoline === 3841 && e75.barrelsOil === 79 && e75.households === 5, 'v254: 75,255 lb CO2 -> 8 cars, 3,841 gal gasoline, 79 barrels, 5 homes (' + [e75.carsRemoved, e75.gallonsGasoline, e75.barrelsOil, e75.households].join(', ') + ')');
+ok(e75.treeSeedlings === 569 && e75.acresForest === 34 && e75.tonsRecycled === 12 && e75.propaneCylinders === 1552, 'v254: 569 seedlings, 34 acres, 12 tons of waste, 1,552 propane cylinders (' + [e75.treeSeedlings, e75.acresForest, e75.tonsRecycled, e75.propaneCylinders].join(', ') + ')');
+// the equivalents of a result are those of its own CO2 pounds (not of CO2e)
+const q3eq = calc(-107310, 222, 24).increaseEquivalents;
+const q3mt = -calc(-107310, 222, 24).pollutants.co2 / 2204.6;
+ok(q3eq.gallonsGasoline === Math.round(q3mt / 0.008887) && q3eq.carsRemoved === Math.round(q3mt / 4.29), 'v254: a result equivalents are computed from its printed CO2 pounds');
+
 console.log(fails ? fails + ' FAILED' : 'ALL PASS');
 process.exit(fails ? 1 : 0);

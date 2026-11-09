@@ -118,7 +118,7 @@ const ok = (c, m) => {
       ok(r[1] === '50', '1 baseline hours per week (5 days x 10 hours): ' + r[1]);
       ok(r[2] === '56', '1 quarter hours per week weighted by days in force (45 h for 26 days, 60 h for 66 days; open end clipped to the quarter end): ' + r[2]);
       ok(r[3] === '68 / 72', '1 baseline set points heating / cooling: ' + r[3]);
-      ok(r[4] === '69-70 / 73-74', '1 quarter set point range, out-of-quarter entry dropped: ' + r[4]);
+      ok(r[4] === '69–70 / 73–74', '1 quarter set point range, out-of-quarter entry dropped: ' + r[4]);
     }
     ok(/°F/.test(out.heads[4]) && !/degrees Fahrenheit/i.test(out.heads[4]), '5 set point header uses °F: ' + out.heads[4]);
     ok(!/zones/i.test(out.rows.map((r) => r.join(' ')).join(' ')), '5 no zone text in any cell');

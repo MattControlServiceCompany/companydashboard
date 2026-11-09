@@ -2507,6 +2507,13 @@ async function siteResetAllMeterTableSettings() {
    site-ui.js delegates to this array and should NOT maintain its own copy.
 */
 var RELEASE_NOTES = [
+  { v: 'v2026.11.09.254', date: '2026-11-09', title: 'Quarterly report: review fixes',
+    items: [
+      { type: 'fix', text: 'Reports > Quarterly report, Observations and Savings Performance pages: the electricity savings of a building equal its kWh row plus its kW row. The Total saved percent in the Meter Performance tables uses the exact values on every page.' },
+      { type: 'fix', text: 'Reports > Quarterly report, Environmental Impact page: every equivalent comes from the printed CO2. The source note is one sentence.' },
+      { type: 'fix', text: 'Reports > Quarterly report, Appendix A and Year-to-Date pages: new Terms entries. The Contract to Date table prints later quarters below the total. Headers and column widths are cleaner.' }
+    ]
+  },
   { v: 'v2026.11.08.253', date: '2026-11-08', title: 'Quarterly report: use change fixes',
     items: [
       { type: 'fix', text: 'Reports > Quarterly report, Building Summary, Meter Performance and Appendix B pages: every use change equals the actual use minus the baseline use printed beside it, in each month and in each Total row.' },

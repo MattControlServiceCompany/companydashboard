@@ -616,7 +616,7 @@ console.log('\n--- 14. rounding, actual cost on every page, meter names, kW sepa
   bh.electric.kwCostSaved = -92.54;
   bh.gas = { monthly: bh.electric.monthly, thermsBl: 1, thermsCur: 1, costSaved: -402.3 };
   const fr = run(ctx, '_rptQFacts')(dr);
-  assert(fr.parts.A.electric === -2678 && fr.parts.A.gas === -402 && fr.parts.A.total === -3081, 'each part rounded from its own value: electricity ' + fr.parts.A.electric + ', gas ' + fr.parts.A.gas + ', total ' + fr.parts.A.total);
+  assert(fr.parts.A.electric === -2679 && fr.parts.A.gas === -402 && fr.parts.A.total === -3081, 'electricity is its printed kWh row plus its printed billed kW row (-2,586 + -93), gas and total each rounded from their own value: electricity ' + fr.parts.A.electric + ', gas ' + fr.parts.A.gas + ', total ' + fr.parts.A.total);
   assert(fr.parts.A.elecEnergy === -2586 && fr.parts.A.elecDemand === -93, 'the kWh and billed kW parts are each rounded from their own value: ' + fr.parts.A.elecEnergy + ', ' + fr.parts.A.elecDemand);
   const rawElec = dr.buildings.reduce((s, b) => s + ((b.electric && b.electric.costSaved) || 0), 0);
   assert(fr.partsTotal.electric === Math.round(rawElec), 'the site total of a fuel is the rounded sum of the unrounded values: ' + fr.partsTotal.electric + ' = round(' + rawElec.toFixed(2) + ')');
@@ -628,7 +628,7 @@ console.log('\n--- 14. rounding, actual cost on every page, meter names, kW sepa
     console.log('ERR building summary page ' + String(e.stack).split(String.fromCharCode(10)).slice(0, 2).join(' / '));
   }
   const byFuelHtml = run(ctx, '_rptQByFuelTable')(dr, fr);
-  assert(/-\$2,678/.test(byFuelHtml.replace(/<[^>]+>/g, ' ')), 'Savings by building and utility prints electricity -$2,678 for the review case');
+  assert(/Building A\s+-\$2,679/.test(byFuelHtml.replace(/<[^>]+>/g, ' ')), 'data 1 (v254): Savings by building and utility prints electricity -$2,679 (the -$2,586 kWh row plus the -$93 billed kW row) for the review case');
   if (sumHtml) assert(rowLast(sumHtml, 'Electricity use (kWh)') === '-$2,586' && rowLast(sumHtml, 'Electricity demand (billed') === '-$93', 'Building Summary electricity is two rows, use -$2,586 and demand -$93: ' + rowLast(sumHtml, 'Electricity use (kWh)') + ' / ' + rowLast(sumHtml, 'Electricity demand (billed kW, sum of 3 months)'));
   // The Building Summary and the "by Building" table of every building print the same savings (collected data)
   const fq = run(ctx, '_rptQFacts')(q3);
@@ -682,10 +682,10 @@ console.log('\n--- 14. rounding, actual cost on every page, meter names, kW sepa
   // 13c. a meter name is one line in the PDF (nowrap) and in Word (the nowrap cell widens the Word column)
   const meterHtml = run(ctx, '(function(d,f){ return _rptQMeterPage(6,d,f); })')(q3, fq);
   const nNames = (meterHtml.match(/Acct#/g) || []).length;
-  const nNowrap = (meterHtml.match(/<td style="white-space:nowrap">[A-Za-z ]+ - Acct#/g) || []).length;
+  const nNowrap = (meterHtml.match(/<td style="white-space:nowrap">[A-Za-z ]+, Acct#/g) || []).length;
   assert(nNames > 0 && nNames === nNowrap, 'every meter name cell is white-space:nowrap (' + nNowrap + ' of ' + nNames + ')');
   const detailMeters = detail(1, q3, fq, 'electric').html;
-  assert(/<td style="white-space:nowrap">Electricity - Acct#/.test(detailMeters), 'the meters under the fuel table also keep each name on one line');
+  assert(/<td style="white-space:nowrap">Electricity, Acct#/.test(detailMeters), 'the meters under the fuel table also keep each name on one line');
   const wM = run(ctx, '_RPT_Q_W_METERS');
   assert(wM.reduce((s, v) => s + v, 0) === 100 && wM[1] >= 30 && wM[0] >= 28, 'the meter name column is at least 30% and the building column 28% of the meter table: ' + wM.join(','));
   // 13d. Baseline Data kW cells use thousands separators (a total of 3,600.0 kW, not 3600.0)
@@ -817,7 +817,7 @@ console.log('\n--- 17. v250 display fixes (v249 reviews) ---');
   assert(/Math\.round\(\(d\.savings \|\| 0\) \* 100\) - fl\[0\] - fl\[1\]/.test(pt17), 'meter table kWh $ and kW $ cents are apportioned to the Total $');
   const T17 = run(ctx, '_rptQTerms')({ project: { blStart: 'January 2025', blEnd: 'December 2025' }, period: { year: 2026 } });
   assert(/^Facilities kW is /.test(T17.facilitiesKw) && /^Normalized use is /.test(T17.normalized) && /^Load factor is /.test(T17.loadFactor), 'Appendix A defines Facilities kW, Normalized use and Load factor');
-  assert(/An annual EUI covers a year\. A quarter EUI covers only the quarter and is not annualized\./.test(T17.eui), 'the EUI term states the quarter and annual forms');
+  assert(/An annual EUI covers a year\. A quarterly EUI covers only the quarter and is not annualized\./.test(T17.eui), 'the EUI term states the quarter and annual forms');
   assert(!/_rptQLaterYears|Degree days compare each day/.test(re17), 'no explanation prose left on the contract totals or the weather appendix page');
 }
 
@@ -903,6 +903,48 @@ console.log('\n--- 20. v253 release: every printed change equals printed actual 
   assert(/Contract time elapsed: \d+% of the contract period/.test(sp20), 'p25 Terms: "Contract time elapsed"');
   assert(/white-space:nowrap;color:var\(--rpt-page-text\)/.test(re20) && /table-layout:fixed' : ''\) \+ '"' \+ \(_uq \? ' data-dx-widths="16,17,10,9,9,13,14,12"'/.test(re20), 'p5: the Period cells never wrap and the Period column has width');
   assert(/\(x == null \? '&mdash;' : _rptQN\(x\)\)/.test(re20), 'p31 Degree Days: an empty cell is an em dash');
+}
+
+console.log('\n--- 21. v254 release: one value for one figure (building electricity, meter total percent) ---');
+{
+  const fq21 = run(ctx, '_rptQFacts')(q3);
+  // Data 1: a building electricity figure is its printed kWh row plus its printed billed kW row, for every building
+  const allSum = q3.buildings.every((b) => fq21.parts[b.id].electric === fq21.parts[b.id].elecEnergy + fq21.parts[b.id].elecDemand);
+  assert(allSum, 'data 1: each building electricity dollars = its kWh row + its billed kW row (one rule for all buildings)');
+  const byFuel = run(ctx, '_rptQByFuelTable')(q3, fq21).replace(/<tr/g, '\n<tr');
+  const usd = (t) => Number(String(t).replace(/[$,\s]/g, '').replace(/\u2212/g, '-'));
+  const sumHtml21 = run(ctx, '_rptQBuildingSummaryPage')(1, q3, q3.buildings[0], fq21);
+  const rowCells = (re) => {
+    const r = re.exec(sumHtml21);
+    return r ? (r[0].match(/<td[^>]*>[\s\S]*?<\/td>/g) || []).map((c) => c.replace(/<[^>]+>/g, '')) : null;
+  };
+  const kwhCells = rowCells(/<tr><td>Electricity use \(kWh\)[\s\S]*?<\/tr>/);
+  const kwCells = rowCells(/<tr><td>Electricity demand[\s\S]*?<\/tr>/);
+  const fuelLine = byFuel.split('\n').find((l) => l.indexOf(q3.buildings[0].name) >= 0);
+  const fuelCells = fuelLine ? (fuelLine.match(/<td[^>]*>[\s\S]*?<\/td>/g) || []).map((c) => c.replace(/<[^>]+>/g, '')) : null;
+  assert(kwhCells && kwCells && fuelCells && usd(kwhCells[kwhCells.length - 1]) + usd(kwCells[kwCells.length - 1]) === usd(fuelCells[1]), 'data 1: the Electricity by Building cell equals the two Building Summary rows (' + (kwhCells && kwCells ? kwhCells[kwhCells.length - 1] + ' + ' + kwCells[kwCells.length - 1] : '?') + ' = ' + (fuelCells && fuelCells[1]) + ')');
+  // Data 2 and 3: the Total percent of a meter table is the exact saved use over the exact baseline (the figure of every row)
+  const meterTotalCells = (rows, commodity) => {
+    vm.runInContext('var __gmsOrig = getMeterSavings;', ctx);
+    ctx.__rows = rows;
+    vm.runInContext('getMeterSavings = function () { return { rows: __rows }; };', ctx);
+    try {
+      const m = { id: 'mx', commodity: commodity, baseline: { months: ['2024-07', '2024-08', '2024-09'] } };
+      const html = vm.runInContext('buildMeterPerfTableHTML', ctx)(m, [], true, { mode: 'report', filterYMs: rows.map((r) => r.ym) }).html;
+      const trs = html.match(/<tr[\s\S]*?<\/tr>/g).filter((r) => /<td/.test(r));
+      return trs[trs.length - 1].match(/<td[^>]*>[\s\S]*?<\/td>/g).map((c) => c.replace(/<[^>]+>/g, '').replace(/\u2212/g, '-'));
+    } finally {
+      vm.runInContext('getMeterSavings = __gmsOrig;', ctx);
+    }
+  };
+  const mk = (ym, e, a, rate) => ({ ym: ym, normDays: 30, expUsage: e, actUsage: a, unitRate: rate, savings: (e - a) * rate, kwhRate: 0, kwhCostSav: 0, blExpKW: 0, demKW: 0, bilKW: 0, kwRate: 0, kwCostSav: 0 });
+  // propane: exact baseline 23.72 gal, none delivered; 24 gal printed; the percent is never above 100%
+  const tp = meterTotalCells([mk('2026-07', 10.0, 0, 1.69), mk('2026-08', 7.72, 0, 1.69), mk('2026-09', 6.0, 0, 1.69)], 'Propane');
+  assert(tp.some((c) => c === '+100.0%'), 'data 2: a propane total of 24 -> 0 gal prints +100.0% (' + tp.join(' | ') + ')');
+  // gas: exact baseline 130.9, exact actual 3.4 -> 97.4%, the use change percent of the building page
+  const tg = meterTotalCells([mk('2026-07', 0.4, 1.4, 0.9), mk('2026-08', 10.8, 0, 0.9), mk('2026-09', 119.7, 2.0, 0.9)], 'Gas');
+  const exactPct = (((130.9 - 3.4) / 130.9) * 100).toFixed(1);
+  assert(exactPct === '97.4' && tg.some((c) => c === '+97.4%'), 'data 3: a gas total prints the exact saved use over the exact baseline (+97.4%), the value of the building page (' + tg.join(' | ') + ')');
 }
 
 console.log('\n' + passed + ' passed, ' + failed + ' failed');
