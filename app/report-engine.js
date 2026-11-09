@@ -3685,8 +3685,19 @@ function _rptQContractBody(d, f) {
   qRows += '<tr><td>Year ' + d.contract.currentYear + ' contract target</td><td class="rpt-n">' + _fmtUSD(_rptYear1Target(d), '$0') + '</td><td class="rpt-n"></td></tr>';
   var t1 = _rptQTable([58, 21, 21], ['Contract year ' + d.contract.currentYear, 'Allocated target', 'Savings billed'], qRows);
 
-  // Savings to date against the projected savings of the same quarters (Matt, 2026-11-09): the quarters through this one, then the
-  // total that adds from them. Projected = the allocated target of the contract quarterly table (qT); savings to date = the
+  var body =
+    '<h2>Contract to Date</h2>' +
+    t1;
+  return body;
+}
+// Savings to date against the projected savings, quarter by quarter (Matt, 2026-11-09); printed on the Financial Summary.
+function _rptQSavingsToDateTable(d, f) {
+  var qT = d.contract.quarterlyTargets || [0, 0, 0, 0];
+  var acts = d.contract.quarterlyActuals || [];
+  var tT = 0;
+  var tB = f.cumulative;
+  for (var ti = 0; ti < f.q && ti < 4; ti++) tT += qT[ti] || 0;
+  // The quarters through this one, then the total that adds from them. Projected = the allocated target of the contract quarterly table (qT); savings to date = the
   // savings billed (acts, tB: the same values the table above prints).
   var pctOf = function (billed, target) {
     return target > 0 ? Math.round((billed / target) * 100) + '%' : '-';
@@ -3701,13 +3712,7 @@ function _rptQContractBody(d, f) {
   pRows +=
     '<tr class="rpt-tot"><td>Through ' + _rptQuarterLabel(f.q, f.year) + '</td><td class="rpt-n">' + _fmtUSD(tT, '$0') + '</td><td class="rpt-n">' +
     _fmtUSD(tB, '$0') + '</td><td class="rpt-n">' + pctOf(tB, tT) + '</td></tr>';
-  var t3 = _rptQTable([34, 22, 22, 22], ['Period', 'Projected', 'Savings to date', '% of projected'], pRows);
-  var body =
-    '<h2>Contract to Date</h2>' +
-    t1 +
-    '<h2>Contract Totals</h2>' +
-    t3;
-  return body;
+  return _rptQTable([34, 22, 22, 22], ['Period', 'Projected', 'Savings to date', '% of projected'], pRows);
 }
 function _rptQContractPage(n, d, f) {
   var body = _rptQContractBody(d, f);
@@ -4216,7 +4221,7 @@ function _rptQFuelDetailPages(n, d, f, kind) {
     (kind === 'electric' ? '<td class="rpt-n">' + _rptQN(t.kwBl) + '</td><td class="rpt-n">' + _rptQN(t.kwCur) + '</td>' : '') +
     '<td class="rpt-n">' + _fmtUSD(t.cBl, '$0') + '</td><td class="rpt-n">' + _fmtUSD(t.cCur, '$0') + '</td>' + _rptQSavTd(t.sav) + '</tr>';
   var uh = kind === 'propane' ? 'delivered (gal)' : K.unit;
-  var heads = ['Building', 'Baseline<br>' + uh, 'Actual<br>' + uh, 'Use change<br>(%)'].concat(kind === 'electric' ? (_rptKwActual(d) ? ['Baseline&nbsp;kW', 'Actual&nbsp;kW'] : ['Baseline<br>billed&nbsp;kW', 'Actual<br>billed&nbsp;kW']) : [], [_rptCostHeads(d).bl, _rptCostHeads(d).cur, _rptCostHeads(d).sav]);
+  var heads = ['Building', 'Baseline<br>' + uh, 'Actual<br>' + uh, 'Use change<br>(%)'].concat(kind === 'electric' ? (_rptKwActual(d) ? ['Baseline<br>Actual&nbsp;kW', 'Actual&nbsp;kW'] : ['Baseline<br>billed&nbsp;kW', 'Actual<br>billed&nbsp;kW']) : [], [_rptCostHeads(d).bl, _rptCostHeads(d).cur, _rptCostHeads(d).sav]);
   var widths = kind === 'electric' ? _RPT_Q_W_FUEL_ELEC : _RPT_Q_W_FUEL;
   var names = blds.map(function (b) {
     return b.name;
@@ -6375,6 +6380,7 @@ function rptPageFinancial(n, d) {
     qtrTable +
     (d.contract.hasCsc ? '<h2>Control Service Company Compensation</h2>' : '') +
     cscTable +
+    (_uq && !pw.isAnnual ? '<h2>Savings to Date vs Projected</h2>' + _rptQSavingsToDateTable(d, _rptQFacts(d)) : '') +
     '';
   // fix/report-quarterly-restructure (2026-09-09), Part B item 1: the "Monthly Cost Breakdown"
   // table that used to render here read every b[com].monthly entry (the RAW full-post-baseline-

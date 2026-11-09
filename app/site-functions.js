@@ -2510,6 +2510,7 @@ var RELEASE_NOTES = [
   { v: 'v2026.11.09.261', date: '2026-11-09', title: 'Quarterly report: Q3 2026 kW savings on Actual kW',
     items: [
       { type: 'fix', text: 'Reports > Quarterly report, Q3 2026 on: kW savings compare the baseline kW with the Actual kW of each bill. The baseline kW uses the cooling degree days of the same month of 2025. The kW rate adds the demand, TDC and facilities charges, each over its own kW. Q1 and Q2 do not change.' },
+      { type: 'fix', text: 'Reports > Quarterly report, Financial Summary: a Savings to Date vs Projected table shows each quarter, then the total to date.' },
       { type: 'fix', text: 'Reports > Quarterly report: a gas month with zero use saves the baseline use at the average gas rate of the other bills of the same provider that month.' }
     ]
   },

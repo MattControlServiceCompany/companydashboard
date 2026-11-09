@@ -356,7 +356,8 @@ assert(/\$26,948/.test(cover) && !/26,968/.test(cover), 'cover prints $26,948');
 assert(/\$26,948/.test(results) && !/26,968/.test(results), 'results page prints $26,948');
 assert(/\$26,948/.test(contract), 'contract page prints $26,948');
 assert(/\$16,169/.test(results) && /\$10,779/.test(results), 'split is 60% $16,169 and 40% $10,779');
-assert(!/billed through Q3 2026 plus the/.test(contract) && /Through Q3 2026/.test(contract) && /Savings to date/.test(contract), 'no explanation prose under the contract totals table; the Through row names its parts');
+const stdTbl = run(ctx, '_rptQSavingsToDateTable')(d, f).replace(/<[^>]+>/g, ' ');
+assert(!/billed through Q3 2026 plus the/.test(contract) && /Through Q3 2026/.test(stdTbl) && /Savings to date/.test(stdTbl) && /\$26,948/.test(stdTbl), 'Savings to Date vs Projected table: no explanation prose; the Through row prints billed to date');
 
 const targets = d.buildings.map((b) => run(ctx, '(function(d,b){ return _rptBuildingTarget(d,b); })')(d, b));
 assert(targets.reduce((s, v) => s + v, 0) === 100 && targets.every(Number.isInteger), 'building targets are whole dollars that add to the total target: ' + targets.join('+'));
@@ -568,7 +569,8 @@ console.log('\n--- 13. model fit, wording, entered months, allocated target ---'
 
   // Contract page (point 17; Matt 2026-11-09: Contract Totals = savings to date against projected)
   const ctPage = plain(run(ctx, '_rptQContractPage')(5, d, f));
-  assert(/Contract Totals/.test(ctPage) && /Projected/.test(ctPage) && /Savings to date/.test(ctPage) && /% of projected/.test(ctPage) && !/Billed to date plus contract targets|Year 2027|Year 2028|if remaining targets are met|Savings target/.test(ctPage), 'contract page: the Contract Totals table is Period / Projected / Savings to date / % of projected (Matt, 2026-11-09), no 3-year rows');
+  const stdPlain = plain(run(ctx, '_rptQSavingsToDateTable')(d, f));
+  assert(!/Contract Totals/.test(ctPage) && /Projected/.test(stdPlain) && /Savings to date/.test(stdPlain) && /% of projected/.test(stdPlain) && !/Billed to date plus contract targets|Year 2027|Year 2028|if remaining targets are met|Savings target/.test(ctPage), 'Savings to Date vs Projected (Financial Summary) is Period / Projected / Savings to date / % of projected (Matt, 2026-11-09); the contract page has no Contract Totals table');
   const mPage = plain(run(ctx, '_rptQMethodPage')(5, d, f, 'A'));
   assert(/later years escalate it 3\.5% a year, as the Agreement states/.test(mPage) && !/escalation stated in the Agreement/.test(mPage) && !/escalation stated in the Agreement/.test(ctPage), 'Appendix A (not the contract page) attributes the 3.5% to the Agreement');
   assert(/Allocated target/.test(ctPage), 'contract page: column "Allocated target"');
