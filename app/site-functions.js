@@ -2507,6 +2507,13 @@ async function siteResetAllMeterTableSettings() {
    site-ui.js delegates to this array and should NOT maintain its own copy.
 */
 var RELEASE_NOTES = [
+  { v: 'v2026.11.09.255', date: '2026-11-09', title: 'Quarterly report: heading and column fixes',
+    items: [
+      { type: 'fix', text: 'Reports > Quarterly report, Contract to Date and Totals page: the page heading no longer repeats as a table heading.' },
+      { type: 'fix', text: 'Reports > Quarterly report, Financial Summary and Savings Performance pages: the column reads "Savings, % of baseline cost".' },
+      { type: 'fix', text: 'Reports > Quarterly report, Electricity Use Detail page: the Building column is wider so school names stay on one line.' }
+    ]
+  },
   { v: 'v2026.11.09.254', date: '2026-11-09', title: 'Quarterly report: review fixes',
     items: [
       { type: 'fix', text: 'Reports > Quarterly report, Observations and Savings Performance pages: the electricity savings of a building equal its kWh row plus its kW row. The Total saved percent in the Meter Performance tables uses the exact values on every page.' },

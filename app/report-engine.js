@@ -2576,7 +2576,7 @@ function _rptQUnitSavTd(v) {
 // Meter tables (Utility Bills and Use Detail, the meters under each fuel): the meter name column is wide enough for the longest
 // name ("Natural Gas-Acct#" and an account number) and the name cell never wraps (_rptMeterTd), in the PDF and in Word.
 var _RPT_Q_W_METERS = [28, 32, 12, 14, 14];
-var _RPT_Q_W_FUEL_ELEC = [22, 10, 10, 9, 8, 8, 11, 12, 10];
+var _RPT_Q_W_FUEL_ELEC = [29, 10, 9, 8, 7, 7, 10, 11, 9];
 var _RPT_Q_W_FUEL = [25, 10, 10, 12, 13, 13, 17];
 var _RPT_Q_W_BILLS = [19, 12, 15, 14, 8, 9, 23];
 // The Word export has its own widths for the same three tables: a building name stays on one line in Word.
@@ -3571,7 +3571,7 @@ function _rptQContractBody(d, f) {
 }
 function _rptQContractPage(n, d, f) {
   var body = _rptQContractBody(d, f);
-  return rptPage(n, 'Contract Totals', body, { data: d, letterhead: false, label: 'Page ' + n + ' - Contract Totals' });
+  return rptPage(n, 'Contract to Date and Totals', body, { data: d, letterhead: false, label: 'Page ' + n + ' - Contract to Date and Totals' });
 }
 
 // ---- Page 6: energy use intensity and weather ----
@@ -4054,7 +4054,7 @@ function _rptQFuelDetailPages(n, d, f, kind) {
       ? _rptQNote(_escHtml(_rptQListPlain(names)) + (names.length === 1 ? ' is the only building with a propane meter.' : ' have propane meters.'))
       : '';
   var body =
-    chart + '<h2>' + K.head + ', ' + ql + '</h2>' + _rptQTable(widths, heads, rows, null, kind === 'electric' ? _RPT_Q_WDX_FUEL_ELEC : _RPT_Q_WDX_FUEL).replace('<table ', kind === 'electric' ? '<table data-dx-fscale="0.95" ' : '<table ') +
+    chart + '<h2>' + K.head + ', ' + ql + '</h2>' + _rptQTable(widths, heads, rows, null, kind === 'electric' ? _RPT_Q_WDX_FUEL_ELEC : _RPT_Q_WDX_FUEL).replace('<table ', kind === 'electric' ? '<table data-dx-fscale="0.95" data-rpt-small="1" ' : '<table ') +
     only;
   // The meters of this fuel: one row per meter, the meter named "<Utility type>-Acct#<account number>".
   var mrows = '';
@@ -6000,7 +6000,7 @@ function rptPageFinancial(n, d) {
     (_uq ? '<br>' + _rptCostHeads(d).sav : '<br>Actual Savings') +
     '</th>' +
     '<th class="rpt-n" style="width:11%">' +
-    (_uq ? 'Percent of<br>baseline cost' : 'Savings<br>Percent') +
+    (_uq ? 'Savings, %<br>of baseline cost' : 'Savings<br>Percent') +
     '</th>' +
     '<th style="width:' + (_uq ? 14 : 15) + '%">' +
     'Status' +
@@ -6411,7 +6411,7 @@ function rptPageSavingsPerformance(n, d) {
     '<th class="rpt-n" style="width:9%">' + (_uq ? 'Propane<br>delivered<br>(gal)' : 'Propane<br>Gallons') + '</th>' +
     '<th class="rpt-n" style="width:15%">' + (_uq ? _rptCostHeads(d).both : 'Cost') + '</th>' +
     '<th class="rpt-n" style="width:15%">' + (_uq ? 'Site EUI, ' + _rptQuarterLabel(d.period.quarter, d.period.year).replace(' ', '&nbsp;') + '<br>(kBtu/ft&sup2;)' : 'Site Energy<br>Use Intensity') + '</th>' +
-    '<th class="rpt-n" style="width:13%">' + (_uq ? 'Percent of<br>baseline cost' : 'vs<br>Baseline') + '</th>' +
+    '<th class="rpt-n" style="width:13%">' + (_uq ? 'Savings, %<br>of baseline cost' : 'vs<br>Baseline') + '</th>' +
     '</tr></thead>' +
     '<tbody>' +
     annTableBody +

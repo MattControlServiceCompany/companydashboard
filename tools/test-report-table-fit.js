@@ -35,7 +35,7 @@ const ok = (c, m) => {
           _RPT_Q_W_FUEL_ELEC,
           ['Building', 'Baseline kWh', 'Actual kWh', 'Change percent', 'Baseline billed kW', 'Actual billed kW', 'Baseline cost', 'Actual cost', 'Savings'],
           names.map((n) => e(n, vals)).join('') + '<tr class="rpt-tot"><td>Total</td>' + vals.map((x) => '<td class="rpt-n">' + x + '</td>').join('') + '</tr>',
-        );
+        ).replace('<table ', '<table data-rpt-small="1" ');
         const host = document.createElement('div');
         host.id = 'reportPages';
         host.innerHTML = rptPage(1, 'Fit test', t1, { letterhead: false }) + rptPage(2, 'Fit test', t2, { letterhead: false });

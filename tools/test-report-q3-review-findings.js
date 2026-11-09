@@ -566,7 +566,7 @@ console.log('\n--- 13. model fit, wording, entered months, allocated target ---'
 
   // Contract page (point 17): contract facts, no prediction, no "Projection"
   const ctPage = plain(run(ctx, '_rptQContractPage')(5, d, f));
-  assert(/Contract Totals/.test(ctPage) && /Billed to date plus contract targets/.test(ctPage) && !/Projection|projected|if remaining targets are met|Savings target/.test(ctPage), 'contract page: "Contract Totals", "Billed to date plus contract targets", no projection wording');
+  assert(/Contract Totals/.test(ctPage) && /Billed to date plus contract targets/.test(ctPage) && !/Projection|projected|if remaining targets are met|Savings target/.test(ctPage), 'contract page: "Billed to date plus contract targets", no projection wording');
   const mPage = plain(run(ctx, '_rptQMethodPage')(5, d, f, 'A'));
   assert(/contract target at the 3\.5% annual energy cost escalation stated in the Agreement/.test(mPage) && !/escalated 3\.5% a year/.test(ctPage + mPage) && !/escalation stated in the Agreement/.test(ctPage), 'Appendix A (not the contract page) attributes the 3.5% to the Agreement');
   assert(/Allocated target/.test(ctPage), 'contract page: column "Allocated target"');

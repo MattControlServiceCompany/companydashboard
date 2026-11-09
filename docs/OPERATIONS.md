@@ -1311,3 +1311,12 @@ No timer, no env var, no host change. It runs in the browser when a report previ
 - Environmental page: `_equivalentsOf` (computations/pollution.js:196) rounds to the nearest whole number and derives every equivalent from the printed CO2 (pounds divided by 2,204.62) with the EPA factors. The page prints "nitrogen oxides" and one source line.
 - Wording and layout: meter labels "Electricity, Acct# ..."; building sentences on the Observations page use one form for all buildings; Appendix A Terms (`_rptQTerms`, line 2782) has entries for baseline cost, actual cost, target cost, Below Target, negative savings, sign convention, Actual kW, kW cost, Total utility and occupied hours. Contract to Date prints the later quarters below the "Through Q3 2026" total. Column widths changed on the Building, Utility, EUI, electric fuel and compensation tables. The page count stays 31.
 - Check: `node tools/test-report-q3-review-findings.js` (section 21), `node tools/test-pollution-factors.js`, `node tools/test-report-table-fit.js`, `node tools/test-report-word-table-widths.js`, `node tools/test-report-page-packing.js`. In the preview: p7 one building electricity equals its two rows; p6 equivalents 8 cars, 3,841 gallons.
+
+## Quarterly report: heading and column fixes (2026-11-09, version v2026.11.09.255)
+
+No timer, no env var, no host change. It runs in the browser when a report preview or a Word export is built. No formula, stored bill value or cost basis changes.
+
+- Contract page (`_rptQContractPage`, app/report-engine.js:3574): the page title is "Contract to Date and Totals". The title no longer equals the second table heading "Contract Totals", so no heading prints twice.
+- Financial Summary and Savings Performance (`_uq` branch, app/report-engine.js:6003 and :6414): the savings percent column header is "Savings, % of baseline cost" on both pages.
+- Electricity Use Detail: the Electricity by Building table (`data-rpt-small`, app/report-engine.js:4057) prints at 10px (rule `.rpt-q-dense[data-rpt-small]` in energy-department.html) and `_RPT_Q_W_FUEL_ELEC` (app/report-engine.js:2579) gives the Building column 29 percent, so school names stay on one line. tools/test-report-table-fit.js sets the same attribute.
+- Check: `node tools/test-report-table-fit.js`, `node tools/test-report-q3-review-findings.js`, `node tools/test-report-word-table-widths.js`.
