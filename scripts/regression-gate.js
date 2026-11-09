@@ -310,8 +310,29 @@ function startServer() {
 // ---- results ----
 const results = []; // { group, name, status: PASS|FAIL|XFAIL|FIXED|INFO, detail }
 const diffs = []; // short diff lines for changed values
+// Progress while the gate runs (Matt, 2026-11-09): one line when a section ends, a FAIL at once, feature tests every 20.
+const T0 = Date.now();
+const live = {};
+let liveGroup = null;
+function stamp() {
+  return '[' + String(Math.round((Date.now() - T0) / 1000)).padStart(4) + 's]';
+}
+function liveLine(g) {
+  const c = live[g];
+  console.log(stamp() + ' ' + g + '  ' + (c.FAIL ? 'FAIL' : 'PASS') + '  ' + c.n + ' checks' + (c.FAIL ? ', ' + c.FAIL + ' FAIL' : ''));
+}
 function add(group, name, status, detail) {
   results.push({ group, name, status, detail: detail || '' });
+  const g = group.startsWith('numbers:') ? 'numbers' : group;
+  if (g !== liveGroup) {
+    if (liveGroup) liveLine(liveGroup);
+    liveGroup = g;
+  }
+  const c = (live[g] = live[g] || { n: 0, FAIL: 0 });
+  c.n++;
+  if (status === 'FAIL') c.FAIL++;
+  if (status === 'FAIL' || status === 'FIXED') console.log(stamp() + ' ' + g + '  ' + status + '  ' + name + (detail ? '  -- ' + String(detail).split('\n')[0].slice(0, 200) : ''));
+  else if (g === 'feature-tests' && c.n % 20 === 0) console.log(stamp() + ' ' + g + '  ' + c.n + ' done' + (c.FAIL ? ', ' + c.FAIL + ' FAIL' : ''));
 }
 
 function fmt(v) {
@@ -851,6 +872,7 @@ async function main() {
     groups[g] = groups[g] || { PASS: 0, FAIL: 0, XFAIL: 0, FIXED: 0, INFO: 0 };
     groups[g][r.status]++;
   });
+  if (liveGroup) liveLine(liveGroup);
   console.log('\n---- per-check results (non-PASS shown; PASS lines collapsed) ----');
   results.forEach((r) => {
     if (r.status !== 'PASS') console.log(`[${r.status}] ${r.group} :: ${r.name}${r.detail ? '  -- ' + r.detail : ''}`);
