@@ -855,7 +855,7 @@ function _buildBaselineDataHtml(b, projId, opts) {
                         '</td>' +
                         (rpt ? '<td style="text-align:right;font-family:var(--mono)">' + numOrZero(gb.therms, gCost, Math.round(gb.therms || 0).toLocaleString()) + '</td>' : '') +
                         '<td style="text-align:right;font-family:var(--mono);font-size:11px">' +
-                        (avgTherm ? '$' + avgTherm.toFixed(3) : rpt && (gb.therms || 0) > 0 ? '$0.000' : rpt && gCost > 0 ? 'n/a' : '—') +
+                        (avgTherm ? '$' + avgTherm.toFixed(3) : rpt && (gb.therms || 0) > 0 ? '$0.000' : '—') +
                         '</td>' +
                         '<td style="text-align:right;font-family:var(--mono);font-weight:600">' +
                         (gCost ? $c(gCost) : rpt && (gb.therms > 0 || typeof gb.thermsPredicted === 'number') ? '$0.00' : '—') +
@@ -866,7 +866,7 @@ function _buildBaselineDataHtml(b, projId, opts) {
                         numOrZero(propGal, pCost, Math.round(propGal).toLocaleString()) +
                         '</td>' +
                         '<td style="text-align:right;font-family:var(--mono);font-size:11px">' +
-                        (avgPropGal ? '$' + avgPropGal.toFixed(3) : rpt && pCost > 0 ? 'n/a' : '—') +
+                        (avgPropGal ? '$' + avgPropGal.toFixed(3) : '—') +
                         '</td>' +
                         '<td style="text-align:right;font-family:var(--mono);font-weight:600">' +
                         (pCost ? $c(pCost) : rpt && typeof pb.gallons === 'number' ? '$0.00' : '—') +

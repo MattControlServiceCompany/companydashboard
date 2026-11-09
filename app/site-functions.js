@@ -2507,6 +2507,14 @@ async function siteResetAllMeterTableSettings() {
    site-ui.js delegates to this array and should NOT maintain its own copy.
 */
 var RELEASE_NOTES = [
+  { v: 'v2026.11.08.251', date: '2026-11-08', title: 'Quarterly report: small display fixes',
+    items: [
+      { type: 'fix', text: 'Reports > Quarterly report, Energy Use Intensity page: the line "No approved changes in 2026." under the Year-to-Date table is gone (the Approved Changes page states it).' },
+      { type: 'fix', text: 'Reports > Quarterly report, Contract Totals page: the heading prints once.' },
+      { type: 'fix', text: 'Reports > Quarterly report, Electricity Use Detail page: the Word header "Baseline billed kW" no longer breaks inside "kW".' },
+      { type: 'fix', text: 'Reports > Quarterly report, meter tables: Saved % shows a dash when the baseline is 0. Baseline Data pages show a dash, not "n/a", in empty price cells.' }
+    ]
+  },
   { v: 'v2026.11.08.250', date: '2026-11-08', title: 'Quarterly report: display fixes from the review',
     items: [
       { type: 'fix', text: 'Reports > Quarterly report, Energy Use Intensity page: the Year-to-Date table lists the Q3 savings as measured, not billed, in red. Every total adds from the rows shown, and the difference from the presented Q1 and Q2 is computed from the unrounded values.' },

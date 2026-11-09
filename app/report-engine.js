@@ -3969,7 +3969,7 @@ function _rptQFuelDetailPages(n, d, f, kind) {
       ? _rptQNote(_escHtml(_rptQListPlain(names)) + (names.length === 1 ? ' is the only building with a propane meter.' : ' have propane meters.'))
       : '';
   var body =
-    chart + '<h2>' + K.head + ', ' + ql + '</h2>' + _rptQTable(widths, heads, rows, null, kind === 'electric' ? _RPT_Q_WDX_FUEL_ELEC : _RPT_Q_WDX_FUEL) +
+    chart + '<h2>' + K.head + ', ' + ql + '</h2>' + _rptQTable(widths, heads, rows, null, kind === 'electric' ? _RPT_Q_WDX_FUEL_ELEC : _RPT_Q_WDX_FUEL).replace('<table ', kind === 'electric' ? '<table data-dx-fscale="0.95" ' : '<table ') +
     only;
   // The meters of this fuel: one row per meter, the meter named "<Utility type>-Acct#<account number>".
   var mrows = '';
@@ -4343,6 +4343,9 @@ function _rptQPackRun(run, d, st, out) {
       st.keys[k] = true;
     });
     var label = _rptQUnescape(u.label).replace(/^Page \d+/, 'Page ' + st.total);
+    // A page whose first heading says the page title prints it once (the page title is the heading).
+    var lead2 = /^(<div data-subsection="[^"]*">)<h2[^>]*>([\s\S]*?)<\/h2>/.exec(pg.html);
+    if (lead2 && lead2[2] === title) pg.html = lead2[1] + pg.html.slice(lead2[0].length);
     out.push(_rptQTagPage(rptPage(st.total, title, pg.html, { data: d, letterhead: false, label: label, unitsProtected: true }), key));
   });
 }
@@ -8247,12 +8250,11 @@ function rptPageYearToDate(n, d) {
   }
 
   var ytdApprovedCount = (d && d.approvedChangesYTDCount) || 0;
-  var rollupLine =
-    '<p style="font-size:13px;color:var(--rpt-page-text);margin-top:10px" contenteditable="true">' +
-    (ytdApprovedCount
-      ? ytdApprovedCount + _rptPluralize(ytdApprovedCount, ' change{s} approved in ' + periodYear + '.')
-      : 'No approved changes in ' + periodYear + '.') +
-    '</p>';
+  var rollupLine = ytdApprovedCount
+    ? '<p style="font-size:13px;color:var(--rpt-page-text);margin-top:10px" contenteditable="true">' +
+      ytdApprovedCount + _rptPluralize(ytdApprovedCount, ' change{s} approved in ' + periodYear + '.') +
+      '</p>'
+    : '';
 
   var bodyHTML =
     '<h2>Year-to-Date Monthly Trend</h2>' +

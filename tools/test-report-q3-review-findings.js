@@ -821,6 +821,18 @@ console.log('\n--- 17. v250 display fixes (v249 reviews) ---');
   assert(!/_rptQLaterYears|Degree days compare each day/.test(re17), 'no explanation prose left on the contract totals or the weather appendix page');
 }
 
+console.log('\n--- 18. v251 display fixes ---');
+{
+  const re18 = fs.readFileSync(path.join(REPO, 'app', 'report-engine.js'), 'utf8');
+  const pt18 = fs.readFileSync(path.join(REPO, 'lib', 'perf-table.js'), 'utf8');
+  const ca18 = fs.readFileSync(path.join(REPO, 'app', 'calculators.js'), 'utf8');
+  assert(!/'No approved changes in ' \+ periodYear/.test(re18), 'Year-to-Date page prints no "No approved changes" line (the Approved Changes page states it)');
+  assert(/r\.expUsage > 0 \? \(sav \/ r\.expUsage\) \* 100 : null/.test(pt18) && /d\.savPc == null \? '&mdash;'/.test(pt18), 'meter table: Saved % is a dash when the baseline is 0');
+  assert(!/'n\/a'/.test(ca18.slice(ca18.indexOf('avgTherm ?'), ca18.indexOf('avgPropGal ?') + 200)), 'Baseline Data: empty average price cells are a dash, not n/a');
+  assert(/lead2\[2\] === title/.test(re18), 'a packed page whose first heading equals the page title prints it once');
+  assert(/split\(\/\[\^\\S\\u00a0\]\+\//.test(fs.readFileSync(path.join(REPO, 'app', 'docx-writer.js'), 'utf8')) && /data-dx-fscale="0\.95"/.test(re18), 'Word: a no-break space keeps "billed kW" whole when the column widths are set, and the electricity by building table has room for it');
+}
+
 console.log('\n' + passed + ' passed, ' + failed + ' failed');
 process.exit(failed ? 1 : 0);
 

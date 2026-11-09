@@ -1268,3 +1268,13 @@ No timer, no env var, no host change. All of it runs in the browser when a repor
 - Environmental Impact (`rptPageEnvironmentalImpact` :7021): equivalents say "Equal to the CO2 of ..." with the EPA basis (one year); `_equivalentsOf` (computations/pollution.js:194) uses `Math.floor` for tanker trucks, railcars and power plants, so a value below 1 is not shown.
 - Check: `node tools/test-report-q3-review-findings.js` (section 17), `node tools/test-report-page-packing.js` (31 pages), `node tools/test-gas-cost-single-source.js`. In the browser: Reports > Quarterly report, page 23 totals add; page 6 shows no tanker, railcar or power plant line.
 
+## Quarterly report: small display fixes (2026-11-08, version v2026.11.08.251)
+
+No timer, no env var, no host change. All of it runs in the browser when a report preview or a Word export is built. No stored bill value and no savings figure changes.
+
+- Year-to-Date page (`rptPageYearToDate`, app/report-engine.js): the "No approved changes in <year>." line is no longer printed. A count above 0 still prints.
+- One page heading: `_rptQPackRun` (app/report-engine.js:4304) drops the first heading of a packed page when it equals the page title (Contract Totals page).
+- Meter tables (lib/perf-table.js:49): `savPc` is null when the baseline is 0, so "Saved %" prints a dash.
+- Baseline Data (app/calculators.js:858, :869): an empty average price cell prints a dash, never "n/a".
+- Word (app/docx-writer.js:1971, `_docxColumnMinWidths`): a no-break space joins two words into one piece, so "billed kW" keeps its width. The Electricity by Building table carries `data-dx-fscale="0.95"` (app/report-engine.js:3972) so every column fits at the minimum widths.
+- Check: `node tools/test-report-q3-review-findings.js` (section 18), `node tools/test-report-page-packing.js`, `node tools/test-report-word-table-widths.js`. In Word: page 21 header "Baseline billed kW" is on two lines, none ends in "k".

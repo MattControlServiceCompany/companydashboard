@@ -1968,7 +1968,7 @@ function _docxColumnMinWidths(rowCells, colCount, cellMarginTwips, sizeHalfPt, s
         // A <br> separates words ("Baseline<br>Therms"): textContent alone would join them into one long word.
         var cellText = cell.getAttribute('data-dx-caps') === '1' ? _docxTextWithBreaks(cell).toUpperCase() : _docxTextWithBreaks(cell);
         var whole = cellText.replace(/\s+/g, ' ').trim();
-        var pieces = cellText.split(/\s+/);
+        var pieces = cellText.split(/[^\S\u00a0]+/); // a no-break space joins two words into one piece ("billed kW")
         // A cell that does not wrap in the PDF, or a short one (a number with its unit, a name), is one piece when asked.
         // strict 2: every short cell is one piece; strict 1: only cells that do not wrap in the PDF, and numbers with a unit.
         if (strict && whole && (cell.getAttribute('data-dx-nw') === '1' || (cell.tagName !== 'TH' || !(cell.closest && cell.closest('[data-dx-live-widths]'))) && (strict >= 2 ? whole.length <= 24 : /\d/.test(whole) && whole.length <= 24))) pieces = [whole];
