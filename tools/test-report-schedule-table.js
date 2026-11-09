@@ -111,7 +111,7 @@ const ok = (c, m) => {
       };
     });
     ok(out.hasPage, '1 table page renders when the project has a BAS schedule history');
-    ok(out.heads.length === 5 && /Building/.test(out.heads[0]) && /^Baseline( \d{4})? occupied/i.test(out.heads[1]) && /^Q3 2026 occupied/i.test(out.heads[2]) && /^Baseline( \d{4})? set points/i.test(out.heads[3]) && /^Actual Q3 2026 set points/i.test(out.heads[4]), '1 five column headers: ' + JSON.stringify(out.heads));
+    ok(out.heads.length === 5 && /Building/.test(out.heads[0]) && /^Baseline( \d{4})? occupied/i.test(out.heads[1]) && /^Actual Q3 2026 occupied/i.test(out.heads[2]) && /^Baseline( \d{4})? set points/i.test(out.heads[3]) && /^Actual Q3 2026 set points/i.test(out.heads[4]), '1 five column headers: ' + JSON.stringify(out.heads));
     ok(out.rows.length === 1 && /Alpha School/.test(out.rows[0][0]), '1 one row per building with weekday hours in the baseline and the quarter; no row for Beta, Gamma or Delta: ' + out.rows.length + ' rows');
     if (out.rows.length) {
       const r = out.rows[0];

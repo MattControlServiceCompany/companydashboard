@@ -689,7 +689,7 @@ console.log('\n--- 14. rounding, actual cost on every page, meter names, kW sepa
   const detailMeters = detail(1, q3, fq, 'electric').html;
   assert(/<td style="white-space:nowrap">Electricity, Acct#/.test(detailMeters), 'the meters under the fuel table also keep each name on one line');
   const wM = run(ctx, '_RPT_Q_W_METERS');
-  assert(wM.reduce((s, v) => s + v, 0) === 100 && wM[1] >= 30 && wM[0] >= 28, 'the meter name column is at least 30% and the building column 28% of the meter table: ' + wM.join(','));
+  assert(wM.reduce((s, v) => s + v, 0) === 100 && wM[0] >= 30 && wM[1] >= 28, 'the building column is at least 30% and the meter name column 28% of the meter table: ' + wM.join(','));
   // 13d. Baseline Data kW cells use thousands separators (a total of 3,600.0 kW, not 3600.0)
   run(ctx, "getUDBldg(" + PROJ + ", 'bB').meters[0].bills.forEach(function (b) { b.billedKW = 300; b.demandKW = 300; })");
   const blHtml = run(ctx, '(function(){ return _buildBaselineDataHtml(getUDBldg(' + PROJ + ", 'bB'), " + PROJ + '); })')();
@@ -903,7 +903,7 @@ console.log('\n--- 20. v253 release: every printed change equals printed actual 
   const sp20 = flat.replace(/\s+/g, ' ');
   assert(!/Q1\+Q2 billed \(presented to the district\)/.test(sp20), 'p23: the billed figure is not printed twice (one row, on the last line)');
   assert(/Contract time elapsed: \d+% of the contract period/.test(sp20), 'p25 Terms: "Contract time elapsed"');
-  assert(/white-space:nowrap;color:var\(--rpt-page-text\)/.test(re20) && /table-layout:fixed' : ''\) \+ '"' \+ \(_uq \? ' data-dx-widths="16,17,10,9,9,13,14,12"'/.test(re20), 'p5: the Period cells never wrap and the Period column has width');
+  assert(/white-space:nowrap;color:var\(--rpt-page-text\)/.test(re20) && /table-layout:fixed' : ''\) \+ '"' \+ \(_uq \? ' data-dx-widths="20,14,10,12,8,10,14,12"'/.test(re20), 'p5: the Period cells never wrap and the Period column has width');
   assert(/\(x == null \? '&mdash;' : _rptQN\(x\)\)/.test(re20), 'p31 Degree Days: an empty cell is an em dash');
 }
 
