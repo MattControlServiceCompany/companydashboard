@@ -631,7 +631,7 @@ console.log('\n--- 14. rounding, actual cost on every page, meter names, kW sepa
   }
   const byFuelHtml = run(ctx, '_rptQByFuelTable')(dr, fr);
   assert(/Building A\s+-\$2,679/.test(byFuelHtml.replace(/<[^>]+>/g, ' ')), 'data 1 (v254): Savings by building and utility prints electricity -$2,679 (the -$2,586 kWh row plus the -$93 billed kW row) for the review case');
-  if (sumHtml) assert(rowLast(sumHtml, 'Electricity use (kWh)') === '-$2,586' && rowLast(sumHtml, 'Electricity demand (billed') === '-$93', 'Building Summary electricity is two rows, use -$2,586 and demand -$93: ' + rowLast(sumHtml, 'Electricity use (kWh)') + ' / ' + rowLast(sumHtml, 'Electricity demand (billed kW, sum of 3 months)'));
+  if (sumHtml) assert(rowLast(sumHtml, 'Electricity use (kWh)') === '-$2,586' && rowLast(sumHtml, 'Electricity demand (') === '-$93', 'Building Summary electricity is two rows, use -$2,586 and demand -$93: ' + rowLast(sumHtml, 'Electricity use (kWh)') + ' / ' + rowLast(sumHtml, 'Electricity demand (billed kW, sum of 3 months)'));
   // The Building Summary and the "by Building" table of every building print the same savings (collected data)
   const fq = run(ctx, '_rptQFacts')(q3);
   const detail = run(ctx, '_rptQFuelDetailPages');
@@ -852,7 +852,7 @@ console.log('\n--- 19. v252 release: Q3 2026 report fixes ---');
   assert(/Propane delivered \(gal\)/.test(re19) && /Propane Gal\(lons\)\?/.test(re19), 'propane headers read "Propane delivered (gal)"');
   assert(/<h2>Site EUI, annualized<\/h2>/.test(re19) && /National median<br>\(12-month,<br>kBtu\/ft&sup2;\/yr\)/.test(re19), 'p23 EUI table labels');
   assert(/white-space:nowrap">' \+ shortMo\(first\)/.test(re19), 'p23 EUI header month range does not break at the dash');
-  assert(/Electricity demand \(billed&nbsp;kW, sum of /.test(re19) && /wxYear && !kwActualHdr \? BR \+ '\(' \+ wxYear \+ BR \+ 'weather\)'/.test(pt19), 'kW row and meter table labels');
+  assert(/'Electricity demand \(' \+ \(_rptKwActual\(d\) \? 'Actual' : 'billed'\) \+ '&nbsp;kW, sum of /.test(re19) && /wxYear && !kwActualHdr \? BR \+ '\(' \+ wxYear \+ BR \+ 'weather\)'/.test(pt19), 'kW row and meter table labels');
   const T19 = run(ctx, '_rptQTerms')({ project: { blStart: 'January 2025', blEnd: 'December 2025' }, period: { year: 2026 } });
   assert(/The unit kWh is electricity use/.test(T19.units) && /kW is electricity demand/.test(T19.units) && !/kilowatt/i.test(T19.units) && /therm is/i.test(T19.units) && /gal is a gallon/.test(T19.units) && /kBtu\/ft/.test(T19.units) && /set point/i.test(T19.setPoint) && /Acct#/.test(T19.setPoint) && /Site EUI/.test(T19.eui), 'Appendix A defines kWh, kW, therm, gal, kBtu/ft2, set point, Acct# and Site EUI');
   assert(/replace\(\/National median, \(\[\^:\]\*\): \/g, 'The national median for \$1 is '\)/.test(re19), 'Appendix A National median label is not repeated in its text');

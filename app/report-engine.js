@@ -2941,7 +2941,7 @@ function _rptQTerms(d) {
     sign: 'Use change is actual minus baseline use: a plus is more use. Saved is baseline minus actual use: a plus is less use.',
     actualKw: 'Actual kW is the highest demand the meter measured in the month.',
     kwCost: act
-      ? '$/billed kW is the kW cost divided by billed kW. $/kW (meter pages) is the kW rate of the month: demand charge over Billed kW, plus TDC charge over TDC kW, plus facilities charge over Facilities kW.'
+      ? '$/kW (meter pages) is the kW rate of the month: demand charge over Billed kW, plus TDC charge over TDC kW, plus facilities charge over Facilities kW.'
       : '$/billed kW is the kW cost divided by billed kW. $/kW (meter pages) is the rate per billed kW of the month reported.',
     totalUtility: 'Total utility is electric plus gas or propane cost.',
     occupied: 'Occupied hours are the hours each week that the building is scheduled for use.',
@@ -9600,7 +9600,7 @@ function _rptQBuildingSummaryPage(n, d, b, f) {
   // Electricity is two rows: the use (kWh) and the demand (billed kW), each with its own change and savings.
   var sumRows = fuels.slice();
   if (fuels.length && fuels[0].k === 'electric' && b.electric.kwBl != null)
-    sumRows.splice(1, 0, { k: 'elecKw', name: 'Electricity demand (billed&nbsp;kW, sum of ' + (d.period.yearMonths || []).length + '&nbsp;months)', bl: _rptShownUse(d, b, 'electric', 'kwBl'), cur: _rptShownUse(d, b, 'electric', 'kwCur'), xbl: b.electric.kwBl, xcur: b.electric.kwCur, usd: parts.elecDemand || 0 });
+    sumRows.splice(1, 0, { k: 'elecKw', name: 'Electricity demand (' + (_rptKwActual(d) ? 'Actual' : 'billed') + '&nbsp;kW, sum of ' + (d.period.yearMonths || []).length + '&nbsp;months)', bl: _rptShownUse(d, b, 'electric', 'kwBl'), cur: _rptShownUse(d, b, 'electric', 'kwCur'), xbl: b.electric.kwBl, xcur: b.electric.kwCur, usd: parts.elecDemand || 0 });
   var rows = sumRows
     .map(function (x) {
       var ch = _rptQChangePctTd(x.xbl >= 10 || ((x.k === 'propane' || x.k === 'elecKw') && x.xbl > 0) ? ((x.xcur - x.xbl) / x.xbl) * 100 : null);
