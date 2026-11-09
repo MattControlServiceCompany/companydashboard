@@ -10876,10 +10876,10 @@ function renderPerfPane(pane, m, bills, incl) {
       // energyCost mirrors Meter Data "Energy Cost" = totalCost - kwCost
       const totalBillCost = bfr.reduce((s, b) => s + parseFloat(b.totalCost || 0), 0);
       const energyCostAmt = totalBillCost - kwCostAmt - facKWCostAmt;
-      const bilKW = bfr.length ? Math.max(...bfr.map((b) => parseFloat(b.billedKW || b.demandKW || 0))) : 0;
-      // Rate of this month's bill(s): getMonthBillRate (computations/rates.js), the same value the savings use.
+      // The kW and the $/kW the savings use for this month (getMonthSavingsKw, getMonthKwRate: computations/rates.js).
+      const bilKW = getMonthSavingsKw(bfr, r.ym);
       const _storedKwhRate = getMonthBillRate(bfr, 'kwh');
-      const _storedKwRate = getMonthBillRate(bfr, 'kw');
+      const _storedKwRate = getMonthKwRate(bfr, r.ym);
       perfDemByYm[r.ym] = {
         demKW: bfr.length ? Math.max(...bfr.map((b) => parseFloat(b.demandKW || 0))) : 0,
         bilKW,

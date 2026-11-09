@@ -356,7 +356,7 @@ assert(/\$26,948/.test(cover) && !/26,968/.test(cover), 'cover prints $26,948');
 assert(/\$26,948/.test(results) && !/26,968/.test(results), 'results page prints $26,948');
 assert(/\$26,948/.test(contract), 'contract page prints $26,948');
 assert(/\$16,169/.test(results) && /\$10,779/.test(results), 'split is 60% $16,169 and 40% $10,779');
-assert(!/billed through Q3 2026 plus the/.test(contract) && /Year 1 \(billed \+ targets\)/.test(contract), 'no explanation prose under the contract totals table; the Year 1 row names its parts');
+assert(!/billed through Q3 2026 plus the/.test(contract) && /Through Q3 2026/.test(contract) && /Savings to date/.test(contract), 'no explanation prose under the contract totals table; the Through row names its parts');
 
 const targets = d.buildings.map((b) => run(ctx, '(function(d,b){ return _rptBuildingTarget(d,b); })')(d, b));
 assert(targets.reduce((s, v) => s + v, 0) === 100 && targets.every(Number.isInteger), 'building targets are whole dollars that add to the total target: ' + targets.join('+'));
@@ -381,7 +381,7 @@ try {
 }
 const byFuel = run(ctx, '(function(d,f){ return _rptQByFuelTable(d,f); })')(dp, fp).replace(/<[^>]+>/g, ' ');
 assert(/\$3,294/.test(byFuel) && /\$359/.test(byFuel) && /\$3,654/.test(byFuel) && !/\$3,295/.test(byFuel), 'the fuel table prints each part rounded from its own value (3,294 and 359) and the total from its own value (3,654)');
-assert(!/<table/.test(energyHtml) && /kWh charges/.test(energy) && /billed kW charges/.test(energy), 'page 3 has no table and splits the electricity dollars into kWh and billed kW parts');
+assert(!/<table/.test(energyHtml) && /kWh charges/.test(energy) && /from kW charges/.test(energy), 'page 3 has no table and splits the electricity dollars into kWh and kW parts (Q3 2026: Actual kW basis)');
 assert(/Percent saved = savings (÷|&divide;) baseline cost \(\$[\d,]+ this quarter\)./.test(results) && !/what the utility bills would have been/.test(results), 'percent note states the denominator as baseline cost');
 
 // decision 1: utility invoices are "Utility bills"; "billed" is for contract savings
@@ -439,7 +439,7 @@ console.log('\n--- 11. Manager decisions 1-7 ---');
   assert(!/Lower is better/.test(sp), '"Lower is better" is removed');
   assert(!/credit/i.test(sp.replace(/Control Service Company/g, '')), 'no "credit" wording about propane');
   const termFn = run(ctx, '(function (v, label, first, digits) { var dg = digits || 2; var a = Math.abs(v).toFixed(dg); return (first ? (v < 0 ? "-" : "") : v < 0 ? " - " : " + ") + a + " &times; " + label; })');
-  const kwB = { id: 1, meterDetails: [{ commodity: 'Electric', account: 'X1', kwFit: { intercept: 100, slope: 0.25, n: 12, r2: 0.5, cvrmse: 0.1 } }], electric: { monthly: [{ month: '2026-07', kwBl: 120.4, kwCur: 110.2 }] } };
+  const kwB = { id: 1, meterDetails: [{ commodity: 'Electric', account: 'X1', kwFit: { actual: { intercept: 100, slope: 0.25, n: 12, r2: 0.5, cvrmse: 0.1 }, billed: null } }], electric: { monthly: [{ month: '2026-07', kwBl: 120.4, kwCur: 110.2 }] } };
   const kwBlock = run(ctx, '_rptQBilledKwBlock')(
     { buildings: [kwB], period: { year: 2026, yearMonths: ['2026-07'] }, project: {} },
     kwB,
@@ -447,7 +447,7 @@ console.log('\n--- 11. Manager decisions 1-7 ---');
     { '2026-07': { cddCur: 600 } },
     termFn,
   );
-  assert(/Baseline billed kW for a month = 100\.0000 \+ 0\.2500 x cooling degree days\. R&sup2;&nbsp;=&nbsp;0\.500; 12 baseline months; CV\(RMSE\) 10\.0%\./.test(String(kwBlock).replace(/&times;/g, 'x')), 'Appendix B prints the kW formula per meter: ' + String(kwBlock).slice(0, 160));
+  assert(/Baseline kW for a month = 100\.0000 \+ 0\.2500 x cooling degree days\. R&sup2;&nbsp;=&nbsp;0\.500; 12 baseline months; CV\(RMSE\) 10\.0%\./.test(String(kwBlock).replace(/&times;/g, 'x')), 'Appendix B prints the kW formula per meter: ' + String(kwBlock).slice(0, 160));
 }
 
 // 12. Final pass (2026-11-05): controlled rounding (A), billing period (B), state name (C), sign rules (F), Year to Date (K)
@@ -513,7 +513,7 @@ console.log('\n--- 13. model fit, wording, entered months, allocated target ---'
     kwRows.push({ ym, cdd });
     kwBills.push({ id: 'k' + mo, start: ym + '-01', end: ym + '-28', billedKW: String(kw) });
   });
-  const kf = run(ctx, 'fitKwCdd')(kwRows, kwBills);
+  const kf = run(ctx, 'fitKwCdd')(kwRows, kwBills, 'billed');
   // hand fit: x mean 250, y mean 55.25; Sxx 50000, Sxy 4950 -> slope 0.099, intercept 30.5
   assert(kf && Math.abs(kf.slope - 0.099) < 1e-9 && Math.abs(kf.intercept - 30.5) < 1e-9 && kf.n === 4, 'kW fit coefficients unchanged: ' + JSON.stringify(kf));
   assert(kf && kf.r2 > 0.9 && kf.r2 < 1 && kf.cvrmse > 0 && kf.cvrmse < 0.1, 'kW fit carries r2 and cvrmse: ' + JSON.stringify(kf));
@@ -522,7 +522,7 @@ console.log('\n--- 13. model fit, wording, entered months, allocated target ---'
   const dB = pageData();
   dB.buildings.forEach((b) => {
     b.meterDetails = [
-      { commodity: 'Electric', account: 'E1', regrCoeffs: { type: 'dual', intercept: 100, slopeHDD: 2, slopeCDD: -0.5, r2: 0.912, n: 12, cvrmse: 0.0843 }, kwFit: { intercept: 40, slope: 0.07, n: 12, r2: 0.463, cvrmse: 0.131 } },
+      { commodity: 'Electric', account: 'E1', regrCoeffs: { type: 'dual', intercept: 100, slopeHDD: 2, slopeCDD: -0.5, r2: 0.912, n: 12, cvrmse: 0.0843 }, kwFit: { actual: { intercept: 40, slope: 0.07, n: 12, r2: 0.463, cvrmse: 0.131 }, billed: null } },
       { commodity: 'Gas', account: 'G1', regrCoeffs: { type: 'hdd', intercept: 5, slope: 0.3, r2: 0.97, n: 12, cvrmse: 0.052 } },
     ];
     b.electric = { monthly: [{ month: '2026-07', bl: 100, cur: 90, kwBl: 40, kwCur: 41 }] };
@@ -534,7 +534,7 @@ console.log('\n--- 13. model fit, wording, entered months, allocated target ---'
   const appBtxt = plain(appBraw.html);
   assert((appBtxt.match(/R²(?:&nbsp;| )=(?:&nbsp;| )0\.912; 12 baseline months; CV\(RMSE\) 8\.4%\./g) || []).length === 3, 'Appendix B: the electricity model prints R2, n and CV(RMSE) (3 buildings)');
   assert((appBtxt.match(/R²(?:&nbsp;| )=(?:&nbsp;| )0\.970; 12 baseline months; CV\(RMSE\) 5\.2%\./g) || []).length === 3, 'Appendix B: the gas model prints R2, n and CV(RMSE) (3 buildings)');
-  assert((appBtxt.match(/R²(?:&nbsp;| )=(?:&nbsp;| )0\.463; 12 baseline months; CV\(RMSE\) 13\.1%\./g) || []).length === 3, 'Appendix B: the billed kW model prints R2, n and CV(RMSE) (3 buildings)');
+  assert((appBtxt.match(/R²(?:&nbsp;| )=(?:&nbsp;| )0\.463; 12 baseline months; CV\(RMSE\) 13\.1%\./g) || []).length === 3, 'Appendix B: the kW model prints R2, n and CV(RMSE) (3 buildings)');
   assert(!/NMBE/.test(appBtxt), 'NMBE is not printed (0 by construction after the bias correction)');
   assert(/- 0\.50 x cooling degree days/.test(appBtxt), 'the wrong-sign term stays in the formula, unchanged');
 
@@ -566,9 +566,9 @@ console.log('\n--- 13. model fit, wording, entered months, allocated target ---'
   assert(/Below Target/.test(cA) && /rpt-sc-val" style="color:var\(--rpt-green-dark\)"[^>]*>5\.5%/.test(cA) && /rpt-sc-label" style="color:var\(--rpt-red\)"[^>]*>[^<]*Below Target/.test(cA), 'page 2 card: positive savings with Below Target status shows the savings green and the status red: ' + cA.replace(/contenteditable="true"/g, ''));
   assert(/Below Target/.test(cB) && /rpt-sc-val" style="color:var\(--rpt-red\)"[^>]*>-2\.1%/.test(cB) && /rpt-sc-label" style="color:var\(--rpt-red\)"/.test(cB), 'page 2 card: negative savings shows the savings red');
 
-  // Contract page (point 17): contract facts, no prediction, no "Projection"
+  // Contract page (point 17; Matt 2026-11-09: Contract Totals = savings to date against projected)
   const ctPage = plain(run(ctx, '_rptQContractPage')(5, d, f));
-  assert(/Contract Totals/.test(ctPage) && /Billed to date plus contract targets/.test(ctPage) && !/Projection|projected|if remaining targets are met|Savings target/.test(ctPage), 'contract page: "Billed to date plus contract targets", no projection wording');
+  assert(/Contract Totals/.test(ctPage) && /Projected/.test(ctPage) && /Savings to date/.test(ctPage) && /% of projected/.test(ctPage) && !/Billed to date plus contract targets|Year 2027|Year 2028|if remaining targets are met|Savings target/.test(ctPage), 'contract page: the Contract Totals table is Period / Projected / Savings to date / % of projected (Matt, 2026-11-09), no 3-year rows');
   const mPage = plain(run(ctx, '_rptQMethodPage')(5, d, f, 'A'));
   assert(/later years escalate it 3\.5% a year, as the Agreement states/.test(mPage) && !/escalation stated in the Agreement/.test(mPage) && !/escalation stated in the Agreement/.test(ctPage), 'Appendix A (not the contract page) attributes the 3.5% to the Agreement');
   assert(/Allocated target/.test(ctPage), 'contract page: column "Allocated target"');
@@ -815,7 +815,7 @@ console.log('\n--- 17. v250 display fixes (v249 reviews) ---');
   const envFn = re17.slice(re17.indexOf('function rptPageEnvironmentalImpact'), re17.indexOf('function rptPageObservations'));
   assert(!/deforestation|_eqYrSuffix/.test(envFn) && /of U\.S\. forest in one year/.test(envFn), 'p6 equivalents: forest carbon wording, no "this quarter" on an annual EPA basis');
   assert(!/current costs at/.test(re17) && /actual costs at/.test(re17), '"current costs" is "actual costs"');
-  assert(/H_BL_KW = rpt \? 'Baseline' \+ BR \+ 'billed' \+ NB \+ 'kW'/.test(pt17), 'meter table header says Baseline billed kW with the unit not split');
+  assert(/H_BL_KW = rpt \? 'Baseline' \+ \(kwActualHdr \? NB : BR \+ 'billed' \+ NB\) \+ 'kW'/.test(pt17), 'meter table header says Baseline kW (Actual kW basis) or Baseline billed kW, with the unit not split');
   assert(/Math\.round\(\(d\.savings \|\| 0\) \* 100\) - fl\[0\] - fl\[1\]/.test(pt17), 'meter table kWh $ and kW $ cents are apportioned to the Total $');
   const T17 = run(ctx, '_rptQTerms')({ project: { blStart: 'January 2025', blEnd: 'December 2025' }, period: { year: 2026 } });
   assert(/^Facilities kW is /.test(T17.facilitiesKw) && /^Normalized use is /.test(T17.normalized) && /^Load factor is /.test(T17.loadFactor), 'Appendix A defines Facilities kW, Normalized use and Load factor');
@@ -852,7 +852,7 @@ console.log('\n--- 19. v252 release: Q3 2026 report fixes ---');
   assert(/Propane delivered \(gal\)/.test(re19) && /Propane Gal\(lons\)\?/.test(re19), 'propane headers read "Propane delivered (gal)"');
   assert(/<h2>Site EUI, annualized<\/h2>/.test(re19) && /National median<br>\(12-month,<br>kBtu\/ft&sup2;\/yr\)/.test(re19), 'p23 EUI table labels');
   assert(/white-space:nowrap">' \+ shortMo\(first\)/.test(re19), 'p23 EUI header month range does not break at the dash');
-  assert(/Electricity demand \(billed&nbsp;kW, sum of /.test(re19) && /wxYear \? BR \+ '\(' \+ wxYear \+ BR \+ 'weather\)'/.test(pt19), 'kW row and meter table labels');
+  assert(/Electricity demand \(billed&nbsp;kW, sum of /.test(re19) && /wxYear && !kwActualHdr \? BR \+ '\(' \+ wxYear \+ BR \+ 'weather\)'/.test(pt19), 'kW row and meter table labels');
   const T19 = run(ctx, '_rptQTerms')({ project: { blStart: 'January 2025', blEnd: 'December 2025' }, period: { year: 2026 } });
   assert(/The unit kWh is electricity use/.test(T19.units) && /kW is electricity demand/.test(T19.units) && !/kilowatt/i.test(T19.units) && /therm is/i.test(T19.units) && /gal is a gallon/.test(T19.units) && /kBtu\/ft/.test(T19.units) && /set point/i.test(T19.setPoint) && /Acct#/.test(T19.setPoint) && /Site EUI/.test(T19.eui), 'Appendix A defines kWh, kW, therm, gal, kBtu/ft2, set point, Acct# and Site EUI');
   assert(/replace\(\/National median, \(\[\^:\]\*\): \/g, 'The national median for \$1 is '\)/.test(re19), 'Appendix A National median label is not repeated in its text');

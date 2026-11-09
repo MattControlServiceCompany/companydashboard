@@ -171,6 +171,23 @@ function getBillRateParts(bill, type) {
           parseBillNumber(bill.FacilitiesKW) ||
           0,
       };
+    case 'kwTotal': {
+      // The total actual kW rate (Matt, 2026-11-09): each charge over the kW the bill uses for it. Demand over Billed kW,
+      // TDC over TDC kW, Facilities over Facilities kW (a missing own kW falls back to Billed kW). charge / usage of the
+      // result is the sum of the three rates, so getMonthBillRate weights it by Billed kW like the 'kw' type.
+      var kwBilled = getBillRateParts(bill, 'kw').usage;
+      if (!(kwBilled > 0)) return { charge: 0, usage: 0 };
+      var kwD = parseBillNumber(bill.demandCharge);
+      var kwT = parseBillNumber(bill.tdcCharge);
+      var kwTdcKw = parseBillNumber(bill.tdcKW) || kwBilled;
+      var kwFacKw = parseBillNumber(bill.facKW) || parseBillNumber(bill.FacilitiesKW) || kwBilled;
+      var kwRateSum =
+        kwD !== null || kwT !== null
+          ? (kwD || 0) / kwBilled + (kwT || 0) / kwTdcKw
+          : getBillKwCost(bill) / kwBilled;
+      kwRateSum += getBillFacKWCost(bill) / kwFacKw;
+      return { charge: kwRateSum * kwBilled, usage: kwBilled };
+    }
     case 'gas':
       return {
         charge: getBillGasCost(bill),
@@ -256,10 +273,70 @@ function getMonthBillRate(bills, type) {
   });
   if (usage > 0) return charge / usage;
   for (var i = 0; i < (bills || []).length; i++) {
-    var r = type === 'kw' ? getStoredKwRate(bills[i]) : getStoredRate(bills[i], type);
+    var r = type === 'kw' || type === 'kwTotal' ? getStoredKwRate(bills[i]) : getStoredRate(bills[i], type);
     if (r > 0) return r;
   }
   return 0;
+}
+
+// getPeerMonthGasRate(projId, meter, ym) - the current monthly rate of a gas meter month with no gas use and no gas charge
+// (Matt, 2026-11-09: "8-0=8"), from ZERO_USE_GAS_FROM_YM on. It is the plain average of the individual billed rates (gas charge /
+// therms of each bill, getBillRateParts) of the project's other gas meters of the same provider in that month. A rate more than
+// PEER_GAS_RATE_OUTLIER from their median is left out (another rate schedule, or a small bill with a rounded charge). Charges and
+// therms are never pooled across bills. Returns 0 when no other bill has a rate.
+var ZERO_USE_GAS_FROM_YM = '2026-07';
+var PEER_GAS_RATE_OUTLIER = 0.1;
+function getPeerMonthGasRate(projId, meter, ym) {
+  if (ym < ZERO_USE_GAS_FROM_YM || typeof getUDBldgs !== 'function') return 0;
+  var prov = String((meter && meter.provider) || '').trim().toLowerCase();
+  var rates = [];
+  (getUDBldgs(projId) || []).forEach(function (bl) {
+    (bl.meters || []).forEach(function (pm) {
+      if (pm === meter || pm.commodity !== 'Gas' || String(pm.provider || '').trim().toLowerCase() !== prov) return;
+      var pb = pm.bills || [];
+      pb.forEach(function (b) {
+        if (billMonth(b, pb) !== ym) return;
+        var p = getBillRateParts(b, 'gas');
+        if (p.usage > 0 && p.charge > 0) rates.push(p.charge / p.usage);
+      });
+    });
+  });
+  if (!rates.length) return 0;
+  var sorted = rates.slice().sort(function (a, b) { return a - b; });
+  var n = sorted.length;
+  var median = n % 2 ? sorted[(n - 1) / 2] : (sorted[n / 2 - 1] + sorted[n / 2]) / 2;
+  var kept = rates.filter(function (r) { return Math.abs(r - median) <= PEER_GAS_RATE_OUTLIER * median; });
+  return kept.reduce(function (s, r) { return s + r; }, 0) / kept.length;
+}
+
+// ── The kW basis of the savings (Matt, 2026-11-09) ──
+// From KW_ACTUAL_FROM_YM on (Q3 2026 and later) the kW term compares the baseline kW (fit on 2025 Actual kW) with the
+// Actual kW (bill field demandKW) at the total actual kW rate. Months before it keep the Billed kW basis of the presented
+// Q1 and Q2 2026 reports; their figures never change.
+var KW_ACTUAL_FROM_YM = '2026-07';
+function kwBasisForYm(ym) {
+  return ym >= KW_ACTUAL_FROM_YM ? 'actual' : 'billed';
+}
+// getBillSavingsKw(bill, basis) - the kW of one bill that the savings compare: Actual kW (demandKW, Billed kW only when the bill
+// has no demandKW) on the 'actual' basis, Billed kW (demandKW only when it has none) on the 'billed' basis.
+function getBillSavingsKw(bill, basis) {
+  var bil = parseBillNumberOrZero(bill && bill.billedKW);
+  var dem = parseBillNumberOrZero(bill && bill.demandKW);
+  return basis === 'actual' ? dem || bil : bil || dem;
+}
+// getMonthSavingsKw(bills, ym) - the kW of a calendar month: the highest of its bills' savings kW.
+function getMonthSavingsKw(bills, ym) {
+  var basis = kwBasisForYm(ym);
+  var max = 0;
+  (bills || []).forEach(function (b) {
+    max = Math.max(max, getBillSavingsKw(b, basis));
+  });
+  return max;
+}
+// getMonthKwRate(bills, ym) - the ONE $/kW rate of a savings month: the total actual kW rate on the 'actual' basis, demand
+// plus facilities dollars over Billed kW before it.
+function getMonthKwRate(bills, ym) {
+  return getMonthBillRate(bills, kwBasisForYm(ym) === 'actual' ? 'kwTotal' : 'kw');
 }
 
 function validateImpliedRate(commodity, usage, charge, utilityName) {

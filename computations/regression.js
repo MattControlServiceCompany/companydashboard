@@ -280,18 +280,18 @@ function regressionBaseline(row, reg, commodity, normBasis) {
 }
 
 // ── The one kW CDD regression ────────────────────────────────────────────────
-// Fits a simple linear regression of BILLED kW ~ CDD from the baseline rows, then predicts
-// kW for every row. It fits on billed kW (billedKW, else demandKW) because savings compare the
-// prediction to billed kW - a metered-kW fit against a billed-kW actual books false kW
-// savings when billing has a minimum or ratchet (WP-04, math-02 H3). Savings, the Meter
-// Performance table and Energy Graphics all call this function; there is no other copy.
+// Fits a simple linear regression of kW ~ CDD from the baseline rows, then predicts kW for every row.
+// The kW is the basis of the month predicted (kwBasisForYm, computations/rates.js): Q3 2026 and later fit on
+// Actual kW (demandKW, else billedKW), the same kW the savings compare it to (Matt, 2026-11-09). Months before
+// that keep the Billed kW fit of the presented Q1 and Q2 2026 reports (billedKW, else demandKW; WP-04, math-02 H3).
+// Savings, the Meter Performance table and Energy Graphics all call this function; there is no other copy.
 // blRows: baseline rows used for the fit (must have .ym and .cdd)
 // allRows: rows to predict for (must have .ym and .cdd)
 // bills: the meter's bills array
 // incl: the inclusion setting for billMonth
 // Returns: {ym: predictedKW} for all months in allRows, or {} if there are fewer than 3 usable points.
-// fitKwCdd(blRows, bills): the OLS fit of billed kW on CDD over the baseline rows; null with fewer than 3 usable points.
-function fitKwCdd(blRows, bills) {
+// fitKwCdd(blRows, bills, basis): the OLS fit of the basis kW ('actual' | 'billed') on CDD over the baseline rows; null with fewer than 3 usable points.
+function fitKwCdd(blRows, bills, basis) {
   var pts = blRows
     .map(function (r) {
       var bfr = bills.filter(function (b) {
@@ -299,7 +299,7 @@ function fitKwCdd(blRows, bills) {
       });
       var kw = bfr.length
         ? bfr.reduce(function (s, b) {
-            return s + (parseBillNumberOrZero(b.billedKW) || parseBillNumberOrZero(b.demandKW));
+            return s + getBillSavingsKw(b, basis);
           }, 0) / bfr.length
         : 0;
       return { x: r.cdd, y: kw };
@@ -339,13 +339,30 @@ function fitKwCdd(blRows, bills) {
 // quarterly report prints the formula the kW dollars use (one fit, no second copy).
 function computeKwCddRegression(blRows, allRows, bills, incl) {
   var result = {};
-  var fit = fitKwCdd(blRows, bills);
-  if (fit) {
-    allRows.forEach(function (r) {
-      // no weather for the month = no kW baseline for it (never CDD 0)
-      if (r.cdd == null || !isFinite(r.cdd)) return;
-      result[r.ym] = Math.max(0, fit.intercept + fit.slope * r.cdd);
+  var fits = {
+    actual: fitKwCdd(blRows, bills, 'actual'),
+    billed: fitKwCdd(blRows, bills, 'billed'),
+  };
+  // Baseline-year CDD of a calendar month (mean of the baseline rows of that month).
+  var blCdd = function (ym) {
+    var v = blRows.filter(function (b) {
+      return b.ym.slice(5, 7) === ym.slice(5, 7) && b.cdd != null && isFinite(b.cdd);
     });
-  }
+    return v.length
+      ? v.reduce(function (s, b) {
+          return s + b.cdd;
+        }, 0) / v.length
+      : null;
+  };
+  allRows.forEach(function (r) {
+    var basis = kwBasisForYm(r.ym);
+    var fit = fits[basis];
+    // Q3 2026 on: the kW baseline is at baseline weather (the CDD of the same month of the baseline year), the same as
+    // the kWh and therms baselines (Matt, 2026-11-03 and 2026-11-09). Earlier months keep the month's own CDD (presented Q1/Q2).
+    var cdd = basis === 'actual' ? blCdd(r.ym) : r.cdd;
+    // no weather for the month = no kW baseline for it (never CDD 0)
+    if (!fit || cdd == null || !isFinite(cdd)) return;
+    result[r.ym] = Math.max(0, fit.intercept + fit.slope * cdd);
+  });
   return result;
 }

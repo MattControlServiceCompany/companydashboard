@@ -11,7 +11,7 @@ const vm = require('vm');
 const REPO = path.resolve(__dirname, '..');
 // billMonth (computations/normalization.js) is stubbed: one bill = the month it starts in.
 const ctx = vm.createContext({ console, billMonth: (b) => b.start.slice(0, 7) });
-['lib/date-helpers.js', 'lib/formatting.js', 'computations/regression.js', 'computations/savings.js'].forEach((f) =>
+['lib/date-helpers.js', 'lib/formatting.js', 'computations/rates.js', 'computations/regression.js', 'computations/savings.js'].forEach((f) =>
   new vm.Script(fs.readFileSync(path.join(REPO, f), 'utf8'), { filename: f }).runInContext(ctx),
 );
 const get = (name) => new vm.Script(name).runInContext(ctx);
@@ -73,8 +73,10 @@ const blRows = [
   { ym: '2025-09', cdd: null },
 ];
 const allBills = [].concat(bills('2025-06', 110), bills('2025-07', 120), bills('2025-08', 130), bills('2025-09', 500));
-const kw = computeKwCddRegression(blRows, blRows.concat([{ ym: '2026-09', cdd: null }, { ym: '2026-08', cdd: 400 }]), allBills, true);
-eq('kW: weather-less baseline month is not a CDD-0 fit point', Math.round(kw['2026-08']), 140);
+const kw = computeKwCddRegression(blRows, blRows.concat([{ ym: '2026-09', cdd: null }, { ym: '2026-08', cdd: 400 }, { ym: '2026-05', cdd: 400 }]), allBills, true);
+// fit kW = 100 + 0.1 x CDD; Q3 2026 on (Actual kW) is at the baseline-year CDD of the month (2025-08: 300), earlier months at their own CDD
+eq('kW: weather-less baseline month is not a CDD-0 fit point', Math.round(kw['2026-05']), 140);
+eq('kW from Q3 2026: baseline-year CDD of the same month, not the month reported', Math.round(kw['2026-08']), 130);
 eq('kW: month without weather has no prediction', kw['2026-09'], undefined);
 
 console.log(fail ? 'FAILED ' + fail : 'ALL PASS');

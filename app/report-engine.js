@@ -332,7 +332,7 @@ function collectReportData(projId, buildingIds, reportDateStr, reportType, selec
     totCumSavings = 0;
 
   const perBldgSavByYM = {};
-  const kwFitByMeter = {}; // meter id -> the kW baseline fit getMeterSavings used (blKwFit), for the Appendix B kW formula
+  const kwFitByMeter = {}; // meter id -> the kW baseline fits getMeterSavings used (blKwFits: actual, billed), for the Appendix B kW formula
   const _reportYMsSorted = reportYMs.slice().sort();
   // --- Raw utility bills for Appendix D ---
   const rawBills = [];
@@ -352,9 +352,9 @@ function collectReportData(projId, buildingIds, reportDateStr, reportType, selec
         start: bill.start || '',
         end: bill.end || '',
         kwh: m.commodity === 'Electric' ? parseFloat(bill.kwh) || parseFloat(bill.usage) || 0 : 0,
-        // Billed demand (the kW the utility charges), same value the savings, the Actual kW totals and the
-        // baseline table use; measured demandKW only when the bill has no billedKW.
-        kw: parseBillNumberOrZero(bill.billedKW) || parseBillNumberOrZero(bill.demandKW),
+        // The kW of the bill that the savings, the Actual kW totals and the baseline table use (getBillSavingsKw, rates.js):
+        // Actual kW from 2026-07 on, Billed kW before.
+        kw: getBillSavingsKw(bill, kwBasisForYm(_billYm)),
         therms: m.commodity === 'Gas' ? resolveGasUsageTherms(bill) : 0,
         gallons: parseFloat(bill.gallonsDelivered) || 0,
         amount: _rptBillAmount(bill, m.commodity),
@@ -465,7 +465,7 @@ function collectReportData(projId, buildingIds, reportDateStr, reportType, selec
       // Actual cost savings + per-ym unit savings from single source of truth
       const meterSav = getMeterSavings(m, bills, incl, projId, b.id);
       const meterSavByYM = meterSav.byYM;
-      kwFitByMeter[m.id] = meterSav.blKwFit || null;
+      kwFitByMeter[m.id] = meterSav.blKwFits || null;
       const meterRowByYM = {};
       meterSav.rows.forEach((row) => {
         meterRowByYM[row.ym] = row;
@@ -493,22 +493,9 @@ function collectReportData(projId, buildingIds, reportDateStr, reportType, selec
 
         if (isElec) {
           const actKwh = actUsage;
-          // kW Baseline and kW Actual are both billed kW: the same basis getMeterSavings uses for
-          // the kW dollars (WP-04b). Metered demandKW is shown only in the Meter Performance table.
-          // kW Baseline must reconcile with the $ savings shown for this same meter/
-          // month — both come from getMeterSavings() (4487ad80). getMeterSavings does
-          // not return blExpKW directly, but it DOES return unitsByYM[ym].kw = blExpKW
-          // - actBilKW (its real internal actual-billed-kW value). actBilKW is a plain
-          // bill fact (no weather/regression dependency), so reading it back here and
-          // adding it to the returned kw figure reconstructs the EXACT blExpKW
-          // getMeterSavings used — this avoids re-deriving a CDD regression locally,
-          // which would NOT match savings.js's fit (this report's allRows/blRows use a
-          // different weather lookup — wddLoadCache(b.zip) above vs. savings.js's own
-          // getWeatherForBuilding() call — so a locally-fit regression silently
-          // disagreed even with identical formula).
-          const actBilKW = bfr.length
-            ? Math.max(...bfr.map((b2) => parseBillNumberOrZero(b2.billedKW) || parseBillNumberOrZero(b2.demandKW)))
-            : 0;
+          // kW Baseline and kW Actual are both on the basis of the month (kwBasisForYm, rates.js): the same basis and the same
+          // Actual kW getMeterSavings uses for the kW dollars. Read from its row, never figured again here.
+          const actBilKW = bfr.length ? _savRow.bilKW || 0 : 0;
           const blExpKW = _savRow.blExpKW || 0;
           // Actual cost of the month = the energy charges of its bills (_rptBillAmount).
           const billedAmt = bfr.reduce((s, b2) => s + _rptBillAmount(b2, 'Electric'), 0);
@@ -2917,14 +2904,24 @@ function _rptQFlatText(b) {
   return out;
 }
 
+// _rptKwActual(d) - true when the kW of the months reported is Actual kW (Q3 2026 and later; kwBasisForYm, computations/rates.js).
+// The kW words of the report follow it: Q3 2026 and later say Actual kW and kW; Q1 and Q2 2026 keep Billed kW.
+function _rptKwActual(d) {
+  var y = ((d && d.period && d.period.yearMonths) || []).slice().sort();
+  return !!y.length && kwBasisForYm(y[y.length - 1]) === 'actual';
+}
+
 // _rptQTerms(d) - the ONE short plain definition of each term the report uses. Page 1 prints the first four where
 // the terms first appear; Appendix A prints all of them; the other pages point to them. Nothing else defines a term.
 function _rptQTerms(d) {
+  var act = _rptKwActual(d);
   return {
     baseline:
       'Baseline is the ' + ((d.period && d.period.year ? d.period.year : 0) - 1) + ' use in the same month. For an electricity or gas meter it comes from the weather model of the meter at the ' + ((d.period && d.period.year ? d.period.year : 0) - 1) +
-      ' weather (billed kW: the weather of the month reported).',
-    measured: 'Savings measured is the baseline use minus the actual use, times the rate of the month, plus the baseline billed kW minus the actual billed kW, times the demand rate, added over the months.',
+      (act ? ' weather.' : ' weather (billed kW: the weather of the month reported).'),
+    measured: act
+      ? 'Savings measured is the baseline use minus the actual use, times the rate of the month, plus the baseline kW minus the Actual kW, times the kW rate, added over the months.'
+      : 'Savings measured is the baseline use minus the actual use, times the rate of the month, plus the baseline billed kW minus the actual billed kW, times the demand rate, added over the months.',
     billed: 'Savings billed is the amount invoiced under the Agreement.',
     savTarget: 'Savings vs target is the savings measured as a percent of the allocated target.',
     target: 'Allocated target is the projected savings of the selected energy conservation measures for the quarter' + "'" + 's months.',
@@ -2943,7 +2940,9 @@ function _rptQTerms(d) {
     negative: 'A negative value means the actual use cost more than the baseline use, both at the rates of the month reported.',
     sign: 'Use change is actual minus baseline use: a plus is more use. Saved is baseline minus actual use: a plus is less use.',
     actualKw: 'Actual kW is the highest demand the meter measured in the month.',
-    kwCost: '$/billed kW is the kW cost divided by billed kW. $/kW (meter pages) is the rate per billed kW of the month reported.',
+    kwCost: act
+      ? '$/billed kW is the kW cost divided by billed kW. $/kW (meter pages) is the kW rate of the month: demand charge over Billed kW, plus TDC charge over TDC kW, plus facilities charge over Facilities kW.'
+      : '$/billed kW is the kW cost divided by billed kW. $/kW (meter pages) is the rate per billed kW of the month reported.',
     totalUtility: 'Total utility is electric plus gas or propane cost.',
     occupied: 'Occupied hours are the hours each week that the building is scheduled for use.',
     share: 'Control Service Company (' + _escHtml(d.contract && d.contract.cscPct) + '%) and District share (' + _escHtml(d.contract && d.contract.clientPct) + '%) split it.',
@@ -2965,12 +2964,16 @@ function _rptQWeatherMethod(d, f) {
   var py = f.year - 1;
   return (
     'The kWh and therms baseline of a month is the weather model of the meter at the heating and cooling degree days (base ' + WX_DD_BASE_F + '&deg;F) of the same month of ' + py + '. ' +
-    'The billed kW baseline of a month is the model of billed kW on cooling degree days, at those of the month reported; a meter with no such model uses the billed kW of the same month of ' + py + '.'
+    (_rptKwActual(d)
+      ? 'The kW baseline of a month is the model of Actual kW on cooling degree days, at those of the same month of ' + py + '; a meter with no such model uses the Actual kW of the same month of ' + py + '.'
+      : 'The billed kW baseline of a month is the model of billed kW on cooling degree days, at those of the month reported; a meter with no such model uses the billed kW of the same month of ' + py + '.')
   );
 }
-// _rptQSavingsFormula() - the ONE statement of the savings formula (page 2 and Appendix A print it).
-function _rptQSavingsFormula() {
-  return 'Savings = (baseline use &minus; actual use) &times; the rate of the month reported, for each month, plus (baseline billed kW &minus; actual billed kW) &times; the demand rate of the month reported.';
+// _rptQSavingsFormula(d) - the ONE statement of the savings formula (page 2 and Appendix A print it).
+function _rptQSavingsFormula(d) {
+  return _rptKwActual(d)
+    ? 'Savings = (baseline use &minus; actual use) &times; the rate of the month reported, for each month, plus (baseline kW &minus; Actual kW) &times; the kW rate of the month reported.'
+    : 'Savings = (baseline use &minus; actual use) &times; the rate of the month reported, for each month, plus (baseline billed kW &minus; actual billed kW) &times; the demand rate of the month reported.';
 }
 
 // The facts the pages and the findings share, from d only.
@@ -3553,14 +3556,14 @@ function _rptQEnergyPage(n, d, f) {
   var body =
     _rptQPara(
       'Electricity use was ' + _rptQN(Math.abs(f.kwhDiff)) + ' kWh (' + _rptQPct(Math.abs(f.kwhPct)).replace('+', '') + ') ' + (f.kwhDiff > 0 ? 'more than' : 'less than') + ' baseline. ' +
-        'Savings measured on electricity were ' + _fmtUSD(eTotal, '$0') + ': ' + _fmtUSD(eWorth, '$0') + ' from kWh charges and ' + _fmtUSD(kwPart, '$0') + ' from billed kW charges. ' +
+        'Savings measured on electricity were ' + _fmtUSD(eTotal, '$0') + ': ' + _fmtUSD(eWorth, '$0') + ' from kWh charges and ' + _fmtUSD(kwPart, '$0') + ' from ' + (_rptKwActual(d) ? '' : 'billed ') + 'kW charges. ' +
         t.billedKw,
     ) +
     _rptQPara(
-      gasWord + (gasWord ? ' ' : '') + 'The kWh and therms baselines use the degree days of ' + (f.year - 1) + '. The billed kW baseline uses the degree days of the month in ' + f.year + '. ' +
+      gasWord + (gasWord ? ' ' : '') + 'The kWh and therms baselines use the degree days of ' + (f.year - 1) + '. The ' + (_rptKwActual(d) ? '' : 'billed ') + 'kW baseline uses the degree days of the month in ' + f.year + '. ' +
         _rptQCddSentence(f) + ' ' + t.degreeDays + ' Appendix C gives the degree days by month.',
     ) +
-    _rptQNote('The use, billed kW and cost of each building and fuel are on the detail pages.');
+    _rptQNote('The use, ' + (_rptKwActual(d) ? 'Actual' : 'billed') + ' kW and cost of each building and fuel are on the detail pages.');
   return rptPage(n, 'Energy Use', body, { data: d, letterhead: false, label: 'Page ' + n + ' - Energy Use' });
 }
 
@@ -3682,35 +3685,23 @@ function _rptQContractBody(d, f) {
   qRows += '<tr><td>Year ' + d.contract.currentYear + ' contract target</td><td class="rpt-n">' + _fmtUSD(_rptYear1Target(d), '$0') + '</td><td class="rpt-n"></td></tr>';
   var t1 = _rptQTable([58, 21, 21], ['Contract year ' + d.contract.currentYear, 'Allocated target', 'Savings billed'], qRows);
 
-  // Projection - the one shared projection
-  var proj = _rptContractProjection(d);
-  var pRows = proj.years
-    .map(function (y) {
-      return (
-        '<tr><td>Year ' +
-        y.year +
-        (y.year === d.contract.currentYear ? ' (billed + targets)' : ' (target, escalated)') +
-        '</td><td class="rpt-n">' +
-        _fmtUSD(y.savings, '$0') +
-        '</td>' +
-        (d.contract.hasCsc ? '<td class="rpt-n">' + _fmtUSD(y.csc, '$0') + '</td><td class="rpt-n">' + _fmtUSD(y.client, '$0') + '</td>' : '') +
-        '</tr>'
-      );
-    })
-    .join('');
+  // Savings to date against the projected savings of the same quarters (Matt, 2026-11-09): the quarters through this one, then the
+  // total that adds from them. Projected = the allocated target of the contract quarterly table (qT); savings to date = the
+  // savings billed (acts, tB: the same values the table above prints).
+  var pctOf = function (billed, target) {
+    return target > 0 ? Math.round((billed / target) * 100) + '%' : '-';
+  };
+  var pRows = '';
+  for (var pi = 0; pi < f.q && pi < 4; pi++) {
+    var pb = acts[pi] != null ? acts[pi] : 0;
+    pRows +=
+      '<tr><td>' + _rptQuarterLabel(pi + 1, f.year) + '</td><td class="rpt-n">' + _fmtUSD(qT[pi] || 0, '$0') + '</td><td class="rpt-n">' +
+      _fmtUSD(pb, '$0') + '</td><td class="rpt-n">' + pctOf(pb, qT[pi] || 0) + '</td></tr>';
+  }
   pRows +=
-    '<tr class="rpt-tot"><td>Total</td><td class="rpt-n">' +
-    _fmtUSD(proj.totalSavings, '$0') +
-    '</td>' +
-    (d.contract.hasCsc ? '<td class="rpt-n">' + _fmtUSD(proj.totalCsc, '$0') + '</td><td class="rpt-n">' + _fmtUSD(proj.totalClient, '$0') + '</td>' : '') +
-    '</tr>';
-  var t3 = _rptQTable(
-    d.contract.hasCsc ? [34, 26, 21, 19] : [70, 30],
-    d.contract.hasCsc
-      ? ['Contract year', 'Billed to date plus contract targets', 'Control Service Company (' + _escHtml(d.contract.cscPct) + '%)', 'District share (' + _escHtml(d.contract.clientPct) + '%)']
-      : ['Contract year', 'Billed to date plus contract targets'],
-    pRows,
-  );
+    '<tr class="rpt-tot"><td>Through ' + _rptQuarterLabel(f.q, f.year) + '</td><td class="rpt-n">' + _fmtUSD(tT, '$0') + '</td><td class="rpt-n">' +
+    _fmtUSD(tB, '$0') + '</td><td class="rpt-n">' + pctOf(tB, tT) + '</td></tr>';
+  var t3 = _rptQTable([34, 22, 22, 22], ['Period', 'Projected', 'Savings to date', '% of projected'], pRows);
   var body =
     '<h2>Contract to Date</h2>' +
     t1 +
@@ -4143,7 +4134,7 @@ function _rptQMonthChartSVG(panels, colors) {
     });
     out += '<line x1="' + x0 + '" y1="' + base + '" x2="' + (x0 + pw) + '" y2="' + base + '" stroke="var(--rpt-page-text)" stroke-width="1"/>';
     // Legend: one row per series, the totals with their unit. A billed kW panel says the total is the sum of the months.
-    var legUnit = p.sum3 ? 'billed kW, sum of ' + p.rows.length + ' months' : p.unit;
+    var legUnit = p.sum3 ? p.kwWord + ', sum of ' + p.rows.length + ' months' : p.unit;
     out += '<rect x="' + x0 + '" y="' + (H - 26) + '" width="10" height="10" fill="' + colors.bl + '"/>';
     out += '<text x="' + (x0 + 14) + '" y="' + (H - 17) + '" font-size="12" fill="var(--rpt-page-text)">Baseline ' + _rptQN(blTot) + ' ' + legUnit + '</text>';
     out += '<rect x="' + x0 + '" y="' + (H - 12) + '" width="10" height="10" fill="' + colors.cur + '"/>';
@@ -4178,7 +4169,7 @@ function _rptQFuelDetailPages(n, d, f, kind) {
     });
   };
   var panels = [{ title: (kind === 'electric' ? 'Electricity' : kind === 'gas' ? 'Natural gas' : 'Propane') + ' use by month, ' + ql + ' (' + K.unit + ')', unit: K.unit, rows: rowsOf('bl', 'cur') }];
-  if (kind === 'electric') panels.push({ title: 'Billed kW by month, ' + ql, unit: 'kW', sum3: true, rows: rowsOf('kwBl', 'kwCur') });
+  if (kind === 'electric') panels.push({ title: (_rptKwActual(d) ? 'Actual' : 'Billed') + ' kW by month, ' + ql, unit: 'kW', sum3: true, kwWord: _rptKwActual(d) ? 'Actual kW' : 'billed kW', rows: rowsOf('kwBl', 'kwCur') });
   // Propane has one meter and one value: the table gives it, so there is no chart.
   var chart = kind === 'propane' ? '' : '<div style="margin:2px 0 6px">' + _rptQMonthChartSVG(panels, K.colors) + '</div>';
   var totLabel = { electric: 'Electricity total', gas: 'Natural gas total', propane: 'Propane total' }[kind];
@@ -4225,7 +4216,7 @@ function _rptQFuelDetailPages(n, d, f, kind) {
     (kind === 'electric' ? '<td class="rpt-n">' + _rptQN(t.kwBl) + '</td><td class="rpt-n">' + _rptQN(t.kwCur) + '</td>' : '') +
     '<td class="rpt-n">' + _fmtUSD(t.cBl, '$0') + '</td><td class="rpt-n">' + _fmtUSD(t.cCur, '$0') + '</td>' + _rptQSavTd(t.sav) + '</tr>';
   var uh = kind === 'propane' ? 'delivered (gal)' : K.unit;
-  var heads = ['Building', 'Baseline<br>' + uh, 'Actual<br>' + uh, 'Use change<br>(%)'].concat(kind === 'electric' ? ['Baseline<br>billed&nbsp;kW', 'Actual<br>billed&nbsp;kW'] : [], [_rptCostHeads(d).bl, _rptCostHeads(d).cur, _rptCostHeads(d).sav]);
+  var heads = ['Building', 'Baseline<br>' + uh, 'Actual<br>' + uh, 'Use change<br>(%)'].concat(kind === 'electric' ? (_rptKwActual(d) ? ['Baseline&nbsp;kW', 'Actual&nbsp;kW'] : ['Baseline<br>billed&nbsp;kW', 'Actual<br>billed&nbsp;kW']) : [], [_rptCostHeads(d).bl, _rptCostHeads(d).cur, _rptCostHeads(d).sav]);
   var widths = kind === 'electric' ? _RPT_Q_W_FUEL_ELEC : _RPT_Q_W_FUEL;
   var names = blds.map(function (b) {
     return b.name;
@@ -4291,7 +4282,7 @@ function _rptQAppendixDPages(n, d, f, letter) {
   };
   var byMonth = _rptBillsByPeriodMonth(d.rawBills || [], f.yms);
   var widths = _RPT_Q_W_BILLS;
-  var heads = ['Building', 'Utility', 'Provider', 'Use', 'Billed kW', 'Cost', 'Billing period'];
+  var heads = ['Building', 'Utility', 'Provider', 'Use', _rptKwActual(d) ? 'Actual kW' : 'Billed kW', 'Cost', 'Billing period'];
   var textCols = [1, 2, 6];
   var pages = [];
   var cur = '';
@@ -4449,7 +4440,7 @@ function _rptQMethodPage(n, d, f, letter) {
     '<ul style="margin:2px 0 4px 20px;padding:0;font-size:13px;line-height:1.3">' +
     li('<strong>Baseline model.</strong> A weather model is fitted to the use of each electricity and gas meter from ' + _escHtml(d.project.blStart) + ' through ' + _escHtml(d.project.blEnd) + '. Operating hours and set points are not adjusted.') +
     li('<strong>Weather.</strong> ' + _rptQWeatherMethod(d, f)) +
-    li('<strong>Savings.</strong> ' + _rptQSavingsFormula()) +
+    li('<strong>Savings.</strong> ' + _rptQSavingsFormula(d)) +
     li('<strong>Building target.</strong> A building' + apos + 's target is its share of the allocated target, in proportion to its baseline cost.') +
     li('<strong>Contract totals.</strong> Year ' + d.contract.currentYear + ' is savings billed to date plus the remaining targets. The Year ' + d.contract.currentYear + ' contract target, ' + _fmtUSD(_rptYear1Target(d), '$0') + ', is the sum of the four quarterly allocated targets; later years escalate it ' + _escHtml(d.contract.escalation || 0) + '% a year, as the Agreement states.') +
     li('<strong>Site EUI, annualized.</strong> Annualized use is the use of the months reported to date &times; 12 &divide; the number of those months. The baseline covers the same calendar months of ' + (d.period.year - 1) + '.') +
@@ -5010,10 +5001,10 @@ function _rptQBilledKwBlock(d, b, f, wx, term) {
   var eqs = meters
     .map(function (md) {
       var who = meters.length > 1 ? ', ' + _escHtml(_rptMeterLabel(md.commodity, md.account)) : '';
-      var kf = md.kwFit;
+      var kf = md.kwFit ? md.kwFit[_rptKwActual(d) ? 'actual' : 'billed'] : null;
       return _rptQNote(
-        'Baseline billed kW' + who + ' for a month = ' +
-          (kf ? term(kf.intercept, '', true, 4).replace(/ &times; $/, '') + term(kf.slope, 'cooling degree days', false, 4) + '.' + _rptQFitText(kf) : 'the billed kW of the same month of ' + py + '.'),
+        'Baseline ' + (_rptKwActual(d) ? '' : 'billed ') + 'kW' + who + ' for a month = ' +
+          (kf ? term(kf.intercept, '', true, 4).replace(/ &times; $/, '') + term(kf.slope, 'cooling degree days', false, 4) + '.' + _rptQFitText(kf) : 'the ' + (_rptKwActual(d) ? 'Actual' : 'billed') + ' kW of the same month of ' + py + '.'),
       );
     })
     .join('');
@@ -5027,11 +5018,14 @@ function _rptQBilledKwBlock(d, b, f, wx, term) {
       tb += shBl[i];
       tc += shCur[i];
       var w = wx[m.month] || {};
-      return '<tr><td>' + _rptQMonthName(m.month) + '</td><td class="rpt-n">' + (w.cddCur == null ? '-' : _rptQN(w.cddCur)) + '</td><td class="rpt-n">' + _rptQN(shBl[i]) + '</td><td class="rpt-n">' + _rptQN(shCur[i]) + '</td>' + _rptQChangeTd(_rptUseChange(shBl[i], shCur[i])) + '</tr>';
+      // the CDD the kW baseline uses: the baseline year's from Q3 2026 (Actual kW), the month's own before (computeKwCddRegression)
+      var cdd = _rptKwActual(d) ? w.cddBl : w.cddCur;
+      return '<tr><td>' + _rptQMonthName(m.month) + '</td><td class="rpt-n">' + (cdd == null ? '-' : _rptQN(cdd)) + '</td><td class="rpt-n">' + _rptQN(shBl[i]) + '</td><td class="rpt-n">' + _rptQN(shCur[i]) + '</td>' + _rptQChangeTd(_rptUseChange(shBl[i], shCur[i])) + '</tr>';
     })
     .join('');
   rows += '<tr class="rpt-tot"><td>Total</td><td></td><td class="rpt-n">' + _rptQN(tb) + '</td><td class="rpt-n">' + _rptQN(tc) + '</td>' + _rptQChangeTd(_rptUseChange(tb, tc)) + '</tr>';
-  return '<h3>Billed kW</h3>' + eqs + _rptQTable([24, 22, 18, 18, 18], ['Month', 'Cooling degree days (' + f.year + ')', 'Baseline billed kW', 'Actual billed kW', 'Use change kW'], rows);
+  var kwA = _rptKwActual(d);
+  return '<h3>' + (kwA ? 'Actual kW' : 'Billed kW') + '</h3>' + eqs + _rptQTable([24, 22, 18, 18, 18], ['Month', 'Cooling degree days (' + (kwA ? f.year - 1 : f.year) + ')', kwA ? 'Baseline kW' : 'Baseline billed kW', kwA ? 'Actual kW' : 'Actual billed kW', 'Use change kW'], rows);
 }
 
 // Appendix B, quarterly layout: for each building and fuel with a weather model, one row per month of the quarter.
@@ -5106,7 +5100,9 @@ function _rptQAppendixBPages(n, d, f, letter) {
   // The tables are packed onto pages while the measured body still fits; a building's tables may continue on the next page
   // under its name and "(continued)", so no page is left part empty by a building that does not fit whole.
   var intro0 = _rptQPara(
-    'Appendix A gives the method. The kWh and therms baselines use the degree days of ' + (f.year - 1) + '; the billed kW baseline uses the degree days of ' + f.year + ', the year of the months reported.',
+    _rptKwActual(d)
+      ? 'Appendix A gives the method. The kWh, therms and kW baselines use the degree days of ' + (f.year - 1) + '.'
+      : 'Appendix A gives the method. The kWh and therms baselines use the degree days of ' + (f.year - 1) + '; the billed kW baseline uses the degree days of ' + f.year + ', the year of the months reported.',
   );
   var unitHtml = function (u, starts) {
     var head = !u.name ? '' : u.first ? '<h2>' + _escHtml(u.name) + '</h2>' : starts ? '<h2>' + _escHtml(u.name) + ' (continued)</h2>' : '';
@@ -6620,7 +6616,7 @@ function rptPageSavingsPerformance(n, d) {
     _rptUnit('kWh') +
     '</th>' +
     '<th class="rpt-n" style="width:10%">' +
-    (_uq ? 'Billed kW<br>(sum of<br>3 months)' : _rptUnit('kW')) +
+    (_uq ? (_rptKwActual(d) ? 'Actual' : 'Billed') + ' kW<br>(sum of<br>3 months)' : _rptUnit('kW')) +
     '</th>' +
     '<th class="rpt-n" style="width:9%">Therms</th>' +
     '<th class="rpt-n" style="width:9%">' + (_uq ? 'Propane<br>delivered<br>(gal)' : 'Propane<br>Gallons') + '</th>' +
@@ -6728,7 +6724,7 @@ function rptPageSavingsPerformance(n, d) {
     '<th class="rpt-n">' +
     _rptUnit('kWh') +
     '</th>' +
-    '<th class="rpt-n">' + (_uq ? 'Billed kW<br>(sum of<br>3 months)' : 'kW') + '</th>' +
+    '<th class="rpt-n">' + (_uq ? (_rptKwActual(d) ? 'Actual' : 'Billed') + ' kW<br>(sum of<br>3 months)' : 'kW') + '</th>' +
     '<th class="rpt-n">Therms</th>' +
     '<th class="rpt-n">' + (_uq ? 'Propane delivered (gal)' : 'Propane Gallons') + '</th>' +
     '<th class="rpt-n">' + (_uq ? _rptCostHeads(d).both : 'Cost') + '</th>' +

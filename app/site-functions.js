@@ -2507,6 +2507,12 @@ async function siteResetAllMeterTableSettings() {
    site-ui.js delegates to this array and should NOT maintain its own copy.
 */
 var RELEASE_NOTES = [
+  { v: 'v2026.11.09.261', date: '2026-11-09', title: 'Quarterly report: Q3 2026 kW savings on Actual kW',
+    items: [
+      { type: 'fix', text: 'Reports > Quarterly report, Q3 2026 on: kW savings compare the baseline kW with the Actual kW of each bill. The baseline kW uses the cooling degree days of the same month of 2025. The kW rate adds the demand, TDC and facilities charges, each over its own kW. Q1 and Q2 do not change.' },
+      { type: 'fix', text: 'Reports > Quarterly report: a gas month with zero use saves the baseline use at the average gas rate of the other bills of the same provider that month.' }
+    ]
+  },
   { v: 'v2026.11.09.260', date: '2026-11-09', title: 'Reports: table borders in the PDF',
     items: [
       { type: 'fix', text: 'Reports > Quarterly report, Download PDF: tables with a merged cell (Summary by Building and the other merged tables) now print solid, straight, same-colour borders. The vertical line next to a merged cell no longer jumps from row to row, and the merged cell has one fill.' }

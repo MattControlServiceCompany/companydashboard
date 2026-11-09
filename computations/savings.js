@@ -418,10 +418,13 @@ function getMeterSavings(m, bills, incl, projId, bldgId, opts) {
     propaneByMo: pMo,
     waterByMo: wMo,
   });
-  const blDemKWByCalMo = {};
+  // Baseline-year kW of each calendar month, per kW basis (kwBasisForYm, computations/rates.js): the fallback baseline
+  // of a meter with no kW fit.
+  const blDemKWByCalMo = { billed: {}, actual: {} };
   if (isElec)
     Object.entries(eMo).forEach(([mo, v]) => {
-      blDemKWByCalMo[mo] = v.billedKW || v.demandKW || 0;
+      blDemKWByCalMo.billed[mo] = v.billedKW || v.demandKW || 0;
+      blDemKWByCalMo.actual[mo] = v.demandKW || v.billedKW || 0;
     });
   const hasRegrP = allRows.some((r) => r.regrBaseline != null);
   const blAvg = _fzBl
@@ -435,8 +438,11 @@ function getMeterSavings(m, bills, incl, projId, bldgId, opts) {
     isElec && hasRegrP
       ? computeKwCddRegression(blRowsActual, allRows, bills, incl)
       : {};
-  // The fit behind those kW values (null: no fit, the kW baseline is the billed kW of the same calendar month of the baseline year).
-  const _kwFit = isElec && hasRegrP ? fitKwCdd(blRowsActual, bills) : null;
+  // The fits behind those kW values, per kW basis (null: no fit, the kW baseline is the kW of the same calendar month of the baseline year).
+  const _kwFits =
+    isElec && hasRegrP
+      ? { actual: fitKwCdd(blRowsActual, bills, "actual"), billed: fitKwCdd(blRowsActual, bills, "billed") }
+      : null;
 
   const rawUsageByYm = {};
   if (isPropane) {
@@ -553,14 +559,14 @@ function getMeterSavings(m, bills, incl, projId, bldgId, opts) {
       blExpKW =
         _kwNormByYm[r.ym] != null
           ? _kwNormByYm[r.ym]
-          : blDemKWByCalMo[calMo] || 0;
-      actBilKW = Math.max(
-        ...bfr.map((b) => parseBillNumberOrZero(b.billedKW) || parseBillNumberOrZero(b.demandKW)),
-      );
+          : blDemKWByCalMo[kwBasisForYm(r.ym)][calMo] || 0;
+      // The kW the savings compare: Actual kW from 2026-07 on, Billed kW before (getMonthSavingsKw, rates.js). The row
+      // field `bilKW` keeps its name because the report column and its printed-value key (bld_kw) use it.
+      actBilKW = getMonthSavingsKw(bfr, r.ym);
       actDemKW = Math.max(...bfr.map((b) => parseBillNumberOrZero(b.demandKW)));
-      // getStoredKwRate() (computations/rates.js) is the ONE $/kW rate: stored totalKwRate,
-      // else demand dollars / billed kW (see its header).
-      moKwRate = getMonthBillRate(bfr, "kw");
+      // getMonthKwRate() (computations/rates.js) is the ONE $/kW rate of a month: from 2026-07 on the total actual kW
+      // rate (each charge over its own kW), before it demand + facilities dollars over Billed kW (see its header).
+      moKwRate = getMonthKwRate(bfr, r.ym);
       // Missing-rate cascade (steps 2-5, computations/rates.js resolveMeterRate): only when
       // the own-bill rate above is genuinely absent AND there is real billed kW that month
       // (a savings-feeding month) - see _context/plans/2026-09-10-missing-rate-resolution-cascade.md.
@@ -626,9 +632,12 @@ function getMeterSavings(m, bills, incl, projId, bldgId, opts) {
       // bills left out, not counted as 0 - math-02 M1. Only a Gas meter derives a rate from the
       // bill's gas fields; this branch also runs for Water/Sewer/Stormwater/Steam meters.
       const _sGasRate = isGas ? getMonthBillRate(bfr, "gas") : 0;
+      // A gas month with no gas use and no gas charge still saves its baseline therms at the current monthly rate of the
+      // utility: getPeerMonthGasRate (computations/rates.js), from ZERO_USE_GAS_FROM_YM on.
       const thermRate =
         _sGasRate ||
-        (actTherms > 0 && actThermCost > 0 ? actThermCost / actTherms : 0);
+        (actTherms > 0 && actThermCost > 0 ? actThermCost / actTherms : 0) ||
+        (isGas && !(actTherms > 0) && !(actThermCost > 0) ? getPeerMonthGasRate(projId, m, r.ym) : 0);
       // Gate on Gas specifically - this "else" branch also runs for Water/Sewer/Stormwater/
       // Steam meters (ALL_COMMODITIES, app/core.js). This is NOT "no rate by design": real
       // bills for those commodities DO carry their own rate (totalWaterRate/waterCharge,
@@ -760,7 +769,7 @@ function getMeterSavings(m, bills, incl, projId, bldgId, opts) {
     unitsByCalMo,
     incompleteYM,
     rows: rowsOut,
-    blKwFit: _kwFit,
+    blKwFits: _kwFits,
   };
   if (!opts.effectiveRows && !opts.normalizedBills) {
     m._savingsCache = result;
