@@ -74,6 +74,11 @@ function parseArgs(argv) {
   return out;
 }
 const args = parseArgs(process.argv.slice(2));
+// --fast (Matt, 2026-11-09: "This should be a 2 minute or less test"): syntax of changed files, all oracle numbers, a pages
+// smoke (sidebar views + one project), static gates without the slow ones. No reconciliation, no feature tests.
+// The full gate (no flag) stays the release gate.
+const FAST = !!args.fast;
+const SLOW_GATES = ['tools/gate-read-chain-correction.js', 'tools/gate-single-bill-flag-count.js'];
 
 function pinnedBackup(oracle) {
   const name = oracle._input && oracle._input.backupFile;
@@ -403,9 +408,10 @@ async function main() {
   // ---- syntax gate (2026-10-22): every tracked .js file must pass `node --check`. Runs FIRST: a file with a syntax error
   // kills its page before any browser step can report, so the later steps would only time out with no useful message. ----
   {
-    const jsFiles = execSync('git ls-files "*.js"', { cwd: REPO_ROOT, encoding: 'utf8', maxBuffer: 64 * 1024 * 1024 })
-      .split(/\r?\n/)
-      .filter(Boolean);
+    const gitList = (cmd) => execSync(cmd, { cwd: REPO_ROOT, encoding: 'utf8', maxBuffer: 64 * 1024 * 1024 }).split(/\r?\n/).filter(Boolean);
+    const tracked = gitList('git ls-files "*.js"');
+    const changed = FAST ? new Set(gitList('git diff --name-only origin/main -- "*.js"').concat(gitList('git ls-files --others --exclude-standard "*.js"'))) : null;
+    const jsFiles = FAST ? tracked.filter((f) => changed.has(f)) : tracked;
     const bad = [];
     jsFiles.forEach((f) => {
       const r = spawnSync(process.execPath, ['--check', path.join(REPO_ROOT, f)], { encoding: 'utf8' });
@@ -598,7 +604,7 @@ async function main() {
     }
 
     // ---- 2b. every project tab on every project ----
-    const projs = await page.evaluate(() => DB.get('en_projects', []).map((p) => ({ id: p.id, name: p.name })));
+    const projs = (await page.evaluate(() => DB.get('en_projects', []).map((p) => ({ id: p.id, name: p.name })))).slice(0, FAST ? 1 : undefined);
     for (const p of projs) {
       const openThrown = await page.evaluate((id) => {
         try {
@@ -722,14 +728,14 @@ async function main() {
   }
 
   // ---- static gates: tools/gate-*.js listed here run on every gate run (exit 0 = PASS) ----
-  ['tools/gate-single-number-parser.js', 'tools/gate-no-baselineinclude-token.js', 'tools/gate-project-scope-unchanged.js', 'tools/gate-single-day-count.js', 'tools/gate-utility-data-single-accessor.js', 'tools/gate-single-baseload-source.js', 'tools/gate-single-bill-flag-count.js', 'tools/gate-read-chain-correction.js', 'tools/gate-bill-change-history.js', 'tools/gate-auto-repair.js', 'tools/gate-bill-display-and-hover.js', 'tools/gate-dup-compare.js', 'tools/gate-printed-read-mismatch.js', 'tools/gate-flag-badge-onclick-escape.js', 'tools/gate-single-physics.js', 'tools/gate-single-fan-model.js', 'tools/gate-single-month-rule.js', 'tools/gate-ecm-templates-no-dollars.js', 'tools/gate-single-payback.js', 'tools/gate-bill-ground-truth.js', 'tools/gate-correction-formulas.js', 'tools/gate-contract-rates-frozen.js', 'tools/gate-schema-grants.js', 'computations/bill-save-fields.gate.js', 'computations/gas-rate-save-paths.gate.js', 'computations/rates.cascade.gate.js'].forEach((g) => {
+  ['tools/gate-single-number-parser.js', 'tools/gate-no-baselineinclude-token.js', 'tools/gate-project-scope-unchanged.js', 'tools/gate-single-day-count.js', 'tools/gate-utility-data-single-accessor.js', 'tools/gate-single-baseload-source.js', 'tools/gate-single-bill-flag-count.js', 'tools/gate-read-chain-correction.js', 'tools/gate-bill-change-history.js', 'tools/gate-auto-repair.js', 'tools/gate-bill-display-and-hover.js', 'tools/gate-dup-compare.js', 'tools/gate-printed-read-mismatch.js', 'tools/gate-flag-badge-onclick-escape.js', 'tools/gate-single-physics.js', 'tools/gate-single-fan-model.js', 'tools/gate-single-month-rule.js', 'tools/gate-ecm-templates-no-dollars.js', 'tools/gate-single-payback.js', 'tools/gate-bill-ground-truth.js', 'tools/gate-correction-formulas.js', 'tools/gate-contract-rates-frozen.js', 'tools/gate-schema-grants.js', 'computations/bill-save-fields.gate.js', 'computations/gas-rate-save-paths.gate.js', 'computations/rates.cascade.gate.js'].filter((g) => !(FAST && SLOW_GATES.includes(g))).forEach((g) => {
     const r = spawnSync(process.execPath, [path.join(REPO_ROOT, g)], { cwd: REPO_ROOT, encoding: 'utf8' });
     add('static-gates', g, r.status === 0 ? 'PASS' : 'FAIL', r.status === 0 ? '' : (r.stdout || r.stderr || '').slice(0, 300));
   });
 
   // ---- 3. existing report reconciliation harness (own browser; runs after ours is closed) ----
-  if (args['skip-reconcile']) {
-    add('reconciliation', 'verify-report-reconciliation.js', 'INFO', 'skipped (--skip-reconcile)');
+  if (args['skip-reconcile'] || FAST) {
+    add('reconciliation', 'verify-report-reconciliation.js', 'INFO', 'skipped (' + (FAST ? '--fast' : '--skip-reconcile') + ')');
   } else {
     const rc = spawnSync(process.execPath, [path.join(REPO_ROOT, 'scripts', 'verify-report-reconciliation.js')], {
       cwd: REPO_ROOT,
@@ -761,7 +767,8 @@ async function main() {
       .forEach((f) => testFiles.push(d === '.' ? f : d + '/' + f));
   });
   testFiles.sort();
-  const toRun = testFiles.filter((f) => {
+  if (FAST) add('feature-tests', testFiles.length + ' feature tests', 'INFO', 'skipped (--fast); the full gate runs them');
+  const toRun = FAST ? [] : testFiles.filter((f) => {
     if (TEST_EXCLUDE[f]) add('feature-tests', f, 'INFO', 'EXCLUDED: ' + TEST_EXCLUDE[f]);
     return !TEST_EXCLUDE[f];
   });
@@ -904,7 +911,7 @@ async function main() {
   const nX = results.filter((r) => r.status === 'XFAIL').length;
   const secs = Math.round((Date.now() - t0) / 1000);
   console.log(
-    `\nREGRESSION GATE ${nFail ? 'FAIL' : 'PASS'}: ${results.filter((r) => r.status === 'PASS').length} pass, ${nFail} fail, ${nX} known-defect (XFAIL)  in ${secs}s`,
+    `\nREGRESSION GATE${FAST ? ' (FAST)' : ''} ${nFail ? 'FAIL' : 'PASS'}: ${results.filter((r) => r.status === 'PASS').length} pass, ${nFail} fail, ${nX} known-defect (XFAIL)  in ${secs}s`,
   );
   if (args.json && args.json !== true) fs.writeFileSync(args.json, JSON.stringify({ results, probe, diffs }, null, 1));
   process.exit(nFail ? 1 : 0);
