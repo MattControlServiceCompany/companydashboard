@@ -5,13 +5,13 @@
 // (tools/test-report-table-fit.js) are separate. The export sets data-dx-live-widths on every page, so the Word widths follow the widths the live page shows (data-dx-w), raised to the whole-word minimums.
 'use strict';
 const EXPECTED = {
- "Building|Square|||Feet|Baseline|||Cost|Projected|||Cost|Actual|||Cost|Q2 2025|||Savings Measured|Percent of|||Baseline Cost|Status": "2218,907,1008,1109,1008,1210,1109,1511",
- "Quarter|Baseline|||kWh|Actual|||kWh|Baseline|||Therms|Actual|||Therms|Baseline|||Gallons|Actual|||Gallons|Baseline|||Cost|Actual|||Cost|Savings|||Measured": "907,1008,1008,1008,1008,1008,1008,1008,1008,1109",
- "Period|kWh|kW|Therms|Propane|||Gallons|Cost|Site EUI, Q2 2025|||(kBtu/ft\u00b2)|Savings vs|||Baseline": "1349,892,484,792,1551,770,2391,1851",
- "Building|Year|kWh|kW|Therms|Propane Gallons|Cost|Site EUI, Q2 2025|||(kBtu/ft\u00b2)": "2720,1170,690,496,892,1711,650,1751",
- "Month|Days|Baseline|||Therms|Actual|||Therms|Therms|||saved|Saved|||%|$/therm|Therm\u00a0$|||saved": "1260,1260,1260,1260,1260,1260,1260,1260",
- "Month|Days|Baseline|||Gal|Actual|||Gal|Gal|||saved|Saved|||%|$/Gallon|Gallon\u00a0$|||saved": "1260,1260,1260,1260,1260,1260,1260,1260",
- "Month|Cooling degree days |(2025)|Baseline billed |kW|Actual billed |kW|Change |kW": "2418,2218,1814,1814,1816"
+ "Building|Square|||feet|Baseline|||cost|Target|||cost|Actual|||cost|Q2 2025|||Savings measured|Percent of|||baseline cost|Status": "2218,907,1008,1109,1008,1210,1109,1511",
+ "Quarter|Baseline|||kWh|Actual|||kWh|Baseline|||therms|Actual|||therms|Baseline|||gal|Actual|||gal|Baseline|||cost|Actual|||cost|Savings|||measured": "907,1008,1008,1008,1008,1008,1008,1008,1008,1109",
+ "Period|kWh|Billed |kW|||(sum of|||months)|Therms|Propane|||gal|Cost|Site EUI, Q2 2025|||(kBtu/ft²)|Savings, % of|||baseline cost": "1814,1210,1210,907,907,1210,1511,1311",
+ "Building|Period|kWh|Billed |kW|||(sum of|||months)|Therms|Propane gal|Cost|Site EUI, Q2 2025|||(kBtu/ft²)": "2597,1395,661,1014,854,1235,650,1674",
+ "Month|Days|Baseline|||therms|Actual|||therms|Therms|||saved|Saved|||%|$/therm|Therm $|||saved": "1260,1260,1260,1260,1260,1260,1260,1260",
+ "Month|Days|Baseline|||gal|Actual|||gal|gal|||saved|Saved|||%|$/gal|gal $|||saved": "1260,1260,1260,1260,1260,1260,1260,1260",
+ "Month|Cooling degree days |(2025)|Baseline billed |kW|Actual billed |kW|Use change |kW": "2418,2218,1814,1814,1816"
 };
 const path = require('path');
 const { pathToFileURL } = require('url');

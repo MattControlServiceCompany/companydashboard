@@ -693,9 +693,35 @@ function _buildBaselineDataHtml(b, projId, opts) {
   let totPropGal = 0,
     totPropCost = 0;
   let kwMonths = 0;
+  // The Total row adds the values as printed (Matt, 2026-11-08): each month value is rounded the way its cell prints it,
+  // then added, so a total never differs from its rows by the last digit.
+  const r1 = (v) => Math.round((v || 0) * 10) / 10;
+  const r2 = (v) => Math.round((v || 0) * 100) / 100;
+  let pKwh = 0,
+    pBilledKwh = 0,
+    pKw = 0,
+    pBilledKW = 0,
+    pFacKW = 0,
+    pKwCost = 0,
+    pFacKwCost = 0,
+    pKwhCost = 0,
+    pElecCost = 0,
+    pTherms = 0,
+    pBilledTherms = 0,
+    pGasCost = 0,
+    pPropGal = 0,
+    pPropCost = 0;
   MO_SHORT.forEach((_, i) => {
     const eb = eByMo[i];
     if (eb) {
+      pKwh += Math.round(eb.kwhPredicted || 0);
+      pBilledKwh += Math.round(eb.kwh || 0);
+      pKw += r1(eb.demandKW);
+      pBilledKW += r1(eb.billedKW);
+      pFacKW += r1(eb.facKW);
+      pKwCost += r2(eb.kwCost);
+      pFacKwCost += r2(eb.facKWCost);
+      pKwhCost += r2(eb.energyCost);
       totKwh += eb.kwhPredicted || 0;
       totBilledKwh += eb.kwh || 0;
       const kwVal = eb.demandKW || 0;
@@ -709,18 +735,28 @@ function _buildBaselineDataHtml(b, projId, opts) {
       totKwhCost += eb.energyCost || 0;
     }
     totElecCost += elecCostOf(i);
+    pElecCost += r2(elecCostOf(i));
     const gb = gByMo[i];
     if (gb) {
+      pTherms += Math.round(gb.thermsPredicted || 0);
+      pBilledTherms += Math.round(gb.therms || 0);
       totTherms += gb.thermsPredicted || 0;
       totBilledTherms += gb.therms || 0;
     }
     totGasCost += gasCostOf(i);
+    pGasCost += r2(gasCostOf(i));
     const pb = pByMo[i];
     if (pb) {
+      pPropGal += Math.round(pb.gallons || 0);
       totPropGal += pb.gallons || 0;
     }
     totPropCost += propCostOf(i);
+    pPropCost += r2(propCostOf(i));
   });
+  const pTotalUtility = r2(pElecCost + pGasCost + pPropCost);
+  // The report table has the billed quantity and the facilities cost beside the normalized one, so every average and
+  // every Electric Cost can be checked from the columns printed; a building with only electricity has no Total Utility column.
+  const showTotalUtility = !(rpt && !gasM && !propaneM);
   if (totKwh === 0 && totTherms === 0 && totPropGal === 0) return '';
   // kW with one decimal and thousands separators (the Baseline Data table: "5,737.7", never "5737.7").
   const $k = (v) => (v || 0).toLocaleString('en-US', { minimumFractionDigits: 1, maximumFractionDigits: 1 });
@@ -735,10 +771,10 @@ function _buildBaselineDataHtml(b, projId, opts) {
               <thead>
                 <tr>
                   <th style="width:80px">Month</th>
-                  ${elecM ? '<th style="text-align:right">Normalized kWh</th><th style="text-align:right">Actual kW</th>' + (hasBilledKW ? '<th style="text-align:right">Billed kW</th>' : '') + (hasFacKW ? '<th style="text-align:right">Facilities kW</th>' : '') + '<th style="text-align:right">kW Cost</th><th style="text-align:right">kWh Cost</th><th style="text-align:right">Electric Cost</th><th style="text-align:right">Average $/kWh</th><th style="text-align:right">Average $/kW</th><th style="text-align:right">Load Factor</th>' : ''}
-                  ${gasM ? '<th style="border-left:2px solid var(--border2);text-align:right">Normalized therms</th><th style="text-align:right">Average $/Therm</th><th style="text-align:right">Gas Cost</th>' : ''}
+                  ${elecM ? '<th style="text-align:right">Normalized kWh</th>' + (rpt ? '<th style="text-align:right">Billed kWh</th>' : '') + '<th style="text-align:right">Actual kW</th>' + (hasBilledKW ? '<th style="text-align:right">Billed kW</th>' : '') + (hasFacKW ? '<th style="text-align:right">Facilities kW</th>' : '') + '<th style="text-align:right">kW Cost</th>' + (rpt && hasFacKW ? '<th style="text-align:right">Facilities kW Cost</th>' : '') + '<th style="text-align:right">kWh Cost</th><th style="text-align:right">Electric Cost</th><th style="text-align:right">' + (rpt ? 'kWh cost per kWh' : 'Average $/kWh') + '</th><th style="text-align:right">' + (rpt ? 'kW cost per billed kW' : 'Average $/kW') + '</th><th style="text-align:right">Load Factor</th>' : ''}
+                  ${gasM ? '<th style="border-left:2px solid var(--border2);text-align:right">Normalized therms</th>' + (rpt ? '<th style="text-align:right">Billed therms</th>' : '') + '<th style="text-align:right">Average $/Therm</th><th style="text-align:right">Gas Cost</th>' : ''}
                   ${propaneM ? '<th style="border-left:2px solid var(--border2);text-align:right">Propane Gal</th><th style="text-align:right">Average $/Gal</th><th style="text-align:right">Propane Cost</th>' : ''}
-                  <th style="text-align:right;border-left:2px solid var(--border2)">Total Utility</th>
+                  ${showTotalUtility ? '<th style="text-align:right;border-left:2px solid var(--border2)">Total Utility</th>' : ''}
                 </tr>
               </thead>
               <tbody>
@@ -773,6 +809,11 @@ function _buildBaselineDataHtml(b, projId, opts) {
                       ? '<td style="text-align:right;font-family:var(--mono)">' +
                         numOrZero(kwh, eCost, Math.round(kwh).toLocaleString()) +
                         '</td>' +
+                        (rpt
+                          ? '<td style="text-align:right;font-family:var(--mono)">' +
+                            numOrZero(eb.kwh, eCost, Math.round(eb.kwh || 0).toLocaleString()) +
+                            '</td>'
+                          : '') +
                         '<td style="text-align:right;font-family:var(--mono)">' +
                         (kw ? $k(kw) : '—') +
                         '</td>' +
@@ -789,6 +830,9 @@ function _buildBaselineDataHtml(b, projId, opts) {
                         '<td style="text-align:right;font-family:var(--mono)">' +
                         (kwCost ? $c(kwCost) : '—') +
                         '</td>' +
+                        (rpt && hasFacKW
+                          ? '<td style="text-align:right;font-family:var(--mono)">' + (eb.facKWCost ? $c(eb.facKWCost) : '—') + '</td>'
+                          : '') +
                         '<td style="text-align:right;font-family:var(--mono)">' +
                         (kwhCost ? $c(kwhCost) : '—') +
                         '</td>' +
@@ -809,11 +853,12 @@ function _buildBaselineDataHtml(b, projId, opts) {
                       ? '<td style="border-left:2px solid var(--border2);text-align:right;font-family:var(--mono)">' +
                         (typeof gb.thermsPredicted === 'number' ? Math.round(therms).toLocaleString() : '—') +
                         '</td>' +
+                        (rpt ? '<td style="text-align:right;font-family:var(--mono)">' + numOrZero(gb.therms, gCost, Math.round(gb.therms || 0).toLocaleString()) + '</td>' : '') +
                         '<td style="text-align:right;font-family:var(--mono);font-size:11px">' +
-                        (avgTherm ? '$' + avgTherm.toFixed(3) : '—') +
+                        (avgTherm ? '$' + avgTherm.toFixed(3) : rpt && (gb.therms || 0) > 0 ? '$0.000' : rpt && gCost > 0 ? 'n/a' : '—') +
                         '</td>' +
                         '<td style="text-align:right;font-family:var(--mono);font-weight:600">' +
-                        (gCost ? $c(gCost) : '—') +
+                        (gCost ? $c(gCost) : rpt && (gb.therms > 0 || typeof gb.thermsPredicted === 'number') ? '$0.00' : '—') +
                         '</td>'
                       : '') +
                     (propaneM
@@ -821,15 +866,17 @@ function _buildBaselineDataHtml(b, projId, opts) {
                         numOrZero(propGal, pCost, Math.round(propGal).toLocaleString()) +
                         '</td>' +
                         '<td style="text-align:right;font-family:var(--mono);font-size:11px">' +
-                        (avgPropGal ? '$' + avgPropGal.toFixed(3) : '—') +
+                        (avgPropGal ? '$' + avgPropGal.toFixed(3) : rpt && pCost > 0 ? 'n/a' : '—') +
                         '</td>' +
                         '<td style="text-align:right;font-family:var(--mono);font-weight:600">' +
-                        (pCost ? $c(pCost) : '—') +
+                        (pCost ? $c(pCost) : rpt && typeof pb.gallons === 'number' ? '$0.00' : '—') +
                         '</td>'
                       : '') +
-                    '<td style="text-align:right;font-family:var(--mono);font-weight:700;border-left:2px solid var(--border2)">' +
-                    (moTotal > 0 ? $c(moTotal) : '—') +
-                    '</td>' +
+                    (showTotalUtility
+                      ? '<td style="text-align:right;font-family:var(--mono);font-weight:700;border-left:2px solid var(--border2)">' +
+                        (moTotal > 0 ? $c(moTotal) : '—') +
+                        '</td>'
+                      : '') +
                     '</tr>'
                   );
                 }).join('')}
@@ -837,27 +884,30 @@ function _buildBaselineDataHtml(b, projId, opts) {
                   <td>TOTAL</td>
                   ${
                     elecM
-                      ? `<td style="text-align:right;font-family:var(--mono)">${totKwh ? Math.round(totKwh).toLocaleString() : '—'}</td>
-                  <td style="text-align:right;font-family:var(--mono)">${totKw ? $k(totKw) : '—'}</td>
-                  ${hasBilledKW ? `<td style="text-align:right;font-family:var(--mono)">${totBilledKW ? $k(totBilledKW) : '—'}</td>` : ''}
-                  ${hasFacKW ? `<td style="text-align:right;font-family:var(--mono)">${totFacKW ? $k(totFacKW) : '—'}</td>` : ''}
-                  <td style="text-align:right;font-family:var(--mono)">${totKwCost ? $c(totKwCost) : '—'}</td>
-                  <td style="text-align:right;font-family:var(--mono)">${totKwhCost ? $c(totKwhCost) : '—'}</td>
-                  <td style="text-align:right;font-family:var(--mono);color:var(--em)">${totElecCost ? $c(totElecCost) : '—'}</td>
-                  <td style="text-align:right;font-family:var(--mono);font-size:11px">${totBilledKwh > 0 && totKwhCost > 0 ? '$' + (totKwhCost / totBilledKwh).toFixed(4) : '—'}</td>
-                  <td style="text-align:right;font-family:var(--mono);font-size:11px">${totBilledKW > 0 && totKwCost > 0 ? '$' + (totKwCost / totBilledKW).toFixed(2) : '—'}</td>
+                      ? `<td style="text-align:right;font-family:var(--mono)">${pKwh ? pKwh.toLocaleString() : '—'}</td>
+                  ${rpt ? `<td style="text-align:right;font-family:var(--mono)">${pBilledKwh ? pBilledKwh.toLocaleString() : '—'}</td>` : ''}
+                  <td style="text-align:right;font-family:var(--mono)">${pKw ? $k(pKw) : '—'}</td>
+                  ${hasBilledKW ? `<td style="text-align:right;font-family:var(--mono)">${pBilledKW ? $k(pBilledKW) : '—'}</td>` : ''}
+                  ${hasFacKW ? `<td style="text-align:right;font-family:var(--mono)">${pFacKW ? $k(pFacKW) : '—'}</td>` : ''}
+                  <td style="text-align:right;font-family:var(--mono)">${pKwCost ? $c(pKwCost) : '—'}</td>
+                  ${rpt && hasFacKW ? `<td style="text-align:right;font-family:var(--mono)">${pFacKwCost ? $c(pFacKwCost) : '—'}</td>` : ''}
+                  <td style="text-align:right;font-family:var(--mono)">${pKwhCost ? $c(pKwhCost) : '—'}</td>
+                  <td style="text-align:right;font-family:var(--mono);color:var(--em)">${pElecCost ? $c(pElecCost) : '—'}</td>
+                  <td style="text-align:right;font-family:var(--mono);font-size:11px">${pBilledKwh > 0 && pKwhCost > 0 ? '$' + (pKwhCost / pBilledKwh).toFixed(4) : '—'}</td>
+                  <td style="text-align:right;font-family:var(--mono);font-size:11px">${pBilledKW > 0 && pKwCost > 0 ? '$' + (pKwCost / pBilledKW).toFixed(2) : '—'}</td>
                   <td></td>`
                       : ''
                   }
                   ${
                     gasM
-                      ? `<td style="border-left:2px solid var(--border2);text-align:right;font-family:var(--mono)">${totTherms ? Math.round(totTherms).toLocaleString() : '—'}</td>
-                  <td style="text-align:right;font-family:var(--mono);font-size:11px">${totBilledTherms > 0 && totGasCost > 0 ? '$' + (totGasCost / totBilledTherms).toFixed(3) : '—'}</td>
-                  <td style="text-align:right;font-family:var(--mono);color:var(--em)">${totGasCost ? $c(totGasCost) : '—'}</td>`
+                      ? `<td style="border-left:2px solid var(--border2);text-align:right;font-family:var(--mono)">${pTherms ? pTherms.toLocaleString() : '—'}</td>
+                  ${rpt ? `<td style="text-align:right;font-family:var(--mono)">${pBilledTherms ? pBilledTherms.toLocaleString() : '—'}</td>` : ''}
+                  <td style="text-align:right;font-family:var(--mono);font-size:11px">${pBilledTherms > 0 && pGasCost > 0 ? '$' + (pGasCost / pBilledTherms).toFixed(3) : '—'}</td>
+                  <td style="text-align:right;font-family:var(--mono);color:var(--em)">${pGasCost ? $c(pGasCost) : '—'}</td>`
                       : ''
                   }
-                  ${propaneM ? '<td style="border-left:2px solid var(--border2);text-align:right;font-family:var(--mono)">' + (totPropGal ? Math.round(totPropGal).toLocaleString() : '—') + '</td><td style="text-align:right;font-family:var(--mono);font-size:11px">' + (totPropGal > 0 && totPropCost > 0 ? '$' + (totPropCost / totPropGal).toFixed(3) : '—') + '</td><td style="text-align:right;font-family:var(--mono);color:var(--em)">' + (totPropCost ? $c(totPropCost) : '—') + '</td>' : ''}
-                  <td style="text-align:right;font-family:var(--mono);font-weight:700;color:var(--em);border-left:2px solid var(--border2)">${totElecCost + totGasCost + totPropCost > 0 ? $c(totElecCost + totGasCost + totPropCost) : '—'}</td>
+                  ${propaneM ? '<td style="border-left:2px solid var(--border2);text-align:right;font-family:var(--mono)">' + (pPropGal ? pPropGal.toLocaleString() : '—') + '</td><td style="text-align:right;font-family:var(--mono);font-size:11px">' + (pPropGal > 0 && pPropCost > 0 ? '$' + (pPropCost / pPropGal).toFixed(3) : '—') + '</td><td style="text-align:right;font-family:var(--mono);color:var(--em)">' + (pPropCost ? $c(pPropCost) : '—') + '</td>' : ''}
+                  ${showTotalUtility ? `<td style="text-align:right;font-family:var(--mono);font-weight:700;color:var(--em);border-left:2px solid var(--border2)">${pTotalUtility > 0 ? $c(pTotalUtility) : '—'}</td>` : ''}
                 </tr>
               </tbody>
             </table>

@@ -86,7 +86,7 @@ const ok = (c, m) => {
         // Building summaries: the Monthly Use heading sits in one block with the Savings table and the EUI table.
         const sumBlocks = allH2.filter((h) => /^Monthly Use/.test(h.textContent)).map((h) => {
           const k = h.closest('[data-unit="keep"]');
-          return !!(k && [...k.querySelectorAll('h2')].some((x) => /^Savings,/.test(x.textContent)) && /Site energy use intensity/.test(k.textContent));
+          return !!(k && [...k.querySelectorAll('h2')].some((x) => /^Savings,/.test(x.textContent)) && /Site EUI, /.test(k.textContent));
         });
         // Meter blocks: the section heading is on the page of the first meter table, ahead of it.
         const mBlocks = [...host.querySelectorAll('[data-unit="keep"]')].filter((k) => /Meter Performance -/.test(k.textContent));
@@ -111,14 +111,15 @@ const ok = (c, m) => {
         let ytd = null;
         host.querySelectorAll('table').forEach((t) => {
           const hs = [...t.querySelectorAll('th')].map((x) => x.textContent);
-          if (hs.indexOf('Savings $') < 0) return;
+          if (hs.indexOf('Savings measured ($)') < 0) return;
           const num = (tr) => {
             const c = tr.cells[tr.cells.length - 1].textContent.replace(/[\s$,]/g, '').replace(/−/g, '-');
             return Number(c);
           };
           const trs = [...t.querySelectorAll('tbody tr')];
-          const last = trs[trs.length - 1];
-          ytd = { sum: trs.slice(0, -1).reduce((a, tr) => a + num(tr), 0), last: num(last), labels: trs.map((tr) => tr.cells[0].textContent) };
+          const ti = trs.findIndex((tr) => /^Total/.test(tr.cells[0].textContent));
+          const last = trs[ti];
+          ytd = { sum: trs.slice(0, ti).reduce((a, tr) => a + num(tr), 0), last: num(last), labels: trs.map((tr) => tr.cells[0].textContent) };
         });
         const sumH = allH2.filter((h) => /^Monthly Use/.test(h.textContent)).map((h) => _rptQMeasureH(h.closest('[data-unit="keep"]').outerHTML));
         host.remove();
@@ -184,8 +185,8 @@ const ok = (c, m) => {
     console.log('summary block heights (px): ' + JSON.stringify(res.sumH) + ', page body budget ' + res.budget);
     ok(res.mBlocks === 6 && res.meterHeadOk && res.meterHeadCount === 1, 'the Meter Performance heading is on the page of the first meter block, once: blocks ' + res.mBlocks + ', ok ' + res.meterHeadOk + ', count ' + res.meterHeadCount);
     ok(res.meterHead2, 'the Meter Performance heading precedes the first meter block when it follows a building summary on the page');
-    ok(res.kwLines.length > 0 && res.kwLines.every((l) => l === 'kW'), 'billed kW header units are on a line of their own: ' + JSON.stringify(res.kwLines));
-    ok(res.ytd && res.ytd.sum === res.ytd.last && res.ytd.labels.some((l) => /savings not billed/.test(l)), 'the Year-to-Date Savings column adds to the last row: ' + JSON.stringify(res.ytd));
+    ok(res.kwLines.length > 0 && res.kwLines.every((l) => l !== 'kW'), 'no billed kW header leaves the unit alone on a line: ' + JSON.stringify(res.kwLines));
+    ok(res.ytd && res.ytd.sum === res.ytd.last && res.ytd.labels.some((l) => /measured savings \(not billed\)/.test(l)), 'the Year-to-Date Savings column adds to its Total row: ' + JSON.stringify(res.ytd));
     ok(res.pageNums.every((n, i) => n === i + 1) && res.pageNums.length === res.total, 'the page numbers run 1 to ' + res.total);
     ok(errs.length === 0, 'no page errors' + (errs.length ? ': ' + errs[0] : ''));
   } finally {

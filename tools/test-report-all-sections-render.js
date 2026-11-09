@@ -86,7 +86,7 @@ const ok = (c, m) => {
       ok(first.every((v, i) => i === 0 || v > first[i - 1]), 'pages follow the order of the section table: ' + order.map((k, i) => k + '@' + first[i]).join(' '));
       Object.keys(res.off).forEach((k) => ok(res.off[k] === false, 'with "' + k + '" unchecked its page is gone'));
       ok(!/Baseline cost is the actual cost plus savings/.test(res.fuelText), 'no page says the baseline cost is the actual cost plus savings');
-      ok(new RegExp('Electricity-Acct' + String.fromCharCode(35) + 'ZZ9').test(res.fuelText), 'a Use Detail meter is named Electricity-Acct#<account>');
+      ok(new RegExp('Electricity - Acct' + String.fromCharCode(35) + ' ZZ9').test(res.fuelText), 'a Use Detail meter is named Electricity - Acct# <account>');
       ok(/\$2,700/.test(res.fuelText), 'the baseline cost of a Use Detail row is the baseline-month cost of the building (costBl), not actual cost plus savings');
     }
     ok(errs.length === 0, 'no page errors' + (errs.length ? ': ' + errs[0] : ''));

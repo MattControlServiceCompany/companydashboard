@@ -2507,6 +2507,16 @@ async function siteResetAllMeterTableSettings() {
    site-ui.js delegates to this array and should NOT maintain its own copy.
 */
 var RELEASE_NOTES = [
+  { v: 'v2026.11.08.250', date: '2026-11-08', title: 'Quarterly report: display fixes from the review',
+    items: [
+      { type: 'fix', text: 'Reports > Quarterly report, Energy Use Intensity page: the Year-to-Date table lists the Q3 savings as measured, not billed, in red. Every total adds from the rows shown, and the difference from the presented Q1 and Q2 is computed from the unrounded values.' },
+      { type: 'fix', text: 'Reports > Quarterly report: totals now add from the rounded rows shown (month totals, kW changes, gas chart months, meter tables). Savings totals keep their exact values.' },
+      { type: 'fix', text: 'Reports > Quarterly report, Financial Summary and Savings Performance: the compensation table names what each value holds (billed and target), "Projected" is "Target", the tile reads "Electricity Use Change", and kW sums read "Billed kW (sum of months)".' },
+      { type: 'fix', text: 'Reports > Quarterly report, Building Baseline Data pages: Electric Cost shows its parts (kW cost, facilities kW cost, kWh cost), the price columns name their cost and use, each page shows the year, and Appendix A defines Normalized use, Facilities kW and Load factor.' },
+      { type: 'fix', text: 'Reports > Quarterly report, Environmental Impact page: one heading, equivalents that state their yearly EPA basis, forest wording corrected, and no tanker truck, railcar or power plant line when the value is below 1.' },
+      { type: 'fix', text: 'Reports > Quarterly report: explanation text under the contract, energy use and weather tables moved to Appendix A, table headers use one case, the baseline is stated as the 2025 use in the same month, and meter tables use a larger font.' }
+    ]
+  },
   { v: 'v2026.11.08.249', date: '2026-11-08', title: 'Quarterly report: Baseline Data gas table',
     items: [
       { type: 'fix', text: 'Reports > Quarterly report, Building Baseline Data pages: the gas columns are again in their own table (Natural Gas and Total Utility) in PDF and Word. The v2026.11.08.248 label change had put them back into the Electricity table.' },

@@ -1256,3 +1256,15 @@ No timer, no env var, no host change. All of it runs in the browser when a repor
 - Propane baseline price: `_rptPropaneBlCostMap` (:52) fills a baseline month that has gallons and a $0 cost with gallons x the usage-weighted all-in $/gal of the baseline-year deliveries (`getMonthBillRate(..., 'propane')`). The stored contract baseline is copied, never written. No priced delivery = no rate and no change. Display only: `getMeterSavings` does not read it.
 - Check: `node tools/test-report-q3-review-findings.js` (section 14, synthetic data). In the browser: Building Summary and the "by Building" table print the same savings for a building; Building Performance actual cost = the sum of the Use Detail actual costs; the Natural Gas Meters names are on one line.
 
+## Quarterly report: display fixes from the v249 review (2026-11-08, version v2026.11.08.250)
+
+No timer, no env var, no host change. All of it runs in the browser when a report preview is built. No stored bill value and no savings figure changes.
+
+- Year-to-Date table (`rptPageYearToDate`, app/report-engine.js:8132): the Savings column and the Baseline and Actual columns total the rows shown. "Q3 2026 measured savings (not billed)" is a memo row after the total (red when negative). The difference row = unrounded measured Q1+Q2 minus the presented total.
+- One header case: `_rptQThSameCase` (:4408) prints every table header in sentence case ("Baseline cost", "Propane gal", "$/gal") on the final HTML of the quarterly report.
+- Meter tables (lib/perf-table.js `buildMeterPerfTableHTML`, report mode): kWh $ and kW $ cents are apportioned so they add to the Total $ of the row (:112); font 11 px in the page (about 8 pt printed); header "billed kW" with a no-break space; a gas or propane month with usage shows `$0.00` instead of a dash.
+- Baseline Data (`_buildBaselineDataHtml`, app/calculators.js, report mode only): billed kWh, facilities kW cost and billed therms columns; Average columns divide by the billed value shown; header names "kWh cost per kWh" and "kW cost per billed kW"; the Total Utility column is dropped when the building has no gas or propane (:759). `rptBuildSiteBaselineData` (:4502) sizes each column from its longest value.
+- Appendix A (`_rptQTerms` :2728, `_rptQMethodPage` :4175, `_rptQMedianText` :3530): the baseline is "the 2025 use in the same month"; terms for Facilities kW, Normalized use, Load factor, quarter and annual EUI; the contract total, annualized EUI and national median text moved here from the contract and EUI pages.
+- Environmental Impact (`rptPageEnvironmentalImpact` :7021): equivalents say "Equal to the CO2 of ..." with the EPA basis (one year); `_equivalentsOf` (computations/pollution.js:194) uses `Math.floor` for tanker trucks, railcars and power plants, so a value below 1 is not shown.
+- Check: `node tools/test-report-q3-review-findings.js` (section 17), `node tools/test-report-page-packing.js` (31 pages), `node tools/test-gas-cost-single-source.js`. In the browser: Reports > Quarterly report, page 23 totals add; page 6 shows no tanker, railcar or power plant line.
+

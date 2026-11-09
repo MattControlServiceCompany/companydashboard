@@ -190,20 +190,21 @@ function energyUseChangeLine(kwhSaved, thermsSaved, galSaved) {
 var EMISSIONS_SIGN_NOTE = 'A plus sign means more emissions than baseline.';
 
 // _equivalentsOf(mt): the EPA equivalency counts for mt metric tons of CO2e (one rule for avoided and added emissions).
+// A tanker truck, a railcar and a power plant are whole large items: a value below 1 is 0 (not shown), never rounded up to 1.
 function _equivalentsOf(mt) {
   var eq = EQUIV_PER_MT_CO2E;
   return {
     carsRemoved: Math.ceil(mt * eq.carsRemoved),
     gallonsGasoline: Math.ceil(mt * eq.gallonsGasoline),
-    tankerTrucks: Math.ceil(mt * eq.tankerTrucks),
+    tankerTrucks: Math.floor(mt * eq.tankerTrucks),
     barrelsOil: Math.ceil(mt * eq.barrelsOil),
     households: Math.ceil(mt * eq.households),
     treeSeedlings: Math.ceil(mt * eq.treeSeedlings),
     acresForest: Math.ceil(mt * eq.acresForest),
-    railcarsCoal: Math.ceil(mt * eq.railcarsCoal),
+    railcarsCoal: Math.floor(mt * eq.railcarsCoal),
     tonsRecycled: Math.ceil(mt * eq.tonsRecycled),
     propaneCylinders: Math.ceil(mt * eq.propaneCylinders),
-    coalPlants: Math.ceil(mt * eq.coalPlants),
+    coalPlants: Math.floor(mt * eq.coalPlants),
   };
 }
 
