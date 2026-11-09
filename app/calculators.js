@@ -807,7 +807,7 @@ function _buildBaselineDataHtml(b, projId, opts) {
                       : '') +
                     (gasM
                       ? '<td style="border-left:2px solid var(--border2);text-align:right;font-family:var(--mono)">' +
-                        numOrZero(therms, gCost, Math.round(therms).toLocaleString()) +
+                        (typeof gb.thermsPredicted === 'number' ? Math.round(therms).toLocaleString() : '—') +
                         '</td>' +
                         '<td style="text-align:right;font-family:var(--mono);font-size:11px">' +
                         (avgTherm ? '$' + avgTherm.toFixed(3) : '—') +

@@ -2507,6 +2507,12 @@ async function siteResetAllMeterTableSettings() {
    site-ui.js delegates to this array and should NOT maintain its own copy.
 */
 var RELEASE_NOTES = [
+  { v: 'v2026.11.08.249', date: '2026-11-08', title: 'Quarterly report: Baseline Data gas table',
+    items: [
+      { type: 'fix', text: 'Reports > Quarterly report, Building Baseline Data pages: the gas columns are again in their own table (Natural Gas and Total Utility) in PDF and Word. The v2026.11.08.248 label change had put them back into the Electricity table.' },
+      { type: 'fix', text: 'Project > Baseline Data and the report Baseline Data pages: a month whose normalized therms is 0 now shows 0, not a dash. The price columns still show a dash when there is no cost.' }
+    ]
+  },
   { v: 'v2026.11.08.248', date: '2026-11-08', title: 'Quarterly report: Baseline Data gas column label',
     items: [
       { type: 'fix', text: 'Project > Baseline Data and the report Baseline Data pages: the gas usage column is now named "Normalized therms", like "Normalized kWh". It holds weather-normalized therms. No figure changes.' }

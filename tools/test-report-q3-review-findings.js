@@ -780,7 +780,7 @@ console.log('\n--- 15. Baseline Data average price uses billed usage ---');
 // 16. v248 (Matt 2026-11-08): the gas usage column holds weather-normalized therms, so its header says so (like "Normalized kWh")
 console.log('\n--- 16. Baseline Data gas column header ---');
 {
-  run(ctx, 'var _hvlRealMonthly16 = _hvlMonthlyBaseline; _hvlMonthlyBaseline = function () { return { elecM: {}, gasM: {}, propaneM: null, pByMo: {}, eByMo: {}, gByMo: { 0: { therms: 65, thermsPredicted: 455, cost: 51.88 } } }; }');
+  run(ctx, 'var _hvlRealMonthly16 = _hvlMonthlyBaseline; _hvlMonthlyBaseline = function () { return { elecM: {}, gasM: {}, propaneM: null, pByMo: {}, eByMo: {}, gByMo: { 0: { therms: 65, thermsPredicted: 455, cost: 51.88 }, 6: { therms: 0, thermsPredicted: 0, cost: 0 } } }; }');
   let html16 = '';
   try {
     html16 = run(ctx, '(function(){ return _buildBaselineDataHtml({ id: "x", name: "T", sqft: 1000, meters: [] }, ' + PROJ + '); })')();
@@ -788,7 +788,17 @@ console.log('\n--- 16. Baseline Data gas column header ---');
     run(ctx, '_hvlMonthlyBaseline = _hvlRealMonthly16');
   }
   assert(/>Normalized therms<\/th><th[^>]*>Average \$\/Therm</.test(html16), 'gas column header says "Normalized therms"');
+  const rows16 = (html16.match(/<tr[\s\S]*?<\/tr>/g) || []).map((r) => (r.match(/<td[^>]*>([\s\S]*?)<\/td>/g) || []).map((c) => c.replace(/<[^>]+>/g, '').trim()));
+  const jul16 = rows16.find((r) => r[0] === 'Jul') || [], aug16 = rows16.find((r) => r[0] === 'Aug') || [];
+  const gi16 = (html16.match(/<th[^>]*>[^<]*<\/th>/g) || []).map((h) => h.replace(/<[^>]+>/g, '')).indexOf('Normalized therms');
+  assert(gi16 > 0 && jul16[gi16] === '0' && jul16[gi16 + 1] === '—' && jul16[gi16 + 2] === '—', 'a month with a normalized value of 0 shows 0 therms and a dash for the price');
+  assert(gi16 > 0 && aug16[gi16] === '—', 'a month with no baseline row shows a dash');
   assert(!/>Therms<\/th>/.test(html16), 'no plain "Therms" gas header');
+  // the report cuts the site table into Electricity / Natural Gas and Total Utility by the gas header name (rptBuildSiteBaselineData):
+  // the name the site table prints must be the name the report splitter looks for
+  const reSrc = fs.readFileSync(path.join(REPO, 'app', 'report-engine.js'), 'utf8');
+  const fn16 = reSrc.slice(reSrc.indexOf('function rptBuildSiteBaselineData'), reSrc.indexOf('function _rptQHoursPage'));
+  assert(/h === 'Normalized therms'/.test(fn16) && /heads\.indexOf\('Normalized therms'\)/.test(fn16) && !/'Therms'/.test(fn16), 'report split (rptBuildSiteBaselineData) looks for the gas header "Normalized therms", the name the site table prints');
 }
 
 console.log('\n' + passed + ' passed, ' + failed + ' failed');

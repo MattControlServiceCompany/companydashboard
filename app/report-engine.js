@@ -4517,7 +4517,7 @@ function rptBuildSiteBaselineData(b, d) {
   });
   if (!heads.length || !rows.length) return '';
   var firstOther = heads.findIndex(function (h) {
-    return h === 'Therms' || h === 'Propane Gal' || h === 'Total Utility';
+    return h === 'Normalized therms' || h === 'Propane Gal' || h === 'Total Utility';
   });
   var sub = function (cols, title) {
     var last = rows.length - 1;
@@ -4560,7 +4560,7 @@ function rptBuildSiteBaselineData(b, d) {
   var out = '';
   if (firstOther > 1) out += sub([0].concat(range(1, firstOther)), 'Electricity');
   var names = [];
-  if (heads.indexOf('Therms') >= 0) names.push('Natural Gas');
+  if (heads.indexOf('Normalized therms') >= 0) names.push('Natural Gas');
   if (heads.indexOf('Propane Gal') >= 0) names.push('Propane');
   names.push('Total Utility');
   // A building with no gas and no propane has only Total Utility left: it joins the Electricity table, not a table of one column.
