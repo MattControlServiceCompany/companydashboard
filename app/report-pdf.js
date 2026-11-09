@@ -150,15 +150,63 @@ function _rptPdfFlattenTables(root, win) {
     if (tcs.borderCollapse !== 'collapse') continue;
     table.style.borderCollapse = 'separate';
     table.style.borderSpacing = '0';
+    // Grid of the table: grid[row][col] is the cell that covers that slot. A cell with rowspan or
+    // colspan fills several slots, so a neighbour is found by slot, never by position in the row.
     var rows = table.rows;
+    var grid = [];
+    var cellList = [];
     for (var ri = 0; ri < rows.length; ri++) {
-      var cells = rows[ri].cells;
-      for (var ci = 0; ci < cells.length; ci++) {
-        var cell = cells[ci];
-        cell.style.borderRadius = '0';
-        if (ci > 0 && parseFloat(win.getComputedStyle(cells[ci - 1]).borderRightWidth) >= parseFloat(win.getComputedStyle(cell).borderLeftWidth)) cell.style.borderLeftWidth = '0';
-        if (ri > 0 && parseFloat(win.getComputedStyle(rows[ri - 1].cells[Math.min(ci, rows[ri - 1].cells.length - 1)] || cell).borderBottomWidth) >= parseFloat(win.getComputedStyle(cell).borderTopWidth)) cell.style.borderTopWidth = '0';
+      grid[ri] = grid[ri] || [];
+      var gc = 0;
+      for (var ci = 0; ci < rows[ri].cells.length; ci++) {
+        var cell = rows[ri].cells[ci];
+        while (grid[ri][gc]) gc++;
+        var rs = cell.rowSpan || 1;
+        var cs = cell.colSpan || 1;
+        for (var r2 = ri; r2 < ri + rs && r2 < rows.length; r2++) {
+          grid[r2] = grid[r2] || [];
+          for (var c2 = gc; c2 < gc + cs; c2++) grid[r2][c2] = cell;
+        }
+        cellList.push({ cell: cell, row: ri, col: gc, cs: cs });
+        gc += cs;
       }
+    }
+    var bw = function (el, side) {
+      return parseFloat(win.getComputedStyle(el)['border' + side + 'Width']) || 0;
+    };
+    for (var li = 0; li < cellList.length; li++) {
+      var it = cellList[li];
+      it.cell.style.borderRadius = '0';
+      var left = it.col > 0 ? grid[it.row][it.col - 1] : null;
+      var leftW = bw(it.cell, 'Left');
+      var topW = bw(it.cell, 'Top');
+      var dropLeft = !!left && left !== it.cell && bw(left, 'Right') >= leftW;
+      var dropTop = it.row > 0 && topW > 0;
+      for (var tc = it.col; dropTop && tc < it.col + it.cs; tc++) {
+        var above = grid[it.row - 1][tc];
+        if (!above || above === it.cell || bw(above, 'Bottom') < topW) dropTop = false;
+      }
+      it._dropLeft = dropLeft;
+      it._dropTop = dropTop;
+    }
+    // html2canvas paints a row background after the cells of the rows above it. A row background of
+    // the second row of a rowspan group would cover the lower half of the merged cell (its border and
+    // its fill). Each row background moves onto the cells of that row, so nothing paints over a
+    // merged cell.
+    for (var bi = 0; bi < rows.length; bi++) {
+      var rowBg = win.getComputedStyle(rows[bi]).backgroundColor;
+      if (!rowBg || rowBg === 'transparent' || rowBg === 'rgba(0, 0, 0, 0)') continue;
+      for (var bc = 0; bc < rows[bi].cells.length; bc++) {
+        var bcell = rows[bi].cells[bc];
+        var cellBg = win.getComputedStyle(bcell).backgroundColor;
+        if (!cellBg || cellBg === 'transparent' || cellBg === 'rgba(0, 0, 0, 0)') bcell.style.backgroundColor = rowBg;
+      }
+      rows[bi].style.backgroundColor = 'transparent';
+    }
+    // Set after every measurement: dropping a border must not change what a neighbour measures.
+    for (var si = 0; si < cellList.length; si++) {
+      if (cellList[si]._dropLeft) cellList[si].cell.style.borderLeftWidth = '0';
+      if (cellList[si]._dropTop) cellList[si].cell.style.borderTopWidth = '0';
     }
   }
 }

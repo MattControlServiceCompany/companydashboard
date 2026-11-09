@@ -2507,6 +2507,11 @@ async function siteResetAllMeterTableSettings() {
    site-ui.js delegates to this array and should NOT maintain its own copy.
 */
 var RELEASE_NOTES = [
+  { v: 'v2026.11.09.260', date: '2026-11-09', title: 'Reports: table borders in the PDF',
+    items: [
+      { type: 'fix', text: 'Reports > Quarterly report, Download PDF: tables with a merged cell (Summary by Building and the other merged tables) now print solid, straight, same-colour borders. The vertical line next to a merged cell no longer jumps from row to row, and the merged cell has one fill.' }
+    ]
+  },
   { v: 'v2026.11.09.259', date: '2026-11-09', title: 'Quarterly report: contract target row and Appendix A terms',
     items: [
       { type: 'fix', text: 'Reports > Quarterly report, Contract to Date: a Year 1 contract target row (the sum of the four quarterly allocated targets), so the Year 2 target follows from a printed figure. Appendix A defines the allocated target again, adds the billed kW term to savings measured, and states the sign rule at the rates of the month reported. Wider Building column on Savings Performance. One heading colour on Environmental Impact.' }
