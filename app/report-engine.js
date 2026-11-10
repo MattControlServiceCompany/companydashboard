@@ -20785,14 +20785,14 @@ function rptPageASHRAE36SetpointReview(n, d, extraTopH) {
     );
   }
   var _spColDefs = [
-    { w: 14, th: 'Building', td: tdBase, cell: function (r) { return '<span style="font-weight:600;color:var(--rpt-page-text)">' + _a36DisplayName(r) + '</span>'; } },
+    { w: 13, th: 'Building', td: tdBase, cell: function (r) { return '<span style="font-weight:600;color:var(--rpt-page-text)">' + _a36DisplayName(r) + '</span>'; } },
     { w: 12, th: 'Occupied' + thSub + 'Existing average, °F</span>', td: tdRight, cell: function (r) { return _fmtAvg(r.avgHeat) + ' / ' + _fmtAvg(r.avgCool); } },
-    { w: 12, th: 'Unoccupied' + thSub + 'Existing average, °F</span>', td: tdRight, cell: function (r) { return _fmtAvg(r.avgUnoccHeat) + ' / ' + _fmtAvg(r.avgUnoccCool); } },
+    { w: 16, th: 'Unoccupied' + thSub + 'Existing average, °F</span>', td: tdRight, cell: function (r) { return _fmtAvg(r.avgUnoccHeat) + ' / ' + _fmtAvg(r.avgUnoccCool); } },
     { w: 13, th: 'ASHRAE 36<br>Reference' + thSub + 'Occupied / Unoccupied, °F</span>', td: tdCenter, cell: _refCellFor, uniformNote: function (h) { var p = h.split('<br>'); return '<strong>ASHRAE 36 reference for every building:</strong> Occupied ' + p[0] + '; Unoccupied ' + p[1]; } },
-    { w: 11, th: 'Deadband' + thSub + 'Existing average, °F</span>', td: tdRight, cell: function (r) { return _fmtAvg(r.avgDb); } },
-    { w: 15, th: 'Existing<br>Schedule' + thSub + 'Mon–Fri, Sat &amp; Sun</span>', td: tdCenter, cell: _eschCellFor, uniformNote: function (h) { return h === 'Not part of this review' ? '' : '<strong>Existing schedule for every building:</strong> ' + h.replace(/<br>/g, '; '); }, dropIf: function (h) { return h === 'Not part of this review'; } },
-    { w: 16, th: 'Recommended' + thSub + 'Setpoints (Occupied / Unoccupied, °F) and Schedule</span>', td: tdCenter, cell: _recCellFor, uniformNote: function (h) { return '<strong>Recommended for every building</strong> (setpoints and schedule): ' + h.replace(/<br>/g, '; '); } },
-    { w: 20, th: 'Status', td: tdBase, keep: true, cell: function (r) { return _statusCell(r.bStatus) + ' <span style="font-size:8px;color:var(--rpt-page-text)">' + r.deviatorLabel + '</span>'; } },
+    { w: 13, th: 'Deadband' + thSub + 'Existing average, °F</span>', td: tdRight, cell: function (r) { return _fmtAvg(r.avgDb); } },
+    { w: 14, th: 'Existing<br>Schedule' + thSub + 'Mon–Fri, Sat &amp; Sun</span>', td: tdCenter, cell: _eschCellFor, uniformNote: function (h) { return h === 'Not part of this review' ? '' : '<strong>Existing schedule for every building:</strong> ' + h.replace(/<br>/g, '; '); }, dropIf: function (h) { return h === 'Not part of this review'; } },
+    { w: 17, th: 'Recommended' + thSub + 'Setpoints (Occupied / Unoccupied, °F) and Schedule</span>', td: tdCenter, cell: _recCellFor, uniformNote: function (h) { return '<strong>Recommended for every building</strong> (setpoints and schedule): ' + h.replace(/<br>/g, '; '); } },
+    { w: 15, th: 'Status', td: tdBase, keep: true, cell: function (r) { return _statusCell(r.bStatus) + ' <span style="font-size:8px;color:var(--rpt-page-text)">' + r.deviatorLabel + '</span>'; } },
   ];
   var _uniformNotes = [];
   var _spCols = _spColDefs.filter(function (c, ci) {
