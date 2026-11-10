@@ -67,6 +67,26 @@ const t1 = '2026-10-30T15:00:00Z';
 let r = SA.reconcile(o(1080, { stored: null, now: t1, latestImport: '2026-10-29T20:00:00Z' }));
 eq(r.changes.map((c) => c.what), ['New action'], 'first look opens the action');
 eq(r.stored.actions[G1].status, 'open', 'status open');
+// the lines of one period say where the change goes and what the group has now; the copy note says how old the data is
+const gs = { 'Test Alpha Hall|Gyms': { building: 'Test Alpha Hall', group: 'Gyms', members: ['Area 1 / AHU-1 - Gym'], schedules: [
+  { description: 'Open Gym', days: 'Mon, Wed', start: '4:00 PM', end: '6:00 PM', mode: 'Occupied' },
+  { description: 'stagger', days: 'No days', start: 'not opened', end: 'not opened', mode: 'not opened' },
+] } };
+const pn = SA.periodNeeds(o(1080, { groups: gs, from: '2026-10-30', to: '2026-10-31' }));
+eq(pn.length, 1, 'period list: one line');
+eq(pn[0].where, 'Test Alpha Hall / Area 1 / AHU-1 - Gym', 'line says building / area / program');
+eq(pn[0].groupNow, 'Open Gym Mon, Wed 4:00 PM - 6:00 PM', 'line shows the group schedules now, unread entries left out');
+// a group whose saved building name differs from the BAS location name (as in the real data: 'Test Alpha' and 'Test Alpha Hall ') still shows its schedules
+const gs2 = { 'Test Alpha|Gyms': { building: 'Test Alpha', group: 'Gyms', members: ['Area 1 / AHU-1 - Gym'], schedules: gs['Test Alpha Hall|Gyms'].schedules } };
+eq(SA.periodNeeds(o(1080, { groups: gs2, from: '2026-10-30', to: '2026-10-31' }))[0].groupNow, 'Open Gym Mon, Wed 4:00 PM - 6:00 PM', 'group schedules found although the building names differ');
+eq(SA.periodNeeds(o(1080, { from: '2026-10-30', to: '2026-10-31' }))[0].groupNow, '', 'no group schedules saved: empty text');
+eq(
+  SA.copyNote({ snapFetchedAt: '2026-10-23T15:00:00Z', snaps: mkSnaps(1080, ''), tz: TZ, today: '2026-10-30' }),
+  'Calendar copy: Fri Oct 23, 2026 (7 days old). BAS copies: Fri Oct 30, 2026, Sat Oct 31, 2026.',
+  'copy note: calendar age and BAS copy dates',
+);
+eq(SA.copyNote({ snapFetchedAt: '', snaps: {}, tz: TZ, today: '2026-10-30' }), 'No calendar copy saved. No BAS copy saved.', 'copy note: nothing saved');
+
 // nothing new
 eq(SA.reconcile(o(1080, { stored: r.stored, now: t1, latestImport: '2026-10-29T20:00:00Z' })).changes, [], 'second look changes nothing');
 // done by a person
