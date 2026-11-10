@@ -20349,10 +20349,12 @@ function renderPDFFields(parsed, warnings) {
   const _row = (html) => {
     if (!html) return;
     if (_pendingSection) {
-      const _runHdr = /^charges$/i.test(_pendingSection)
-        ? `<span class="ef-section-run" title="${_RUN_TITLE}">Running total</span>`
-        : '';
-      rows.push(`<div class="ef-section">${_pendingSection}${_runHdr}</div>`);
+      rows.push(`<div class="ef-section">${_pendingSection}</div>`);
+      // The Running total heading sits over its own column of the charge rows.
+      if (/^charges$/i.test(_pendingSection))
+        rows.push(
+          `<div class="ef-charge-row ef-run-hdr">${_blank}${_blank}${_blank}<div class="ef-section-run" title="${_RUN_TITLE}">Running total</div></div>`,
+        );
       _pendingSection = '';
     }
     rows.push(html);

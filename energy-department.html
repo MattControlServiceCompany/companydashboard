@@ -5554,9 +5554,12 @@
       .ef-pair {
         display: contents;
       }
+      /* Quantity | rate | charge are as wide as their values need (at most 230 px); the running total sits right
+         after them with room for its widest value, clear of the scroll bar. */
       .ef-charge-row {
         display: grid;
-        grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) minmax(0, 1fr) 84px;
+        grid-template-columns: repeat(3, minmax(0, 230px)) minmax(96px, max-content);
+        justify-content: start;
         gap: 2px;
         align-items: stretch;
       }
@@ -5573,7 +5576,7 @@
         color: var(--ink);
         white-space: nowrap;
         min-width: 72px;
-        padding: 0 2px;
+        padding: 0 8px 0 2px;
       }
       .ef-running.match,
       .ef-running.mismatch {
@@ -5586,13 +5589,11 @@
         border-bottom: 2px solid var(--red);
       }
       .ef-section-run {
-        float: right;
+        font-size: 10px;
+        font-weight: 700;
         color: var(--ink);
-        text-transform: none;
-        letter-spacing: 0;
-        min-width: 72px;
         text-align: right;
-        padding: 0 2px;
+        padding: 0 8px 0 2px;
       }
       .ef-section {
         font-size: 10px;
