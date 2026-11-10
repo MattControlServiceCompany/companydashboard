@@ -28,9 +28,12 @@ const bldgs = [
   { id: 'bA', name: 'Alpha', sqft: 40000, meters: [meter('mA', 30000)] },
   { id: 'bB', name: 'Beta', sqft: 20000, meters: [meter('mB', 12000)] },
   { id: 'bG', name: 'Gamma', sqft: 5000, meters: [meter('mG', 90000)] },
+  // Live data 2026-11-10: the per-customer "Unmatched Bills" sentinel is in scope with Water meters only, so the
+  // Dashboard said 7 buildings again. A sentinel is never a building of the project (LBG-2).
+  { id: 'bU', name: 'Unmatched Bills', sqft: 0, _unmatchedSentinel: true, meters: [Object.assign(meter('mU', 0), { commodity: 'Water' })] },
 ];
 const project = { id: 1, name: 'Synthetic', calcCommodities: ['Electric', 'Gas', 'Propane', 'Unknown'],
-  scope: { buildingIds: ['bA', 'bB', 'bG'], meterExcludeIds: ['mG'] } };
+  scope: { buildingIds: ['bA', 'bB', 'bG', 'bU'], meterExcludeIds: ['mG'] } };
 
 const ctx = makeContext();
 ['eui', 'regression', 'physics'].forEach((f) => vm.runInContext(read('computations/' + f + '.js'), ctx));
@@ -47,6 +50,8 @@ vm.runInContext(['getUDProj', 'getUDBldgs', 'getIncludedBldgs', 'getBaselineElig
 vm.runInContext(['isCalcCommodity', '_updateCompactHdrBaseline'].map((n) => fnSource('app/core.js', n)).join('\n'), ctx);
 
 // ---- counts ----
+const incl = vm.runInContext('getIncludedBldgs(1).map(b => b.name)', ctx);
+check(JSON.stringify(incl) === '["Alpha","Beta"]', 'included list skips the excluded building and the Unmatched Bills sentinel (got ' + JSON.stringify(incl) + ')');
 const elig = vm.runInContext('getBaselineEligibleBldgs(1).map(b => b.name)', ctx);
 check(JSON.stringify(elig) === '["Alpha","Beta"]', 'eligible list = included buildings only (got ' + JSON.stringify(elig) + ')');
 const core = read('app/core.js');
