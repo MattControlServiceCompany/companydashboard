@@ -4953,9 +4953,19 @@
       .pdf-top-chips {
         flex: 1 1 auto;
       }
-      /* Air between the selected-bill row and the Extracted values header below it. */
+      /* The selected-bill row: utility and month, the bill's compact box, then the status chips, in one row. */
       .pdf-top-sel {
-        margin-bottom: 12px;
+        margin-bottom: 0;
+      }
+      .pdf-billrow {
+        margin-bottom: 6px;
+      }
+      .pdf-billrow .pdf-dest {
+        flex: 1 1 auto;
+        margin: 0;
+      }
+      .pdf-billrow .pdf-top-chips {
+        flex: 0 1 auto;
       }
       /* Save, More and Clear stay together: they wrap to the next line as one group, never one button alone. */
       .pdf-top-actions {
@@ -5097,11 +5107,7 @@
         display: grid;
         grid-template-columns: repeat(auto-fill, minmax(min(260px, 100%), 1fr));
         gap: 6px;
-        margin-bottom: 14px;
-      }
-      .pdf-bldgs-toggle {
-        align-self: start;
-        justify-self: start;
+        margin-bottom: 8px;
       }
       .pdf-bldgs:empty {
         display: none;
@@ -5143,16 +5149,23 @@
          red = an issue that stops the save (no matching meter, held), amber = values to check, green = ready. */
       .pdf-dest {
         display: flex;
-        flex-direction: column;
-        gap: 6px;
-        margin: 8px 0 10px;
-        padding: 8px 10px;
+        flex-direction: row;
+        align-items: center;
+        flex-wrap: wrap;
+        gap: 6px 10px;
+        margin: 4px 0 6px;
+        padding: 5px 10px;
         font-size: 12px;
         color: var(--text);
         background: var(--s3);
         border: 1px solid var(--border2);
         border-left: 4px solid var(--border2);
         border-radius: 6px;
+      }
+      /* One compact row: the head, the Saves-to line and the actions flow as items of the box itself; Previous / Next go last, at the right. */
+      .pdf-dest-head,
+      .pdf-dest-acts {
+        display: contents;
       }
       .pdf-dest.st-err {
         border-left-color: var(--red);
@@ -5173,6 +5186,7 @@
         font-weight: 700;
       }
       .pdf-dest-step {
+        order: 9;
         margin-left: auto;
         display: inline-flex;
         gap: 6px;
@@ -5195,8 +5209,7 @@
       .pdf-dest-issue strong {
         color: var(--red);
       }
-      .pdf-dest-line,
-      .pdf-dest-acts {
+      .pdf-dest-line {
         display: flex;
         align-items: center;
         gap: 6px 10px;
@@ -5271,6 +5284,7 @@
          values and the file bar, and the dock fills the same height. */
       #view-pdf.view.active {
         overflow: hidden;
+        padding-top: 6px;
       }
       #view-pdf.view.active #pdfBody {
         flex: 1 1 0;
@@ -5288,10 +5302,20 @@
         overflow-x: hidden;
       }
       /* Inside this scroller the pinned boxes sit flush with its top edge (no page padding above them). */
-      #pdfValuesScroll .pdf-topbar {
-        top: 0;
+      /* Frozen top of the values column: file name row, building list, compact bill row. It is outside the scroller, so it never moves.
+         A long open list (many buildings, a Save list) scrolls inside it past half the screen so the values keep room. */
+      #pdfFrozen {
+        flex: 0 0 auto;
+        max-height: 50vh;
+        overflow-y: auto;
+        overflow-x: hidden;
+        padding: 0 2px;
       }
-      #pdfValuesScroll .pdf-topbar::before {
+      #pdfFrozen .pdf-topbar {
+        position: static;
+        margin-top: 0;
+      }
+      #pdfFrozen .pdf-topbar::before {
         display: none;
       }
       #pdfBody.pdf-docked {
@@ -5764,6 +5788,19 @@
       #pdfBody[data-queue-busy] #pdfTopBar,
       #pdfBody[data-queue-busy] #pdfBillSection {
         display: none !important;
+      }
+      /* PDF / OCR page title sits in the top bar row (same row as the user chip and bell); other views hide it. */
+      #pdfPageHdr {
+        display: none;
+        flex: 1 1 0;
+        min-width: 0;
+        padding: 6px 8px;
+      }
+      .app-col:has(#view-pdf.active) #pdfPageHdr {
+        display: block;
+      }
+      #pdfPageHdr .pg-hdr {
+        margin-bottom: 0;
       }
       /* PDF / OCR page header: View PDF and Saved Bills stay top-right at every width; the subtitle wraps instead. */
       #pdfPageHdr .pg-hdr {
@@ -9581,6 +9618,54 @@
         <div class="app-col">
         <header class="topbar" data-fb="energy.topbar">
           <div class="hdr-projbar" id="hdrProjBar" style="display: none"></div>
+            <!-- PDF / OCR page title: lives in the top bar row; shown only while the PDF / OCR view is active (CSS below). -->
+            <div id="pdfPageHdr">
+              <div class="pg-hdr">
+                <div style="display: flex; align-items: baseline; gap: 6px 14px; flex-wrap: wrap">
+                  <h1 class="pg-title">PDF <em>/ OCR</em></h1>
+                  <p style="font-size: 13px; color: var(--text2); margin: 0">
+                    Extract data from utility bills, drawings, submittals, and contracts
+                  </p>
+                </div>
+                <div class="hdr-actions">
+                  <!-- View PDF: always here, at every width. Shown by _showExtractionToolbar() when a PDF is kept. -->
+                  <button
+                    class="btn btn-ghost"
+                    id="pdfViewBtn"
+                    style="display: none"
+                    onclick="
+                      event.stopPropagation();
+                      viewCurrentExtractionPDF(event);
+                    "
+                    title="Show or hide the source PDF. It opens at the page of the selected billing period"
+                    data-fb="energy.pdf.view-pdf-btn"
+                  >
+                    View PDF
+                  </button>
+                  <button
+                    class="btn btn-ghost"
+                    onclick="openSavedBillsModal()"
+                    id="savedBillsBtn"
+                    data-fb="energy.pdf.saved-bills-btn"
+                  >
+                    Saved Bills
+                    <span
+                      id="pdfBillCount"
+                      style="
+                        background: var(--em);
+                        color: #000000;
+                        font-size: 10px;
+                        font-weight: 700;
+                        padding: 1px 6px;
+                        border-radius: 8px;
+                        margin-left: 4px;
+                        display: none;
+                      "
+                    ></span>
+                  </button>
+                </div>
+              </div>
+            </div>
           <div class="t-right">
             <div class="user-wrap">
               <button type="button" class="user-chip" id="topUser" aria-haspopup="menu" aria-expanded="false" aria-controls="userMenu" onclick="toggleUserMenu()">
@@ -10029,54 +10114,6 @@
 
           <!-- PDF OCR -->
           <div id="view-pdf" class="view" data-ui-id="en-pdf" data-fb="energy.pdf">
-            <!-- Page title bar — stays frozen at top, spans full width -->
-            <div id="pdfPageHdr" style="padding: 0 0 6px; background: var(--bg)">
-              <div class="pg-hdr">
-                <div style="display: flex; align-items: baseline; gap: 6px 14px; flex-wrap: wrap">
-                  <h1 class="pg-title">PDF <em>/ OCR</em></h1>
-                  <p style="font-size: 13px; color: var(--text2); margin: 0">
-                    Extract data from utility bills, drawings, submittals, and contracts
-                  </p>
-                </div>
-                <div class="hdr-actions">
-                  <!-- View PDF: always here, at every width. Shown by _showExtractionToolbar() when a PDF is kept. -->
-                  <button
-                    class="btn btn-ghost"
-                    id="pdfViewBtn"
-                    style="display: none"
-                    onclick="
-                      event.stopPropagation();
-                      viewCurrentExtractionPDF(event);
-                    "
-                    title="Show or hide the source PDF. It opens at the page of the selected billing period"
-                    data-fb="energy.pdf.view-pdf-btn"
-                  >
-                    View PDF
-                  </button>
-                  <button
-                    class="btn btn-ghost"
-                    onclick="openSavedBillsModal()"
-                    id="savedBillsBtn"
-                    data-fb="energy.pdf.saved-bills-btn"
-                  >
-                    Saved Bills
-                    <span
-                      id="pdfBillCount"
-                      style="
-                        background: var(--em);
-                        color: #000000;
-                        font-size: 10px;
-                        font-weight: 700;
-                        padding: 1px 6px;
-                        border-radius: 8px;
-                        margin-left: 4px;
-                        display: none;
-                      "
-                    ></span>
-                  </button>
-                </div>
-              </div>
-            </div>
             <!-- The page scrolls; the PDF dock (PDF / OCR text tabs) sits beside the values and stays in view (sticky). -->
             <div
               id="pdfBody"
@@ -10087,6 +10124,49 @@
                 id="pdfLeftCol"
                 style="flex: 3 1 0; min-width: 0"
               >
+                <!-- Frozen top of the values column: file name row, building list, compact bill row. Only #pdfValuesScroll below scrolls. -->
+                <div id="pdfFrozen">
+                <!-- File bar for every file kind: file name, file status, the one Save control, More, Clear.
+                     Filled by _pdfRenderTopBar() (app/bill-analysis.js). A chip or Save opens a list under the bar. -->
+                <div id="pdfTopBar" class="pdf-topbar" data-fb="energy.pdf.top-bar" style="display: none">
+                  <div class="pdf-topbar-row">
+                    <div id="pdfTopFile" class="pdf-top-file"></div>
+                    <div id="pdfTopFileChips" class="pdf-top-chips"></div>
+                    <div class="pdf-top-actions">
+                      <div id="pdfTopSave" class="pdf-top-save"></div>
+                      <button id="pdfMoreBtn" class="pdf-top-btn" style="display: none" title="Other ways to save, and the PDF page options" onclick="_pdfTogglePop('more')">More</button>
+                      <button id="pdfClearFileBtn" class="pdf-top-btn" style="display: none" title="Remove this file and its values from the page" onclick="clearPDFOCR()">Clear</button>
+                    </div>
+                  </div>
+                  <div id="pdfTopPop" class="pdf-pop" style="display: none"></div>
+                  <div id="pdfMorePop" class="pdf-pop pdf-pop-narrow" style="display: none">
+                    <div id="pdfMoreSave"></div>
+                    <label
+                      id="pdfSbsWrap"
+                      class="pdf-more-item"
+                      title="Open the PDF page next to the values when a file is loaded"
+                    >
+                      <input type="checkbox" id="pdfSbsToggle" onchange="setPdfSideBySide(this.checked)" />
+                      Show the PDF beside the values
+                    </label>
+                    <button id="pdfSaveDebugBtn" class="pdf-more-item" style="display: none" onclick="savePDFDebug(true)">
+                      Save a debug file of this extraction
+                    </button>
+                  </div>
+                </div>
+                <!-- The bills of the file: one row per building (every row shows), then the bill on screen:
+                     its utility chips, billing period and status chips. -->
+                <div id="pdfBillSection" class="pdf-billsec" style="display: none">
+                  <div id="pdfTopBldgs" class="pdf-bldgs" role="list" aria-label="Buildings found in this PDF"></div>
+                  <div class="pdf-billrow">
+                    <div id="pdfTopSel" class="pdf-top-sel"></div>
+                    <!-- Multi-building file: the bill's destination and issues (no matching meter, Create meter), drawn by _mbRenderReview. Same row as the utility and month. -->
+                    <div id="pdfBillDest" class="pdf-dest" data-fb="energy.pdf.bill-dest" style="display: none"></div>
+                    <div id="pdfTopChips" class="pdf-top-chips"></div>
+                  </div>
+                  <div id="pdfBillPop" class="pdf-pop" style="display: none"></div>
+                </div>
+                </div>
                 <!-- The values area: its own bounded scroll region. The review bar below it is a normal row, so it is always
                      on screen and no value scrolls behind it. -->
                 <div id="pdfValuesScroll">
@@ -10136,47 +10216,7 @@
                     <button class="ptpill" onclick="setPDFType('contract', this)">Contract</button>
                   </div>
                 </div>
-                <!-- File bar for every file kind: file name, file status, the one Save control, More, Clear.
-                     Filled by _pdfRenderTopBar() (app/bill-analysis.js). A chip or Save opens a list under the bar. -->
-                <div id="pdfTopBar" class="pdf-topbar" data-fb="energy.pdf.top-bar" style="display: none">
-                  <div class="pdf-topbar-row">
-                    <div id="pdfTopFile" class="pdf-top-file"></div>
-                    <div id="pdfTopFileChips" class="pdf-top-chips"></div>
-                    <div class="pdf-top-actions">
-                      <div id="pdfTopSave" class="pdf-top-save"></div>
-                      <button id="pdfMoreBtn" class="pdf-top-btn" style="display: none" title="Other ways to save, and the PDF page options" onclick="_pdfTogglePop('more')">More</button>
-                      <button id="pdfClearFileBtn" class="pdf-top-btn" style="display: none" title="Remove this file and its values from the page" onclick="clearPDFOCR()">Clear</button>
-                    </div>
-                  </div>
-                  <div id="pdfTopPop" class="pdf-pop" style="display: none"></div>
-                  <div id="pdfMorePop" class="pdf-pop pdf-pop-narrow" style="display: none">
-                    <div id="pdfMoreSave"></div>
-                    <label
-                      id="pdfSbsWrap"
-                      class="pdf-more-item"
-                      title="Open the PDF page next to the values when a file is loaded"
-                    >
-                      <input type="checkbox" id="pdfSbsToggle" onchange="setPdfSideBySide(this.checked)" />
-                      Show the PDF beside the values
-                    </label>
-                    <button id="pdfSaveDebugBtn" class="pdf-more-item" style="display: none" onclick="savePDFDebug(true)">
-                      Save a debug file of this extraction
-                    </button>
-                  </div>
-                </div>
-                <!-- The bills of the file: one row per building (every row shows), then the bill on screen:
-                     its utility chips, billing period and status chips. -->
-                <div id="pdfBillSection" class="pdf-billsec" style="display: none">
-                  <div id="pdfTopBldgs" class="pdf-bldgs" role="list" aria-label="Buildings found in this PDF"></div>
-                  <div class="pdf-billrow">
-                    <div id="pdfTopSel" class="pdf-top-sel"></div>
-                    <div id="pdfTopChips" class="pdf-top-chips"></div>
-                  </div>
-                  <div id="pdfBillPop" class="pdf-pop" style="display: none"></div>
-                </div>
                 <div id="pdfStatusBox" class="ai-box" data-fb="energy.pdf.status-box"></div>
-                <!-- Multi-building file: the bill's destination and issues (no matching meter, Create meter), drawn by _mbRenderReview. -->
-                <div id="pdfBillDest" class="pdf-dest" data-fb="energy.pdf.bill-dest" style="display: none"></div>
                 <div id="extractedFieldsHdr" data-fb="energy.pdf.extracted-fields-hdr"></div>
                 <!-- Destination selects: the save code reads them; the auto-detected match fills them. Never shown. -->
                 <div id="pdfSaveSelects" hidden>
