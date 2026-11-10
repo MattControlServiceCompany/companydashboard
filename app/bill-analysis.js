@@ -20579,7 +20579,7 @@ function renderPDFFields(parsed, warnings) {
         }
         const bad = _rowMismatches.find((m) => m.idx === idx);
         if (bad) {
-          return `<div class="ef-detail ef-warn">Check: expected $${bad.computed.toFixed(2)} (${bad.qty != null && bad.rate != null ? `${bad.qty.toFixed(2)} ${_escHtml(bad.unit || '')} &times; $${bad.rate}${bad.prorationNum && bad.prorationDen ? ` &times; ${bad.prorationNum}/${bad.prorationDen} days` : ''}` : 'quantity &times; rate'}) but read $${bad.ocrCharge.toFixed(2)} (off $${bad.diff.toFixed(2)}). Not changed. Check it against the PDF.</div>`;
+          return `<div class="ef-detail ef-warn">Check: expected $${bad.computed.toFixed(2)} (${bad.qty != null && bad.rate != null ? `${bad.qty.toFixed(2)} ${_escHtml(bad.unit || '')} &times; $${Number(bad.rate)}${bad.prorationNum && bad.prorationDen ? ` &times; ${Number(bad.prorationNum)}/${Number(bad.prorationDen)} days` : ''}` : 'quantity &times; rate'}) but read $${bad.ocrCharge.toFixed(2)} (off $${bad.diff.toFixed(2)}). Not changed. Check it against the PDF.</div>`;
         }
         return '';
       };
