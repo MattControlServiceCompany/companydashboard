@@ -439,7 +439,7 @@ The app Restore path (6c) is on main only, not in stable (v87), until the Nov 2 
 - Theme and System mode (lib/theme.js, lib/theme.css; linked in the head of index.html, energy-department.html, ems-leads.html (css only)). The stored choice is dark, light or system in ch_settings.theme and ch_theme (per-user keys, same path as before; existing Dark or Light users are unchanged, default stays dark). `chTheme.effective(pref)` (lib/theme.js) is the ONE function that decides the theme on screen; `data-theme` on html is always the effective dark or light. System follows the prefers-color-scheme media query live, no reload, and fires the `ch-theme-change` window event; lib/shared-charts.js listens and re-reads the chart text color. `chTheme.apply(pref)` saves and paints (siteApplyTheme calls it); `chTheme.applyAccent(hex)` sets the accent and `--on-accent` (white on a dark accent, black on a light accent; .btn-em uses it). lib/theme.css holds the rules every page needs: color-scheme per theme, explicit select colors from the tokens, and the shared disabled-button cue (dashed border, not-allowed cursor, pole text). Check: node tools/test-no-grey-text.js --verbose; in Settings choose System and change the OS color mode.
 - The regression gate needs a backup that has presented records (`en_presented_savings`); the oracle checks the presented client figures from it.
 - The regression gate uses the backup named in the oracle (`_input.backupFile` in regression-oracle.json, file in Downloads), not the newest one. If it is missing the gate fails. `--data` overrides. When you rebuild the oracle on a new backup, set `_input.backupFile` to that file (`--capture-baseline` sets it only if empty).
-- Regression gate (scripts/regression-gate.js). Run: `node scripts/regression-gate.js` (about 230 s, exit 0 = pass). It
+- Regression gate (scripts/regression-gate.js). Run: `node scripts/regression-gate.js` (about 830 s on 2026-11-09, exit 0 = pass). It
   checks pages and numbers against the oracle, runs scripts/verify-report-reconciliation.js, and runs EVERY `tools/test-*.js`
   and repo-root `test-*.js` / `test-*.mjs` as its own child process (3 at a time, 240 s limit each; a non-zero exit is a FAIL). New test files
   are found by glob. Tests that fail or hang on main, or need the internet, are listed in `TEST_EXCLUDE` in the gate with the
@@ -468,6 +468,16 @@ The app Restore path (6c) is on main only, not in stable (v87), until the Nov 2 
   It is set as a Windows user environment variable on the work machine (`[Environment]::SetEnvironmentVariable('CH_REAL_IDS_FILE', <path in _context/reference/private>, 'User')`), like the other gate settings.
   Unset or missing file = SKIP (INFO, exit 0). A new shell is needed to see a new user variable.
   Browser tests must use `launchBrowser`. Other scratch files must use `tools/tmp-root.js`; `os.tmpdir()` and `C:/Temp` are not used in `tools/`, `scripts/` or the repo-root `test-*.js` files.
+- Check routine (Matt, 2026-11-09). Run the gate on a snapshot worktree (detached at the commit), never on a tree you edit; one full gate at a time.
+  While you work: `node scripts/regression-gate.js --fast` (about 100 s). It checks syntax of the files changed against origin/main plus untracked
+  files, every oracle number, the pages of 1 project and the fast static gates. It skips the reconciliation, the feature tests and the slow gates
+  (`SLOW_GATES`), and its last line says "REGRESSION GATE (FAST)". It is not a release check.
+  Before a release, both: (1) the report check, `python -I "<context dir>\tools\2026-11-09-louisburg-report-check.py" <repo> <seed backup json> <work dir under _context\temp>`.
+  It exports the Louisburg report data and the report PDF from <repo> and compares them with the newest frozen snapshots in
+  `<context dir>\ground-truth\2026-11-09-frozen-snapshots` (write-once, SHA-256 manifest, hash-chained INDEX.jsonl). Any baseline change, any Q1/Q2 change,
+  any page layout change or a frozen figure that is gone = "REPORT CHECK FAIL" and exit 1. Other changes are listed in compare-data.xlsx and compare-pdf.xlsx.
+  A presented report or a baseline change that Matt approves = a new dated snapshot (`2026-11-09-frozen-snapshot.py freeze`); never edit a snapshot.
+  (2) the full gate. Progress lines print while it runs: the end of each section, each FAIL at once, and a count every 20 feature tests.
 - Bill CSV header matching (app/csv-import.js `ci()` inside `parseBillCsv`). One rule for every column: exact header first,
   then whole-word match. A header with a cost, id or date word is claimed only by an alias of the same class, so
   "Energy Cost" is not kWh, "Bill ID" is not cost and "Total" is not an end date. How to check:
