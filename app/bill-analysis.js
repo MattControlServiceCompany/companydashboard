@@ -17881,7 +17881,19 @@ function _pdfBillIssues(bill, bw) {
   const hasGap = !!bill._billing_gap;
   const held = !!((bill._gateTripped && !bill._gateOverrideConfirmed) || bill._manualReview);
   const dest = _pdfDestIssue(bill);
-  return { dest, hasWarn, sumMismatch, hasGap, held, any: !!dest || hasWarn || sumMismatch || hasGap || held };
+  // A charge line whose quantity x rate does not give its printed charge (the line check) is an issue too.
+  const lineMismatch = Object.keys(bill)
+    .filter((k) => k.startsWith('_part_mismatches_') && (bill[k] || []).length)
+    .map((k) => k.slice('_part_mismatches_'.length));
+  return {
+    dest,
+    hasWarn,
+    sumMismatch,
+    hasGap,
+    held,
+    lineMismatch,
+    any: !!dest || hasWarn || sumMismatch || hasGap || held || lineMismatch.length > 0,
+  };
 }
 // The issues of one bill as a list, each { kind: 'dest' | 'values', level: 'err' | 'warn', text, field? }. Built
 // only from _pdfBillIssues. The review bar shows one link per item; the bill's box counts them; _pdfBillStatus
@@ -17911,6 +17923,9 @@ function _pdfBillIssueItems(bill, bw) {
   if (is.sumMismatch) add({ kind: 'values', level: 'warn', text: 'The charges do not add up to the total', field: 'TotalCurrentCharges' });
   bw.filter((w) => w.level === 'warn').forEach((w) => add({ kind: 'values', level: 'warn', text: firstLine(w.message), field: fieldOf(w) }));
   if (is.hasGap) add({ kind: 'values', level: 'warn', text: 'Billing period gap before this bill' });
+  is.lineMismatch.forEach((f) =>
+    add({ kind: 'values', level: 'warn', text: (_DUP_FIELD_LABELS[f] || f) + ': quantity x rate does not match the charge', field: f }),
+  );
   if (!out.length) add({ kind: 'values', level: 'warn', text: 'Check this bill' });
   return out;
 }
