@@ -441,7 +441,8 @@ The app Restore path (6c) is on main only, not in stable (v87), until the Nov 2 
 - The regression gate uses the backup named in the oracle (`_input.backupFile` in regression-oracle.json, file in Downloads), not the newest one. If it is missing the gate fails. `--data` overrides. When you rebuild the oracle on a new backup, set `_input.backupFile` to that file (`--capture-baseline` sets it only if empty).
 - Regression gate (scripts/regression-gate.js). Run: `node scripts/regression-gate.js` (about 830 s on 2026-11-09, exit 0 = pass). It
   checks pages and numbers against the oracle, runs scripts/verify-report-reconciliation.js, and runs EVERY `tools/test-*.js`
-  and repo-root `test-*.js` / `test-*.mjs` as its own child process (3 at a time, 240 s limit each; a non-zero exit is a FAIL). New test files
+  and repo-root `test-*.js` / `test-*.mjs` as its own child process (a non-zero exit is a FAIL). The static gates, the reconciliation and the
+  feature tests share one job pool: 3 child processes at a time, the known slow jobs first (`SLOW_FIRST`); a feature test stops after 240 s, a gate or the reconciliation after 600 s. New test files
   are found by glob. Tests that fail or hang on main, or need the internet, are listed in `TEST_EXCLUDE` in the gate with the
   reason and show as INFO; remove an entry when the test is fixed. Playwright comes from the env var
   `CH_PLAYWRIGHT_NODE_MODULES` (default `C:/Users/Matt Miller/AI/_context/tools/playwright-runtime/node_modules`, a permanent copy of the same Playwright version so the installed Chromium matches);
@@ -472,8 +473,8 @@ The app Restore path (6c) is on main only, not in stable (v87), until the Nov 2 
   While you work: `node scripts/regression-gate.js --fast` (about 100 s). It checks syntax of the files changed against origin/main plus untracked
   files, every oracle number, the pages of 1 project and the fast static gates. It skips the reconciliation, the feature tests and the slow gates
   (`SLOW_GATES`), and its last line says "REGRESSION GATE (FAST)". It is not a release check.
-  Before a release, both: (1) the report check, `python -I "<context dir>\tools\2026-11-09-louisburg-report-check.py" <repo> <seed backup json> <work dir under _context\temp>`.
-  It exports the Louisburg report data and the report PDF from <repo> and compares them with the newest frozen snapshots in
+  Before a release, both: (1) the report check, `python -I "<context dir>\tools\<report check script>" <repo> <seed backup json> <work dir under _context\temp>`
+  (the script name is in memory reference_frozen_snapshots). It exports the quarterly report data and the report PDF from <repo> and compares them with the newest frozen snapshots in
   `<context dir>\ground-truth\2026-11-09-frozen-snapshots` (write-once, SHA-256 manifest, hash-chained INDEX.jsonl). Any baseline change, any Q1/Q2 change,
   any page layout change or a frozen figure that is gone = "REPORT CHECK FAIL" and exit 1. Other changes are listed in compare-data.xlsx and compare-pdf.xlsx.
   A presented report or a baseline change that Matt approves = a new dated snapshot (`2026-11-09-frozen-snapshot.py freeze`); never edit a snapshot.
