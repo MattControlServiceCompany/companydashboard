@@ -2410,7 +2410,7 @@ function _evgTouRawLines(tc, kw, nextChgLine, getAmt) {
       qty = head ? parseFloat(head + '.' + last.match(/(\d{4})/)[1]) : null;
       if (tm) qtyRaw = tm[1] + last;
     }
-    const rm = block.match(/\$?\s*(\d*\.\d{4,5})\s*(?:per|p\s*er)\b/i);
+    const rm = block.match(/\$?\s*(\d*\.\d{4,5})\s*(?:[A-Za-z]\s+)?p\s*[eo]\s*r\b/i); // OCR reads 'per' as 'por', and may put one stray letter before it
     const rate = rm ? parseFloat(rm[1]) : null;
     raws.push({
       kind,
@@ -8700,6 +8700,7 @@ const UTILITY_RULES = [
       let _pageFirstOk = uniqueBills.length > 0 && _pfPageMarkers.length > 0;
       const _pfBdPages = [];
       const _pfBdPagesMax = [];
+      const _pfBdIdxs = [];
       for (const b of uniqueBills) {
         const idxs = b._groupIdxs || [b.idx];
         let bdIdx = null,
@@ -8715,6 +8716,7 @@ const UTILITY_RULES = [
           bdIdx = Math.max(...idxs);
           bdIdxMax = bdIdx;
         }
+        _pfBdIdxs.push(bdIdx);
         _pfBdPages.push(_pfPageForIdx(bdIdx));
         _pfBdPagesMax.push(_pfPageForIdx(bdIdxMax));
       }
@@ -8830,6 +8832,29 @@ const UTILITY_RULES = [
               pageEnd = p;
             }
           }
+          // SHARED PAGE: a bill runs from its own address header to the next
+          // bill's address header, inclusive. When the next bill's header page
+          // opens with this bill's "(Continued)" meter-read row (same account),
+          // that page belongs to BOTH bills. This bill's range ends on it and its
+          // text gets only the part above the next bill's header. Ranges overlap
+          // on that one page.
+          if (i + 1 < uniqueBills.length) {
+            const _nxtPage = _pfBdPages[i + 1];
+            const _nxtText = _pfPageTextMap[_nxtPage] || '';
+            const _nxtMarker = _pfPageMarkers.filter((pm) => pm.page === _nxtPage)[0];
+            const _hdr = _nxtMarker ? _pfBdIdxs[i + 1] - _nxtMarker.idx : -1;
+            if (_nxtPage === pageEnd + 1 && _pfPageStarts[i + 1] === _nxtPage && _hdr > 0) {
+              const _pre = _nxtText.slice(0, _hdr);
+              const _preAccts = _evgAccountsIn(_pre);
+              const _ownAcct2 = uniqueBills[i]._acct || acct;
+              if (/\(\s*Continued\s*\)/i.test(_pre) && _preAccts.length > 0 && _preAccts.every((a) => a === _ownAcct2)) {
+                // Drop the next bill's address and rate lines (the last two lines above its header).
+                const _lines = _pre.split('\n');
+                uniqueBills[i]._pfSharedTail = _lines.slice(0, Math.max(0, _lines.length - 2)).join('\n') + '\n';
+                pageEnd = _nxtPage;
+              }
+            }
+          }
           const pageStart = _pfPageStarts[i];
           // Guard against corrupt ranges.
           if (pageEnd < pageStart || pageStart < 1 || pageEnd > _pfMaxPage) {
@@ -8888,7 +8913,8 @@ const UTILITY_RULES = [
       if (uniqueBills.length > 0) {
         validSections = uniqueBills.map((b, i) => {
           if (_pageFirstOk && b._pfPageGroup) {
-            return b._pfPageGroup.map((pg) => _pfPageTextMap[pg]).join('');
+            const _own = b._pfPageGroup.filter((pg) => !b._pfSharedTail || pg < b._pfPageEnd);
+            return _own.map((pg) => _pfPageTextMap[pg]).join('') + (b._pfSharedTail || '');
           }
           // Fallback: midpoint-of-_groupIdxs slicing (pre-Update 80 behavior).
           const groupIdxs = b._groupIdxs || [b.idx];
@@ -9025,6 +9051,7 @@ const UTILITY_RULES = [
       // the page range resolved from its (acct, billingDate) group. This
       // short-circuits the full fallback cascade below — the cascade
       // still runs as a safety net when _pageFirstOk is false.
+      const _sharedPageWithNext = new Set(); // bills whose range ends on the page the next bill starts on
       if (_pageFirstOk) {
         for (let i = 0; i < results.length; i++) {
           const ub = uniqueBills[i];
@@ -9032,6 +9059,7 @@ const UTILITY_RULES = [
             results[i]._pageStart = ub._pfPageStart;
             results[i]._pageEnd = ub._pfPageEnd;
             results[i]._pageRangeSource = 'page-first';
+            if (ub._pfSharedTail) _sharedPageWithNext.add(i);
           }
         }
       }
@@ -9254,6 +9282,7 @@ const UTILITY_RULES = [
         const r = results[i];
         const nxt = results[i + 1];
         if (!r._pageEnd || !nxt._pageStart) continue;
+        if (_sharedPageWithNext.has(i) && r._pageEnd === nxt._pageStart) continue; // the one shared page (see SHARED PAGE)
         if (r._pageEnd >= nxt._pageStart) {
           const origEnd = r._pageEnd;
           r._pageEnd = Math.max(r._pageStart || 1, nxt._pageStart - 1);

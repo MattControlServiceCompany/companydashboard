@@ -131,6 +131,53 @@ try {
 check('extractAll does not throw', !thrown, thrown && thrown.message);
 check('bills are still read', noMarkerBills && noMarkerBills.length >= 1, 'got ' + (noMarkerBills && noMarkerBills.length));
 
+console.log('Case 4: page 2 holds the end of bill A (Continued meter row) and all of bill B (same account, two addresses)');
+{
+  const NLC = String.fromCharCode(10);
+  const A = ['09/28/2026', '10/27/2026'];
+  const addr = (s) => s + ' TEST ST, TESTVILLE, KS';
+  const t = [
+    '%%PAGE_1%%',
+    ACCT,
+    addr('1'),
+    'Billing Details - service from ' + A[0] + ' to ' + A[1],
+    'Customer Chg $25.00',
+    'Current Charges $25.00',
+    '%%PAGE_2%%',
+    ACCT,
+    '(Continued)',
+    'Read Date Read Date Days Read Read Difference Multiplier kWh Used',
+    '09/29 10/28 29 55.25 44.25 11.00 1.00 11.00 7.50',
+    addr('2'),
+    'Billing Details - service from ' + A[0] + ' to ' + A[1],
+    'Customer Chg $40.00',
+    'Current Charges $40.00',
+    '',
+  ].join(NLC);
+  const two = rule.extractAll(t);
+  check('two bills', two.length === 2, 'got ' + two.length);
+  check('A pages 1-2 (its own header page to the page of the next header)', two[0] && two[0]._pageStart === 1 && two[0]._pageEnd === 2, two[0] && two[0]._pageStart + '-' + two[0]._pageEnd);
+  check('B page 2-2', two[1] && two[1]._pageStart === 2 && two[1]._pageEnd === 2, two[1] && two[1]._pageStart + '-' + two[1]._pageEnd);
+  check('A total = 25.00, B total = 40.00 (the shared page adds nothing of B to A)', two[0] && two[1] && String(two[0].TotalCurrentCharges) === '25.00' && String(two[1].TotalCurrentCharges) === '40.00', two.map((x) => x.TotalCurrentCharges).join());
+  // control: a Continued page that follows its own bill alone is not shared
+  const one = rule.extractAll(
+    [
+      '%%PAGE_1%%',
+      ACCT,
+      addr('1'),
+      'Billing Details - service from ' + A[0] + ' to ' + A[1],
+      'Customer Chg $25.00',
+      'Current Charges $25.00',
+      '%%PAGE_2%%',
+      ACCT,
+      '(Continued)',
+      '09/29 10/28 29 55.25 44.25 11.00 1.00 11.00 7.50',
+      '',
+    ].join(NLC),
+  );
+  check('control: one bill with its Continued page = pages 1-2', one.length === 1 && one[0]._pageStart === 1 && one[0]._pageEnd === 2, one[0] && one[0]._pageStart + '-' + one[0]._pageEnd);
+}
+
 if (process.env.DBG)
   console.log(JSON.stringify(bills[1], (k, v) => (k[0] === '_' ? undefined : v)));
 console.log(fail ? '\n' + fail + ' FAILED' : '\nALL PASSED');
