@@ -26353,10 +26353,18 @@ function openASHRAE36ReportModal(projId, type) {
       '<label style="display:flex;align-items:center;gap:6px;font-size:12px;color:var(--text);cursor:pointer"><input type="radio" name="a36Style" value="simple" checked onchange="_a36StyleChanged()" style="accent-color:var(--em)">Simple</label>' +
       '<label style="display:flex;align-items:center;gap:6px;font-size:12px;color:var(--text);cursor:pointer"><input type="radio" name="a36Style" value="detailed" onchange="_a36StyleChanged()" style="accent-color:var(--em)">Detailed</label>' +
       '</div>' +
-      '<div id="a36PictureBox" style="display:none;margin-top:8px">' +
-      '<div style="font-size:12px;color:var(--text);margin-bottom:4px">Pictures folder (optional). The picture list is imported on the Facility Audit tab.</div>' +
-      '<input type="file" id="a36PictureDir" webkitdirectory multiple style="font-size:12px;color:var(--text)">' +
-      '</div></div>';
+      '<div id="a36PictureBox" style="display:none;margin-top:8px;padding:12px;border:1px solid var(--s3);border-radius:6px;background:var(--s1)">' +
+      '<div style="font-size:13px;font-weight:600;color:var(--text);margin-bottom:4px">Add pictures to the report</div>' +
+      '<div style="font-size:12px;color:var(--text);margin-bottom:8px">Choose the folder that holds this project\'s site pictures. Each picture becomes a numbered figure under its equipment.</div>' +
+      '<input type="file" id="a36PictureDir" webkitdirectory multiple style="display:none" onchange="_a36PictureStatus()">' +
+      '<input type="file" id="a36PictureCsv" accept=".csv" style="display:none" onchange="_a36PictureCsvChosen(this)">' +
+      '<button type="button" id="a36PictureBtn" class="btn btn-em btn-sm" onclick="_a36PictureOpen(1)">Choose picture folder</button>' +
+      '<div id="a36PictureStatus" style="font-size:12px;color:var(--text);margin-top:8px"></div>' +
+      '<div id="a36PictureNoList" style="display:none;margin-top:8px">' +
+      '<div style="font-size:12px;color:var(--text);margin-bottom:6px">No picture list yet.</div>' +
+      '<button type="button" id="a36PictureCsvBtn" class="btn btn-ghost btn-sm" onclick="_a36PictureOpen(0)">Import picture list (CSV)</button>' +
+      '</div></div></div>';
+    window._a36PicPid = projId;
   }
 
   // Buildings — shared scope tree (app/scope-tree.js), one row per building name in the
@@ -26424,12 +26432,60 @@ function _a36StyleChanged() {
   var detailed = !!checked && checked.value === 'detailed';
   var box = document.getElementById('a36PictureBox');
   if (box) box.style.display = detailed ? '' : 'none';
+  if (detailed) _a36PictureStatus();
   document.querySelectorAll('.a36SecCheck').forEach(function (cb) {
     if (cb.dataset.key === 'building' || cb.dataset.key === 'buildingInfra') cb.disabled = detailed;
     if (detailed && cb.dataset.key === 'pointInventory') cb.checked = true;
   });
 }
 window._a36StyleChanged = _a36StyleChanged;
+
+// Picture panel of the Detailed style: how many pictures the project list has and, once a folder is chosen,
+// how many of them the folder holds (matched by file name).
+function _a36PictureStatus() {
+  var st = document.getElementById('a36PictureStatus');
+  if (!st) return;
+  var map = typeof faLoad === 'function' ? faLoad(window._a36PicPid).pictureMap || [] : [];
+  var dir = document.getElementById('a36PictureDir');
+  var files = dir && dir.files ? dir.files : [];
+  var noList = document.getElementById('a36PictureNoList');
+  if (noList) noList.style.display = map.length ? 'none' : '';
+  if (!map.length) {
+    st.textContent = '';
+    return;
+  }
+  var listed = {};
+  map.forEach(function (p) {
+    listed[p.file] = true;
+  });
+  var total = Object.keys(listed).length;
+  if (!files.length) {
+    st.textContent = total + (total === 1 ? ' picture' : ' pictures') + ' in the picture list';
+    return;
+  }
+  var found = 0;
+  var have = {};
+  for (var i = 0; i < files.length; i++) have[files[i].name] = true;
+  Object.keys(listed).forEach(function (f) {
+    if (have[f]) found++;
+  });
+  var folder = files[0].webkitRelativePath ? files[0].webkitRelativePath.split('/')[0] : '';
+  st.textContent =
+    (found === 0 ? 'No listed pictures found in this folder' : found + ' of ' + total + ' pictures found in the folder') +
+    (folder ? ' (folder: ' + folder + ')' : '');
+}
+window._a36PictureStatus = _a36PictureStatus;
+
+function _a36PictureOpen(folder) {
+  var el = document.getElementById(folder ? 'a36PictureDir' : 'a36PictureCsv');
+  if (el) el.click();
+}
+window._a36PictureOpen = _a36PictureOpen;
+
+function _a36PictureCsvChosen(input) {
+  faImportPictureList(window._a36PicPid, input, _a36PictureStatus);
+}
+window._a36PictureCsvChosen = _a36PictureCsvChosen;
 
 // Building rows for the ASHRAE 36 modal tree: unique row.building names from the equipment
 // matrix (sorted), each with its equipment count. All checked by default.

@@ -229,7 +229,7 @@ function faParsePictureList(text) {
   return { map: map };
 }
 
-function faImportPictureList(pid, input) {
+function faImportPictureList(pid, input, after) {
   var file = input && input.files && input.files[0];
   if (!file) return;
   input.value = '';
@@ -242,6 +242,7 @@ function faImportPictureList(pid, input) {
     faSave(pid, d);
     faRender(pid);
     showToast(res.map.length + ' pictures in the list', 'success');
+    if (after) after();
   };
   reader.readAsText(file);
 }

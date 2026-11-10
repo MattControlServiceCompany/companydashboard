@@ -105,6 +105,48 @@ const ok = (c, m) => {
     ok(modal.radio && modal.simpleChecked && !modal.boxShown, 'audit modal: Report Style radio, Simple is the default, picture picker hidden');
     ok(!modal.proposalRadio, 'proposal modal: no Report Style radio');
 
+    // ---- 2b. picture panel: visible only for Detailed; status text for an empty list, the list, and a chosen folder ----
+    const panel = await page.evaluate(async (PID) => {
+      const q = (id) => document.getElementById(id);
+      const vis = () => q('a36PictureBox').style.display !== 'none';
+      const pick = (names) => { const dt = new DataTransfer(); names.forEach((n) => dt.items.add(new File(['x'], n, { type: 'image/png' }))); q('a36PictureDir').files = dt.files; q('a36PictureDir').dispatchEvent(new Event('change')); };
+      const radio = (v) => { document.querySelector('input[name="a36Style"][value="' + v + '"]').checked = true; _a36StyleChanged(); };
+      const out = {};
+      const saved = faLoad(PID).pictureMap;
+      let d = faLoad(PID); d.pictureMap = []; await faSave(PID, d);
+      openASHRAE36ReportModal(PID, 'audit');
+      out.simpleHidden = !vis();
+      radio('detailed');
+      out.shownForDetailed = vis();
+      out.title = q('a36PictureBox').textContent.indexOf('Add pictures to the report') >= 0;
+      out.btn = q('a36PictureBtn').tagName === 'BUTTON' && q('a36PictureBtn').textContent === 'Choose picture folder' && q('a36PictureDir').type === 'file' && q('a36PictureDir').hasAttribute('webkitdirectory');
+      out.emptyNote = q('a36PictureNoList').style.display !== 'none' && q('a36PictureNoList').textContent.indexOf('No picture list yet.') >= 0 && q('a36PictureCsvBtn').textContent === 'Import picture list (CSV)';
+      // import the list from the panel, modal stays open
+      const csv = 'file,library,equipment_or_program,page_shown,cited_in_audit,disposition\nsyn-1.png,Alpha Library,AHU-1,graphic,Y,Cited\nsyn-2.png,Alpha Library,AHU-1,graphic,N,Not cited\nsyn-3.png,Alpha Library,VAV-101,graphic,Y,Cited\nsyn-4.png,Beta Library,AHU-3,graphic,N,Not cited\n';
+      const dt = new DataTransfer(); dt.items.add(new File([csv], 'list.csv', { type: 'text/csv' }));
+      q('a36PictureCsv').files = dt.files;
+      q('a36PictureCsv').dispatchEvent(new Event('change'));
+      for (let i = 0; i < 50 && q('a36PictureStatus').textContent === ''; i++) await new Promise((r) => setTimeout(r, 100));
+      out.afterImport = q('a36PictureStatus').textContent;
+      out.noteGone = q('a36PictureNoList').style.display === 'none';
+      out.modalOpen = document.getElementById('ashrae36ReportModal').classList.contains('open');
+      pick(['syn-1.png', 'syn-3.png', 'other.png']);
+      out.found = q('a36PictureStatus').textContent;
+      pick(['other.png']);
+      out.none = q('a36PictureStatus').textContent;
+      radio('simple');
+      out.hiddenAgain = !vis();
+      document.getElementById('ashrae36ReportModal').classList.remove('open');
+      d = faLoad(PID); d.pictureMap = saved; await faSave(PID, d);
+      return out;
+    }, seed);
+    ok(panel.simpleHidden && panel.shownForDetailed && panel.hiddenAgain, 'picture panel: hidden for Simple, shown for Detailed, hidden again for Simple');
+    ok(panel.title && panel.btn, 'picture panel: titled "Add pictures to the report", real button "Choose picture folder" for the folder input');
+    ok(panel.emptyNote, 'empty list: panel says "No picture list yet." with an Import picture list (CSV) button');
+    ok(panel.afterImport === '4 pictures in the picture list' && panel.noteGone && panel.modalOpen, 'import from the panel: status "' + panel.afterImport + '", modal still open');
+    ok(panel.found === '2 of 4 pictures found in the folder', 'folder chosen: "' + panel.found + '"');
+    ok(panel.none === 'No listed pictures found in this folder', 'no match: "' + panel.none + '"');
+
     // ---- make Detailed through the modal, with a picture folder ----
     async function makeDetailed(withFolder) {
       return page.evaluate(
