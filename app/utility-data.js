@@ -1580,6 +1580,9 @@ function renderUDProjList() {
       if (!bldgs.length) {
         html += `<div style="padding:6px 14px 0 30px;font-size:11px;color:var(--text3)">No buildings</div>`;
       } else {
+        const _noZipCt = bldgs.filter((b) => !_weatherZipFor(p.id, b.id)).length;
+        if (_noZipCt)
+          html += `<div class="ud-nav-bldg-meta" style="padding:6px 14px 0 30px;color:var(--warn)">${_noZipCt} building${_noZipCt === 1 ? ' has' : 's have'} no ZIP code: weather cannot load</div>`;
         bldgs.forEach((b) => {
           const _totalMCount = (b.meters || []).length;
           const blBadge = udBuildingBaselineChipHtml(p.id, b);
@@ -3216,6 +3219,8 @@ function renderUDDetail(targetWrap) {
     if (b.addr) parts.push('<span>📍 ' + _escHtml(b.addr) + '</span>');
     if (b.zip) parts.push('<span>📮 ' + _escHtml(b.zip) + '</span>');
     if (b.sqft) parts.push('<span>📐 ' + Number(b.sqft).toLocaleString() + ' sq ft</span>');
+    if (!_weatherZipFor(udSelProjId, b.id))
+      parts.push('<span style="color:var(--warn)">No ZIP code: weather cannot load</span>');
     const meters = b.meters || [];
     parts.push('<span>⚡ ' + meters.length + ' meter' + (meters.length !== 1 ? 's' : '') + '</span>');
     // Trust indicator (building-level summary): "X of Y meters frozen" — Y is
