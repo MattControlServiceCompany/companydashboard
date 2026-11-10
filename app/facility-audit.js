@@ -8,6 +8,9 @@
 // The Coverage view (default) is the internal tracker: computations/audit-coverage.js auditComputeCoverage, render only.
 // Screenshot evidence: en_audit_<pid>.evidence = { <auditCovLineKey>: { files:[...], note, who, when } }.
 // A Still-need line with evidence counts as covered (auditComputeCoverage gets it passed in). Same synced key.
+// Picture list for the Detailed Audit Report: en_audit_<pid>.pictureMap = [{ file, building, equipName, page, cited }], imported
+// from a CSV (columns file, library, equipment_or_program, page_shown, cited_in_audit, disposition). The picture files stay on disk;
+// the report picks them from a folder the user chooses when the report is made.
 // Cost and savings link through measureId to the existing measures; no energy math here.
 
 var FA_STATUSES = ['Open', 'Planned', 'Done', 'Dismissed'];
@@ -21,6 +24,7 @@ function faLoad(pid) {
   if (!Array.isArray(d.findings)) d.findings = [];
   if (!d.edits || typeof d.edits !== 'object') d.edits = {};
   if (!d.evidence || typeof d.evidence !== 'object' || Array.isArray(d.evidence)) d.evidence = {};
+  if (!Array.isArray(d.pictureMap)) d.pictureMap = [];
   return d;
 }
 
@@ -191,6 +195,57 @@ function faImportFile(pid, input) {
   reader.readAsArrayBuffer(file);
 }
 
+// Picture list CSV -> pictureMap rows. Columns are found by name. A row whose disposition starts "Not used" is skipped.
+// Returns { map } or { error }.
+function faParsePictureList(text) {
+  var rows = emParseCSVText(String(text || '').replace(/^\uFEFF/, ''));
+  if (!rows.length) return { error: 'The picture list is empty.' };
+  var head = rows[0].map(function (h) {
+    return String(h || '').trim().toLowerCase();
+  });
+  var pos = {};
+  ['file', 'library', 'equipment_or_program', 'page_shown', 'cited_in_audit', 'disposition'].forEach(function (c) {
+    pos[c] = head.indexOf(c);
+  });
+  if (pos.file < 0 || pos.library < 0 || pos.equipment_or_program < 0) {
+    return { error: 'The picture list needs the columns file, library and equipment_or_program.' };
+  }
+  function cell(r, c) {
+    return pos[c] < 0 || r[pos[c]] == null ? '' : String(r[pos[c]]).trim();
+  }
+  var map = [];
+  for (var i = 1; i < rows.length; i++) {
+    var r = rows[i];
+    if (!cell(r, 'file')) continue;
+    if (/^not used/i.test(cell(r, 'disposition'))) continue;
+    map.push({
+      file: cell(r, 'file'),
+      building: cell(r, 'library'),
+      equipName: cell(r, 'equipment_or_program'),
+      page: cell(r, 'page_shown'),
+      cited: /^y/i.test(cell(r, 'cited_in_audit')),
+    });
+  }
+  return { map: map };
+}
+
+function faImportPictureList(pid, input) {
+  var file = input && input.files && input.files[0];
+  if (!file) return;
+  input.value = '';
+  var reader = new FileReader();
+  reader.onload = function () {
+    var res = faParsePictureList(reader.result);
+    if (res.error) return showToast(res.error, 'error');
+    var d = faLoad(pid);
+    d.pictureMap = res.map;
+    faSave(pid, d);
+    faRender(pid);
+    showToast(res.map.length + ' pictures in the list', 'success');
+  };
+  reader.readAsText(file);
+}
+
 function _faStatusChip(pid, f) {
   return (
     '<select class="fa-chip" aria-label="Status" data-pid="' +
@@ -232,6 +287,7 @@ function _faBindChange(body) {
     var t = ev.target;
     if (!t || !t.dataset) return;
     if (t.dataset.action === 'import') faImportFile(t.dataset.pid, t);
+    else if (t.dataset.action === 'picture-list') faImportPictureList(t.dataset.pid, t);
     else if (t.dataset.field && t.dataset.id) faEdit(t.dataset.pid, t.dataset.id, t.dataset.field, t.value);
   });
   body.addEventListener('click', function (ev) {
@@ -478,6 +534,11 @@ function faRender(pid, importResult) {
     _faCss +
     '</style><div class="fa-wrap"><div class="fa-bar">' +
     pills +
+    '<label class="fa-btn">Import picture list (CSV)<input type="file" accept=".csv" style="display:none" data-action="picture-list" data-pid="' +
+    _escHtml(pid) +
+    '"></label><span class="fa-sub">' +
+    faLoad(pid).pictureMap.length +
+    ' pictures in the list</span>' +
     (_faView === 'coverage'
       ? ''
       : '<span class="fa-sub">' + all.length + ' findings, ' + open.length + ' not done, ' + defs.length + ' deficiencies</span>') +
