@@ -22,19 +22,16 @@ const nav = { multiAcct: true, bills: sb.window._pdfMultiBills, periods: [{ i: 0
   { acct: 'TST-0003', name: 'Bldg Three', review: 1, types: [{ comm: 'Water', idxs: [2] }] },
   { acct: 'TST-0004', name: 'Bldg Four', review: 0, types: [{ comm: 'Water', idxs: [] }] }] };
 sb.window._pdfBuildingTab = 'TST-0001';
-sb.window._pdfBldgsAll = false;
 const cards = (h) => (h.match(/class="pdf-bldg /g) || []).length;
+// Every building is listed, with a bill open or not; there is no collapsed list and no toggle.
 let h = sb.get('_pdfBuildingListHtml')(nav);
-ok(cards(h) === 2, 'collapsed: selected + issue building only (' + cards(h) + ')');
-ok(/Show all 4 buildings/.test(h), 'toggle says Show all 4 buildings');
-ok(/st-review/.test(h), 'issue building stays visible and marked');
-sb.window._pdfBldgsAll = true;
-h = sb.get('_pdfBuildingListHtml')(nav);
-ok(cards(h) === 4 && /Show fewer buildings/.test(h), 'expanded: all 4 cards and a Show fewer toggle');
-// one building only: no toggle
-sb.window._pdfBldgsAll = false;
+ok(cards(h) === 4, 'all 4 buildings listed (' + cards(h) + ')');
+ok(!/Show all|Show fewer|pdf-bldgs-toggle/.test(h), 'no show-all / show-fewer toggle');
+ok(/st-review/.test(h), 'issue building is marked');
+ok(/pdf-bldg [^"]*sel/.test(h), 'selected building is marked');
 h = sb.get('_pdfBuildingListHtml')(Object.assign({}, nav, { groups: [nav.groups[0]] }));
-ok(cards(h) === 1 && !/Show all/.test(h), 'one building: no toggle');
+ok(cards(h) === 1, 'one building: one card');
+ok(!/_pdfBldgsAll|_pdfToggleBldgs/.test(src), 'collapsed-list flag and toggle are removed from the code');
 
 // #3: bar link plus Create meter button for no-building; no button for other issues.
 run('_pdfDestIssue = function(b){ return b.AccountNumber === "TST-0001" ? null : { kind: "no-building", text: "No matching building or meter" }; }; _mbReviewLive = function(){ return true; }; _pdfBuildingName = function(b,a){ return "Bldg "+a; }; _buildDestCell = function(){ return "PICK"; };');

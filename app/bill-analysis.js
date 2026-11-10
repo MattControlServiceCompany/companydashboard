@@ -18476,16 +18476,7 @@ function _pdfBuildingListHtml(nav) {
   const dup = _pdfDupView(bills).map;
   const order = {};
   nav.periods.forEach((p, k) => (order[p.i] = k));
-  // With a bill open, the list shrinks to the building on screen and every building with a bill to review; a toggle shows all.
-  const shownGroups = window._pdfBldgsAll ? nav.groups : nav.groups.filter((g) => g.acct === window._pdfBuildingTab || g.review);
-  const hidden = nav.groups.length - shownGroups.length;
-  const toggle =
-    hidden > 0 || window._pdfBldgsAll
-      ? '<button type="button" class="pdf-top-btn pdf-bldgs-toggle" onclick="_pdfToggleBldgs()">' +
-        (window._pdfBldgsAll ? 'Show fewer buildings' : 'Show all ' + nav.groups.length + ' buildings') +
-        '</button>'
-      : '';
-  return shownGroups
+  return nav.groups
     .map((g) => {
       const idxs = [].concat(...g.types.map((t) => t.idxs)).sort((a, b) => order[a] - order[b]);
       const months = [...new Set(idxs.map((i) => nav.monthOf[i]).filter(Boolean))];
@@ -18515,13 +18506,8 @@ function _pdfBuildingListHtml(nav) {
         '</span></span></button>'
       );
     })
-    .join('') + toggle;
+    .join('');
 }
-function _pdfToggleBldgs() {
-  window._pdfBldgsAll = !window._pdfBldgsAll;
-  _pdfRenderTopBar();
-}
-window._pdfToggleBldgs = _pdfToggleBldgs;
 // The bill on screen: its building (always named), its utility (one button per utility, the one on screen filled), and its billing period. A file with one choice shows plain text, not a menu.
 function _pdfSelectorsHtml(nav) {
   const bills = nav.bills;
@@ -18530,10 +18516,9 @@ function _pdfSelectorsHtml(nav) {
     '<option value="' + _escHtml(String(v)) + '"' + (selected ? ' selected' : '') + '>' + _escHtml(label) + '</option>';
   let h = '';
   // The building of the bill on screen is always named, so the utility chips beside it say whose bill they switch.
-  h +=
-    '<span class="pdf-top-static" title="Building">' +
-    _escHtml(_pdfBuildingName(bills, (cur && cur.AccountNumber) || '_unknown')) +
-    '</span>';
+  // A multi-building file lists every building above with the one on screen selected, so the name is not repeated here.
+  if (!nav.multiAcct)
+    h += '<span class="pdf-top-static" title="Building">' + _escHtml(_pdfBuildingName(bills, (cur && cur.AccountNumber) || '_unknown')) + '</span>';
   if (nav.hasMultiComm) {
     // One button per utility of this building. The one on screen is filled with the accent color and bold.
     h +=
