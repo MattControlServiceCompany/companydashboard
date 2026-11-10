@@ -43,7 +43,7 @@ const ok = (c, m) => {
       const noRat = { 'Supply Air Temp': '56.0 °F', 'Duct Static Pressure': '1.0 in H2O' };
       const zone = { 'Zone Temp': '72.4 °F', 'Zone Cooling Setpoint': '74', 'Zone Heating Setpoint': '70' };
       const rows = [
-        ahu('r1', 'Alpha Library', 'AHU-1', pts(full)),
+        ahu('r1', 'Alpha Library', 'AHU-1', pts(Object.assign({}, full, { 'Demand Level': '0.0', 'Heat Source Supply': '167.0' }))),
         ahu('r2', 'Alpha Library', 'AHU-2', pts(noRat)),
         vav('r3', 'Alpha Library', 'VAV-101', pts(zone)),
         vav('r4', 'Alpha Library', 'VAV-102', pts(zone)),
@@ -52,6 +52,10 @@ const ok = (c, m) => {
         ahu('r7', 'Beta Library', 'AHU-3', pts(full)),
         vav('r8', 'Beta Library', 'VAV-201', pts(zone)),
       ];
+      const occ = (a, b) => ({ startMin: 0, stopMin: 0, startStr: '', stopStr: '', rawText: 'Unoccupied from 12:00 AM to ' + a + '\nOccupied from ' + a + ' to ' + b + '\nUnoccupied from ' + b + ' to 12:00 AM' });
+      rows[2].existingSchedule = occ('6:00 AM', '9:00 PM');
+      rows[3].existingSchedule = occ('7:00 AM', '6:00 PM');
+      rows[4].existingSchedule = { rawText: 'Unoccupied from 12:00 AM to 12:00 AM' }; // no occupied period: not counted
       projects.push({ id: PID, name: 'Synthetic Library District', client: 'Synthetic Library District', type: 'K-12', start: '2025-01-01' });
       await sset('en_eqmatrix_' + PID, { rows: rows, importedAt: null, buildings: ['Alpha Library', 'Beta Library'] });
       await sset('en_audit_' + PID, {
@@ -211,13 +215,19 @@ const ok = (c, m) => {
     ok(s.filter((x) => x === 'detailedLibrary').length >= 2, 'at least one chapter page per library (' + s.filter((x) => x === 'detailedLibrary').length + ' chapter pages)');
     ok(s.indexOf('detailedAppendixA') > s.lastIndexOf('detailedLibrary') && s.indexOf('pointInventory') > s.indexOf('detailedAppendixA'), 'Appendix A (deficiencies) then Appendix B (point inventory) after the chapters');
     ok(/Appendix A: Deficiency List/.test(det.text) && /Fan runs at night/.test(det.text) && /Appendix B: Point Inventory/.test(det.text), 'Appendix A lists the deficiency, Appendix B has its heading');
-    ok(!/Appendix C/.test(det.text), 'no Appendix C when the project has no zone set point data to review (or none is shown)');
+    ok(s.indexOf('setpointReview') > s.indexOf('pointInventory') && /Appendix C: Setpoint Programming Review/.test(det.text), 'Appendix C prints last when zone set point data exists (Detailed turns the review on by itself)');
     const t = det.libText;
     ['Alpha Library: System Overview', 'Beta Library: System Overview', 'Equipment Descriptions', 'Findings', 'Alpha Library: Recommended Work', 'Beta Library: Recommended Work', 'Missing against ASHRAE 36'].forEach((x) => ok(t.indexOf(x) >= 0, 'chapters contain "' + x + '"'));
     ok(/Air Handling Unit[^\n]*2/.test(t) || /Air Handling Unit.{0,40}2/.test(t), 'System Overview counts the 2 air handling units of Alpha Library');
     ok(/Total\s*6/.test(t) && /Total\s*2/.test(t), 'System Overview totals: Alpha Library 6, Beta Library 2');
     ok(/Building automation controller: Sample Controller \(5 of 6 units\)/.test(t), 'BAS controller line from the rows (5 of 6 units in Alpha Library: the exhaust fan row has none)');
     ok(/Readings at the time of the audit on AHU-1: .*55\.2 °F/.test(t), 'Equipment Descriptions: readings from the row data with units as stored');
+    ok(/VAV[^\n]*Occupied schedule: 6:00 AM-9:00 PM \(1 unit\), 7:00 AM-6:00 PM \(1 unit\)\./.test(t), 'Equipment Descriptions: occupied schedule line lists each distinct schedule with its unit count');
+    ok((t.match(/Occupied schedule:/g) || []).length === 1, 'groups with no schedule print nothing about schedules (one schedule line in all chapters)');
+    ok(!/Demand Level 0/.test(t) && /Readings at the time of the audit on AHU-1: .*Heat Source Supply Temperature/.test(t), 'a coded reading (Demand Level 0.0) is left out while the other readings stay');
+    ok(/Heat Source Supply Temperature 167\.0°F/.test(t), 'a bare temperature reading gets °F');
+    const rv = await page.evaluate(() => ['Supply Air Temperature|55.2', 'Airflow Setpoint|580.0', 'Air Source Mode|2.0', 'Duct Static Pressure|1.1 in H2O', 'Fan Status|On', 'Zone Status|?'].map((x) => String(_a36DetReadingValue(x.split('|')[0], x.split('|')[1]))));
+    ok(rv.join(' / ') === '55.2°F / null / null / 1.1 in H2O / On / null', 'reading rule: temperature gets °F; bare airflow set point and mode codes dropped; units and words kept (' + rv.join(' / ') + ')');
     ok(!/\$|\bhours?\b|\bprice\b|\bcost\b/i.test(t), 'no price, no hours, no cost text in the Detailed chapters');
     ok(!/metered kW|Next Steps/i.test(t), 'no "metered kW", no Next Steps');
 

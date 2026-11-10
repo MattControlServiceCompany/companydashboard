@@ -25387,6 +25387,46 @@ function _a36DetGroupFindings(g) {
   return out;
 }
 
+// The printed value of one reading, or null when the reading is left out. A reading prints only with a unit or as a
+// word (On, Off, Open, Occupied, Normal...). A bare number on a mode, level, status or request point is a code and
+// is left out; a bare number on a temperature or set point gets degrees F. The one place that decides this.
+function _a36DetReadingValue(label, raw) {
+  var v = String(raw == null ? '' : raw).trim();
+  if (v === '' || v === '?') return null;
+  if (/^-?\d+(\.\d+)?$/.test(v)) {
+    var isTemp = /temperature|temp|setpoint|set point/i.test(label) && !/flow|pressure|humidity|position|speed|co2|damper|valve|request|mode|status/i.test(label);
+    return isTemp ? v + '°F' : null;
+  }
+  return v;
+}
+
+// The occupied schedule line of a group: "6:00 AM-9:00 PM (18 units), 7:00 AM-6:00 PM (3 units)", or '' when no unit of
+// the group has an imported occupied period. The schedule text comes from emZoneScheduleDisplay (the one formatter of
+// an imported schedule). The unit count is left out when every unit of the group has the same schedule.
+function _a36DetSchedules(g, rowsById) {
+  var keys = [];
+  var count = {};
+  g.units.forEach(function (eq) {
+    var row = rowsById[eq.id];
+    if (!row || !row.existingSchedule || typeof emZoneScheduleDisplay !== 'function') return;
+    var t = emZoneScheduleDisplay(row);
+    if (t.indexOf('Occ ') !== 0) return;
+    t = t.slice(4);
+    if (!count[t]) {
+      count[t] = 0;
+      keys.push(t);
+    }
+    count[t]++;
+  });
+  if (!keys.length) return '';
+  if (keys.length === 1 && count[keys[0]] === g.units.length) return keys[0];
+  return keys
+    .map(function (k) {
+      return k + ' (' + _a36DetUnits(count[k]) + ')';
+    })
+    .join(', ');
+}
+
 // Readings at audit time for the first unit of a group that has any: { unit, list: [{ label, value }] }, plain names only
 // (never raw keys), or null.
 function _a36DetReadings(g, rowsById) {
@@ -25399,7 +25439,9 @@ function _a36DetReadings(g, rowsById) {
       if (k.indexOf('auto_') === 0 || pts[k] == null || String(pts[k]).trim() === '') return;
       var label = typeof emColLabel === 'function' ? emColLabel(k) : k;
       if (!label || label === k) return;
-      list.push({ label: label, value: String(pts[k]).trim() });
+      var value = _a36DetReadingValue(label, pts[k]);
+      if (value === null) return;
+      list.push({ label: label, value: value });
     });
     if (list.length) return { unit: g.names[i], list: list.slice(0, A36_DET_READINGS_MAX) };
   }
@@ -25814,6 +25856,8 @@ function rptPageA36DetailedLibrary(n, d, b, ctx) {
     } else {
       text += ' The building automation system shows no sensors or control points for this equipment.';
     }
+    var sched = _a36DetSchedules(g, ctx.rowsById);
+    if (sched) text += ' Occupied schedule: ' + _escHtml(sched) + '.';
     var rd = _a36DetReadings(g, ctx.rowsById);
     if (rd) {
       text +=
@@ -26426,7 +26470,7 @@ function openASHRAE36ReportModal(projId, type) {
 window.openASHRAE36ReportModal = openASHRAE36ReportModal;
 
 // Report Style radio of the audit modal: Detailed shows the picture folder picker, turns on the Point Inventory
-// (Appendix B) and takes Per-Building Detail out (the library chapters replace it).
+// (Appendix B) and the Setpoint Programming Review (Appendix C, printed only when zone set point data exists) and takes Per-Building Detail out (the library chapters replace it).
 function _a36StyleChanged() {
   var checked = document.querySelector('input[name="a36Style"]:checked');
   var detailed = !!checked && checked.value === 'detailed';
@@ -26435,7 +26479,7 @@ function _a36StyleChanged() {
   if (detailed) _a36PictureStatus();
   document.querySelectorAll('.a36SecCheck').forEach(function (cb) {
     if (cb.dataset.key === 'building' || cb.dataset.key === 'buildingInfra') cb.disabled = detailed;
-    if (detailed && cb.dataset.key === 'pointInventory') cb.checked = true;
+    if (detailed && (cb.dataset.key === 'pointInventory' || cb.dataset.key === 'setpointReview')) cb.checked = true;
   });
 }
 window._a36StyleChanged = _a36StyleChanged;
