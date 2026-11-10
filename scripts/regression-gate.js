@@ -319,6 +319,7 @@ const diffs = []; // short diff lines for changed values
 const T0 = Date.now();
 const live = {};
 let liveGroup = null;
+const POOL_GROUPS = ['static-gates', 'reconciliation', 'feature-tests'];
 function stamp() {
   return '[' + String(Math.round((Date.now() - T0) / 1000)).padStart(4) + 's]';
 }
@@ -329,7 +330,8 @@ function liveLine(g) {
 function add(group, name, status, detail) {
   results.push({ group, name, status, detail: detail || '' });
   const g = group.startsWith('numbers:') ? 'numbers' : group;
-  if (g !== liveGroup) {
+  // Pool groups finish mixed; their end lines print once after the pool.
+  if (!POOL_GROUPS.includes(g) && g !== liveGroup) {
     if (liveGroup) liveLine(liveGroup);
     liveGroup = g;
   }
@@ -727,34 +729,12 @@ async function main() {
     } catch (e) {}
   }
 
-  // ---- static gates: tools/gate-*.js listed here run on every gate run (exit 0 = PASS) ----
-  ['tools/gate-single-number-parser.js', 'tools/gate-no-baselineinclude-token.js', 'tools/gate-project-scope-unchanged.js', 'tools/gate-single-day-count.js', 'tools/gate-utility-data-single-accessor.js', 'tools/gate-single-baseload-source.js', 'tools/gate-single-bill-flag-count.js', 'tools/gate-read-chain-correction.js', 'tools/gate-bill-change-history.js', 'tools/gate-auto-repair.js', 'tools/gate-bill-display-and-hover.js', 'tools/gate-dup-compare.js', 'tools/gate-printed-read-mismatch.js', 'tools/gate-flag-badge-onclick-escape.js', 'tools/gate-single-physics.js', 'tools/gate-single-fan-model.js', 'tools/gate-single-month-rule.js', 'tools/gate-ecm-templates-no-dollars.js', 'tools/gate-single-payback.js', 'tools/gate-bill-ground-truth.js', 'tools/gate-correction-formulas.js', 'tools/gate-contract-rates-frozen.js', 'tools/gate-schema-grants.js', 'computations/bill-save-fields.gate.js', 'computations/gas-rate-save-paths.gate.js', 'computations/rates.cascade.gate.js', 'tools/gate-bill-flag-behavior.js', 'tools/gate-rate-write-guard.js', 'tools/gate-single-rate-source.js', 'computations/bill-sum-check.gate.js', 'computations/utility-e-sum-fixes.gate.js'].filter((g) => !(FAST && SLOW_GATES.includes(g))).forEach((g) => {
-    const r = spawnSync(process.execPath, [path.join(REPO_ROOT, g)], { cwd: REPO_ROOT, encoding: 'utf8' });
-    add('static-gates', g, r.status === 0 ? 'PASS' : 'FAIL', r.status === 0 ? '' : (r.stdout || r.stderr || '').slice(0, 300));
-  });
+  // ---- static gates: tools/gate-*.js listed here run on every gate run (exit 0 = PASS); they run in the job pool below ----
+  const staticGates = ['tools/gate-single-number-parser.js', 'tools/gate-no-baselineinclude-token.js', 'tools/gate-project-scope-unchanged.js', 'tools/gate-single-day-count.js', 'tools/gate-utility-data-single-accessor.js', 'tools/gate-single-baseload-source.js', 'tools/gate-single-bill-flag-count.js', 'tools/gate-read-chain-correction.js', 'tools/gate-bill-change-history.js', 'tools/gate-auto-repair.js', 'tools/gate-bill-display-and-hover.js', 'tools/gate-dup-compare.js', 'tools/gate-printed-read-mismatch.js', 'tools/gate-flag-badge-onclick-escape.js', 'tools/gate-single-physics.js', 'tools/gate-single-fan-model.js', 'tools/gate-single-month-rule.js', 'tools/gate-ecm-templates-no-dollars.js', 'tools/gate-single-payback.js', 'tools/gate-bill-ground-truth.js', 'tools/gate-correction-formulas.js', 'tools/gate-contract-rates-frozen.js', 'tools/gate-schema-grants.js', 'computations/bill-save-fields.gate.js', 'computations/gas-rate-save-paths.gate.js', 'computations/rates.cascade.gate.js', 'tools/gate-bill-flag-behavior.js', 'tools/gate-rate-write-guard.js', 'tools/gate-single-rate-source.js', 'computations/bill-sum-check.gate.js', 'computations/utility-e-sum-fixes.gate.js'].filter((g) => !(FAST && SLOW_GATES.includes(g)));
 
-  // ---- 3. existing report reconciliation harness (own browser; runs after ours is closed) ----
-  if (args['skip-reconcile'] || FAST) {
-    add('reconciliation', 'verify-report-reconciliation.js', 'INFO', 'skipped (' + (FAST ? '--fast' : '--skip-reconcile') + ')');
-  } else {
-    const rc = spawnSync(process.execPath, [path.join(REPO_ROOT, 'scripts', 'verify-report-reconciliation.js')], {
-      cwd: REPO_ROOT,
-      env: Object.assign({}, process.env, { NODE_PATH: PW_MODULES }),
-      encoding: 'utf8',
-      maxBuffer: 64 * 1024 * 1024,
-    });
-    const text = (rc.stdout || '') + (rc.stderr || '');
-    const bad = text
-      .split(/\r?\n/)
-      .filter((l) => /FAIL|VIOLATION|FATAL|ERROR/i.test(l))
-      .slice(0, 6);
-    add(
-      'reconciliation',
-      'verify-report-reconciliation.js (exit ' + rc.status + ')',
-      rc.status === 0 ? 'PASS' : 'FAIL',
-      rc.status === 0 ? '' : bad.join(' ; ') || text.slice(-300),
-    );
-  }
+  // ---- 3. existing report reconciliation harness (own browser; runs after ours is closed, in the job pool below) ----
+  const reconcile = !(args['skip-reconcile'] || FAST);
+  if (!reconcile) add('reconciliation', 'verify-report-reconciliation.js', 'INFO', 'skipped (' + (FAST ? '--fast' : '--skip-reconcile') + ')');
 
   // ---- standalone feature tests: every tools/test-*.js and repo-root test-*.js, one child process each ----
   // Excluded = fails or hangs on main today (stale tests) or needs the internet. Each is listed with its reason
@@ -772,9 +752,20 @@ async function main() {
     if (TEST_EXCLUDE[f]) add('feature-tests', f, 'INFO', 'EXCLUDED: ' + TEST_EXCLUDE[f]);
     return !TEST_EXCLUDE[f];
   });
-  const runTest = (f) =>
+  // ---- job pool: static gates, reconciliation and feature tests, 3 child processes at a time, known slow jobs first ----
+  // Feature tests stop after 240 s; gates and the reconciliation after 600 s.
+  const SLOW_FIRST = ['tools/gate-read-chain-correction.js', 'tools/test-physics-single-source.js', 'scripts/verify-report-reconciliation.js', 'tools/test-pdf-view-after-reload.js', 'tools/test-bill-corrections-review.js', 'tools/gate-single-bill-flag-count.js', 'tools/gate-bill-flag-behavior.js'];
+  const jobs = staticGates
+    .map((f) => ({ group: 'static-gates', f, ms: 600000 }))
+    .concat(reconcile ? [{ group: 'reconciliation', f: 'scripts/verify-report-reconciliation.js', ms: 600000 }] : [])
+    .concat(toRun.map((f) => ({ group: 'feature-tests', f, ms: 240000 })));
+  const rank = (j) => (SLOW_FIRST.includes(j.f) ? SLOW_FIRST.indexOf(j.f) : SLOW_FIRST.length);
+  jobs.sort((a, b) => rank(a) - rank(b));
+  if (liveGroup) liveLine(liveGroup);
+  liveGroup = null;
+  const runJob = (j) =>
     new Promise((resolve) => {
-      const cp = require('child_process').spawn(process.execPath, [f], {
+      const cp = require('child_process').spawn(process.execPath, [j.f], {
         cwd: REPO_ROOT,
         env: Object.assign({}, process.env, { NODE_PATH: PW_MODULES }),
         stdio: ['ignore', 'pipe', 'pipe'],
@@ -782,16 +773,18 @@ async function main() {
       let out = '';
       cp.stdout.on('data', (c) => (out += c));
       cp.stderr.on('data', (c) => (out += c));
-      const timer = setTimeout(() => cp.kill(), 240000);
+      const timer = setTimeout(() => cp.kill(), j.ms);
       cp.on('close', (code) => {
         clearTimeout(timer);
-        const tail = out.trim().split(String.fromCharCode(10)).slice(-3).join(' | ').slice(0, 300);
-        add('feature-tests', f, code === 0 ? 'PASS' : 'FAIL', code === 0 ? '' : 'exit ' + code + ' :: ' + tail);
+        const lines = out.trim().split(/\r?\n/);
+        const bad = lines.filter((l) => /FAIL|VIOLATION|FATAL|ERROR/i.test(l)).slice(0, 6);
+        const tail = (bad.length ? bad : lines.slice(-3)).join(' | ').slice(0, 300);
+        add(j.group, j.f, code === 0 ? 'PASS' : 'FAIL', code === 0 ? '' : 'exit ' + code + ' :: ' + tail);
         resolve();
       });
     });
-  const queue = toRun.slice();
-  await Promise.all([1, 2, 3].map(async () => { while (queue.length) await runTest(queue.shift()); }));
+  await Promise.all([1, 2, 3].map(async () => { while (jobs.length) await runJob(jobs.shift()); }));
+  POOL_GROUPS.forEach((g) => live[g] && liveLine(g));
 
   // ---- temp-leak guard: the run (gate + every test) must leave nothing in its own run folder under CH_TMP_ROOT ----
   let leaked = 0;
