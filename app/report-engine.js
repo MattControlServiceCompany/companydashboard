@@ -2018,35 +2018,6 @@ function _rptYtdKicker() {
 }
 
 /**
- * _rptDocumentDateLong — the one date every generated client document prints on its cover.
- *
- * Reads the SAME instant and the SAME calendar day the export filename is built from
- * (printReportToPDF / the .docx path all use
- * `new Date().toISOString().slice(0, 10)`), so the date on the page and the date in the file
- * name can never disagree. Formatted for a client to read out loud ("August 3, 2026"), never as
- * a numeric code.
- * @returns {string} e.g. "August 3, 2026"
- */
-var _RPT_DOC_MONTHS = [
-  'January',
-  'February',
-  'March',
-  'April',
-  'May',
-  'June',
-  'July',
-  'August',
-  'September',
-  'October',
-  'November',
-  'December',
-];
-function _rptDocumentDateLong() {
-  var iso = new Date().toISOString().slice(0, 10).split('-');
-  return _RPT_DOC_MONTHS[Number(iso[1]) - 1] + ' ' + Number(iso[2]) + ', ' + iso[0];
-}
-
-/**
  * generateReportHTML — assembles all selected report pages into HTML.
  * @param {object} data - Output from collectReportData()
  * @param {object} selectedSections - Which sections to include (all default true)
