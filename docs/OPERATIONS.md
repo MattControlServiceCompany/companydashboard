@@ -11,9 +11,13 @@ No secrets are in this file. Only env var NAMES are listed.
 | GitHub Pages (MattControlServiceCompany.github.io/companydashboard) | `main` | Production for routine deploys. Test host. No sync. (scripts/stamp-version.py:46-56) |
 | Netlify (cscdashboard.netlify.app) | `stable` | Stable host. Only host that runs functions and sync. (app/ch-auth.js:70-73) |
 
-- Promote to Netlify: `git push origin main:stable`.
-- Cost: 15 credits for each Netlify deploy. Limit: 300 credits each month. The count resets on the 2nd.
-  (Source: Netlify account rules told by Matt. Not in the code.)
+- Promote to Netlify: only `python -I _context/tools/2026-11-10-netlify-promote.py`, and only after Matt
+  types `APPROVE NETLIFY DEPLOY cscdashboard <sha>` for that commit. A direct `git push origin main:stable` is refused by the
+  local deploy guard and the git pre-push guard. Branch map: `_context/reference/2026-11-10-deployment-map.json`.
+- Push to `main` (GitHub site): only `python -I _context/tools/2026-11-10-push-main.py`.
+  Feature-branch pushes are normal and cost nothing.
+- Cost: 15 credits for each Netlify production deploy. Limit: 300 credits each cycle (resets on the 2nd). Branch deploys,
+  Deploy Previews, rollbacks and failed deploys cost 0 (Netlify docs, checked 2026-11-10).
 - Netlify does not build on pushes to `main`. (scripts/stamp-version.py:46-52)
 - Build config: no build command, publish root `.`. (netlify.toml:4-6)
 - Release bump and the ?v= refs (2026-11-03, branch feat/2026-11-03-per-file-version): `python scripts/stamp-version.py` sets
@@ -408,7 +412,7 @@ Modes:
 How to check: `node test-migrate-seed.js` (38 tests, in-memory fake Supabase, no network). Then the same command without
 `--apply` must show 0 new and 0 changed.
 
-Nov 2 runbook, data step (after the Netlify deploy and the live acceptance run):
+Production data runbook, data step (after a Netlify deploy and the live acceptance run):
 1. On the GitHub site: Backup. Do not edit there after that. The newest PDF export also (a PDF export newer than 20260930 does not exist yet).
 2. Check out the exact commit that is deployed. Run the dry run: `node scripts/migrate-seed.js --file <backup> --pdf-dir <pdf folder> --target prod`. Read the counts. Open the diff file. Held keys: compare each, then decide.
 3. Run it with `--apply`. The snapshot file name is printed; keep it. Rows written: see the "Data written" line.
@@ -417,7 +421,7 @@ Nov 2 runbook, data step (after the Netlify deploy and the live acceptance run):
 Rehearse the same steps on a staging project first (a second free Supabase project with netlify/db/schema.sql applied and a private
 `pdf_blobs` bucket). Undo one key: read its row in `kv_history`, or copy it from the snapshot file.
 Schema grants: netlify/db/schema.sql gives `service_role` (only) explicit grants on `public.kv`, `public.kv_history` and the sequence `public.kv_history_id_seq`, because Supabase stopped automatic Data API grants on new public tables on 2026-10-30 (existing tables are unaffected). Run the file in the SQL editor of any new project (staging included). `node tools/gate-schema-grants.js` (in the regression gate) fails if a `create table` in netlify/db/*.sql has no RLS or no `service_role` grant, or if any grant targets anon.
-The app Restore path (6c) is on main only, not in stable (v87), until the Nov 2 deploy.
+The app Restore path (6c) is in stable (checked 2026-11-10: `_restoreDialog` in origin/stable 7a71718a, v2026.11.09.259).
 
 ## 6b. Bill fields (merged 2026-10-06, fix/2026-10-05-hidden-fields)
 
