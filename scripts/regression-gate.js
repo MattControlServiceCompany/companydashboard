@@ -14,8 +14,10 @@
 // USAGE
 //   node scripts/regression-gate.js [--data <backup.json>] [--oracle <oracle.json>]
 //        [--skip-reconcile] [--capture-baseline] [--json <out.json>]
-//   Default --data   = the file named in the oracle (oracle._input.backupFile, looked up in <home>\Downloads). If it is
-//     missing the gate fails; it NEVER falls back to the newest file. --data overrides.
+//   Default --data   = the file named in the oracle (oracle._input.backupFile, looked up in
+//     <context dir>\reference\known-good-values\regression-gate-seeds). If it is missing the gate fails; it NEVER falls
+//     back to the newest file. --data overrides. The seed is a fixed copy the oracle was built from (a regression
+//     fixture, not a source of client numbers); it is never read from Downloads (2026-11-10 data-source rule).
 //   Default --oracle = <context dir>\reference\known-good-values\regression-oracle.json  (context dir = CH_CONTEXT_DIR, default <home>\AI\_context)
 //   --capture-baseline: add every probe value that has NO oracle entry to the oracle file as tier
 //     "baseline-current" (value = what current code computes, NOT a verified truth), then exit 0.
@@ -43,9 +45,9 @@ const os = require('os');
 const { spawnSync, execSync } = require('child_process');
 
 const REPO_ROOT = path.resolve(__dirname, '..');
-const DOWNLOADS = path.join(os.homedir(), 'Downloads').split(path.sep).join('/');
 const CTX_DIR = (process.env.CH_CONTEXT_DIR || path.join(os.homedir(), 'AI', '_context')).split(path.sep).join('/');
 const DEFAULT_ORACLE = CTX_DIR + '/reference/known-good-values/regression-oracle.json';
+const SEED_DIR = CTX_DIR + '/reference/known-good-values/regression-gate-seeds';
 
 // ---- playwright: no node_modules in the repo. Resolve from CH_PLAYWRIGHT_NODE_MODULES (default: the
 // permanent copy in _context/tools/playwright-runtime), then this tree's own install. The same dir goes to child tests as NODE_PATH. ----
@@ -78,7 +80,7 @@ const args = parseArgs(process.argv.slice(2));
 function pinnedBackup(oracle) {
   const name = oracle._input && oracle._input.backupFile;
   if (!name) throw new Error('oracle has no _input.backupFile; set it to the backup the oracle was built from, or pass --data');
-  const p = DOWNLOADS + '/' + name;
+  const p = SEED_DIR + '/' + name;
   if (!fs.existsSync(p)) throw new Error('the backup the oracle was built from is missing: ' + p + ' (oracle._input.backupFile). Restore it or pass --data. The gate does not use the newest file.');
   return p;
 }
