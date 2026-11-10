@@ -264,10 +264,10 @@ const loadFixture = (shiftYears, costFactor) => {
 };
 const baseYear = Number(BASE_JSON.match(/"baseline":\{"months":\["(\d{4})/)[1]);
 const eachMonth = (d, fn) => d.buildings.forEach((b) => fuels.forEach((k) => ((b[k] && b[k].monthly) || []).filter((m) => d.period.yearMonths.indexOf(m.month) >= 0).forEach((m) => fn(b, k, m))));
-const baseCost = (c, b, k, calMo) => {
-  const com = k === 'electric' ? 'Electric' : k === 'gas' ? 'Gas' : 'Propane';
-  return run(c, '(function(){var ub=getUDBldg(' + PROJ + ',"' + b.id + '");var t=0;ub.meters.forEach(function(m){if(m.commodity!=="' + com + '"||m.baselineInclude===false)return;(m.baseline.months||[]).forEach(function(ym){if(ym.slice(5,7)!=="' + calMo + '")return;(m.bills||[]).forEach(function(bl){if(billMonth(bl,m.bills)!==ym)return;t+=parseFloat(bl.totalCost)||0;});});});return t;})()');
-};
+// baseRate(c, b, calMo): the gas $/therm of the baseline-year bills of that calendar month, else of the whole baseline year
+// (Matt, 2026-11-09, app/report-engine.js _rptBaselineCostOfRow: the baseline cost is the baseline use at baseline-year
+// rates, never the baseline-year bill amounts). null when the building has more than one included gas meter.
+const baseRate = (c, b, calMo) => run(c, '(function(){var ub=getUDBldg(' + PROJ + ',"' + b.id + '");var ms=ub.meters.filter(function(m){return m.commodity==="Gas"&&m.baselineInclude!==false;});if(ms.length!==1)return null;var m=ms[0];var bl=m.baseline.months||[];var inM=function(yms){return (m.bills||[]).filter(function(x){return yms.indexOf(billMonth(x,m.bills))>=0;});};return getMonthBillRate(inM(bl.filter(function(ym){return ym.slice(5,7)==="' + calMo + '";})),"gas")||getMonthBillRate(inM(bl),"gas")||0;})()');
 let nonZero = 0;
 [0, 2].forEach((shift) => {
   loadFixture(shift, 1);
@@ -300,25 +300,26 @@ let nonZero = 0;
     assert(Math.abs(a.buildings.reduce((s, b) => s + b.savings, 0) - b2.buildings.reduce((s, b) => s + b.savings, 0)) <= 0.005, 'total savings unchanged when baseline bill costs x3');
     assert(n > 0, 'months checked: ' + n);
   });
-  console.log('\n--- (b) baseline cost = cost of the baseline-month bills of that calendar month' + tag + ' ---');
+  console.log('\n--- (b) baseline cost = baseline use x baseline-year rate of that calendar month' + tag + ' ---');
   // Propane has its own baseline-cost rule (delivery based); it is checked only for the sum rule below.
   [[ctxA, A], [ctxB, B]].forEach(([c, set], ci) => {
     set.forEach((d, i) => {
       let n = 0, bad = 0;
       eachMonth(d, (b, k, m) => {
         if (k === 'propane') return;
-        const want = k === 'gas' ? baseCost(c, b, k, m.month.slice(5, 7)) : null;
-        if (want == null) return;
+        const rate = k === 'gas' ? baseRate(c, b, m.month.slice(5, 7)) : null;
+        if (rate == null) return;
+        const want = m.bl * rate;
         n++;
-        if (Math.abs(m.blCost - want) > 0.01) { bad++; console.log('  FAIL ' + b.name + ' ' + k + ' ' + m.month + ': baseline cost ' + m.blCost + ' vs baseline-month bills ' + want); }
+        if (Math.abs(m.blCost - want) > 0.01) { bad++; console.log('  FAIL ' + b.name + ' ' + k + ' ' + m.month + ': baseline cost ' + m.blCost + ' vs baseline use ' + m.bl + ' x baseline-year rate ' + rate + ' = ' + want); }
       });
-      assert(bad === 0 && n > 0, (ci ? 'baseline costs x3, ' : '') + 'Q' + (i + 1) + ': gas baseline cost of every month = the baseline-month bill cost (' + n + ' building-months)');
+      assert(bad === 0 && n > 0, (ci ? 'baseline costs x3, ' : '') + 'Q' + (i + 1) + ': gas baseline cost of every month = baseline use x baseline-year rate (' + n + ' building-months)');
       d.buildings.forEach((b) => assert(Math.abs(b.blCost - fuels.reduce((s, k) => s + (b[k] ? b[k].monthly.filter((m) => d.period.yearMonths.indexOf(m.month) >= 0).reduce((t, m) => t + m.blCost, 0) : 0), 0)) <= 0.01, b.name + ': building baseline cost = its months added'));
       assert(Math.abs(d.totals.blCost - d.buildings.reduce((s, b) => s + b.blCost, 0)) <= 0.01, 'Q' + (i + 1) + ': total baseline cost = the buildings added');
     });
   });
   const sumBl = (set) => set[1].buildings.reduce((s, b) => s + b.gas.costBl, 0);
-  assert(sumBl(B) > 2.9 * sumBl(A) && sumBl(B) < 3.1 * sumBl(A), 'the displayed baseline cost follows the baseline-month bills (x3 in, x3 out)');
+  assert(sumBl(B) > 2.9 * sumBl(A) && sumBl(B) < 3.1 * sumBl(A), 'the displayed baseline cost follows the baseline-year rates (bill costs x3 in, x3 out)');
 });
 assert(nonZero > 0, 'the fixture has months with savings other than $0 (' + nonZero + ')');
 
