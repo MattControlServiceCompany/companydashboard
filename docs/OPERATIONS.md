@@ -11,7 +11,10 @@ No secrets are in this file. Only env var NAMES are listed.
 | GitHub Pages (MattControlServiceCompany.github.io/companydashboard) | `main` | Production for routine deploys. Test host. No sync. (scripts/stamp-version.py:46-56) |
 | Netlify (cscdashboard.netlify.app) | `stable` | Stable host. Only host that runs functions and sync. (app/ch-auth.js:70-73) |
 
-- Promote to Netlify: `git push origin main:stable`.
+- Promote to Netlify: only a fully tested, stable release, only through the promote gate script outside this repo
+  (`_context/tools/2026-11-10-netlify-promote.py`). It checks a full gate pass on the exact commit, 48 h on GitHub Pages
+  and localhost first, 7 days since the last production deploy and at most 4 deploys a month. A direct push to `stable`
+  is blocked by a hook. A fix or a review round goes to `main` (GitHub Pages and localhost), never to Netlify.
 - Cost: 15 credits for each Netlify deploy. Limit: 300 credits each month. The count resets on the 2nd.
   (Source: Netlify account rules told by Matt. Not in the code.)
 - Netlify does not build on pushes to `main`. (scripts/stamp-version.py:46-52)
