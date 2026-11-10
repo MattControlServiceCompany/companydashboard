@@ -181,6 +181,7 @@
           title: titlesText(events.map(function (e) { return e.title; })),
           space: uniq(events.map(function (e) { return e.space; })).join(', '),
           program: programs[0],
+          programs: programs,
           short: ds.reduce(function (n, d) { return n + d.short; }, 0),
           group: u.group,
           unit: u.group || names.join(', '),
@@ -224,7 +225,7 @@
   // the period, so a one-time need in December is not listed in a November week. A weekly pattern is one line (one repeating
   // schedule to add to the scheduling group), whatever part of it falls in the period.
   // o = computeActions input + { from, to }. -> [{ id, change, dates, forText, unit, inBas, where, groupNow, repeats, action }]
-  //   where = the BAS program's place (building / area / program); groupNow = the schedules saved for its scheduling group.
+  //   where = the place of every BAS program the line's events use (building / area / program; '; ' between them); groupNow = the schedules saved for its scheduling group.
   function periodNeeds(o) {
     var out = [];
     computeActions(o).forEach(function (a) {
@@ -251,7 +252,7 @@
         forText: a.titleText,
         unit: a.unit,
         inBas: inBas,
-        where: whereText(a.program),
+        where: uniq(a.programs.map(whereText)).join('; '),
         groupNow: groupScheduleText(o.groups, a.program),
         action: a,
       });

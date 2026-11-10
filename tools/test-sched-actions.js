@@ -76,6 +76,15 @@ const pn = SA.periodNeeds(o(1080, { groups: gs, from: '2026-10-30', to: '2026-10
 eq(pn.length, 1, 'period list: one line');
 eq(pn[0].where, 'Test Alpha Hall / Area 1 / AHU-1 - Gym', 'line says building / area / program');
 eq(pn[0].groupNow, 'Open Gym Mon, Wed 4:00 PM - 6:00 PM', 'line shows the group schedules now, unread entries left out');
+// one group, two units (as in the real data: an auditorium unit in the gym group): the line names every unit its events use
+const gs3 = { 'Test Alpha Hall|Gyms': { building: 'Test Alpha Hall', group: 'Gyms', schedules: [], members: ['Area 1 / AHU-1 - Gym', 'Area 1 / AHU-3 Stage'] } };
+const rows3 = Object.assign(mkRows(1080), { [L + '|AHU-3 Stage']: occ(300, 1080) });
+const snaps3 = { '2026-10-30': { importedAt: '2026-10-29T20:00:00Z', rows: rows3 } };
+const map3 = { spaces: Object.assign({}, map.spaces, { 'tah stage': { space: 'TAH Stage', programs: [L + '|AHU-3 Stage'], confirmed: true } }) };
+const ev3 = { g1: events.g1, c1: ['Concert - TAH Stage', z('2026-10-30', 18, 0), z('2026-10-30', 21, 0), 0, ''] };
+const pn3 = SA.periodNeeds(Object.assign({}, base, { events: ev3, map: map3, groups: gs3, snaps: snaps3, from: '2026-10-30', to: '2026-10-31' }));
+eq(pn3.length, 1, 'two units of one group, same time: one line');
+eq(pn3[0].where, 'Test Alpha Hall / Area 1 / AHU-1 - Gym; Test Alpha Hall / Area 1 / AHU-3 Stage', 'line names both units, not only the first');
 // a group whose saved building name differs from the BAS location name (as in the real data: 'Test Alpha' and 'Test Alpha Hall ') still shows its schedules
 const gs2 = { 'Test Alpha|Gyms': { building: 'Test Alpha', group: 'Gyms', members: ['Area 1 / AHU-1 - Gym'], schedules: gs['Test Alpha Hall|Gyms'].schedules } };
 eq(SA.periodNeeds(o(1080, { groups: gs2, from: '2026-10-30', to: '2026-10-31' }))[0].groupNow, 'Open Gym Mon, Wed 4:00 PM - 6:00 PM', 'group schedules found although the building names differ');
