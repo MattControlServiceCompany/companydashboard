@@ -3197,6 +3197,13 @@ async function _postExtractionVerify(bills, utilityName, rawText) {
     // is promoted from a warning to an auto-fix. Two independent checks pointing
     // at the same line, same amount, is what overrides "trust the ink"; a lone
     // per-line signal never does.
+    // OCR look-alike digits (one-digit quantity rule below): each digit maps to the digits the reader mistakes it for.
+    const _OCR_DIGIT_PAIRS = [[3, 8], [5, 6], [6, 8], [0, 8], [1, 7], [9, 8], [0, 6], [4, 1]];
+    const _OCR_DIGIT_LOOKALIKES = {};
+    for (const [x, y] of _OCR_DIGIT_PAIRS) {
+      (_OCR_DIGIT_LOOKALIKES[x] = _OCR_DIGIT_LOOKALIKES[x] || []).push(String(y));
+      (_OCR_DIGIT_LOOKALIKES[y] = _OCR_DIGIT_LOOKALIKES[y] || []).push(String(x));
+    }
     for (const b of bills) {
       if (!b._rates) continue;
       // Check 2 signal (item cd999d9f): the whole-bill compSum-vs-printed-total
@@ -3207,6 +3214,9 @@ async function _postExtractionVerify(bills, utilityName, rawText) {
       // partially-corrected one.
       const _wholeBillSignedDelta = b._sum_mismatch ? b._sum_mismatch.signedDiff : null;
       const _rateEntries = Object.entries(b._rates);
+      // The printed charges add up to the printed total (within a cent): the charges are right, so a line that fails
+      // qty x rate has a misread quantity, never a wrong charge.
+      const _sumHolds = !b._sum_mismatch || Math.abs(b._sum_mismatch.signedDiff) <= 0.01;
 
       // Pass 1 — scan EVERY part of EVERY field on this bill and record every
       // Check-1 (per-line qty×rate) mismatch, whether or not it also passes
@@ -3256,7 +3266,7 @@ async function _postExtractionVerify(bills, utilityName, rawText) {
           // equal exactly that movement's negation, i.e. gap === deltaLine.
           const deltaLine = actual - expected;
           const partLocked = _fieldLocked || !!b['_userCorrected__chg_' + field + '_' + idx];
-          const check2Match = _wholeBillSignedDelta != null && Math.abs(_wholeBillSignedDelta - deltaLine) <= 0.01;
+          const check2Match = !_sumHolds && _wholeBillSignedDelta != null && Math.abs(_wholeBillSignedDelta - deltaLine) <= 0.01;
           _allFlagged.push({
             field,
             idx,
@@ -3273,6 +3283,83 @@ async function _postExtractionVerify(bills, utilityName, rawText) {
         }
       }
 
+      // Pass 1b — misread QUANTITY (Matt 2026-11-10). A flagged part whose quantity is a small misread of
+      // a quantity the bill prints elsewhere (another part of the same field, or the bill's Actual/Billed kW)
+      // is fixed when exactly ONE such quantity makes qty x rate x days-ratio equal the printed charge to the
+      // cent. The charge is never changed here. User-locked parts are never touched.
+      const _qtyFixes = [];
+      for (let fi = _allFlagged.length - 1; fi >= 0; fi--) {
+        const e = _allFlagged[fi];
+        if (e.locked || !(e.qty > 0) || !(e.rate > 0)) continue;
+        const ratio = e.part.prorationNum && e.part.prorationDen ? e.part.prorationNum / e.part.prorationDen : 1;
+        const sources = []; // { qty, where }
+        const siblings = b._rates[e.field].parts || [];
+        siblings.forEach((sp, si) => {
+          if (si !== e.idx && sp && sp.qty > 0) sources.push({ qty: sp.qty, where: 'the other ' + (e.unit || '') + ' line' });
+        });
+        if (/^kw$/i.test(e.unit || '')) {
+          const ak = parseBillNumber(b.ActualKW);
+          const bk = parseBillNumber(b.BilledKW);
+          if (ak > 0) sources.push({ qty: ak, where: 'Actual kW' });
+          if (bk > 0) sources.push({ qty: bk, where: 'Billed kW' });
+        }
+        const tol = Math.max(0.05, 0.001 * e.qty);
+        const ties = new Map(); // distinct candidate qty -> where
+        for (const src of sources) {
+          if (src.qty === e.qty || Math.abs(src.qty - e.qty) > tol || ties.has(src.qty)) continue;
+          if (Math.round(src.qty * e.rate * ratio * 100) === Math.round(e.actual * 100)) ties.set(src.qty, src.where);
+        }
+        let newQty;
+        let where = null; // null = one-digit rule
+        if (ties.size === 1) {
+          [newQty, where] = [...ties.entries()][0];
+        } else if (ties.size === 0 && _sumHolds) {
+          // The printed charges add up, so the charge is right: look for ONE digit of the quantity read as its look-alike.
+          const digits = e.qty.toFixed(4).split('');
+          const found = new Set();
+          digits.forEach((d, di) => {
+            for (const alt of _OCR_DIGIT_LOOKALIKES[d] || []) {
+              const cand = parseFloat(digits.slice(0, di).join('') + alt + digits.slice(di + 1).join(''));
+              if (cand > 0 && cand !== e.qty && Math.round(cand * e.rate * ratio * 100) === Math.round(e.actual * 100)) found.add(cand);
+            }
+          });
+          if (found.size !== 1) continue;
+          newQty = [...found][0];
+        } else continue;
+        const oldQty = e.qty;
+        e.part.qty = newQty;
+        _qtyFixes.push({
+          field: e.field,
+          fix: {
+            idx: e.idx,
+            qty: newQty,
+            rate: e.rate,
+            unit: e.unit,
+            original: e.actual,
+            corrected: e.actual,
+            diff: 0,
+            qtyFrom: oldQty,
+            qtyTo: newQty,
+            reason:
+              'Corrected quantity from ' +
+              oldQty.toFixed(4) +
+              ' to ' +
+              newQty.toFixed(4) +
+              ': ' +
+              (where == null ? 'the bill total adds up with the printed charge $' + e.actual.toFixed(2) + ', and ' : '') +
+              newQty.toFixed(4) +
+              ' x $' +
+              String(e.rate) +
+              (ratio !== 1 ? ' x ' + e.part.prorationNum + '/' + e.part.prorationDen + ' days' : '') +
+              ' matches ' +
+              (where == null
+                ? 'it (one digit read wrong).'
+                : 'the printed charge $' + e.actual.toFixed(2) + ', and the bill shows ' + newQty.toFixed(4) + ' on ' + where + '.'),
+          },
+        });
+        _allFlagged.splice(fi, 1);
+      }
+
       // Pass 2 — candidates are Check-1 mismatches that ALSO pass Check 2 and
       // are not user-locked. Auto-fix ONLY when EXACTLY ONE candidate exists
       // across the whole bill; the whole-bill gap cannot be unambiguously
@@ -3285,6 +3372,7 @@ async function _postExtractionVerify(bills, utilityName, rawText) {
       // warn-only per-part mismatch, grouped back by field.
       const _badPartsByField = {};
       const _fixedByField = {};
+      for (const q of _qtyFixes) (_fixedByField[q.field] = _fixedByField[q.field] || []).push(q.fix);
       for (const e of _allFlagged) {
         if (e === _toFix) {
           (_fixedByField[e.field] = _fixedByField[e.field] || []).push({
@@ -3321,6 +3409,8 @@ async function _postExtractionVerify(bills, utilityName, rawText) {
             ocrCharge: e.actual,
             diff: e.diff,
             valid: false,
+            prorationNum: e.part.prorationNum || null,
+            prorationDen: e.part.prorationDen || null,
           });
         }
       }
@@ -3332,6 +3422,7 @@ async function _postExtractionVerify(bills, utilityName, rawText) {
         else delete b['_part_mismatches_' + field];
         if (_fixedByField[field] && _fixedByField[field].length) {
           b['_corroborated_corrected_' + field] = _fixedByField[field];
+          if (!_fixedByField[field].some((f) => f.qtyFrom == null)) continue; // quantity-only fixes leave the charge as printed
           // Recompute the top-level charge field from the now-corrected parts so
           // the bill's stored/exported charge (and every downstream compSum check)
           // reconciles with TotalCurrentCharges — never leave the field-level
@@ -20480,12 +20571,15 @@ function renderPDFFields(parsed, warnings) {
       const _rowCorrected = parsed['_corroborated_corrected_' + row.chargeField] || [];
       const _partNote = (idx) => {
         const fixed = _rowCorrected.find((c) => c.idx === idx);
+        if (fixed && fixed.qtyFrom != null) {
+          return `<div class="ef-detail ef-ok">Fixed: ${_escHtml(fixed.reason)}</div>`;
+        }
         if (fixed) {
           return `<div class="ef-detail ef-ok">Fixed: computed from quantity &times; rate, confirmed by the bill total (was $${fixed.original.toFixed(2)})</div>`;
         }
         const bad = _rowMismatches.find((m) => m.idx === idx);
         if (bad) {
-          return `<div class="ef-detail ef-warn">Check: expected $${bad.computed.toFixed(2)} (quantity &times; rate) but read $${bad.ocrCharge.toFixed(2)} (off $${bad.diff.toFixed(2)}). Not changed. Check it against the PDF.</div>`;
+          return `<div class="ef-detail ef-warn">Check: expected $${bad.computed.toFixed(2)} (${bad.qty != null && bad.rate != null ? `${bad.qty.toFixed(2)} ${_escHtml(bad.unit || '')} &times; $${bad.rate}${bad.prorationNum && bad.prorationDen ? ` &times; ${bad.prorationNum}/${bad.prorationDen} days` : ''}` : 'quantity &times; rate'}) but read $${bad.ocrCharge.toFixed(2)} (off $${bad.diff.toFixed(2)}). Not changed. Check it against the PDF.</div>`;
         }
         return '';
       };

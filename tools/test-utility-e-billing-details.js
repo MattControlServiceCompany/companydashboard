@@ -293,6 +293,75 @@ const pipeline = async (text) => {
   );
   check('4i the Current Charges reader has no sum substitution (no "calcSum * 1.5")', !/calcSum \* 1\.5/.test(fs.readFileSync(path.join(root, 'app', 'energy-savings.js'), 'utf8')));
 
+  // ---- 4b. per-line check: a misread quantity is fixed from a sibling quantity -----------------------------
+  console.log('-- 4b. per-line check: misread quantity');
+  const PROV = ruleFor(page()).name;
+  const kwBill = (p2qty, locked) => {
+    const bill = {
+      ActualKW: '120.5500',
+      BilledKW: '120.5500',
+      _rates: {
+        BilledKWCharge: {
+          rate: 5.6,
+          unit: 'kW',
+          parts: [
+            { qty: 120.55, rate: 10, unit: 'kW', prorationNum: 2, prorationDen: 30, ocrCharge: 80.37 },
+            { qty: p2qty, rate: 5.6, unit: 'kW', prorationNum: 28, prorationDen: 30, ocrCharge: 630.07 },
+          ],
+        },
+      },
+    };
+    if (locked) bill._userCorrected_BilledKWCharge = true;
+    return bill;
+  };
+  // 120.55 x 5.6 x 28/30 = 630.07; 120.54 x 5.6 x 28/30 = 629.99.
+  let kb = kwBill(120.54, false);
+  await sb.__verify([kb], PROV, '');
+  const kfix = (kb._corroborated_corrected_BilledKWCharge || [])[0];
+  check(
+    '4b-1 one sibling quantity ties to the printed charge: quantity fixed, no warning, charge unchanged',
+    kb._rates.BilledKWCharge.parts[1].qty === 120.55 && !(kb._part_mismatches_BilledKWCharge || []).length && kb._rates.BilledKWCharge.parts[1].ocrCharge === 630.07 && !!kfix && kfix.qtyFrom === 120.54 && /^Corrected quantity from 120.5400 to 120.5500: 120.5500 x \$5\.6 x 28\/30 days matches the printed charge \$630.07/.test(kfix.reason),
+    JSON.stringify(kfix),
+  );
+  kb = kwBill(120.4, false);
+  await sb.__verify([kb], PROV, '');
+  const kbad = (kb._part_mismatches_BilledKWCharge || [])[0];
+  check(
+    '4b-2 no quantity ties: warning kept, quantity unchanged, proration shown',
+    kb._rates.BilledKWCharge.parts[1].qty === 120.4 && !!kbad && kbad.prorationNum === 28 && kbad.prorationDen === 30 && !kb._corroborated_corrected_BilledKWCharge,
+    JSON.stringify(kbad),
+  );
+  kb = kwBill(120.54, true);
+  await sb.__verify([kb], PROV, '');
+  check(
+    '4b-3 user-locked field: quantity unchanged',
+    kb._rates.BilledKWCharge.parts[1].qty === 120.54 && !kb._corroborated_corrected_BilledKWCharge,
+    JSON.stringify(kb._corroborated_corrected_BilledKWCharge),
+  );
+  // One-digit rule (the printed charges add up): 3333.5 x 0.02 = 66.67; the 3 was read as 8.
+  const kwhBill = (charge, extra) =>
+    Object.assign(
+      { _rates: { ECACharge: { rate: 0.02, unit: 'kWh', parts: [{ qty: 8333.5, rate: 0.02, unit: 'kWh', ocrCharge: charge }] } } },
+      extra || {},
+    );
+  let hb = kwhBill(66.67);
+  await sb.__verify([hb], PROV, '');
+  const hfix = (hb._corroborated_corrected_ECACharge || [])[0];
+  check(
+    '4b-4 one digit read wrong (8 for 3) and the bill total adds up: quantity fixed, charge unchanged',
+    hb._rates.ECACharge.parts[0].qty === 3333.5 && !(hb._part_mismatches_ECACharge || []).length && hb._rates.ECACharge.parts[0].ocrCharge === 66.67 && !!hfix && /^Corrected quantity from 8333\.5000 to 3333\.5000: the bill total adds up with the printed charge \$66\.67, and 3333\.5000 x \$0\.02 matches it \(one digit read wrong\)\.$/.test(hfix.reason),
+    JSON.stringify(hfix),
+  );
+  hb = kwhBill(70.0);
+  await sb.__verify([hb], PROV, '');
+  check('4b-5 no one-digit change ties: warning kept, quantity unchanged', hb._rates.ECACharge.parts[0].qty === 8333.5 && (hb._part_mismatches_ECACharge || []).length === 1 && !hb._corroborated_corrected_ECACharge, JSON.stringify(hb._part_mismatches_ECACharge));
+  hb = kwhBill(66.67, { _sum_mismatch: { compSum: 1000, total: 900, diff: 100, signedDiff: 100 } });
+  await sb.__verify([hb], PROV, '');
+  check('4b-6 the bill total does not add up: the one-digit rule does not run', hb._rates.ECACharge.parts[0].qty === 8333.5 && !hb._corroborated_corrected_ECACharge, JSON.stringify(hb._corroborated_corrected_ECACharge));
+  hb = kwhBill(66.67, { _userCorrected_ECACharge: true });
+  await sb.__verify([hb], PROV, '');
+  check('4b-7 user-locked field: one-digit rule does not run', hb._rates.ECACharge.parts[0].qty === 8333.5 && !hb._corroborated_corrected_ECACharge, JSON.stringify(hb._corroborated_corrected_ECACharge));
+
   // ---- 5. one copy of each rule ---------------------------------------------------------------------------
   console.log('-- 5. single source');
   const es = fs.readFileSync(path.join(root, 'app', 'energy-savings.js'), 'utf8');
