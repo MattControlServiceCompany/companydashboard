@@ -988,6 +988,7 @@ function getUDBldgByCustomer(customerId, bldgId) {
 // Do NOT repoint getUDBldgs() itself -- management/data-entry screens must keep showing ALL in-scope buildings.
 function getIncludedBldgs(pid) {
   return getUDBldgs(pid).filter((b) => {
+    if (b._unmatchedSentinel === true) return false; // the Unmatched Bills bucket is not a building (LBG-2)
     const calc = (b.meters || []).filter((m) => isCalcCommodity(pid, m.commodity));
     return !(calc.length && calc.every((m) => isBaselineExcluded(pid, m.id)));
   });
