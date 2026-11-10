@@ -277,6 +277,14 @@ function freezeContractBaselines() {
   return n;
 }
 
+// getSavingsPostRows(allRows, blEnd) - the ONE rule for which normalized rows (getNormRows) book savings: the months
+// after the baseline end, without incompleteCycle rows (2026-09-15 phantom-savings fix: a short/stub bill that has not
+// completed a billing cycle books no savings; a complete bill that straddles a month boundary still does). The savings
+// and every report that lists savings months read this, so a month is in both or in neither.
+function getSavingsPostRows(allRows, blEnd) {
+  return (allRows || []).filter((r) => r.ym > blEnd && !r.incompleteCycle);
+}
+
 /* ─────────────────────────────────────────────────────────────
    getMeterSavings(m, bills, incl, projId, bldgId, opts)
    THE savings function. Every dollar of "savings" on every page and report comes from this
@@ -397,7 +405,7 @@ function getMeterSavings(m, bills, incl, projId, bldgId, opts) {
   // savings everywhere, not a phantom number). incompleteCycle does NOT exclude complete
   // bills that merely straddle a calendar-month boundary (water/sewer irregular cycles),
   // so those keep booking real savings. See computations/normalization.js getNormRows().
-  const postRows = allRows.filter((r) => r.ym > blEnd && !r.incompleteCycle);
+  const postRows = getSavingsPostRows(allRows, blEnd);
   if (!postRows.length) {
     if (!opts.effectiveRows && !opts.normalizedBills) {
       m._savingsCache = empty;

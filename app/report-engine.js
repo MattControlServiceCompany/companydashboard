@@ -210,7 +210,9 @@ function collectReportData(projId, buildingIds, reportDateStr, reportType, selec
       const incl = m.inclusive !== false;
       const allRows = bills.length ? getNormRows(m, bills, incl, bWeatherByYm) : [];
       const blEnd = bl.months.slice().sort().pop();
-      const postRows = allRows.filter((r) => r.ym > blEnd);
+      // The savings months: the same rows getMeterSavings books (getSavingsPostRows, computations/savings.js). A stub cycle
+      // has no savings row; listing it made the month's baseline NaN and counted its use with no baseline.
+      const postRows = getSavingsPostRows(allRows, blEnd);
       postRows.forEach((r) => {
         if (r.zeroFill || !_coverage.hasData || r.ym < _coverage.startYm || r.ym > _coverage.endYm) return;
         if (!allPostYMs.includes(r.ym)) allPostYMs.push(r.ym);
