@@ -898,6 +898,21 @@ const CB_Y = 1265;
     e6.rows[6].value.text === '120.00' && e6.rows[10].value.text === '-200.00' && e6.held.length === 0 && BL.sumHolds(BL.pageSum(e6, E, null, 'rows')),
     j([e6.rows[6].value, e6.rows[10].value, e6.held]),
   );
+  // R4 residual: a $0.00 residual on a slot whose label the page does not print is absent, not held. A slot whose
+  // label IS printed keeps the hold.
+  const r4Run = async (pageText) => {
+    const rd = eRead('E1-clean');
+    const last = rd.rows.filter((x) => !x.below).slice(-1)[0];
+    const ghost = Object.assign({}, last, { slot: 'SolarCredit', labelText: 'Parallel', value: { raw: '', text: null, ok: false }, absent: false, byOrder: false });
+    rd.rows.splice(rd.rows.indexOf(last) + 1, 0, ghost);
+    rd.pageText = pageText;
+    await BL.rereadBoxes(rd, E, canned({ rereads: {} }));
+    return { rd, ghost };
+  };
+  const r4a = await r4Run('Customer Chg ' + String.fromCharCode(10) + 'Bill offset');
+  check('L R4a $0.00 residual on a slot whose label is not on the page: absent, no hold', r4a.ghost.absent === true && r4a.rd.held.length === 0, j([r4a.ghost.absent, r4a.rd.held]));
+  const r4b = await r4Run('Customer Chg ' + String.fromCharCode(10) + 'Parallel Generation Credit');
+  check('L R4b $0.00 residual on a slot whose label is printed: still held', r4b.ghost.absent !== true && r4b.rd.held.length === 1 && r4b.rd.held[0].label === 'SolarCredit', j([r4b.ghost.absent, r4b.rd.held]));
   const e8 = BL.readPageByTemplate(ePage('E8-summary-page-no-match').words, { w: E.ref.w, h: E.ref.h }, E);
   check('L E8 the summary page (no Billing Details header) is not this template', !e8.ok && /Billing Details/.test(e8.reason), j(e8));
   const wsOf = (s) => s.split(' ').map((t, i) => ({ t, x0: i * 60, x1: i * 60 + 50, y0: 0, y1: 18 }));

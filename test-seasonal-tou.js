@@ -288,6 +288,23 @@ async function check(name, fn) {
     assert.ok(b._gateTripped, 'bill not held');
   });
 
+  await check('a stray letter between the rate and "per kWh" does not lose the rate', async () => {
+    const b = await run(
+      touBill({ lines: { offSum: 'Energy Chg Off Pk Sum ' + kwh(L.offSum.q) + ' kWh at $' + L.offSum.r + ' p per kWh ............  ' + money(L.offSum.c) } }).text,
+    );
+    near(f(b, 'OffPkSumKWh'), L.offSum.q, 'OffPkSumKWh');
+    near(f(b, 'OffPkSumRate'), parseFloat(L.offSum.r), 'OffPkSumRate');
+    assert.strictEqual(holds(b).length, 0, 'bill held: ' + (b._gateReasons || []).join(' | '));
+  });
+
+  await check('OCR "por kWh" reads as "per kWh"', async () => {
+    const b = await run(
+      touBill({ lines: { offSum: 'Energy Chg Off Pk Sum ' + kwh(L.offSum.q) + ' kWh at $' + L.offSum.r + ' por kWh ............  ' + money(L.offSum.c) } }).text,
+    );
+    near(f(b, 'OffPkSumRate'), parseFloat(L.offSum.r), 'OffPkSumRate');
+    assert.strictEqual(holds(b).length, 0, 'bill held: ' + (b._gateReasons || []).join(' | '));
+  });
+
   await check('two lines unreadable: no partial quantity stored, one warning', async () => {
     // quantity and rate lost on both Winter lines: nothing can rebuild their kWh
     const b = await run(

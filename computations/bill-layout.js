@@ -1744,6 +1744,35 @@
           p.label,
       );
     };
+    // A residual row of $0.00 whose label the page does not print is no line of the bill: it is absent, not a
+    // value held for review. A residual with a printed label (or a value other than $0.00) is held as before.
+    var labelPrinted = function (slot) {
+      var kind = (tpl.kinds || []).filter(function (k) {
+        return k.field === slot;
+      })[0];
+      if (!kind) return true;
+      var texts = (read.pageTexts && read.pageTexts.length ? read.pageTexts : [read.pageText]).filter(Boolean);
+      return texts.some(function (pageText) {
+        return String(pageText)
+          .split(/\r?\n/)
+          .some(function (line) {
+            var toks = line.split(/\s+/).filter(Boolean);
+            for (var i = 0; i < toks.length; i++)
+              for (var n = 1; n <= 4 && i + n <= toks.length; n++)
+                if (labelDistance(toks.slice(i, i + n).join(' '), kind.text) >= 0) return true;
+            return false;
+          });
+      });
+    };
+    var settleResidual = function (plan, r) {
+      var p = plan[r.residual];
+      if (p.kind === 'row' && r.values[r.residual] === 0 && !labelPrinted(p.label)) {
+        read.rows[p.index].absent = true;
+        read.rereads.push({ label: p.label, was: p.was, readings: [], chosen: 'no line printed (row dropped)' });
+        return;
+      }
+      holdResidual(plan, r);
+    };
     var apply = function (plan, values, skip) {
       plan.forEach(function (p, i) {
         if (i === skip) return;
@@ -1774,7 +1803,7 @@
       var r1 = solve(stage1);
       if (r1.ok) {
         apply(stage1, r1.values, r1.residual);
-        if (r1.residual != null) holdResidual(stage1, r1);
+        if (r1.residual != null) settleResidual(stage1, r1);
         read.lines = buildLines(read);
         return read;
       }
@@ -1787,7 +1816,7 @@
         var r2 = solve(stage2);
         if (r2.ok) {
           apply(stage2, r2.values, r2.residual);
-          if (r2.residual != null) holdResidual(stage2, r2);
+          if (r2.residual != null) settleResidual(stage2, r2);
           read.lines = buildLines(read);
         } else holdFailing(r2.why);
         return read;
