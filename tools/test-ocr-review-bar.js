@@ -6,7 +6,7 @@
 //   2. Save All is on when the only bills with issues are unchecked.
 //   3. Create meter on bill A at once sends bill B (same account) to the same new meter: "New ... meter for account ... (from
 //      bill N)", checked. Save All makes exactly 1 meter, with both bills on it.
-//   4. A bar link opens that bill. The Customer Charge row starts at the left edge. The Create button is a styled
+//   4. A bar link opens that bill. Customer Charge sits in the charge column. The Create button is a styled
 //      button in the bill's box. The bar does not cover the last row at the end of the page.
 // SHOTS=<dir>: also saves dark + light screenshots at 1920 and 640 px wide.
 const path = require('path');
@@ -144,14 +144,15 @@ async function open(context, theme, width) {
     const r2 = await page.evaluate(() => ({ idx: window._pdfMultiIdx, box: document.getElementById('pdfBillDest').textContent }));
     ok(r2.idx === 3 && /Bill \d of 4/.test(r2.box), 'bar link opens the held bill: idx ' + r2.idx);
 
-    // Customer Charge row starts at the left edge of the values.
+    // Customer Charge sits in the charge column (the third cell of a charge row), like every other charge.
     const r3 = await page.evaluate(() => {
       const inp = document.querySelector('.ef-input[data-key="CustomerCharge"]');
       const item = inp && inp.closest('.ef-item');
-      const grid = document.querySelector('#extractedFieldsGrid .ef-grid');
-      return item && grid ? { item: item.getBoundingClientRect().left, grid: grid.getBoundingClientRect().left } : null;
+      const rows = [...document.querySelectorAll('#extractedFieldsGrid .ef-charge-row')];
+      const ref = rows.map((r) => r.children[2]).find((c) => c && c !== item && c.querySelector('.ef-input'));
+      return item && ref ? { item: item.getBoundingClientRect().left, charge: ref.getBoundingClientRect().left } : null;
     });
-    ok(r3 && Math.abs(r3.item - r3.grid) <= 2, 'Customer Charge starts at the left edge: ' + JSON.stringify(r3));
+    ok(r3 && Math.abs(r3.item - r3.charge) <= 2, 'Customer Charge sits in the charge column: ' + JSON.stringify(r3));
 
     // Create meter on bill 1: bill 2 (same account) follows at once.
     await page.evaluate(() => {

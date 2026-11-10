@@ -20368,10 +20368,10 @@ function renderPDFFields(parsed, warnings) {
     const isKwh = (unit || '').toLowerCase().includes('h');
     return '$' + r.toFixed(isKwh ? 5 : 3) + '/' + (unit || '');
   };
-  // A flat charge (no quantity, no rate, such as Customer Charge) starts at the left edge, not in the third column.
+  // Every charge sits in the third (charge) column; a missing quantity or rate leaves its own cell blank.
   const _chargeRow = (qty, rate, charge) =>
     qty || rate || charge
-      ? `<div class="ef-charge-row">${qty || rate ? (qty || _blank) + (rate || _blank) + (charge || _blank) : charge + '<div class="ef-span2"></div>'}<div class="ef-running" title="${_RUN_TITLE}">${fmtDollar(runningTotal)}</div></div>`
+      ? `<div class="ef-charge-row">${(qty || _blank) + (rate || _blank) + (charge || _blank)}<div class="ef-running" title="${_RUN_TITLE}">${fmtDollar(runningTotal)}</div></div>`
       : '';
 
   const totalVal = parseBillNumber(parsed.TotalCurrentCharges);
