@@ -79,7 +79,8 @@ const ok = (c, m) => {
     });
     ok(during.hitInToast, 'toast is on top of the overlay: elementFromPoint at the toast centre is inside #toast ("' + during.text + '", z-index ' + during.zIndex + ', hit ' + during.hitTag + ')');
     ok(during.buttonDisabled && during.buttonText === 'Building PDF...', 'during the build the button is disabled and reads "' + during.buttonText + '"');
-    await page.screenshot({ path: path.join(process.env.CH_TMP_ROOT || '.', 'download-toast-visible.png') });
+    // screenshots only on request (CH_SHOT_DIR); the gate fails a test that leaves files in its temp folder
+    if (process.env.CH_SHOT_DIR) await page.screenshot({ path: path.join(process.env.CH_SHOT_DIR, 'download-toast-visible.png') });
     const second = await page.evaluate(() => {
       downloadReportPdf();
       return document.getElementById('toastMsg').textContent;

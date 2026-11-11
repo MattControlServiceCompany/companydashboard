@@ -23,6 +23,9 @@ Object.assign(ctx, {
   _rptContentBudget: () => 1000, RPT_SECTION_HEAD_PX: 14,
   _rptPaginateWithTail: (tokens) => { tokens.forEach((t) => { seen += t.html; }); return [tokens]; },
   _injectPageNumbers: (x) => x,
+  // helpers the review shares with the Detailed report (names list, HTML escape)
+  _a36DetJoin: (list) => (list.length < 2 ? list.join('') : list.slice(0, -1).join(', ') + ' and ' + list[list.length - 1]),
+  _escHtml: (text) => String(text).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;'),
 });
 vm.runInContext(src.slice(start, end + 1), ctx);
 const res = (st, a) => ({ checkKey: st, actualValue: a, gl36Default: 70, status: a === null ? 'NOT_SCHEDULED' : 'PASS', intentionalFlag: false });
@@ -40,5 +43,7 @@ const d = {
 try { ctx.rptPageASHRAE36SetpointReview(1, d); } catch (e) { console.log('threw', e.message); }
 assert(!/Not Scheduled|no setpoint programmed/i.test(seen), 'no absent-data claim');
 assert(/Has Data/.test(seen) && /1 zone match/.test(seen), 'data building listed, zone count excludes no-data zone');
-assert(!/No Data/.test(seen), 'no-data building not listed as a row');
+// The left-out note names the building (Matt, 2026-11-11: say which buildings are left out and why); it is never a table row.
+assert(!/<td[^>]*>(?:(?!<\/td>)[\s\S])*No Data/.test(seen), 'no-data building not listed as a row');
+assert(/No Data has zone terminal equipment, but the building automation data has no zone setpoints/.test(seen.replace(/<[^>]+>/g, '')), 'the left-out note names the no-data building and the reason');
 console.log('OK');

@@ -164,12 +164,14 @@ const ok = (c, m) => {
     ok(JSON.stringify(granted.names) === JSON.stringify(['other.png', 'syn-1.png', 'syn-2.png']), 'granted: files returned, subfolder included: ' + granted.names.join(','));
     ok(granted.shown.status === '2 of 3 pictures found in the folder (folder: syn-folder)', 'granted: status shows the remembered folder name: "' + granted.shown.status + '"');
     ok(!granted.shown.allowShown && granted.shown.btn === 'Change folder' && granted.hasChoice, 'granted: no Allow button, choose button reads "Change folder"');
-    await page.screenshot({ path: path.join(process.env.CH_TMP_ROOT || '.', 'picture-remembered.png') }).catch(() => {});
+    // screenshots only on request (CH_SHOT_DIR); the gate fails a test that leaves files in its temp folder
+    if (process.env.CH_SHOT_DIR) await page.screenshot({ path: path.join(process.env.CH_SHOT_DIR, 'picture-remembered.png') }).catch(() => {});
     await page.evaluate(() => {
       const box = document.getElementById('a36PictureBox');
       box.scrollIntoView();
     });
-    await page.locator('#a36PictureBox').screenshot({ path: path.join(process.env.CH_TMP_ROOT || '.', 'picture-box-remembered.png') }).catch(() => {});
+    // screenshots only on request (CH_SHOT_DIR); the gate fails a test that leaves files in its temp folder
+    if (process.env.CH_SHOT_DIR) await page.locator('#a36PictureBox').screenshot({ path: path.join(process.env.CH_SHOT_DIR, 'picture-box-remembered.png') }).catch(() => {});
 
     // ---- 1b. a project with no folder of its own uses the last folder chosen ----
     const lastChosen = await page.evaluate(async () => {
@@ -196,7 +198,8 @@ const ok = (c, m) => {
     }, PID);
     ok(prompt.shown.allowShown && prompt.shown.allowText === 'Allow access to syn-folder-p', 'prompt: one button "' + prompt.shown.allowText + '" is shown');
     ok(prompt.requests === 0 && prompt.picker === 0 && prompt.files === 0 && !prompt.hasChoice, 'prompt: before the click no permission request, no picker call, no file read');
-    await page.locator('#a36PictureBox').screenshot({ path: path.join(process.env.CH_TMP_ROOT || '.', 'picture-box-allow.png') }).catch(() => {});
+    // screenshots only on request (CH_SHOT_DIR); the gate fails a test that leaves files in its temp folder
+    if (process.env.CH_SHOT_DIR) await page.locator('#a36PictureBox').screenshot({ path: path.join(process.env.CH_SHOT_DIR, 'picture-box-allow.png') }).catch(() => {});
     await page.click('#a36PictureAllowBtn');
     await page.waitForTimeout(500);
     const afterAllow = await page.evaluate(() => ({
