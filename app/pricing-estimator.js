@@ -266,7 +266,7 @@ const SEQUENCE_SAVINGS_IMPACT = {
   },
   demandCtrl: {
     // 2026-07-22: promoted from 'med-high' to 'high'. DCV ranks by the same ROI score as every
-    // other measure (impact weight per installed dollar). JOCO-16 (Matt 2026-07-29, confirmed
+    // other measure (impact weight per installed dollar). PD-16 (Matt 2026-07-29, confirmed
     // 2026-11-03): no category bonus. If an order looks wrong, fix the ROI math, not the order.
     tier: 'high',
     type: 'savings',
@@ -283,7 +283,7 @@ const SEQUENCE_SAVINGS_IMPACT = {
     sourceType: SAVINGS_SOURCE_LITERATURE,
   },
   vav_dcv: {
-    // 2026-07-22: promoted from 'med-high' to 'high'. No priority bonus (JOCO-16).
+    // 2026-07-22: promoted from 'med-high' to 'high'. No priority bonus (PD-16).
     tier: 'high',
     type: 'savings',
     weight: 2.5,
@@ -1522,7 +1522,7 @@ function _a36ImpactChip(row) {
 }
 
 /* ── Two-key sort for Recommended tier (correction #3)
-   Primary:  impact group order (HIGH > MED-HIGH > MED > LOW-MED > enabler > safety); no category bonus (JOCO-16)
+   Primary:  impact group order (HIGH > MED-HIGH > MED > LOW-MED > enabler > safety); no category bonus (PD-16)
    Secondary: weight / effectiveCostTier (higher weight, lower cost = sort earlier)
    Tertiary:  # instances (qty, desc)
    ─────────────────────────────────────────────────────────────────────────── */
@@ -1530,7 +1530,7 @@ var _SAVINGS_TIER_ORDER = { high: 0, 'med-high': 1, med: 2, 'low-med': 3, enable
 
 function _pricingSortRecommendedRows(rows) {
   return rows.slice().sort(function (a, b) {
-    // JOCO-16 (Matt 2026-07-29): no hardware-readiness key and no DCV key. Tier group, then ROI
+    // PD-16 (Matt 2026-07-29): no hardware-readiness key and no DCV key. Tier group, then ROI
     // score, are the only criteria.
     // Primary: tier group
     var ao = _SAVINGS_TIER_ORDER[a.savingsImpact] != null ? _SAVINGS_TIER_ORDER[a.savingsImpact] : 99;
@@ -2360,7 +2360,7 @@ function _pricingSetRoiOpen(projId, open) {
    predicate may need a VVT-aware carve-out — not assumed here since no such signal exists in the
    real data today.
 
-   JOCO-11 (Matt 2026-11-03): Full Scope holds every item. Only work already under contract is
+   PD-11 (Matt 2026-11-03): Full Scope holds every item. Only work already under contract is
    excluded. Full Scope therefore does NOT apply this predicate: buildFullScopeRows passes
    { includeMonitoringOnly: true } to buildCatalogRows, and buildOptionalPointRows (Full Scope
    only) never filters. Compliance and Recommended still apply it (their scope was not changed).
@@ -2533,7 +2533,7 @@ function buildCatalogRows(projId, buildingNames, opts) {
     // Monitoring-only zone unit exclusion (2026-07-27) — see _pricingIsMonitoringOnlyZoneUnit's
     // header comment. Filtered ONCE, before any row generation, so it applies uniformly to
     // hardware gaps, equipment-count labels, AND sequence-programming rows below.
-    // JOCO-11 (Matt 2026-11-03): the Full Scope tier passes opts.includeMonitoringOnly and keeps
+    // PD-11 (Matt 2026-11-03): the Full Scope tier passes opts.includeMonitoringOnly and keeps
     // every unit. Compliance and Recommended keep the exclusion.
     var equipResults = bldgData.equipResults.filter(function (eq) {
       return includeMonitoringOnly || !_pricingIsMonitoringOnlyZoneUnit(eq);
@@ -2878,7 +2878,7 @@ function buildCatalogRows(projId, buildingNames, opts) {
     //
     // 2026-07-28 (fix/roi-no-hardware-first-per-unit): per-unit cost classification. The 'ready' /
     // 'gap' split feeds the COST side of the ROI score only (effective cost tier). It is not an
-    // ordering rule (JOCO-16). Root cause this fixes: cost tier used to be
+    // ordering rule (PD-16). Root cause this fixes: cost tier used to be
     // decided per BUILDING (see the old buildRecommendedRows comment this replaced) — a building
     // with 25 AHUs on an `ahu_dsp_reset` opportunity, 18 of which already have the duct static
     // pressure sensor and 7 of which don't, scored the ENTIRE 25-unit row at the expensive tier,
@@ -4389,7 +4389,7 @@ function _pricingFindCheapestSku(pointKey, catalog, cfg) {
       enabler/safety/null-impact sequences never form a unit and can never
       appear in Recommended.
    3. Ceiling = _pricingComputeBudgetTotal(budget) when a recurring budget is
-      set — membership is the ranked (JOCO-16: by _pricingEquipRowScore, best ROI-per-dollar first
+      set — membership is the ranked (PD-16: by _pricingEquipRowScore, best ROI-per-dollar first
       — see _pricingSortUnitsByRoi) greedy prefix that fits
       (_pricingGreedyPrefix, the shipped v631 Fit-to-Budget engine, reused
       verbatim). No budget (or Mode A financing, or an invalid term) →
@@ -4667,7 +4667,7 @@ function buildOptionalPointRows(projId) {
 
   ashData.buildings.forEach(function (bldgData) {
     var bName = bldgData.name;
-    // JOCO-11 (Matt 2026-11-03): this function feeds the Full Scope tier only, and Full Scope
+    // PD-11 (Matt 2026-11-03): this function feeds the Full Scope tier only, and Full Scope
     // holds every item. No monitoring-only exclusion here. An item is never dropped.
     var equipResults = bldgData.equipResults;
     var optionalGaps = {}; // gKey -> {pointKey, equipType, catLabel, count, mapEntry}
@@ -4898,7 +4898,7 @@ function buildOptionalPointRows(projId) {
    guarantee); Full Scope ⊇ Compliance and ⊇ Recommended's _baseId sets.
    ─────────────────────────────────────────────────────────────────────────── */
 function buildFullScopeRows(projId) {
-  // JOCO-11 (Matt 2026-11-03): Full Scope holds every item, including monitoring-only zone units,
+  // PD-11 (Matt 2026-11-03): Full Scope holds every item, including monitoring-only zone units,
   // each priced like any other unit. The shared toggle key (_baseId) of a row must stay the id of
   // the matching Compliance/Recommended catalog row, but row ids carry a running index that shifts
   // when extra units are included. So each full row is matched to its scoped-catalog row by
@@ -5548,7 +5548,7 @@ function _pricingEquipRowScore(row) {
   // score them below any real sequence (whose minimum possible score is 0) so they sink to
   // the bottom of the 'equipment' ranked list rather than the top.
   if (row.phase !== 2) return -1;
-  // JOCO-16 (Matt 2026-07-29, confirmed 2026-11-03): rank by client ROI only. JOCO has no dollar
+  // PD-16 (Matt 2026-07-29, confirmed 2026-11-03): rank by client ROI only. this client has no dollar
   // savings data, so the proxy is impact weight per installed dollar (weight / effective cost
   // tier). No category bonus of any kind: the score depends only on weight and cost. If an order
   // looks wrong, fix this ROI math. Read by Recommended membership (_pricingGreedyPrefix) and
@@ -5694,7 +5694,7 @@ function _pricingBuildRoiUnits(rows) {
 }
 
 /* ── _pricingSortUnitsByRoi(units) ───────────────────────────────────────────────────────────
-   JOCO-16 (Matt 2026-07-29, confirmed 2026-11-03): rank by client ROI only. Units sort by their
+   PD-16 (Matt 2026-07-29, confirmed 2026-11-03): rank by client ROI only. Units sort by their
    score (_pricingEquipRowScore: impact weight per installed dollar) and nothing else. There is
    no hardware-readiness rule, no score bonus for programming-only units and no DCV bonus. This
    removes the earlier no-hardware-first sort and PRICING_NO_HW_SCORE_BONUS. Early phases carry
@@ -5730,7 +5730,7 @@ function _pricingSortUnitsByRoi(units) {
    ever reaching the smaller one — real-data verification found exactly this on Client D before this
    line was added. See _pricingDiversifyTiedUnits' header comment for the full diagnosis.
 
-   JOCO-16 (Matt 2026-07-29): sort/diversify is _pricingSortUnitsByRoi (score only, no category bonus).
+   PD-16 (Matt 2026-07-29): sort/diversify is _pricingSortUnitsByRoi (score only, no category bonus).
    ─────────────────────────────────────────────────────────────────────────── */
 function _pricingGreedyPrefix(units, ceiling) {
   var sorted = _pricingSortUnitsByRoi(units);
@@ -5783,7 +5783,7 @@ function _pricingGreedyPrefix(units, ceiling) {
        fit a phase (even offered first) still does not land there; nothing is force-fit by evicting
        better-scoring work.
 
-   JOCO-16 (Matt 2026-07-29): no family goes first. Families are offered in first-seen order.
+   PD-16 (Matt 2026-07-29): no family goes first. Families are offered in first-seen order.
    ─────────────────────────────────────────────────────────────────────────── */
 function _pricingDiversifyTiedUnits(sortedUnits) {
   var getScore = function (u) {
@@ -7632,7 +7632,7 @@ function _pricingComputeProgramCostModel(projId, phaseCount) {
    happened to be in the first buildings encountered, not the best-return measures in the
    portfolio, directly contradicting that promise.
 
-   New rule: rank every priced row across the WHOLE portfolio (JOCO-16: by ROI score only — see _pricingSortUnitsByRoi), then fill Phase 1
+   New rule: rank every priced row across the WHOLE portfolio (PD-16: by ROI score only — see _pricingSortUnitsByRoi), then fill Phase 1
    with the best-ranked measures regardless of building, Phase 2 the next tier, Phase 3 the rest —
    each phase still bounded by its own measures envelope (allowance − that phase's own recurring EM
    labor). Concretely:
@@ -7797,7 +7797,7 @@ function _pricingComputeRecommendedTimeline(projId) {
       total: _pricingComputeTotals([r], estimate, projId).grand || 0,
     });
   });
-  // JOCO-16 (Matt 2026-07-29): ROI score only (stable sort, best first). The measure-family
+  // PD-16 (Matt 2026-07-29): ROI score only (stable sort, best first). The measure-family
   // tie-break (Bug 2744e688) reorders only exactly-tied scores; see _pricingDiversifyTiedUnits.
   units = _pricingSortUnitsByRoi(units);
 
@@ -8288,7 +8288,7 @@ function _pricingComputeRecommendedTimeline(projId) {
  *
  * THIS DOES NOT RE-PRICE OR RE-RANK ANYTHING. It re-runs the SAME two building blocks
  * _pricingComputeRecommendedTimeline itself uses to decide phase membership — _pricingBuildRoiUnits
- * (hardware+sequence bundling) and _pricingSortUnitsByRoi (ROI score only, JOCO-16) — over the term's own rows
+ * (hardware+sequence bundling) and _pricingSortUnitsByRoi (ROI score only, PD-16) — over the term's own rows
  * only, then bin-packs the SAME greedy first-fit walk _pricingComputeRecommendedTimeline uses for
  * phases (see that function's "Multi-round greedy first-fit walk" section, ~L7480) at MONTH
  * granularity instead of PHASE granularity.
@@ -9889,7 +9889,7 @@ initCostEstimateTab = function initCostEstimateTab(projId) {
         });
       });
     });
-    // JOCO-16 (Matt 2026-07-29): ROI score is the only sort key (no hardware-group key).
+    // PD-16 (Matt 2026-07-29): ROI score is the only sort key (no hardware-group key).
     _flatItems.sort(function (a, b) {
       return b.score - a.score;
     });

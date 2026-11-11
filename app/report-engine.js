@@ -22311,7 +22311,7 @@ function _rptA36PhaseTableDerive(d, opts) {
   //
   // 2026-07-30 (contradiction fix, copy-only): the "if we have money to spare" framing above was
   // written to match Matt's literal 07-29 request, but it implies Phase 1 hardware is a budget
-  // contingency. 2026-11-10 (JOCO-16): PRICING_NO_HW_SCORE_BONUS was REMOVED (ranking is ROI only); the
+  // contingency. 2026-11-10 (PD-16): PRICING_NO_HW_SCORE_BONUS was REMOVED (ranking is ROI only); the
   // Phase 1 is 100% programming claim was checked on real data, found false, and removed (see below).
   // Historical note: it never was a contingency: the then-shipped ranking (PRICING_NO_HW_SCORE_BONUS)
   // biases no-hardware units ahead of hardware units in the sort, so Phase 1 (the whole term —
@@ -22325,7 +22325,7 @@ function _rptA36PhaseTableDerive(d, opts) {
   // not to move client dollars via this fix). See dashboardlogic.md 2026-07-30 entry.
   // 2026-11-10 (item 6d8e91cc): the fixed PHASE_IMPROVEMENTS / EXPECTED_RESULTS arrays were removed.
   // No code read them (dead since the month-column rebuild below), and their "every sequence that does
-  // not require a new sensor" claim was false on real data: with ROI-only ranking (JOCO-16) the term
+  // not require a new sensor" claim was false on real data: with ROI-only ranking (PD-16) the term
   // holds sensor installs on 3 of 4 projects (live pull 2026-11-10). The printed table is built only
   // from the real term rows: month cells "Begin X programming (N sequences, M sensors)" and the
   // Expected Results line from _rptA36PhaseSeqCategoryNames(termRows). The history above is kept for
