@@ -21699,11 +21699,9 @@ function _rptA36WhyThisApproachHTML(HEAD, UL) {
  * _pricingComputeRecommendedTimeline), was removed 2026-07-29 (Matt, verbatim: "why would you
  * put continues in phase x for every building? That is redundant... let's just remove the
  * buildings completely from that phase table since all buildings are included.") — see the
- * removal comment in _rptA36PhaseTableInnerHTML. Included Improvements and Expected Results
- * (2026-07-29 rewrite, Matt's own phase framing — see the PHASE_IMPROVEMENTS/EXPECTED_RESULTS
- * header comment in _rptA36PhaseTableInnerHTML) are fixed, generic phase-position narrative
- * (foundation -> expansion -> completion) that names no client-specific fact, matching the
- * target's own wording verbatim.
+ * removal comment in _rptA36PhaseTableInnerHTML. The month cells and the Expected Results line
+ * are built from the real term rows (2026-11-10: the fixed generic narrative arrays were dead
+ * code and were removed; see the comment in _rptA36PhaseTableInnerHTML).
  * Returns '' content gracefully (a single "not yet available" page) if no priced timeline exists
  * yet for this project (i.e. pricing hasn't been configured) rather than showing empty cells.
  */
@@ -21880,8 +21878,7 @@ function _pricingProposalTermMonthLabels(termPhases) {
  * the Cost Estimate prices 14 distinct sequence categories across the full scope ($336,572 total),
  * but the Phase table's "Included Improvements" row previously only ever named DCV explicitly
  * (via the row.label ' (CO2/DCV Programming)' suffix elsewhere in pricing-estimator.js); every
- * other priced category was invisible to the client behind the generic PHASE_IMPROVEMENTS
- * narrative below.
+ * other priced category was invisible to the client behind a generic narrative (removed 2026-11-10).
  * Source of truth: EM_SEQUENCE_DEFS[*].label (equipment-matrix.js) — NEVER a hardcoded name list,
  * so a future sequence def addition/rename is picked up automatically here with zero changes.
  * Names are emitted in EM_SEQUENCE_DEFS' own declared order (AHU -> VAV -> HWP -> CHWP -> DCV),
@@ -22314,8 +22311,8 @@ function _rptA36PhaseTableDerive(d, opts) {
   //
   // 2026-07-30 (contradiction fix, copy-only): the "if we have money to spare" framing above was
   // written to match Matt's literal 07-29 request, but it implies Phase 1 hardware is a budget
-  // contingency. 2026-11-10 (JOCO-16): PRICING_NO_HW_SCORE_BONUS was REMOVED (ranking is ROI only), so the
-  // claim below that Phase 1 is 100% programming must be re-checked against real data before release.
+  // contingency. 2026-11-10 (JOCO-16): PRICING_NO_HW_SCORE_BONUS was REMOVED (ranking is ROI only); the
+  // Phase 1 is 100% programming claim was checked on real data, found false, and removed (see below).
   // Historical note: it never was a contingency: the then-shipped ranking (PRICING_NO_HW_SCORE_BONUS)
   // biases no-hardware units ahead of hardware units in the sort, so Phase 1 (the whole term —
   // PRICING_PROPOSAL_TERM_PHASE_COUNT=1) is 100% programming on equipment that already has the
@@ -22326,22 +22323,13 @@ function _rptA36PhaseTableDerive(d, opts) {
   // is done — instead of describing a contingency the algorithm never produces. The ranking itself
   // was NOT changed (that remains a separate true-ROI workstream, per Matt's explicit instruction
   // not to move client dollars via this fix). See dashboardlogic.md 2026-07-30 entry.
-  // PHASE_IMPROVEMENTS[0]/EXPECTED_RESULTS[0] describe the current term (rendered below, under the
-  // real month headers). Index 1/2 are no longer rendered as separate phase columns — the table
-  // shows only the term (work beyond the term is intentionally not shown; the Future Work section
-  // that used to name it was removed at Matt's direction, 2026-08-03).
-  var PHASE_IMPROVEMENTS = [
-    'Programs every control sequence that does not require a new sensor to be installed, and sets up automated ' +
-      'reporting and alarms so problems are caught right away. Sequencing is prioritized by what can already be ' +
-      'done with the sensors in place today; hardware installation for the remaining sequences follows once this ' +
-      'programming work is complete.',
-  ];
-
-  var EXPECTED_RESULTS = [
-    'Immediate visibility into how equipment is running through reporting and alarms, plus the efficiency and ' +
-      'comfort improvements available from every sequence that does not require new hardware — the fastest, ' +
-      'lowest-cost gains first.',
-  ];
+  // 2026-11-10 (item 6d8e91cc): the fixed PHASE_IMPROVEMENTS / EXPECTED_RESULTS arrays were removed.
+  // No code read them (dead since the month-column rebuild below), and their "every sequence that does
+  // not require a new sensor" claim was false on real data: with ROI-only ranking (JOCO-16) the term
+  // holds sensor installs on 3 of 4 projects (live pull 2026-11-10). The printed table is built only
+  // from the real term rows: month cells "Begin X programming (N sequences, M sensors)" and the
+  // Expected Results line from _rptA36PhaseSeqCategoryNames(termRows). The history above is kept for
+  // Matt's 07-29 framing; the statements in it about the fixed arrays no longer apply.
 
   var thStyle =
     'padding:8px 10px;font-size:14px;font-weight:700;color:var(--rpt-page-text);text-align:center;' +
@@ -22611,9 +22599,8 @@ function _rptA36PhaseTableDerive(d, opts) {
   // month — 2026-07-31, Matt verbatim: "Really that's the best we can do? We can't say what
   // sequences or sensors to do?"). What follows is real, grounded, non-invented content: it names
   // the SAME ongoing activities (monitoring, alarms/trend review, verification) the term's own
-  // PHASE_IMPROVEMENTS/EXPECTED_RESULTS narrative above already describes for this program
-  // ("reporting and alarms so problems are caught right away" / "Immediate visibility... through
-  // reporting and alarms") — never a per-month fabricated specific, since ongoing monitoring is
+  // Expected Results line ("Reporting, alarms, and efficiency/comfort gains from ...") already
+  // names for this program — never a per-month fabricated specific, since ongoing monitoring is
   // genuinely the same activity in every month of the term regardless of whether a new unit also
   // starts that month. Same body-text style literal `intro`'s own body div above uses (14px, no
   // new font size introduced).
