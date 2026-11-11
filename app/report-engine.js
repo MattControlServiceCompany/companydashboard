@@ -25286,8 +25286,8 @@ function rptPageASHRAE36PointInventory(n, d, extraTopH) {
 // ─── Detailed ASHRAE 36 Audit Report (2026-11-10) ───────────────────────────────────────────────
 // The Detailed style is an option of the SAME Audit Report (openASHRAE36ReportModal 'audit', "Report Style").
 // It keeps the Cover, Executive Summary and ASHRAE 36 Sequences pages, replaces Per-Building Detail with one
-// chapter per library (System Overview, Equipment Descriptions, Findings with figures, Recommended Work), then
-// adds Appendix A (Deficiency List), Appendix B (Point Inventory) and, when zone set point data exists, Appendix C
+// chapter per library (System Overview, System Descriptions, Findings with figures, Recommended Work), a Findings Summary before the
+// chapters (the log of every finding), then adds Appendix A (Point Inventory) and, when zone set point data exists, Appendix B
 // (Setpoint Programming Review). Every fact comes from collectASHRAE36Data output (the same scoring and gap data the
 // Simple report reads), the Equipment Matrix rows and the Facility Audit store. No price and no hours are printed here:
 // prices belong in the Service Proposal.
@@ -25310,15 +25310,13 @@ function _a36SeqEntryLabel(seqKey, seqEntry) {
 
 var A36_DET_CAT_ORDER = ['chwp', 'hwp', 'ct', 'ahu', 'rtu', 'doas', 'furnace', 'vav', 'fpb', 'ddvav', 'zone', 'fcu', 'heater', 'ef']; // plant, then air systems, then zone terminals (same tiers as Per-Building Detail)
 var A36_DET_PAGE_SAFETY_H = 12; // px kept free at the bottom of every page
-var A36_DET_APPENDIX_A_SHARE_H = 330; // px: an Appendix A up to this height shares the first page of Appendix B
-var A36_DET_APPENDIX_HEAD_H = 44; // px: the appendix heading put above the first page of the Point Inventory and Setpoint Programming Review
+var A36_DET_APPENDIX_HEAD_H = 44; // px: the appendix heading put above the first page of the Point Inventory (Appendix A) and Setpoint Programming Review (Appendix B)
 var A36_DET_NAMES_MAX = 8; // equipment names listed before "and N more"
-var A36_DET_READINGS_MAX = 8; // readings printed per equipment group
-var A36_DET_FIGURES_PER_GROUP = 2;
 var A36_DET_PICTURE_MAX_W = 1200; // px, widest stored picture (the cropped graphic pane)
 var A36_DET_PICTURE_QUALITY = 0.8; // JPEG quality
-var A36_DET_FIG_SHOW_W = 700; // px, widest picture on the page (the text width)
-var A36_DET_FIG_SHOW_H = 400; // px, tallest picture on the page
+var A36_DET_FIG_SHOW_W = 560; // px, the text width: a picture under a finding (a properties or logic page) is at most this wide
+var A36_DET_FIG_SHOW_FRAC = 0.7; // the graphic of a group is this share of the text width, centered (Matt, 2026-11-11: about 55-65 percent)
+var A36_DET_FIG_SHOW_H = 300; // px, tallest picture on the page
 
 // Match key of a library or equipment name: case and runs of spaces do not matter ("Hot Water System -  BVL" = "hot water system - bvl").
 function _a36DetNorm(s) {
@@ -25328,12 +25326,17 @@ function _a36DetNorm(s) {
     .toLowerCase();
 }
 
-// Printed name of an equipment row. The BAS names a zone unit "Room | TAG" ("Adult Area | VAV-1-21"); the report prints
-// "TAG (Room)". A name without the bar prints as stored.
+// Printed name of an equipment row. The BAS names a zone unit "Room | TAG" ("Adult Area | VAV-1-21") or "Room - TAG"
+// ("Adult 04 - DDZD-10"); the report prints "TAG (Room)". Any other name prints as stored.
 function _a36DetEquipName(name) {
   var n = String(name == null ? '' : name).trim();
   var m = /^(.*?)\s*\|\s*(.+)$/.exec(n);
-  if (!m || !m[1].trim()) return n;
+  if (!m || !m[1].trim()) {
+    // "Room - TAG" ("Adult 04 - DDZD-10"): a dash before a tag (letters, a dash, a digit) is the same pattern. A dash before a
+    // word ("AHU-1 - BVL", "Hot Water System - Central") is part of the name and stays.
+    var dm = /^(.*?\S)\s+-\s+([A-Za-z]{1,6}-\d\S*)$/.exec(n);
+    return dm ? dm[2] + ' (' + dm[1].trim() + ')' : n;
+  }
   return m[2].trim() + ' (' + m[1].trim() + ')';
 }
 
@@ -25500,27 +25503,6 @@ function _a36DetSchedules(g, rowsById) {
     .join(', ');
 }
 
-// Readings at audit time for the first unit of a group that has any: { unit, list: [{ label, value }] }, plain names only
-// (never raw keys), or null.
-function _a36DetReadings(g, rowsById) {
-  for (var i = 0; i < g.units.length; i++) {
-    var row = rowsById[g.units[i].id];
-    if (!row || typeof emGetNormalizedPoints !== 'function') continue;
-    var pts = emGetNormalizedPoints(row);
-    var list = [];
-    Object.keys(pts).forEach(function (k) {
-      if (k.indexOf('auto_') === 0 || pts[k] == null || String(pts[k]).trim() === '') return;
-      var label = typeof emColLabel === 'function' ? emColLabel(k) : k;
-      if (!label || label === k) return;
-      var value = _a36DetReadingValue(label, pts[k]);
-      if (value === null) return;
-      list.push({ label: label, value: value });
-    });
-    if (list.length) return { unit: g.names[i], list: list.slice(0, A36_DET_READINGS_MAX) };
-  }
-  return null;
-}
-
 // Most common BAS controller type among the library's units: { type, n, total } or null.
 function _a36DetController(b, rowsById) {
   var count = {};
@@ -25554,7 +25536,7 @@ function _a36DetPickPictures(picMap, buildingNames, equipNames, loaded, opts) {
   var seen = {};
   var list = (picMap || []).filter(function (p) {
     if (!libs[_a36DetNorm(p.building)] || !eqs[_a36DetNorm(p.equipName)]) return false;
-    if (loaded && !loaded[p.file]) return false;
+    if (loaded && (!loaded[p.file] || loaded[p.file].bad)) return false; // not read, or a graphic that cannot be used (no connection, error icon, empty)
     if (opts.skip && opts.skip[p.file]) return false;
     if (opts.page && !opts.page(p.page || '')) return false;
     if (seen[p.file]) return false;
@@ -25574,7 +25556,7 @@ function _a36DetPickPictures(picMap, buildingNames, equipNames, loaded, opts) {
     .map(function (x) {
       return x.p;
     })
-    .slice(0, opts.limit || A36_DET_FIGURES_PER_GROUP);
+    .slice(0, opts.limit || 1);
 }
 
 // Picture files the report needs, so only those are read from the chosen folder: the files the model places when every listed
@@ -25588,7 +25570,9 @@ function _a36DetNeededPictureFiles(d, picMap, rowsById) {
       });
     });
     lib.findings.forEach(function (f) {
-      if (f.pic) need[f.pic.file] = true;
+      f.picCands.forEach(function (p) {
+        need[p.file] = true;
+      });
     });
   });
   return Object.keys(need);
@@ -25681,8 +25665,81 @@ function _a36DetPaneRect(w, h, px) {
   return { x: left, y: top, w: right - left, h: bottom - top };
 }
 
-// Reads one picture file, crops it to the equipment pane (_a36DetPaneRect), scales it to at most A36_DET_PICTURE_MAX_W px wide and
-// resolves a JPEG data: URL (quality 0.8) as {url,w,h,cropped}, or null.
+// Rows to cut from the top of a cropped light screen (a properties or logic page): the top row of a scrolled page can hold the
+// lower half of a text line. When the first row holds ink, rows are cut up to the first blank gap. A dark graphic and a page whose
+// first row is blank are not cut. px(x, y) = brightness 0..255 inside the crop. Returns the number of rows to cut (0 when none).
+function _a36DetTrimTop(w, h, px) {
+  var maxRows = Math.min(40, Math.floor(h * 0.1));
+  var hist = {};
+  var i;
+  var x;
+  for (i = 0; i < maxRows; i++) for (x = 0; x < w; x += 4) hist[Math.round(px(x, i) / 16)] = (hist[Math.round(px(x, i) / 16)] || 0) + 1;
+  var best = 0;
+  Object.keys(hist).forEach(function (k) {
+    if (!best || hist[k] > hist[best]) best = k;
+  });
+  var bg = best * 16;
+  if (bg < 150) return 0; // a dark graphic
+  function ink(y) {
+    var n = 0;
+    for (var xx = 0; xx < w; xx += 2) if (Math.abs(px(xx, y) - bg) > 50) n++;
+    return n;
+  }
+  if (ink(0) === 0) return 0;
+  for (var j = 1; j < maxRows - 2; j++) {
+    if (ink(j) === 0 && ink(j + 1) === 0 && ink(j + 2) === 0) return j + 1;
+  }
+  return 0;
+}
+
+// Why a stored graphic is not used in the report: 'no connection' (red text "Cannot communicate with controller." at the top left),
+// 'error icon' (a red disc of the broken-picture icon), 'empty' (almost no lit pixel), or '' (usable). px(x, y) = [r, g, b] of
+// the picture as stored (after the JPEG step). Measured on the 91 pictures of the real run: red text 356 pixels in the top left band
+// against 0; the error disc 393 red pixels in a 24 px window against at most 256 (limit 320) for a slider or a gauge; 0.2-0.3 percent lit pixels
+// for the empty graphics against 1.1 percent and more for the others.
+function _a36DetPictureProblem(w, h, px) {
+  var bandH = Math.floor(h * 0.05);
+  var bandW = Math.floor(w * 0.4);
+  var red = 0;
+  var lit = 0;
+  var total = 0;
+  var x;
+  var y;
+  var rgb;
+  for (y = 0; y < bandH; y++)
+    for (x = 0; x < bandW; x++) {
+      rgb = px(x, y);
+      if (rgb[0] > 170 && rgb[1] < 80 && rgb[2] < 80) red++;
+    }
+  if (red >= 150) return 'no connection';
+  var K = 24;
+  var integ = new Int32Array((w + 1) * (h + 1));
+  for (y = 0; y < h; y++) {
+    var rowSum = 0;
+    for (x = 0; x < w; x++) {
+      rgb = px(x, y);
+      if (rgb[0] > 170 && rgb[1] < 80 && rgb[2] < 80) rowSum++;
+      integ[(y + 1) * (w + 1) + x + 1] = integ[y * (w + 1) + x + 1] + rowSum;
+      if (y % 2 === 0 && x % 2 === 0) {
+        total++;
+        if (Math.max(rgb[0], rgb[1], rgb[2]) > 90) lit++;
+      }
+    }
+  }
+  var maxWin = 0;
+  for (y = 0; y + K <= h; y += 2)
+    for (x = 0; x + K <= w; x += 2) {
+      var win = integ[(y + K) * (w + 1) + x + K] - integ[y * (w + 1) + x + K] - integ[(y + K) * (w + 1) + x] + integ[y * (w + 1) + x];
+      if (win > maxWin) maxWin = win;
+    }
+  if (maxWin >= 320) return 'error icon';
+  if (total && lit / total < 0.006) return 'empty';
+  return '';
+}
+
+// Reads one picture file, crops it to the equipment pane (_a36DetPaneRect, then _a36DetTrimTop), scales it to at most
+// A36_DET_PICTURE_MAX_W px wide and resolves a JPEG data: URL (quality 0.8) as {url,w,h,cropped,bad}, or null. bad = the
+// reason from _a36DetPictureProblem measured on the stored JPEG ('' when the picture is usable).
 function _a36DetScalePicture(file) {
   return new Promise(function (resolve) {
     var objUrl = URL.createObjectURL(file);
@@ -25700,6 +25757,10 @@ function _a36DetScalePicture(file) {
         return data[(y * w + x) * 4];
       });
       var r = rect || { x: 0, y: 0, w: w, h: h };
+      var cut = _a36DetTrimTop(r.w, r.h, function (x, y) {
+        return data[((r.y + y) * w + r.x + x) * 4];
+      });
+      if (cut) r = { x: r.x, y: r.y + cut, w: r.w, h: r.h - cut };
       var sc = r.w > A36_DET_PICTURE_MAX_W ? A36_DET_PICTURE_MAX_W / r.w : 1;
       var cw = Math.max(1, Math.round(r.w * sc));
       var ch = Math.max(1, Math.round(r.h * sc));
@@ -25711,7 +25772,25 @@ function _a36DetScalePicture(file) {
       cx.fillRect(0, 0, cw, ch);
       cx.drawImage(img, r.x, r.y, r.w, r.h, 0, 0, cw, ch);
       URL.revokeObjectURL(objUrl);
-      resolve({ url: cv.toDataURL('image/jpeg', A36_DET_PICTURE_QUALITY), w: cw, h: ch, cropped: !!rect });
+      var url = cv.toDataURL('image/jpeg', A36_DET_PICTURE_QUALITY);
+      var back = new Image();
+      back.onload = function () {
+        var c2 = document.createElement('canvas');
+        c2.width = cw;
+        c2.height = ch;
+        var x2 = c2.getContext('2d');
+        x2.drawImage(back, 0, 0);
+        var d2 = x2.getImageData(0, 0, cw, ch).data;
+        var bad = _a36DetPictureProblem(cw, ch, function (x, y) {
+          var o = (y * cw + x) * 4;
+          return [d2[o], d2[o + 1], d2[o + 2]];
+        });
+        resolve({ url: url, w: cw, h: ch, cropped: !!rect, bad: bad });
+      };
+      back.onerror = function () {
+        resolve({ url: url, w: cw, h: ch, cropped: !!rect, bad: '' });
+      };
+      back.src = url;
     };
     img.onerror = function () {
       URL.revokeObjectURL(objUrl);
@@ -25789,6 +25868,10 @@ function _a36DetPaginate(tokens, budget) {
     if (t.chapterStart && cur.length) c += A36_DET_CHAPTER_GAP_H;
     var need = c;
     for (var j = i; tokens[j].keepNext && tokens[j + 1]; j++) need += cost(tokens[j + 1], tokens[j]);
+    if (cur.length && used + need > budget && tokens[j].fig && j > i) {
+      var figCost = cost(tokens[j], tokens[j - 1]);
+      if (_a36DetShrinkFig(tokens[j], budget - used - (need - figCost))) need = need - figCost + cost(tokens[j], tokens[j - 1]);
+    }
     var newChapterPage = t.chapterStart && cur.length && budget - used < budget * A36_DET_CHAPTER_MIN_FRAC;
     if (cur.length && (newChapterPage || used + need > budget)) {
       chunks.push(cur);
@@ -25925,54 +26008,54 @@ function _a36DetScopedWork(d, b, groups) {
   return { sensors: sensors, seqs: seqs, byGroup: byGroup, building: building };
 }
 
-// Equipment cell of a Recommended Work row: the equipment type names of this library (the System Overview labels) for the
-// categories the row covers; "Building-wide" for a building-level item. The catalog count text of the row ("18 of 21 ... Terminals") is not used.
-function _a36DetRecEquipment(r, groups) {
-  var cats = [];
-  if (r.categoryQty) {
-    Object.keys(r.categoryQty).forEach(function (c) {
-      if ((r.categoryQty[c] || 0) > 0) cats.push(c);
-    });
-  }
-  if (!cats.length && r.category) cats.push(r.category);
-  var labels = [];
-  cats.forEach(function (c) {
-    var found = groups.filter(function (g) {
-      return g.category === c;
-    });
-    var names = found.length ? found.map(function (g) { return g.label; }) : ['Building-wide']; // no unit of this library has the category: a building-level item
-    names.forEach(function (l) {
-      if (l && labels.indexOf(l) === -1) labels.push(l);
-    });
-  });
-  return labels.join(', ');
+// One figure block: the picture and its numbered caption. Figure numbers run through the whole report (ctx.figure).
+function _a36DetFigureHtml(f, scale) {
+  var w = Math.round(f.w * scale);
+  var h = Math.round(f.h * scale);
+  return (
+    '<div style="margin:6px 0 10px 0;text-align:center"><img src="' +
+    f.url +
+    '" width="' +
+    w +
+    '" height="' +
+    h +
+    '" style="width:' +
+    w +
+    'px;height:' +
+    h +
+    'px" alt="Figure ' +
+    f.num +
+    '"><div style="font-size:13.34px;line-height:1.4;margin-top:3px;color:var(--rpt-page-text)">Figure ' +
+    f.num +
+    ': ' +
+    _escHtml(f.caption) +
+    '</div></div>'
+  );
 }
 
-// One figure block: the picture and its numbered caption. Figure numbers run through the whole report (ctx.figure).
-function _a36DetFigureTok(ctx, p, caption, num) {
+function _a36DetFigureTok(ctx, p, caption, num, wide) {
   var pic = ctx.pictures[p.file];
-  var sc = Math.min(A36_DET_FIG_SHOW_W / pic.w, A36_DET_FIG_SHOW_H / pic.h, 1);
-  var w = Math.round(pic.w * sc);
-  var h = Math.round(pic.h * sc);
-  return _a36DetTok(
-    '<div style="margin:6px 0 10px 0;text-align:center"><img src="' +
-      pic.url +
-      '" width="' +
-      w +
-      '" height="' +
-      h +
-      '" style="width:' +
-      w +
-      'px;height:' +
-      h +
-      'px" alt="Figure ' +
-      num +
-      '"><div style="font-size:13.34px;line-height:1.4;margin-top:3px;color:var(--rpt-page-text)">Figure ' +
-      num +
-      ': ' +
-      _escHtml(caption) +
-      '</div></div>',
-  );
+  var maxW = wide ? A36_DET_FIG_SHOW_W : Math.round(A36_DET_FIG_SHOW_W * A36_DET_FIG_SHOW_FRAC);
+  var sc = Math.min(maxW / pic.w, A36_DET_FIG_SHOW_H / pic.h, 1);
+  var t = _a36DetTok(_a36DetFigureHtml({ url: pic.url, w: Math.round(pic.w * sc), h: Math.round(pic.h * sc), num: num, caption: caption }, 1));
+  t.fig = { url: pic.url, w: Math.round(pic.w * sc), h: Math.round(pic.h * sc), num: num, caption: caption };
+  return t;
+}
+
+// A figure that does not fit the space left on its page is made smaller to fit when that takes it to at least this share of its size
+// (the page would otherwise stay half empty); below it the figure moves to the next page.
+var A36_DET_FIG_MIN_SCALE = 0.6;
+
+function _a36DetShrinkFig(t, availH) {
+  var f = t.fig;
+  var fixed = t.estH - f.h; // caption and margins
+  var sc = (availH - fixed) / f.h;
+  if (!(sc >= A36_DET_FIG_MIN_SCALE) || sc >= 1) return false;
+  var n = _a36DetTok(_a36DetFigureHtml(f, sc));
+  t.html = n.html;
+  t.estH = n.estH;
+  t.fig = { url: f.url, w: Math.round(f.w * sc), h: Math.round(f.h * sc), num: f.num, caption: f.caption };
+  return true;
 }
 
 // Words of the listed page text that tie a picture to a finding: a picture is placed under a finding only when the picture list
@@ -26000,22 +26083,6 @@ var A36_DET_FINDING_PAGE_WORDS = {
   mat: /mixed/i,
   freezeStat: /low limit|freeze/i,
 };
-
-// The function of a printed point name, for the System Descriptions sentences (first rule that matches wins).
-var A36_DET_FUNCTIONS = [
-  ['water plant equipment', /boiler|chiller|pump|water|condenser|isolation valve|cooling tower/i],
-  ['outside air and ventilation', /co2|carbon dioxide|outdoor|outside|ventilation|economizer/i],
-  ['temperature, humidity and coil valves', /temperature|set ?point|humidity|enthalpy|dewpoint|dew point|valve|coil|reheat/i],
-  ['airflow, fans and static pressure', /fan|static|airflow|flow|damper|pressure|speed|variable frequency|drive/i],
-  ['occupancy and schedule', /occupan|schedule/i],
-  ['safety and status points', /alarm|status|freeze|safety|smoke|fault/i],
-];
-var A36_DET_FUNCTION_POINTS_MAX = 6; // points of one function named in a sentence; more than this is counted and listed in Appendix B
-
-function _a36DetPointFunction(label) {
-  for (var i = 0; i < A36_DET_FUNCTIONS.length; i++) if (A36_DET_FUNCTIONS[i][1].test(label)) return A36_DET_FUNCTIONS[i][0];
-  return 'other points';
-}
 
 // Plain label of a required point category (the same helper the Sequences page uses).
 function _a36DetCatLabel(catKey) {
@@ -26047,13 +26114,56 @@ function _a36DetFraction(qty, total) {
   return qty + ' of ' + total + ' units';
 }
 
+// The "no control meaning in the body" points (outdoor dewpoint, demand level, air source mode, outdoor humidity and the like) are
+// not named in a description sentence; every point of a unit is listed in Appendix A.
+var A36_DET_TERMINALS = { vav: true, fpb: true, ddvav: true, zone: true };
+var A36_DET_CANDIDATES = 8; // listed pictures per group (or finding) whose files are read, so a graphic that cannot be used has a replacement
+
+// Point categories a missing-point finding stands for in the per-unit audit data (compliance.missingPoints[].categoryKey and
+// seqReadiness[].missingCats). The catalog merges the outdoor and return air actuators into one row, and splits the CO2 sensor
+// into a standalone zone sensor and a duct sensor by equipment type.
+function _a36DetMissingCats(key) {
+  if (key === 'damperPositionControl') return ['oaDampCmd', 'raDampCmd'];
+  if (key === 'co2_zone_standalone' || key === 'co2_zone' || key === 'co2_ahu') return ['co2'];
+  return [key];
+}
+
+// The categories of a point finding that one unit lacks. A zone that lacks both CO2 and a zone temperature is one combined sensor
+// (co2_zone) in the catalog, so a standalone CO2 or zone temperature finding does not count it.
+function _a36DetUnitMissing(eq, key) {
+  var have = {};
+  ((eq.compliance && eq.compliance.missingPoints) || []).forEach(function (mp) {
+    have[mp.categoryKey] = true;
+  });
+  if (key === 'co2_zone_standalone' && have.zoneTemp) return [];
+  if (key === 'co2_zone' && !have.zoneTemp) return [];
+  if (key === 'zoneTemp' && have.co2) return [];
+  return _a36DetMissingCats(key).filter(function (c) {
+    return have[c];
+  });
+}
+
+// "Install sensor" is for a sensor; a valve, damper actuator, command, enable or speed point is "Install point" (Matt, 2026-11-11).
+function _a36DetIsSensorLabel(label) {
+  return !/valve|damper|actuator|command|set ?point|enable|speed|control/i.test(label);
+}
+
+function _a36DetJoin(list) {
+  if (list.length <= 1) return list.join('');
+  return list.slice(0, -1).join(', ') + ' and ' + list[list.length - 1];
+}
+
 // The findings model of the report, built once from the same data the Simple report uses: the priced-scope catalog rows
-// (_a36ScopedCatalogRows, through _a36DetScopedWork) and the per-unit audit results (equipResults). Findings are numbered in
-// chapter order across the report. loaded = { file: {url,w,h} } of the pictures read from the folder; null = every listed
-// file counts as available (used to find the files to read).
-// Returns { libs: [{ b, groups, work, descPics: [[picture entry] per group], findings: [finding] }], findings: [finding] }.
-// finding = { n, lib, groupLabel, kind: 'sensor'|'seq', key, label, qty, total, affected: [unit name], missing: [point label],
-//   section, impact, attribute, observed, issue, issueShort, recommendation, pic }.
+// (_a36ScopedCatalogRows, through _a36DetScopedWork) and the per-unit audit results (equipResults). One finding per missing
+// sequence per equipment group (rows of the same sequence add up); a missing point that a listed sequence of the group needs is
+// part of that sequence finding and has no finding of its own; a missing point that no listed sequence needs is a finding of its own;
+// every Facility Audit deficiency of the library is a finding too. Findings are numbered in chapter order across the report.
+// Counts are units. loaded = { file: {url,w,h,bad} } of the pictures read from the folder; null = every listed file counts as
+// available (used to find the files to read).
+// Returns { libs: [{ b, groups, work, descPics: [[picture entry (at most 1)] per group], rep: [index of the unit shown in the
+// figure of each group, -1 when none], findings: [finding] }], findings: [finding] }.
+// finding = { n, lib, groupLabel, kind: 'sensor'|'seq'|'deficiency', key, label, units, total, affected: [unit name], missing: [point
+//   label], section, impact, attribute, observed, issue, issueShort, recommendation, recEquip, recText, pic, picCands }.
 function _a36DetModel(d, rowsById, picMap, loaded) {
   var used = {};
   var libs = [];
@@ -26062,70 +26172,69 @@ function _a36DetModel(d, rowsById, picMap, loaded) {
     return /graphic/i.test(t);
   };
   var savings = typeof SEQUENCE_SAVINGS_IMPACT !== 'undefined' ? SEQUENCE_SAVINGS_IMPACT : {};
-  d.buildings.forEach(function (b) {
+  var defsLeft = _a36DetDeficiencies(d);
+  d.buildings.forEach(function (b, bi) {
     var groups = _a36DetGroups(b, rowsById);
     var work = _a36DetScopedWork(d, b, groups);
     var bn = [b.name, _a36DisplayName(b)];
-    var lib = { b: b, groups: groups, work: work, descPics: [], findings: [] };
+    var lib = { b: b, groups: groups, work: work, descPics: [], rep: [], findings: [] };
     groups.forEach(function (g) {
-      var picks = _a36DetPickPictures(picMap, bn, g.names, loaded, { page: isGraphic, skip: used });
-      picks.forEach(function (p) {
-        used[p.file] = true;
-      });
+      // One graphic per group: the first usable one of the listed graphic pages (cited first). The unit it shows is the
+      // representative unit of the group: its readings are the ones printed.
+      var picks = _a36DetPickPictures(picMap, bn, g.names, loaded, { page: isGraphic, skip: used, limit: loaded ? 1 : A36_DET_CANDIDATES });
+      if (loaded && picks.length) used[picks[0].file] = true;
       lib.descPics.push(picks);
+      lib.rep.push(loaded && picks.length ? g.names.map(_a36DetNorm).indexOf(_a36DetNorm(picks[0].equipName)) : -1);
     });
-    function add(g, kind, w) {
-      var r = w.row;
-      var key = kind === 'seq' ? r.seqKey : r._pointKey;
-      var f = { lib: _a36DisplayName(b), groupLabel: g ? g.label : 'Building-wide', kind: kind, key: key, label: w.label, qty: w.qty, total: g ? g.units.length : 0, affected: [], missing: [], pic: null };
-      if (g) {
-        var seenMissing = {};
-        g.units.forEach(function (eq) {
-          if (kind === 'seq') {
-            var sr = (eq.seqReadiness || {})[key];
-            if (sr && (sr.status === 'blocked' || sr.status === 'partial')) {
-              f.affected.push(eq.name || 'Unknown');
-              (sr.missingCats || []).forEach(function (c) {
-                var l = _a36DetCatLabel(c);
-                if (!seenMissing[l]) {
-                  seenMissing[l] = true;
-                  f.missing.push(l);
-                }
-              });
-            }
-          } else if (
-            ((eq.compliance && eq.compliance.missingPoints) || []).some(function (mp) {
-              return mp.categoryKey === key;
-            })
-          ) {
-            f.affected.push(eq.name || 'Unknown');
-          }
-        });
-      }
-      var frac = _a36DetFraction(w.qty, f.total);
-      var lc = w.label;
+    function sequenceOf(eq, key) {
+      var sr = (eq.seqReadiness || {})[key];
+      return sr && (sr.status === 'blocked' || sr.status === 'partial') ? sr : null;
+    }
+    function add(g, kind, key, label, units, row, extra) {
+      var f = {
+        lib: _a36DisplayName(b),
+        groupLabel: g ? g.label : 'Building-wide',
+        kind: kind,
+        key: key,
+        label: label,
+        units: units,
+        total: g ? g.units.length : 0,
+        affected: extra.affected || [],
+        missing: extra.missing || [],
+        pic: null,
+        picCands: [],
+      };
+      var frac = _a36DetFraction(units, f.total);
+      var recWhere = ' (' + units + ')';
       if (kind === 'seq') {
         f.section = _a36DetSeqSection(key);
         f.impact = _a36DetImpactText(ASHRAE36_SEQUENCE_PLAIN[key]);
         f.attribute = savings[key] && savings[key].type === 'savings' ? 'Energy' : 'Function';
+        var plural = f.missing.length > 1 ? 's' : '';
         f.observed =
-          (g ? 'The ' + w.label + ' sequence is not fully in place on ' + frac + '.' : 'The ' + w.label + ' sequence is not fully in place at building level (' + w.qty + ' needed).') +
-          (f.missing.length ? ' Points the sequence needs that the building automation system does not show: ' + f.missing.join(', ') + '.' : '');
-        f.issue = 'The ' + w.label + ' sequence' + (f.section ? ' (ASHRAE Guideline 36, Section ' + f.section + ')' : ' of ASHRAE Guideline 36') + ' is not fully in place.';
-        f.issueShort = w.label + ' sequence not fully in place';
-        f.recommendation = 'Program the ' + w.label + ' sequence' + (g ? ' on ' + frac : ' (quantity ' + w.qty + ')') + '.';
+          (g ? 'The ' + label + ' sequence is not fully in place on ' + frac + '.' : 'The ' + label + ' sequence is not fully in place at building level (' + units + ' needed).') +
+          (f.missing.length ? ' The building automation system shows no ' + _a36DetJoin(f.missing) + ' point' + plural + ' that the sequence needs.' : '');
+        f.issue = 'The ' + label + ' sequence' + (f.section ? ' (ASHRAE Guideline 36, Section ' + f.section + ')' : ' of ASHRAE Guideline 36') + ' is not fully in place.';
+        f.issueShort = label + ' sequence not fully in place';
+        f.recommendation =
+          (f.missing.length ? 'Add the ' + _a36DetJoin(f.missing) + ' point' + plural + ', then program' : 'Program') +
+          ' the ' + label + ' sequence' + (g ? ' on ' + frac : ' (quantity ' + units + ')') + '.';
+        f.recText = 'Program sequence: ' + label + recWhere + (f.missing.length ? '; add point' + plural + ': ' + f.missing.join(', ') : '');
       } else {
-        f.section = String(r.g36Section || '').replace(/^[§\s]*(Section\s*)?/i, '');
+        var sensor = _a36DetIsSensorLabel(label);
+        f.section = String((row && row.g36Section) || '').replace(/^[§\s]*(Section\s*)?/i, '');
         f.impact = _a36DetImpactText(ASHRAE36_GAP_DESCRIPTIONS[key] && ASHRAE36_GAP_DESCRIPTIONS[key].plain);
         f.attribute = 'Function';
         var names = '';
-        if (g && f.affected.length === w.qty && w.qty > 1 && w.qty < f.total && w.qty <= 6) names = ' (' + f.affected.map(_a36DetEquipName).join(', ') + ')';
-        else if (g && f.affected.length === 1 && w.qty === 1 && f.total > 1) names = ' (' + _a36DetEquipName(f.affected[0]) + ')';
-        f.observed = g ? 'The building automation system shows no ' + lc + ' point on ' + frac + names + '.' : 'The building automation system shows no ' + lc + ' point at building level (' + w.qty + ' needed).';
-        f.issue = 'The ' + lc + ' point is missing against ASHRAE Guideline 36' + (f.section ? ' (Section ' + f.section + ')' : '') + '.';
-        f.issueShort = w.label + ' point missing';
-        f.recommendation = 'Install the ' + lc + (g ? ' on ' + frac : ' (quantity ' + w.qty + ')') + '.';
+        if (g && f.affected.length === units && units > 1 && units < f.total && units <= 6) names = ' (' + f.affected.map(_a36DetEquipName).join(', ') + ')';
+        else if (g && f.affected.length === 1 && units === 1 && f.total > 1) names = ' (' + _a36DetEquipName(f.affected[0]) + ')';
+        f.observed = g ? 'The building automation system shows no ' + label + ' point on ' + frac + names + '.' : 'The building automation system shows no ' + label + ' point at building level (' + units + ' needed).';
+        f.issue = 'The ' + label + ' point is missing against ASHRAE Guideline 36' + (f.section ? ' (Section ' + f.section + ')' : '') + '.';
+        f.issueShort = label + ' point missing';
+        f.recommendation = sensor ? 'Install the ' + label + ' sensor' + (g ? ' on ' + frac : ' (quantity ' + units + ')') + '.' : 'Add the ' + label + ' point' + (g ? ' on ' + frac : ' (quantity ' + units + ')') + '.';
+        f.recText = (sensor ? 'Install sensor: ' : 'Install point: ') + label + recWhere;
       }
+      f.recEquip = g ? g.label : 'Building-wide';
       // A picture only when the listed page text names the topic of this finding, on a non-graphic page of an affected unit.
       var words = A36_DET_FINDING_PAGE_WORDS[key];
       if (g && words && f.affected.length) {
@@ -26134,30 +26243,150 @@ function _a36DetModel(d, rowsById, picMap, loaded) {
             return !isGraphic(t) && words.test(t);
           },
           skip: used,
-          limit: 1,
+          limit: loaded ? 1 : A36_DET_CANDIDATES,
         });
-        if (pk.length) {
+        if (loaded && pk.length) {
           f.pic = pk[0];
           used[pk[0].file] = true;
-        }
+        } else if (!loaded) f.picCands = pk;
       }
       lib.findings.push(f);
       all.push(f);
       f.n = all.length;
     }
     groups.forEach(function (g, gi) {
-      work.byGroup[gi].sensors.forEach(function (w) {
-        add(g, 'sensor', w);
+      var sw = work.byGroup[gi];
+      var seqList = [];
+      var seqBy = {};
+      sw.seqs.forEach(function (w) {
+        var key = w.row.seqKey;
+        if (!seqBy[key]) {
+          seqBy[key] = { key: key, label: w.label, row: w.row, qty: 0 };
+          seqList.push(seqBy[key]);
+        }
+        seqBy[key].qty += w.qty;
       });
-      work.byGroup[gi].seqs.forEach(function (w) {
-        add(g, 'seq', w);
+      var ptList = [];
+      var ptBy = {};
+      sw.sensors.forEach(function (w) {
+        var key = w.row._pointKey;
+        if (!ptBy[key]) {
+          ptBy[key] = { key: key, label: w.label, row: w.row, qty: 0 };
+          ptList.push(ptBy[key]);
+        }
+        ptBy[key].qty += w.qty;
+      });
+      // missing points no sequence of the group needs: standalone findings first
+      ptList.forEach(function (p) {
+        var remain = [];
+        var remainCats = {};
+        var missingUnits = 0;
+        g.units.forEach(function (eq) {
+          var cats = _a36DetUnitMissing(eq, p.key);
+          if (!cats.length) return;
+          missingUnits++;
+          var open = cats.filter(function (c) {
+            return !seqList.some(function (s) {
+              var sr = sequenceOf(eq, s.key);
+              return sr && (sr.missingCats || []).indexOf(c) !== -1;
+            });
+          });
+          if (open.length) {
+            remain.push(eq.name || 'Unknown');
+            open.forEach(function (c) {
+              remainCats[c] = true;
+            });
+          }
+        });
+        if (missingUnits > 0 && !remain.length) return; // every missing point of this finding is part of a sequence finding of the group
+        var units = Math.min(p.qty, g.units.length);
+        var label = p.label;
+        if (p.key === 'damperPositionControl' && missingUnits > 0) {
+          units = remain.length;
+          label = _a36DetJoin(
+            _a36DetMissingCats(p.key)
+              .filter(function (c) {
+                return remainCats[c];
+              })
+              .map(_a36DetCatLabel),
+          );
+        } else if (missingUnits > 0 && remain.length < missingUnits) units = remain.length;
+        if (!units) return;
+        add(g, 'sensor', p.key, label, units, p.row, { affected: missingUnits > 0 ? remain : [] });
+      });
+      seqList.forEach(function (s) {
+        var affected = [];
+        var missing = [];
+        var seen = {};
+        g.units.forEach(function (eq) {
+          var sr = sequenceOf(eq, s.key);
+          if (!sr) return;
+          affected.push(eq.name || 'Unknown');
+          (sr.missingCats || []).forEach(function (c) {
+            var l = _a36DetCatLabel(c);
+            if (!seen[l]) {
+              seen[l] = true;
+              missing.push(l);
+            }
+          });
+        });
+        add(g, 'seq', s.key, s.label, Math.min(s.qty, g.units.length), s.row, { affected: affected, missing: missing });
       });
     });
     work.building.sensors.forEach(function (w) {
-      add(null, 'sensor', w);
+      add(null, 'sensor', w.row._pointKey, w.label, w.qty, w.row, {});
     });
     work.building.seqs.forEach(function (w) {
-      add(null, 'seq', w);
+      add(null, 'seq', w.row.seqKey, w.label, w.qty, w.row, {});
+    });
+    // Facility Audit deficiencies of this library (a deficiency with no library goes to the first library)
+    var mine = [];
+    defsLeft = defsLeft.filter(function (df) {
+      var bld = _a36DetNorm(df.building) || _a36DetNorm((rowsById[df.rowId] || {}).building || '');
+      var hit = bld
+        ? bn.some(function (n) {
+            return _a36DetNorm(n) === bld;
+          })
+        : bi === 0;
+      if (hit) mine.push(df);
+      return !hit;
+    });
+    mine.forEach(function (df) {
+      var unitName = _a36DetEquipName(df.equipment || '');
+      var gMatch = null;
+      groups.forEach(function (g) {
+        if (
+          g.names.some(function (n) {
+            return _a36DetNorm(n) === _a36DetNorm(df.equipment || '');
+          })
+        )
+          gMatch = g;
+      });
+      var f = {
+        lib: _a36DisplayName(b),
+        groupLabel: gMatch ? gMatch.label : df.type || 'Equipment',
+        kind: 'deficiency',
+        key: 'deficiency',
+        label: df.issue || '',
+        units: 0,
+        total: 0,
+        affected: [df.equipment || ''],
+        missing: [],
+        pic: null,
+        picCands: [],
+        section: '',
+        impact: '',
+        attribute: 'Function',
+        observed: (unitName ? unitName + ': ' : '') + (df.issue || ''),
+        issue: '',
+        issueShort: (unitName ? unitName + ': ' : '') + (df.issue || ''),
+        recommendation: df.change || df.how || '',
+        recEquip: gMatch ? gMatch.label : df.type || 'Equipment',
+        recText: df.change || df.how || '',
+      };
+      lib.findings.push(f);
+      all.push(f);
+      f.n = all.length;
     });
     libs.push(lib);
   });
@@ -26180,7 +26409,8 @@ function _a36DetContext(d) {
 
 var A36_DET_P_TIGHT = 'margin:0 0 4px 0;font-size:14px;line-height:1.5;color:var(--rpt-page-text)';
 
-// One finding: heading, Observed, Issue, Impact (only when an approved text exists), Recommendation.
+// One finding: heading, Observed, Issue, Impact (only when an approved text exists), Recommendation. A Facility Audit deficiency has
+// Observed and Recommendation only.
 function _a36DetFindingTok(f) {
   function para(lead, text) {
     return '<p style="' + A36_DET_P_TIGHT + '"><strong>' + lead + '.</strong> ' + _escHtml(text) + '</p>';
@@ -26196,63 +26426,235 @@ function _a36DetFindingTok(f) {
       _escHtml(f.label) +
       '</div>' +
       para('Observed', f.observed) +
-      para('Issue', f.issue) +
+      (f.issue ? para('Issue', f.issue) : '') +
       (f.impact ? para('Impact', f.impact) : '') +
       para('Recommendation', f.recommendation) +
       '</div>',
   );
 }
 
-// The System Descriptions paragraphs of one group, from the data only (HTML strings).
-function _a36DetDescriptionParas(g, ctx) {
+// The audit-time reading of every point category of one unit: { categoryKey: formatted value } (a reading with no printable form is
+// left out). The raw value is the stored reading of the point the category matched (the normalized key, or "auto_" + the point name).
+function _a36DetUnitReadings(eq, rowsById) {
+  var out = {};
+  var row = rowsById[eq.id];
+  if (!row || typeof emGetNormalizedPoints !== 'function') return out;
+  var norm = emGetNormalizedPoints(row);
+  ((eq.compliance && eq.compliance.coveredPoints) || []).forEach(function (cp) {
+    var pn = String(cp.pointName || '');
+    var camel = pn
+      .split(/[^A-Za-z0-9]+/)
+      .filter(Boolean)
+      .map(function (w, i) {
+        return i === 0 ? w.charAt(0).toLowerCase() + w.slice(1) : w.charAt(0).toUpperCase() + w.slice(1);
+      })
+      .join('');
+    var raw = norm[pn] != null ? norm[pn] : norm['auto_' + camel];
+    if (raw == null && typeof emColLabel === 'function') {
+      // a matrix column: the stored key (hwSupplyTemp) differs from the label the audit shows (Hot Water Supply Temperature)
+      Object.keys(norm).some(function (k) {
+        if (k.indexOf('auto_') !== 0 && emColLabel(k) === pn) {
+          raw = norm[k];
+          return true;
+        }
+        return false;
+      });
+    }
+    if (raw == null) return;
+    var v = _a36DetReadingValue(cp.ashrae36PointName || cp.categoryLabel || '', raw);
+    if (v !== null) out[cp.categoryKey] = v;
+  });
+  return out;
+}
+
+// The control sentences of a group (plain text), from the points the group has. A sentence that states a relation (a valve holds a
+// temperature, a damper holds an airflow) is written only when the points that prove it exist; the audit-time reading of the
+// representative unit is part of the sentence. A point with no control meaning is not named (Appendix A lists it).
+function _a36DetControlSentences(g, f, rd) {
+  var total = g.units.length;
+  var out = [];
+  function cnt(k) {
+    return f.covered.by[k] ? f.covered.by[k].names.length : 0;
+  }
+  function has(k) {
+    return cnt(k) > 0;
+  }
+  // " (on 21 of 23 terminals)" when the points of a sentence are not on every unit of the group
+  function part(keys, noun) {
+    var n = Math.min.apply(null, keys.map(cnt));
+    return n > 0 && n < total ? ' (on ' + n + ' of ' + total + ' ' + noun + 's)' : '';
+  }
+  function val(k) {
+    return rd[k] || null;
+  }
+  function wv(text, k) {
+    return val(k) ? text + ' (' + val(k) + ')' : text;
+  }
+  function add(s) {
+    if (s) out.push(s);
+  }
+  function nv(k, word) {
+    return word + (val(k) ? ' ' + val(k) : '');
+  }
+  var cat = g.category;
+  if (A36_DET_TERMINALS[cat]) {
+    var flowKey = has('discFlow') ? 'discFlow' : has('primaryFlow') ? 'primaryFlow' : '';
+    var dampKey = has('dampCmd') ? 'dampCmd' : '';
+    var tz = has('zoneTemp');
+    var sps = has('htgSP') && has('coolSP');
+    if (flowKey && dampKey)
+      add('Each terminal modulates its ' + (flowKey === 'primaryFlow' ? 'primary ' : '') + 'damper to hold ' + (flowKey === 'primaryFlow' ? 'a primary airflow set point' : 'an airflow set point') + part([flowKey, dampKey], 'terminal') + '.');
+    else if (dampKey) add('Each terminal positions its damper by command' + (val(dampKey) ? ' (' + val(dampKey) + ')' : '') + part([dampKey], 'terminal') + '.');
+    else if (flowKey) add('Each terminal measures its airflow' + part([flowKey], 'terminal') + '.');
+    if (flowKey && dampKey && tz && sps)
+      add(
+        'The airflow set point resets between its minimum and maximum to hold the zone temperature' +
+          (val('zoneTemp') ? ' (' + val('zoneTemp') + ')' : '') +
+          ' between the heating set point' +
+          (val('htgSP') ? ' (' + val('htgSP') + ')' : '') +
+          ' and the cooling set point' +
+          (val('coolSP') ? ' (' + val('coolSP') + ')' : '') +
+          '.',
+      );
+    else if (tz && sps)
+      add(
+        'The zone temperature' +
+          (val('zoneTemp') ? ' (' + val('zoneTemp') + ')' : '') +
+          ' is read against a heating set point' +
+          (val('htgSP') ? ' of ' + val('htgSP') : '') +
+          ' and a cooling set point' +
+          (val('coolSP') ? ' of ' + val('coolSP') : '') +
+          '.',
+      );
+    else if (tz) add('Each terminal has a zone temperature sensor' + (val('zoneTemp') ? ' (' + val('zoneTemp') + ')' : '') + part(['zoneTemp'], 'terminal') + '.');
+    if (has('reheatValve')) {
+      var reheat = has('hwPlantStatus') ? 'Hot water reheat' : 'Reheat';
+      add(
+        tz && has('htgSP')
+          ? reheat + ' adds heat when the zone is below its heating set point' + part(['reheatValve'], 'terminal') + '.'
+          : 'Each terminal has a reheat valve' + (val('reheatValve') ? ' (' + val('reheatValve') + ')' : '') + part(['reheatValve'], 'terminal') + '.',
+      );
+    }
+    if (has('dat') && val('dat')) add('The discharge air temperature is ' + val('dat') + '.');
+    if (has('htgAdj') || has('coolAdj'))
+      add('The zone sensor can adjust the set points' + (val('htgAdj') || val('coolAdj') ? ' (heating ' + (val('htgAdj') || 'no reading') + ', cooling ' + (val('coolAdj') || 'no reading') + ')' : '') + '.');
+    if (has('co2')) add('Zone carbon dioxide is measured' + (val('co2') ? ' (' + val('co2') + ')' : '') + part(['co2'], 'terminal') + '.');
+    if (has('occSensor')) add('An occupancy sensor reports whether the zone is occupied' + (val('occSensor') ? ' (' + val('occSensor') + ')' : '') + part(['occSensor'], 'terminal') + '.');
+    if (has('vvtZoneStatus')) add('Each terminal reports its zone status' + (val('vvtZoneStatus') ? ' (' + val('vvtZoneStatus') + ')' : '') + part(['vvtZoneStatus'], 'terminal') + '.');
+    if (has('vvtHtgRequest') || has('vvtCoolRequest'))
+      add('Each terminal reports zone heat and cool requests' + part(['vvtHtgRequest', 'vvtCoolRequest'].filter(has), 'terminal') + '.');
+  } else if (cat === 'ahu' || cat === 'rtu' || cat === 'doas') {
+    var multi = /multi-zone|variable air volume/i.test(g.label);
+    var fanBits = [];
+    if (has('sfEnable')) fanBits.push('is started and stopped by an enable command');
+    if (has('sfStatus')) fanBits.push('reports its status' + (val('sfStatus') ? ' (' + val('sfStatus') + ')' : ''));
+    if (has('sfSpeed') || has('sfSpeedCmd')) fanBits.push('runs at variable speed' + (val('sfSpeed') ? ' (' + val('sfSpeed') + ')' : val('sfSpeedCmd') ? ' (' + val('sfSpeedCmd') + ')' : ''));
+    if (fanBits.length) add('The supply fan ' + _a36DetJoin(fanBits) + '.');
+    if (has('dsp') && (has('sfSpeed') || has('sfSpeedCmd')) && multi) add('The supply fan speed is varied to hold the duct static pressure' + (val('dsp') ? ' (' + val('dsp') + ')' : '') + '.');
+    else if (has('dsp')) add('The duct static pressure is measured' + (val('dsp') ? ' (' + val('dsp') + ')' : '') + '.');
+    var coils = [];
+    if (has('htgValve')) coils.push('heating coil valve' + (val('htgValve') ? ' (' + val('htgValve') + ')' : ''));
+    if (has('clgValve')) coils.push('cooling coil valve' + (val('clgValve') ? ' (' + val('clgValve') + ')' : ''));
+    if (coils.length && has('sat'))
+      add('The ' + _a36DetJoin(coils) + (coils.length > 1 ? ' are' : ' is') + ' positioned by command to hold the supply air temperature' + (val('sat') ? ' (' + val('sat') + ')' : '') + '.');
+    else if (has('sat')) add('The supply air temperature is measured' + (val('sat') ? ' (' + val('sat') + ')' : '') + '.');
+    else if (coils.length) add('The ' + _a36DetJoin(coils) + (coils.length > 1 ? ' are' : ' is') + ' positioned by command.');
+    if (has('satCoolSp') || has('satHtgSp'))
+      add('The supply air temperature set points are ' + _a36DetJoin([val('satCoolSp') ? 'cooling ' + val('satCoolSp') : '', val('satHtgSp') ? 'heating ' + val('satHtgSp') : ''].filter(Boolean)) + '.');
+    var damps = [];
+    var oaK = has('oaDampCmd') ? 'oaDampCmd' : has('oaDamp') ? 'oaDamp' : '';
+    var raK = has('raDampCmd') ? 'raDampCmd' : has('raDamp') ? 'raDamp' : '';
+    if (oaK) damps.push('outdoor air damper' + (val(oaK) ? ' (' + val(oaK) + ')' : ''));
+    if (raK) damps.push('return air damper' + (val(raK) ? ' (' + val(raK) + ')' : ''));
+    if (has('reliefDamp')) damps.push('relief damper' + (val('reliefDamp') ? ' (' + val('reliefDamp') + ')' : ''));
+    if (damps.length) add('The ' + _a36DetJoin(damps) + (damps.length > 1 ? ' are' : ' is') + (has('oaDampCmd') || has('raDampCmd') ? ' positioned by command.' : ' monitored.'));
+    var airTemps = [];
+    if (has('mat')) airTemps.push(nv('mat', 'mixed air'));
+    if (has('rat')) airTemps.push(nv('rat', 'return air'));
+    if (has('oat')) airTemps.push(nv('oat', 'outdoor air'));
+    if (airTemps.length) add('The air temperatures measured are ' + _a36DetJoin(airTemps) + '.');
+    if (has('co2') || has('co2Return')) add('The return air carbon dioxide is measured' + (val('co2') || val('co2Return') ? ' (' + (val('co2') || val('co2Return')) + ')' : '') + '.');
+    if (has('oaFlow')) add('The outdoor airflow is measured' + (val('oaFlow') ? ' (' + val('oaFlow') + ')' : '') + '.');
+    if (has('rfEnable') || has('rfSpeedCmd'))
+      add('The return fan has ' + _a36DetJoin([has('rfEnable') ? 'an enable command' : '', has('rfSpeedCmd') ? 'a speed command' + (val('rfSpeedCmd') ? ' (' + val('rfSpeedCmd') + ')' : '') : ''].filter(Boolean)) + '.');
+    if (has('freezeStat')) add('A freeze protection status point is monitored' + (val('freezeStat') ? ' (' + val('freezeStat') + ')' : '') + '.');
+    if (has('bldgPressure')) add('The building static pressure is measured' + (val('bldgPressure') ? ' (' + val('bldgPressure') + ')' : '') + '.');
+    if (has('ervWheel')) add('The energy recovery wheel speed and status are reported' + (val('ervWheel') ? ' (' + val('ervWheel') + ')' : '') + '.');
+    if (!multi && has('htgSP') && has('coolSP')) add('The zone set points are heating ' + (val('htgSP') || 'no reading') + ' and cooling ' + (val('coolSP') || 'no reading') + '.');
+  } else if (cat === 'hwp') {
+    var boiler = [];
+    if (has('boilerEnable')) boiler.push('is started by an enable command');
+    if (has('boilerStatus')) boiler.push('reports its status' + (val('boilerStatus') ? ' (' + val('boilerStatus') + ')' : ''));
+    if (boiler.length) add('The boiler ' + _a36DetJoin(boiler) + '.');
+    var pump = [];
+    if (has('hwPumpEnable')) pump.push('an enable command');
+    if (has('hwPumpStatus')) pump.push('a status point' + (val('hwPumpStatus') ? ' (' + val('hwPumpStatus') + ')' : ''));
+    if (has('hwPumpSpeed')) pump.push('a speed command' + (val('hwPumpSpeed') ? ' (' + val('hwPumpSpeed') + ')' : ''));
+    if (pump.length) add('The primary hot water pump has ' + _a36DetJoin(pump) + '.');
+    if (has('hwdp') && has('hwPumpSpeed')) add('The pump speed is varied to hold the hot water differential pressure' + (val('hwdp') ? ' (' + val('hwdp') + ')' : '') + '.');
+    else if (has('hwdp')) add('The hot water differential pressure is measured' + (val('hwdp') ? ' (' + val('hwdp') + ')' : '') + '.');
+    if (has('hwst') || has('hwrt')) add('The hot water temperatures measured are ' + _a36DetJoin([has('hwst') ? nv('hwst', 'supply') : '', has('hwrt') ? nv('hwrt', 'return') : ''].filter(Boolean)) + '.');
+    if (has('hwIsoValve')) add('The status of the hot water isolation valve is reported' + (val('hwIsoValve') ? ' (' + val('hwIsoValve') + ')' : '') + '.');
+  } else if (cat === 'chwp') {
+    var chiller = [];
+    if (has('chillerEnable')) chiller.push('is started by an enable command');
+    if (has('chillerStatus')) chiller.push('reports its status' + (val('chillerStatus') ? ' (' + val('chillerStatus') + ')' : ''));
+    if (chiller.length) add('The chiller ' + _a36DetJoin(chiller) + '.');
+    var cpump = [];
+    if (has('pchwpEnable')) cpump.push('an enable command');
+    if (has('pchwpStatus')) cpump.push('a status point' + (val('pchwpStatus') ? ' (' + val('pchwpStatus') + ')' : ''));
+    if (cpump.length) add('The primary chilled water pump has ' + _a36DetJoin(cpump) + '.');
+    if (has('chwdp') && has('schwpSpeed')) add('The secondary pump speed is varied to hold the chilled water differential pressure' + (val('chwdp') ? ' (' + val('chwdp') + ')' : '') + '.');
+    else if (has('chwdp')) add('The chilled water differential pressure is measured' + (val('chwdp') ? ' (' + val('chwdp') + ')' : '') + '.');
+    if (has('chwst') && has('chwSetpoint'))
+      add('The chilled water supply temperature' + (val('chwst') ? ' (' + val('chwst') + ')' : '') + ' is read against a set point' + (val('chwSetpoint') ? ' of ' + val('chwSetpoint') : '') + '.');
+    else if (has('chwst')) add('The chilled water supply temperature is measured' + (val('chwst') ? ' (' + val('chwst') + ')' : '') + '.');
+  } else if (cat === 'fcu') {
+    var valves = [];
+    if (has('chwValve')) valves.push('cooling valve' + (val('chwValve') ? ' (' + val('chwValve') + ')' : ''));
+    if (has('hwValve')) valves.push('heating valve' + (val('hwValve') ? ' (' + val('hwValve') + ')' : ''));
+    if (valves.length && has('zoneTemp') && has('htgSP') && has('coolSP'))
+      add(
+        'The ' + _a36DetJoin(valves) + (valves.length > 1 ? ' are' : ' is') + ' modulated to hold the zone temperature' + (val('zoneTemp') ? ' (' + val('zoneTemp') + ')' : '') +
+          ' between the heating set point' + (val('htgSP') ? ' (' + val('htgSP') + ')' : '') + ' and the cooling set point' + (val('coolSP') ? ' (' + val('coolSP') + ')' : '') + '.',
+      );
+    else if (has('zoneTemp')) add('Each unit has a zone temperature sensor' + (val('zoneTemp') ? ' (' + val('zoneTemp') + ')' : '') + part(['zoneTemp'], 'unit') + '.');
+    if (has('fanStatus')) add('The fan reports its status' + (val('fanStatus') ? ' (' + val('fanStatus') + ')' : '') + part(['fanStatus'], 'unit') + '.');
+    if (has('vvtZoneStatus')) add('Each unit reports its zone status' + (val('vvtZoneStatus') ? ' (' + val('vvtZoneStatus') + ')' : '') + part(['vvtZoneStatus'], 'unit') + '.');
+  } else if (cat === 'heater') {
+    if (has('enable')) add('Each heater is started by an enable command' + (val('enable') ? ' (' + val('enable') + ')' : '') + part(['enable'], 'heater') + '.');
+    if (has('zoneTemp')) add('The zone temperature is measured' + (val('zoneTemp') ? ' (' + val('zoneTemp') + ')' : '') + part(['zoneTemp'], 'heater') + '.');
+  } else if (cat === 'ef') {
+    if (has('schedule')) add('Each exhaust fan follows an occupancy schedule' + part(['schedule'], 'fan') + '.');
+    if (has('fanStatus')) add('The fan reports its status' + (val('fanStatus') ? ' (' + val('fanStatus') + ')' : '') + part(['fanStatus'], 'fan') + '.');
+  }
+  return out;
+}
+
+// The System Descriptions paragraphs of one group (plain text): what the group is, how it is controlled (sentences with the readings
+// of the representative unit inside), the occupied schedule. repIdx = index of the unit shown in the figure, -1 when no figure.
+function _a36DetDescriptionParas(g, ctx, repIdx) {
   var paras = [];
   var f = _a36DetGroupFindings(g);
   var total = g.units.length;
-  paras.push('This system has ' + _a36DetUnits(total) + ': ' + _escHtml(_a36DetNames(g.shown)) + '.');
-  if (f.covered.keys.length) {
-    var byFn = {};
-    var fnOrder = [];
-    f.covered.keys.forEach(function (k) {
-      var c = f.covered.by[k];
-      var fn = _a36DetPointFunction(c.label);
-      if (!byFn[fn]) {
-        byFn[fn] = [];
-        fnOrder.push(fn);
-      }
-      byFn[fn].push(c.label + (c.names.length === total ? '' : ' (' + c.names.length + ' of ' + total + ' units)'));
-    });
-    var sent = fnOrder.map(function (fn) {
-      var list = byFn[fn];
-      if (list.length <= A36_DET_FUNCTION_POINTS_MAX) return 'For ' + fn + ', the building automation system provides ' + _escHtml(list.join(', ')) + '.';
-      return 'For ' + fn + ', the building automation system provides ' + list.length + ' points, including ' + _escHtml(list.slice(0, 3).join(', ')) + ' (the full list is in Appendix B).';
-    });
-    paras.push(sent.join(' '));
-  } else {
-    paras.push('The building automation system shows no sensors or control points for this equipment.');
-  }
+  var rep = g.units[repIdx >= 0 ? repIdx : 0];
+  var rd = rep ? _a36DetUnitReadings(rep, ctx.rowsById) : {};
+  paras.push(
+    'This system has ' + _a36DetUnits(total) + ': ' + _a36DetNames(g.shown) + '.' + (total > 1 && Object.keys(rd).length ? ' The readings below are from ' + g.shown[repIdx >= 0 ? repIdx : 0] + ' at the time of the audit.' : ''),
+  );
+  var body = _a36DetControlSentences(g, f, rd);
   var sched = _a36DetSchedules(g, ctx.rowsById);
-  if (sched) paras.push('The occupied schedule is ' + _escHtml(sched) + '.');
-  var rd = _a36DetReadings(g, ctx.rowsById);
-  if (rd) {
-    paras.push(
-      'At the time of the audit, ' +
-        _escHtml(_a36DetEquipName(rd.unit)) +
-        ' showed: ' +
-        rd.list
-          .map(function (r) {
-            return _escHtml(r.label) + ' ' + _escHtml(r.value);
-          })
-          .join('; ') +
-        '.',
-    );
-  }
+  if (sched) body.push('The occupied schedule is ' + sched + '.');
+  if (f.covered.keys.length) body.push('Every point of this equipment is listed in Appendix A.');
+  else body.push('The building automation system shows no sensors or control points for this equipment.');
+  paras.push(body.join(' '));
   return paras;
 }
 
 /**
  * _a36DetLibraryTokens — the flow tokens of the chapter of one library in the Detailed Audit Report: System Overview, System
- * Descriptions (prose, the graphic of the unit directly under it), Findings (one block per finding, a figure only under the
- * finding it shows), Recommended Work. The first token is flagged chapterStart; every token carries the library name (page label).
+ * Descriptions (prose, the graphic of the representative unit directly under it), Findings (one block per finding, a figure only under
+ * the finding it shows), Recommended Work. The first token is flagged chapterStart; every token carries the library name (page label).
  * @param {object} d - data from collectASHRAE36Data
  * @param {object} b - one entry of d.buildings
  * @param {object} ctx - _a36DetContext(d)
@@ -26263,7 +26665,6 @@ function _a36DetLibraryTokens(d, b, ctx) {
     return m.b === b;
   })[0];
   var groups = model.groups;
-  var work = model.work;
   var tokens = [];
 
   // 1. System Overview: equipment type, quantity, units
@@ -26285,21 +26686,21 @@ function _a36DetLibraryTokens(d, b, ctx) {
   tokens.push(_a36DetTok('<h2 style="margin:10px 0 6px 0">' + lib + ': System Descriptions</h2>', true));
   groups.forEach(function (g, gi) {
     tokens.push(_a36DetTok('<div style="' + A36_DET_H3 + '">' + _escHtml(g.label) + '</div>', true));
-    var paras = _a36DetDescriptionParas(g, ctx);
-    paras.forEach(function (p, pi) {
-      // the last paragraph stays with the graphic sentence and the graphic under it
-      tokens.push(_a36DetTok('<p style="' + A36_DET_P + '">' + p + '</p>', pi === paras.length - 1 && model.descPics[gi].length > 0));
+    var pic = model.descPics[gi][0];
+    var paras = _a36DetDescriptionParas(g, ctx, model.rep[gi]);
+    paras.forEach(function (p) {
+      tokens.push(_a36DetTok('<p style="' + A36_DET_P + '">' + _escHtml(p) + '</p>'));
     });
-    model.descPics[gi].forEach(function (p) {
+    if (pic) {
       var num = ++ctx.figure.n;
-      var at = g.names.map(_a36DetNorm).indexOf(_a36DetNorm(p.equipName));
-      var unit = at >= 0 ? g.shown[at] : _a36DetEquipName(p.equipName);
+      var at = g.names.map(_a36DetNorm).indexOf(_a36DetNorm(pic.equipName));
+      var unit = at >= 0 ? g.shown[at] : _a36DetEquipName(pic.equipName);
       tokens.push(_a36DetTok('<p style="' + A36_DET_P + '">The building automation graphic of ' + _escHtml(unit) + ' is shown in Figure ' + num + '.</p>', true));
-      tokens.push(_a36DetFigureTok(ctx, p, unit + ', ' + (_a36DetCaptionPage(p.page) || 'Graphic'), num));
-    });
+      tokens.push(_a36DetFigureTok(ctx, pic, unit + ', ' + (_a36DetCaptionPage(pic.page) || 'Graphic'), num, false));
+    }
   });
 
-  // 3. Findings: one block per finding (the same list as the Findings Summary and Appendix A)
+  // 3. Findings: one block per finding (the same list as the Findings Summary and Recommended Work)
   tokens.push(_a36DetTok('<h2 style="margin:10px 0 6px 0">' + lib + ': Findings</h2>', true));
   if (!model.findings.length) {
     tokens.push(_a36DetTok('<p style="' + A36_DET_P + '">No sensors or sequences are missing against ASHRAE Guideline 36 for this library.</p>'));
@@ -26312,24 +26713,17 @@ function _a36DetLibraryTokens(d, b, ctx) {
       var at = f.affected.map(_a36DetNorm).indexOf(_a36DetNorm(f.pic.equipName));
       var unit = _a36DetEquipName(at >= 0 ? f.affected[at] : f.pic.equipName);
       ft.keepNext = true;
-      tokens.push(_a36DetFigureTok(ctx, f.pic, f.label + ': ' + unit + ', ' + _a36DetCaptionPage(f.pic.page), num));
+      tokens.push(_a36DetFigureTok(ctx, f.pic, f.label + ': ' + unit + ', ' + _a36DetCaptionPage(f.pic.page), num, true));
     }
   });
 
-  // 4. Recommended Work (no prices, no hours): one row per priced-scope row, full quantity, sensors first, then sequences
-  var recRows = [];
-  work.sensors.forEach(function (r) {
-    recRows.push([_a36DetRecEquipment(r, groups), 'Install sensor: ' + r.item + ' (' + (r.qty || 0) + ')']);
-  });
-  work.seqs.forEach(function (r) {
-    recRows.push([_a36DetRecEquipment(r, groups), 'Program sequence: ' + r.item + ' (' + (r.qty || 0) + ')']);
-  });
+  // 4. Recommended Work (no prices, no hours): one row per finding, the same units as the finding
   tokens.push(_a36DetTok('<h2 style="margin:10px 0 6px 0">' + lib + ': Recommended Work</h2>', true));
-  if (recRows.length) {
+  if (model.findings.length) {
     _a36DetTableToks(
-      _a36DetTableOpen([8, 32, 60], ['Item', 'Equipment', 'Recommended Work']),
-      recRows.map(function (r, i) {
-        return _a36DetRow([{ html: String(i + 1), right: true }, _escHtml(r[0]), _escHtml(r[1])]);
+      _a36DetTableOpen([11, 27, 62], ['Finding', 'Equipment', 'Recommended Work']),
+      model.findings.map(function (f) {
+        return _a36DetRow([{ html: String(f.n), right: true }, _escHtml(f.recEquip), _escHtml(f.recText)]);
       }),
     ).forEach(function (t) {
       tokens.push(t);
@@ -26363,8 +26757,9 @@ function rptPageA36DetailedLibraries(n, d, ctx) {
 }
 
 /**
- * _a36DetSummaryTokens — the Findings Summary printed before the chapters: Library | System | Issue | Attribute for every finding of
- * the report. The Attribute is Energy when the sequence is listed as a savings sequence in SEQUENCE_SAVINGS_IMPACT, else Function.
+ * _a36DetSummaryTokens — the Findings Summary printed before the chapters, and the log of the report: Library | System | Issue |
+ * Attribute for every finding (same numbers as the chapters and the Recommended Work tables). The Attribute is Energy when the
+ * sequence is listed as a savings sequence in SEQUENCE_SAVINGS_IMPACT, else Function.
  */
 function _a36DetSummaryTokens(ctx) {
   var tokens = [_a36DetTok('<h2 style="margin:0 0 6px 0">Findings Summary</h2>', true)];
@@ -26373,7 +26768,7 @@ function _a36DetSummaryTokens(ctx) {
     tokens.push(_a36DetTok('<p style="' + A36_DET_P + '">No sensors or sequences are missing against ASHRAE Guideline 36.</p>'));
   } else {
     _a36DetTableToks(
-      _a36DetTableOpen([21, 21, 42, 16], ['Library', 'System', 'Issue', 'Attribute']),
+      _a36DetTableOpen([20, 22, 48, 10], ['Library', 'System', 'Issue', 'Attribute']),
       list.map(function (f) {
         return _a36DetRow([_escHtml(f.lib), _escHtml(f.groupLabel), _escHtml(f.n + '. ' + f.issueShort), _escHtml(f.attribute)]);
       }),
@@ -26388,11 +26783,11 @@ function _a36DetSummaryTokens(ctx) {
 }
 
 /**
- * _a36DetPointTokens — Appendix B, second part: the points the building automation system shows, per library and equipment type
- * (the point lists that the System Descriptions sentences summarise).
+ * _a36DetPointTokens — Appendix A, second part: the points the building automation system shows, per library and equipment type
+ * (the point lists that the System Descriptions sentences leave out).
  */
 function _a36DetPointTokens(ctx) {
-  var tokens = [_a36DetTok('<h2 style="margin:0 0 6px 0">Appendix B: Points by Equipment Type</h2>', true)];
+  var tokens = [_a36DetTok('<h2 style="margin:0 0 6px 0">Appendix A: Points by Equipment Type</h2>', true)];
   ctx.model.libs.forEach(function (m) {
     m.groups.forEach(function (g) {
       var f = _a36DetGroupFindings(g);
@@ -26406,7 +26801,7 @@ function _a36DetPointTokens(ctx) {
     });
   });
   tokens.forEach(function (t) {
-    t.lib = 'Appendix B: Point Inventory';
+    t.lib = 'Appendix A: Point Inventory';
   });
   return tokens;
 }
@@ -26431,37 +26826,6 @@ function _a36DetDeficiencies(d) {
   return faAllFindings(d.project.id).filter(function (f) {
     return faIsDeficiency(f) && (!_a36DetNorm(f.building) || libs[_a36DetNorm(f.building)]);
   });
-}
-
-// The flow tokens of Appendix A: Issues Log (heading, then the table rows); [] when there is no finding and no deficiency. The
-// rows are the findings of the chapters (same numbers) followed by the deficiency findings of the Facility Audit tab.
-function _a36DetIssuesLogTokens(d, ctx) {
-  var rows = ctx.model.findings.map(function (f) {
-    return [String(f.n), f.lib, f.groupLabel, f.issue, f.recommendation];
-  });
-  _a36DetDeficiencies(d).forEach(function (f) {
-    rows.push([String(rows.length + 1), f.building || '', _a36DetEquipName(f.equipment || ''), f.issue || '', f.change || f.how || '']);
-  });
-  if (!rows.length) return [];
-  var tokens = [_a36DetTok('<h2 style="margin:0 0 6px 0">Appendix A: Issues Log</h2>', true)];
-  _a36DetTableToks(
-    _a36DetTableOpen([6, 16, 18, 32, 28], ['No.', 'Library', 'System', 'Issue', 'Recommended Work']),
-    rows.map(function (r) {
-      return _a36DetRow([{ html: _escHtml(r[0]), right: true }, _escHtml(r[1]), _escHtml(r[2]), _escHtml(r[3]), _escHtml(r[4])]);
-    }),
-  ).forEach(function (t) {
-    tokens.push(t);
-  });
-  return tokens;
-}
-
-// Height in px of a token list that starts a page.
-function _a36DetTokensH(tokens) {
-  var h = 0;
-  tokens.forEach(function (t, i) {
-    h += _a36DetCost(t, tokens[i - 1]);
-  });
-  return h;
 }
 
 // ─── generateASHRAE36AuditHTML ────────────────────────────────────────────
@@ -26591,24 +26955,13 @@ function generateASHRAE36AuditHTML(data, selectedSections) {
     _flushPendingBuildingBlocks();
   }
 
-  // Detailed style: one chapter per library, then Appendix A (Deficiency List). Appendix B is the Point Inventory below.
-  var detDefTokens = [];
-  var detDefShared = false;
+  // Detailed style: one chapter per library. The Findings Summary before the chapters is the log of every finding (no issues log
+  // at the back). Appendix A is the Point Inventory, Appendix B the Set Point Review.
   if (detailed) {
     rptPageA36DetailedLibraries(pageNum, data, detCtx).forEach(function (pg) {
       pages.push(_tagA36Section(pg, 'detailedLibrary'));
       pageNum++;
     });
-    // A short Appendix A (up to A36_DET_APPENDIX_A_SHARE_H) is printed above Appendix B on the first page of the Point
-    // Inventory instead of on a page of its own.
-    detDefTokens = _a36DetIssuesLogTokens(data, detCtx);
-    detDefShared = detDefTokens.length > 0 && s.pointInventory !== false && _a36DetTokensH(detDefTokens) <= A36_DET_APPENDIX_A_SHARE_H;
-    if (!detDefShared && detDefTokens.length) {
-      _a36DetPages(pageNum, data, detDefTokens, 'Appendix A: Issues Log').forEach(function (pg) {
-        pages.push(_tagA36Section(pg, 'detailedAppendixA'));
-        pageNum++;
-      });
-    }
   }
 
   // Batch 3 item 6 / plan 3e Option A: Recommendations page deleted from the Audit report
@@ -26616,7 +26969,7 @@ function generateASHRAE36AuditHTML(data, selectedSections) {
 
   // Phase 5 — Setpoint Programming Review (appended after recommendations)
   // Returns an Array (like executive section) — spread each page individually.
-  // Detailed style prints it last, as Appendix C, and only when zone set point data exists.
+  // Detailed style prints it last, as Appendix B, and only when zone set point data exists.
   if (s.setpointReview !== false && !detailed) {
     var spPages = rptPageASHRAE36SetpointReview(pageNum, data);
     spPages.forEach(function (pg) {
@@ -26629,22 +26982,19 @@ function generateASHRAE36AuditHTML(data, selectedSections) {
   // Returns an Array (like setpointReview) — spread each page individually so pagination
   // (2026-06-30 fix) actually takes effect instead of collapsing back into one overflowing page.
   if (s.pointInventory !== false) {
-    var invAboveH = detailed ? A36_DET_APPENDIX_HEAD_H + (detDefShared ? _a36DetTokensH(detDefTokens) : 0) : 0;
+    var invAboveH = detailed ? A36_DET_APPENDIX_HEAD_H : 0;
     var invPages = rptPageASHRAE36PointInventory(pageNum, data, invAboveH);
     invPages.forEach(function (pg, i) {
       if (detailed) {
-        pg =
-          i === 0
-            ? _a36DetAppendixHeading(pg, 'Appendix B: Point Inventory', detDefShared ? _a36DetBody(detDefTokens) : '')
-            : pg.replace('>Point Inventory Completeness (', '>Appendix B: Point Inventory (');
+        pg = i === 0 ? _a36DetAppendixHeading(pg, 'Appendix A: Point Inventory', '') : pg.replace('>Point Inventory Completeness (', '>Appendix A: Point Inventory (');
       }
       pages.push(_tagA36Section(pg, 'pointInventory'));
       pageNum++;
     });
     if (detailed) {
-      // Appendix B, second part: the point lists per library and equipment type (moved out of the chapters).
-      _a36DetPages(pageNum, data, _a36DetPointTokens(detCtx), 'Appendix B: Point Inventory').forEach(function (pg) {
-        pages.push(_tagA36Section(pg, 'detailedAppendixB'));
+      // Appendix A, second part: the point lists per library and equipment type (moved out of the chapters).
+      _a36DetPages(pageNum, data, _a36DetPointTokens(detCtx), 'Appendix A: Point Inventory').forEach(function (pg) {
+        pages.push(_tagA36Section(pg, 'detailedAppendixA'));
         pageNum++;
       });
     }
@@ -26660,7 +27010,7 @@ function generateASHRAE36AuditHTML(data, selectedSections) {
       rptPageASHRAE36SetpointReview(pageNum, data, A36_DET_APPENDIX_HEAD_H).forEach(function (pg, i) {
         pages.push(
           _tagA36Section(
-            i === 0 ? _a36DetAppendixHeading(pg, 'Appendix C: Setpoint Programming Review') : pg.replace('>Setpoint Programming Review (', '>Appendix C: Setpoint Programming Review ('),
+            i === 0 ? _a36DetAppendixHeading(pg, 'Appendix B: Setpoint Programming Review') : pg.replace('>Setpoint Programming Review (', '>Appendix B: Setpoint Programming Review ('),
             'setpointReview',
           ),
         );
@@ -26984,7 +27334,7 @@ function openASHRAE36ReportModal(projId, type) {
 window.openASHRAE36ReportModal = openASHRAE36ReportModal;
 
 // Report Style radio of the audit modal: Detailed shows the picture folder picker and turns on the Point Inventory
-// (Appendix B) and the Setpoint Programming Review (Appendix C, printed only when zone set point data exists). Per-Building Detail
+// (Appendix A) and the Setpoint Programming Review (Appendix B, printed only when zone set point data exists). Per-Building Detail
 // and the infrastructure notes stay available in Detailed (default unchecked, as in Simple).
 function _a36StyleChanged() {
   var checked = document.querySelector('input[name="a36Style"]:checked');

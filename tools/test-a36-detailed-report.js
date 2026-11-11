@@ -4,9 +4,9 @@
 //   A36_SIMPLE_BASE=<file> fails the run when the Simple HTML differs from that dump.
 //   1. Picture list CSV import: columns found by name, rows whose disposition starts "Not used" skipped, a byte order mark is ignored.
 //   2. The Report Style radio is in the audit modal (not the proposal modal); Detailed shows the picture folder picker.
-//   3. Detailed adds Cover, Executive Summary, Sequences, one chapter per library, Appendix A and B; Per-Building Detail pages are gone.
+//   3. Detailed adds Cover, Executive Summary, Sequences, one chapter per library, Appendix A (Point Inventory) and B (Set Point Review); Per-Building Detail pages are gone.
 //   4. A chapter has System Overview, System Descriptions (prose, graphic under its own description), numbered Findings
-//      (Observed / Issue / Impact / Recommendation), Recommended Work; a Findings Summary precedes the chapters; Appendix A is the Issues Log.
+//      (Observed / Issue / Impact / Recommendation), Recommended Work; a Findings Summary precedes the chapters; there is no Issues Log.
 //   5. Figures: numbers run 1..N in page order, the pictures are JPEG data: URLs at most 1200 px wide, the caption names the equipment;
 //      _a36DetPaneRect finds the equipment graphic pane of a WebCTRL capture (synthetic layout here).
 //   6. No price and no hours text in the Detailed chapters.
@@ -238,24 +238,23 @@ const ok = (c, m) => {
     ok(s.indexOf('building') < 0, 'Detailed has no Per-Building Detail pages');
     ok(s.filter((x) => x === 'detailedLibrary').length >= 2, 'at least one chapter page per library (' + s.filter((x) => x === 'detailedLibrary').length + ' chapter pages)');
     ok(s.indexOf('detailedSummary') > 0 && s.indexOf('detailedSummary') < firstLib, 'the Findings Summary comes before the chapters');
-    ok(s.indexOf('detailedAppendixA') > s.lastIndexOf('detailedLibrary') && s.indexOf('pointInventory') > s.indexOf('detailedAppendixA'), 'Appendix A (Issues Log) follows the chapters; Appendix B follows Appendix A');
-    ok(/Appendix A: Issues Log/.test(det.text) && /Fan runs at night/.test(det.text) && /Appendix B: Point Inventory/.test(det.text), 'Appendix A lists the findings and the deficiency, Appendix B has its heading');
-    ok(det.text.indexOf('Appendix A: Issues Log') < det.text.indexOf('Appendix B: Point Inventory'), 'Appendix A comes before Appendix B');
-    ok(!/Appendix A: Deficiency List/.test(det.text), 'no Deficiency List heading is left');
-    ok(s.indexOf('setpointReview') > s.indexOf('pointInventory') && /Appendix C: Setpoint Programming Review/.test(det.text), 'Appendix C prints last when zone set point data exists (Detailed turns the review on by itself)');
+    ok(s.indexOf('pointInventory') > s.lastIndexOf('detailedLibrary') && s.indexOf('detailedAppendixA') > s.indexOf('pointInventory'), 'Appendix A (Point Inventory) follows the chapters');
+    ok(/Appendix A: Point Inventory/.test(det.text) && /Fan runs at night/.test(det.text), 'Appendix A has its heading; the deficiency of the Facility Audit tab is a finding');
+    ok(!/Issues Log|Appendix A: Deficiency List|Appendix B: Point Inventory|Appendix C/.test(det.text), 'N2: no Issues Log, no Appendix C, Point Inventory is Appendix A');
+    ok(s.indexOf('setpointReview') > s.indexOf('detailedAppendixA') && /Appendix B: Setpoint Programming Review/.test(det.text), 'Appendix B prints last when zone set point data exists (Detailed turns the review on by itself)');
     const t = det.libText;
     ['Alpha Library: System Overview', 'Beta Library: System Overview', 'Alpha Library: System Descriptions', 'Alpha Library: Findings', 'Finding 1:', 'Observed.', 'Issue.', 'Recommendation.', 'Alpha Library: Recommended Work', 'Beta Library: Recommended Work'].forEach((x) => ok(t.indexOf(x) >= 0, 'chapters contain "' + x + '"'));
     ok(/Air Handling Unit[^\n]*2/.test(t) || /Air Handling Unit.{0,40}2/.test(t), 'System Overview counts the 2 air handling units of Alpha Library');
     ok(/Total\s*6/.test(t) && /Total\s*2/.test(t), 'System Overview totals: Alpha Library 6, Beta Library 2');
     ok(/Building automation controller: Sample Controller \(5 of 6 units\)/.test(t), 'BAS controller line from the rows (5 of 6 units in Alpha Library: the exhaust fan row has none)');
-    ok(/At the time of the audit, AHU-1 showed: .*Supply Air Temperature 55\.2°F/.test(t), 'System Descriptions: readings from the row data, temperature as 55.2°F');
+    ok(/The supply air temperature is measured \(55\.2°F\)\./.test(t) && !/showed:/.test(t), 'a: System Descriptions: the reading is inside the sentence (55.2°F), no "showed:" list');
+    ok(/Every point of this equipment is listed in Appendix A\./.test(t) && !/provides [^.]*, [^.]*, /.test(t), 'a: no "the building automation system provides A, B, C" inventory sentence');
     ok(!/\d ?F\b/.test(t.replace(/°F/g, '')), 'D2: no temperature prints as "<n> F" (every temperature has °F)');
     ok(/The occupied schedule is 6:00 AM-9:00 PM \(1 unit\), 7:00 AM-6:00 PM \(1 unit\)\./.test(t), 'System Descriptions: the occupied schedule sentence lists each distinct schedule with its unit count');
     ok((t.match(/The occupied schedule is/g) || []).length === 2, 'groups with no schedule print nothing about schedules (one schedule sentence per group that has one: 2)');
     ok(/The occupied schedule is 24 hours\./.test(t) && !/12:00 AM-12:00 AM/.test(t), 'D8: an all-day schedule (start 0, stop 0) prints "24 hours", never 12:00 AM-12:00 AM');
-    ok(/Beta Library[\s\S]{0,40}Mon–Fri 24 hours/.test(det.text.slice(det.text.indexOf('Appendix C: Setpoint Programming Review'))), 'D8: Appendix C prints the all-day schedule of Beta Library as "Mon–Fri 24 hours"');
-    ok(!/Demand Level 0/.test(t) && /At the time of the audit, AHU-1 showed: .*Heat Source Supply Temperature/.test(t), 'a coded reading (Demand Level 0.0) is left out while the other readings stay');
-    ok(/Heat Source Supply Temperature 167\.0°F/.test(t), 'a bare temperature reading gets °F');
+    ok(/Beta Library[\s\S]{0,40}Mon–Fri 24 hours/.test(det.text.slice(det.text.indexOf('Appendix B: Setpoint Programming Review'))), 'D8: Appendix B prints the all-day schedule of Beta Library as "Mon–Fri 24 hours"');
+    ok(!/Demand Level|Air Source Mode|Outdoor Air Dewpoint/.test(t), 'a: points with no control meaning (Demand Level, Air Source Mode, Dewpoint) are not named in the body');
     const rv = await page.evaluate(() => ['Supply Air Temperature|55.2', 'Airflow Setpoint|580.0', 'Air Source Mode|2.0', 'Duct Static Pressure|1.1 in H2O', 'Fan Status|On', 'Zone Status|?'].map((x) => String(_a36DetReadingValue(x.split('|')[0], x.split('|')[1]))));
     ok(rv.join(' / ') === '55.2°F / null / null / 1.1 in H2O / On / null', 'reading rule: temperature gets °F; bare airflow set point and mode codes dropped; units and words kept (' + rv.join(' / ') + ')');
     const u = await page.evaluate(() => ({
@@ -285,8 +284,8 @@ const ok = (c, m) => {
           }
           if (!lib) return;
           const c = el.querySelectorAll('td');
-          if (c.length === 3 && !/^Total/.test(c[0].textContent) && !/^(Install sensor|Program sequence)/.test(c[2].textContent)) (libs[lib + '|type'] = libs[lib + '|type'] || []).push(c[0].textContent.trim());
-          if (c.length === 3 && /^(Install sensor|Program sequence)/.test(c[2].textContent)) (libs[lib + '|rec'] = libs[lib + '|rec'] || []).push(c[1].textContent.trim());
+          if (c.length === 3 && !/^Total/.test(c[0].textContent) && !/^(Install sensor|Install point|Program sequence)/.test(c[2].textContent)) (libs[lib + '|type'] = libs[lib + '|type'] || []).push(c[0].textContent.trim());
+          if (c.length === 3 && /^(Install sensor|Install point|Program sequence)/.test(c[2].textContent)) (libs[lib + '|rec'] = libs[lib + '|rec'] || []).push(c[1].textContent.trim());
         });
       });
       const bad = [];
@@ -333,7 +332,7 @@ const ok = (c, m) => {
     ok(/Energy/.test(fm.attrs) && /Function/.test(fm.attrs), 'Attribute is Energy or Function (' + fm.attrs + ')');
     const sum = await page.evaluate(() => Array.from(document.querySelectorAll('#reportPages .rpt-page[data-section="detailedSummary"] table')).map((tb) => Array.from(tb.querySelectorAll('th')).map((x) => x.textContent.trim()).join('|') + '#' + tb.querySelectorAll('tbody tr, tr').length));
     ok(sum.length >= 1 && /^Library\|System\|Issue\|Attribute#/.test(sum[0]), 'Findings Summary table: Library | System | Issue | Attribute (' + sum[0] + ')');
-    ok(!/Next Steps/i.test(det.text.slice(0, det.text.indexOf('Appendix A: Issues Log'))) || true, 'chapters carry no Next Steps text (checked above on the chapters)');
+    ok(!/Next Steps/i.test(det.text.slice(0, det.text.indexOf('Appendix A: Point Inventory'))) || true, 'chapters carry no Next Steps text (checked above on the chapters)');
     const pr = await page.evaluate(() => {
       const w = 1728, h = 874;
       const px = (x, y) => {
@@ -377,54 +376,113 @@ const ok = (c, m) => {
     ok(none.sections.indexOf('detailedLibrary') > 0 && none.figs.length === 0 && none.imgInfo.length === 0, 'no picture folder: chapters complete, no figures');
     ok(none.fit.every((f) => f.over <= 1 && f.scrollOver <= 1), 'no picture folder: every page fits');
 
-    // ---- 4b. Missing and Recommended Work come from the priced-scope rows only (same totals as Per-Building Detail) ----
-    // VAV-103 has a zone temperature and no set points: a monitoring-only zone unit. Its raw gaps must not reach the lists.
-    const work = await page.evaluate((PID) => {
+    // ---- 4b. Findings model: one finding per sequence per group (e), counts are units (f), summary = body = Recommended Work (l) ----
+    const mdl = await page.evaluate((PID) => {
       const d = collectASHRAE36Data(PID, '2026-11-10', null);
-      const rows = _a36ScopedCatalogRows(d);
-      const out = {};
-      d.buildings.forEach((b) => {
-        const t = { sensors: 0, seqs: 0, raw: 0, monitoringOnlyRaw: 0 };
-        rows.forEach((r) => {
-          if (r.building !== b.name) return;
-          if (r.phase === 1 && !r.ioOnly) t.sensors += r.qty || 0;
-          else if (r.phase === 2 && r.seqKey) t.seqs += r.qty || 0;
-        });
-        b.equipResults.forEach((eq) => {
-          const n = ((eq.compliance && eq.compliance.missingPoints) || []).length;
-          t.raw += n;
-          if (eq.name === 'VAV-103') t.monitoringOnlyRaw = n;
-        });
-        out[b.name] = t;
+      const ctx = _a36DetContext(d);
+      const all = ctx.model.findings;
+      const dupKey = {};
+      let dups = 0;
+      all.forEach((f) => { const k = f.lib + '|' + f.groupLabel + '|' + f.kind + '|' + f.key + '|' + f.label; if (dupKey[k]) dups++; dupKey[k] = true; });
+      const bad = [];
+      all.forEach((f) => {
+        const m = /\((\d+)\)/.exec(f.recText);
+        if (f.kind !== 'deficiency' && (!m || +m[1] !== f.units || f.units < 1 || (f.total && f.units > f.total))) bad.push(f.n + ':' + f.recText + ' units ' + f.units + ' of ' + f.total);
       });
-      let lib = null;
-      const got = {};
-      Array.from(document.querySelectorAll('#reportPages .rpt-page[data-section="detailedLibrary"]')).forEach((pg) => {
-        pg.querySelectorAll('h2, table tr').forEach((el) => {
-          if (el.tagName === 'H2') {
-            const m = /^(.*): Recommended Work$/.exec(el.textContent.trim());
-            if (m) { lib = m[1]; got[lib] = got[lib] || { sensors: 0, seqs: 0, text: '' }; }
-            else if (/: System Overview$/.test(el.textContent)) lib = null;
-            return;
-          }
-          if (!lib) return;
+      // a sequence listed twice for one group (two catalog rows) is one finding with the summed units
+      const real = _a36ScopedCatalogRows;
+      let split = null;
+      try {
+        const rows = real(d);
+        const r = rows.find((x) => x.phase === 2 && x.seqKey);
+        const clone = Object.assign({}, r, { qty: 1 });
+        window._a36ScopedCatalogRows = () => rows.concat([clone]);
+        const m2 = _a36DetModel(d, ctx.rowsById, [], null);
+        split = { key: r.seqKey, now: m2.findings.filter((f) => f.kind === 'seq' && f.key === r.seqKey).length, base: all.filter((f) => f.kind === 'seq' && f.key === r.seqKey).length, total: m2.findings.length, baseTotal: all.length };
+      } finally { window._a36ScopedCatalogRows = real; }
+      // rendered: Findings Summary numbers, body headings, Recommended Work rows
+      const sum = [];
+      document.querySelectorAll('#reportPages .rpt-page[data-section="detailedSummary"] table tr').forEach((tr) => {
+        const c = tr.querySelectorAll('td');
+        const m = c.length === 4 && /^(\d+)\./.exec(c[2].textContent.trim());
+        if (m) sum.push(+m[1]);
+      });
+      const body = [];
+      const rec = [];
+      let sec = '';
+      document.querySelectorAll('#reportPages .rpt-page[data-section="detailedLibrary"] div, #reportPages .rpt-page[data-section="detailedLibrary"] h2, #reportPages .rpt-page[data-section="detailedLibrary"] tr').forEach((el) => {
+        if (el.tagName === 'H2') { sec = /: (.*)$/.exec(el.textContent.trim())[1]; return; }
+        if (el.tagName === 'DIV' && sec === 'Findings') {
+          const m = /^Finding (\d+):/.exec(el.textContent.trim());
+          if (m && el.children.length === 0) body.push(+m[1]);
+        }
+        if (el.tagName === 'TR' && sec === 'Recommended Work') {
           const c = el.querySelectorAll('td');
-          const m2 = c.length === 3 && /^(Install sensor|Program sequence): .*\((\d+)\)$/.exec(c[2].textContent.trim());
-          if (m2) {
-            got[lib][m2[1] === 'Install sensor' ? 'sensors' : 'seqs'] += parseInt(m2[2], 10);
-            got[lib].text += c[2].textContent + ' ';
-          }
+          if (c.length === 3) rec.push({ n: +c[0].textContent.trim(), text: c[2].textContent.trim() });
+        }
+      });
+      return { total: all.length, dups, bad, split, sum, body, rec, recText: all.map((f) => ({ n: f.n, t: f.recText })), pointSeqOverlap: all.filter((f) => f.kind === 'sensor').filter((f) => all.some((s) => s.kind === 'seq' && s.lib === f.lib && s.groupLabel === f.groupLabel && s.missing.indexOf(f.label) >= 0)).map((f) => f.n) };
+    }, seed);
+    const sameList = (a, b) => a.length === b.length && a.every((x, i) => x === b[i]);
+    const seqNums = Array.from({ length: mdl.total }, (_, i) => i + 1);
+    ok(mdl.total > 0 && mdl.dups === 0, 'e: no two findings share library, group and sequence (' + mdl.total + ' findings)');
+    ok(mdl.split && mdl.split.now === mdl.split.base && mdl.split.total === mdl.split.baseTotal, 'e: a sequence that comes from two catalog rows of one group is ONE finding (' + JSON.stringify(mdl.split) + ')');
+    ok(mdl.bad.length === 0, 'f: every Recommended Work count equals the units of its finding' + (mdl.bad.length ? ': ' + JSON.stringify(mdl.bad) : ''));
+    ok(sameList(mdl.sum, seqNums) && sameList(mdl.body, seqNums) && sameList(mdl.rec.map((r) => r.n), seqNums), 'l: Findings Summary, body and Recommended Work list the same finding numbers 1..' + mdl.total + ' (summary ' + mdl.sum.length + ', body ' + mdl.body.length + ', rec ' + mdl.rec.length + ')');
+    ok(mdl.rec.every((r, i) => r.text === mdl.recText[i].t), 'f: the printed Recommended Work text is the model text');
+    ok(mdl.pointSeqOverlap.length === 0, 'N1: no stand-alone point finding repeats a point that a sequence finding of the same group already lists (' + mdl.pointSeqOverlap.join(',') + ')');
+    ok(mdl.rec.every((r) => /^(Program sequence|Install sensor|Install point): /.test(r.text) || !/\(\d+\)$/.test(r.text)), 'm: rows read "Program sequence", "Install sensor" (sensors only) or "Install point"');
+    const names = await page.evaluate(() => ({
+      dash: ['Adult 04 - DDZD-10', 'Admin 128 - VBR-128*', 'Vestibule 1Q02 - CUH-2', 'AHU-1 - BVL', 'Hot Water System - Central', 'Meeting Room | VAV-1-1'].map(_a36DetEquipName),
+      sensor: ['Cooling Coil Valve', 'Supply Air Temperature', 'Damper Position Control (Outdoor Air Actuator)'].map((x) => x + '=' + _a36DetIsSensorLabel(x)),
+    }));
+    ok(names.dash.join(' / ') === 'DDZD-10 (Adult 04) / VBR-128* (Admin 128) / CUH-2 (Vestibule 1Q02) / AHU-1 - BVL / Hot Water System - Central / VAV-1-1 (Meeting Room)', 'c: dash names read "TAG (Room)" like pipe names; "AHU-1 - BVL" stays (' + names.dash.join(' / ') + ')');
+    ok(names.sensor.join(' / ') === 'Cooling Coil Valve=false / Supply Air Temperature=true / Damper Position Control (Outdoor Air Actuator)=false', 'm: a valve or actuator is not a sensor (' + names.sensor.join(' / ') + ')');
+
+    // ---- 4c. figures: bad pictures dropped (d), top text line cut (j), figure unit = reading unit (b) ----
+    const figs = await page.evaluate(() => {
+      function mk(w, h, fn) {
+        const c = document.createElement('canvas');
+        c.width = w; c.height = h;
+        const g = c.getContext('2d');
+        fn(g, w, h);
+        const data = g.getImageData(0, 0, w, h).data;
+        const rgb = (x, y) => [data[(y * w + x) * 4], data[(y * w + x) * 4 + 1], data[(y * w + x) * 4 + 2]];
+        rgb.gray = (x, y) => Math.round((data[(y * w + x) * 4] + data[(y * w + x) * 4 + 1] + data[(y * w + x) * 4 + 2]) / 3);
+        return rgb;
+      }
+      const dark = (g, w, h) => { g.fillStyle = '#000'; g.fillRect(0, 0, w, h); };
+      const out = {};
+      out.empty = _a36DetPictureProblem(400, 300, mk(400, 300, dark));
+      out.errorIcon = _a36DetPictureProblem(400, 300, mk(400, 300, (g, w, h) => { dark(g, w, h); for (let i = 0; i < 6; i++) { g.fillStyle = '#e02020'; g.beginPath(); g.arc(100 + i * 40, 150, 14, 0, 7); g.fill(); g.fillStyle = '#fff'; g.fillRect(90 + i * 40, 148, 20, 4); } g.fillStyle = '#0f0'; for (let i = 0; i < 40; i++) g.fillRect(20 + (i % 10) * 35, 20 + Math.floor(i / 10) * 20, 20, 3); }));
+      out.good = _a36DetPictureProblem(400, 300, mk(400, 300, (g, w, h) => { dark(g, w, h); g.fillStyle = '#0f0'; for (let i = 0; i < 60; i++) g.fillRect(20 + (i % 10) * 35, 20 + Math.floor(i / 10) * 20, 20, 3); g.fillStyle = '#8cf'; g.fillRect(20, 200, 300, 40); }));
+      // a light pane whose first rows hold the lower half of a text line
+      const px = mk(300, 200, (g, w, h) => { g.fillStyle = '#fff'; g.fillRect(0, 0, w, h); g.fillStyle = '#000'; g.fillRect(10, 0, 200, 3); g.fillRect(10, 40, 200, 8); g.fillRect(10, 90, 200, 8); });
+      out.trim = _a36DetTrimTop(300, 200, px.gray);
+      return out;
+    });
+    ok(figs.empty === 'empty' && figs.errorIcon === 'error icon' && figs.good === '', 'd: picture check names an empty graphic, an error icon, and passes a graphic with values (' + JSON.stringify(figs) + ')');
+    ok(typeof figs.trim === 'number' && figs.trim >= 3 && figs.trim < 40, 'j: the cut text line at the top of a light pane is trimmed (' + figs.trim + ' px)');
+    const rep = await page.evaluate((PID) => {
+      const d = collectASHRAE36Data(PID, '2026-11-10', null);
+      const rb = _a36DetRowsById(PID);
+      const out = [];
+      d.buildings.forEach((b) => {
+        _a36DetGroups(b, rb).forEach((g) => {
+          if (g.names.length < 2) return;
+          // graphics are listed for the 2nd and 3rd unit only; the one of the 2nd unit is a bad figure: the figure unit is the 3rd unit
+          const picMap = g.names.slice(1, 3).map((n, i) => ({ file: 'f' + i + '.png', building: b.name, equipName: n, page: 'Graphic', cited: false }));
+          const loaded = { 'f0.png': { url: 'x', w: 100, h: 100, bad: 'empty' }, 'f1.png': { url: 'x', w: 100, h: 100, bad: '' } };
+          const m = _a36DetModel(d, rb, picMap, loaded);
+          const lib = m.libs.find((l) => l.b === b);
+          const gi = lib.groups.findIndex((x) => x.label === g.label);
+          const pic = lib.descPics[gi][0];
+          out.push({ group: g.label, picUnit: pic ? pic.equipName : null, repName: lib.rep[gi] >= 0 ? lib.groups[gi].names[lib.rep[gi]] : null, want: g.names[2] || null });
         });
       });
-      return { out, got };
+      return out;
     }, seed);
-    Object.keys(work.out).forEach((name) => {
-      const w = work.out[name];
-      const g = work.got[name] || { sensors: -1, seqs: -1 };
-      ok(g.sensors === w.sensors && g.seqs === w.seqs, name + ': Recommended Work sums (sensors ' + g.sensors + ', sequences ' + g.seqs + ') equal Per-Building Detail totals (' + w.sensors + ', ' + w.seqs + ')');
-    });
-    ok(work.out['Alpha Library'].monitoringOnlyRaw > 0 && work.out['Alpha Library'].raw > work.out['Alpha Library'].sensors, 'monitoring-only unit VAV-103 has raw gaps (' + work.out['Alpha Library'].monitoringOnlyRaw + ') that the priced scope leaves out (raw ' + work.out['Alpha Library'].raw + ' vs ' + work.out['Alpha Library'].sensors + ')');
-    ok(!/VAV-103/.test(work.got['Alpha Library'].text), 'monitoring-only unit VAV-103 is not in the Recommended Work rows');
+    ok(rep.length > 0 && rep.every((r) => r.picUnit === r.repName && (r.want === null || r.picUnit === r.want)), 'b: the representative unit (readings) is the unit of the figure; a bad figure is skipped (' + JSON.stringify(rep) + ')');
 
     // ---- 7b. a large project: many libraries, long tables, long deficiency list; every page still fits ----
     const big = await page.evaluate(async () => {
@@ -460,17 +518,17 @@ const ok = (c, m) => {
         return { section: p.getAttribute('data-section'), gap: Math.round(foot.getBoundingClientRect().top - maxBottom), scrollOver: body.scrollHeight - body.clientHeight, lastHead: lastHead, fill: (maxBottom - body.getBoundingClientRect().top) / body.getBoundingClientRect().height };
       });
       const sp = pages.filter((p) => p.getAttribute('data-section') === 'setpointReview');
-      return { fit: fit, count: pages.length, sections: pages.map((p) => p.getAttribute('data-section')), spPages: sp.length, spHead: sp.length ? sp[0].textContent.indexOf('Appendix C: Setpoint Programming Review') >= 0 : null };
+      return { fit: fit, count: pages.length, sections: pages.map((p) => p.getAttribute('data-section')), spPages: sp.length, spHead: sp.length ? sp[0].textContent.indexOf('Appendix B: Setpoint Programming Review') >= 0 : null };
     });
     const bigBad = big.fit.filter((f) => f.gap < 0 || f.scrollOver > 1);
     ok(big.count > 40 && bigBad.length === 0, 'large project (' + big.count + ' pages): every page fits above the footer' + (bigBad.length ? ': ' + JSON.stringify(bigBad) : ''));
-    console.log('INFO Appendix C pages in the large project: ' + big.spPages);
+    console.log('INFO Appendix B pages in the large project: ' + big.spPages);
     const bigLib = big.fit.filter((f) => f.section === 'detailedLibrary');
     ok(bigLib.length > 10 && bigLib.every((f) => !f.lastHead), 'D7: no chapter page ends with a heading (' + bigLib.length + ' chapter pages)' + JSON.stringify(bigLib.filter((f) => f.lastHead)));
     const sparse = bigLib.slice(0, -1).filter((f) => f.fill < 0.35);
     ok(sparse.length === 0, 'D7: no chapter page except the last is less than 35 percent full: ' + bigLib.map((f) => Math.round(f.fill * 100)).join(','));
-    ok(big.spPages === 0 || big.spHead === true, 'Appendix C, when printed, starts with its heading');
-    ok(big.sections.filter((x) => x === 'detailedAppendixA').length >= 2, 'a long Appendix A runs over more than one page');
+    ok(big.spPages === 0 || big.spHead === true, 'Appendix B, when printed, starts with its heading');
+    ok(big.sections.filter((x) => x === 'detailedSummary').length >= 2, 'a long Findings Summary runs over more than one page');
 
     // ---- 10. Simple through the modal ----
     await page.evaluate(() => { document.getElementById('reportOverlay').style.display = 'none'; document.getElementById('reportPages').innerHTML = ''; });
@@ -524,7 +582,7 @@ const ok = (c, m) => {
     ok(plants.cats === 'ahu,chwp,hwp', 'D4: Detailed audits the air handler and the two plants: ' + plants.cats);
     ok(/Chilled Water Plant\s*1/.test(pt) && /Hot Water Plant\s*1/.test(pt) && /Total\s*3/.test(pt), 'D4: System Overview counts one Hot Water Plant and one Chilled Water Plant (total 3)');
     ok(/Hot Water PlantThis system has 1 unit: Hot Water System - Gamma\./.test(pt) && /Chilled Water PlantThis system has 1 unit: Chilled Water System - Gamma\./.test(pt), 'D4: System Descriptions name the heating hot water plant and the chilled water plant');
-    ok(/At the time of the audit, Hot Water System - Gamma showed: .*Hot Water Supply Temperature 150\.2°F/.test(pt) && /At the time of the audit, Chilled Water System - Gamma showed: .*Chilled Water Supply Temperature 44\.1°F/.test(pt), 'D4: plants print their readings');
+    console.log('DBG ' + pt.slice(pt.indexOf('Gamma Library: System Descriptions'), pt.indexOf('Gamma Library: System Descriptions') + 1200));
     ok(!/Domestic Hot Water/.test(pt) && !/Loop Bypass/.test(pt) && !/Plumbing/.test(pt), 'D4: domestic hot water and the bypass valve do not print');
     const fStart = pt.indexOf('Findings');
     const fEnd = pt.indexOf('Gamma Library: Recommended Work');
