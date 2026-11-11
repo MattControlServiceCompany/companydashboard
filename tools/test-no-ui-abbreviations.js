@@ -114,7 +114,17 @@ const BANNED_WORD_FILE_EXCEPTIONS = new Map([
     new Map([
       [
         path.join('app', 'graphics-setpoints.js'),
-        new Set(['Site EUI (kBtu/ft²/Year)', 'Baseline Site EUI', 'Current Site EUI']),
+        new Set([
+          'Site EUI (kBtu/ft²/Year)',
+          'Baseline Site EUI',
+          'Current Site EUI',
+          // 2026-11-11 (item d61eb6cd): the Annual Summary, Building EUI and CBECS tables, each th with the full-words hover title
+          'Site EUI kBtu/ft²',
+          'Site EUI',
+          'Median Site EUI',
+          'Top 25% Site EUI',
+          'DOE Target Site EUI',
+        ]),
       ],
     ]),
   ],

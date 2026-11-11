@@ -2507,6 +2507,13 @@ async function siteResetAllMeterTableSettings() {
    site-ui.js delegates to this array and should NOT maintain its own copy.
 */
 var RELEASE_NOTES = [
+  { v: 'v2026.11.11.265', date: '2026-11-11', title: 'Building Performance table: correct percent and period',
+    items: [
+      { type: 'fix', text: 'Dashboard: the % column now shows savings as a percent of the baseline cost for the same months. Baseline $ and Current $ now cover the savings months (see the Period column).' },
+      { type: 'fix', text: 'Dashboard: Current Site EUI shows the last 12 months of bills for each building. Hover the value to see the months.' },
+      { type: 'fix', text: 'Dashboard: the table no longer lists the Unmatched Bills bucket. A building with all meters out of scope shows Not in scope.' },
+      { type: 'fix', text: 'Dashboard: the table fits on a 1366 px screen, and the column headers stay on one line.' }
+    ] },
   { v: 'v2026.11.11.264', date: '2026-11-11', title: 'Weather loads for new building ZIP codes',
     items: [
       { type: 'fix', text: 'Utility data: when you save or import a building ZIP code, the site now gets the weather for that ZIP right away. Before, it waited for the next page load.' },

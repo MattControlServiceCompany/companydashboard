@@ -1839,7 +1839,7 @@ function egfxRefresh(projId) {
             <div style="font-size:12px;font-weight:700;color:var(--text2);margin-bottom:10px">📊 Annual Summary by Year</div>
             <div style="overflow-x:auto">
               <table class="dtbl" data-egfx-export="annual" style="min-width:500px">
-                <thead><tr><th>Year</th><th style="text-align:right">kWh</th><th style="text-align:right">kW</th><th style="text-align:right">Gas Therms</th>${hasPropane ? '<th style="text-align:right">Propane Gal</th>' : ''}<th style="text-align:right">Site Energy Use Intensity kBtu/ft²</th><th style="text-align:right">Baseline Site Energy Use Intensity</th><th style="text-align:right">vs Baseline</th></tr></thead>
+                <thead><tr><th>Year</th><th style="text-align:right">kWh</th><th style="text-align:right">kW</th><th style="text-align:right">Gas Therms</th>${hasPropane ? '<th style="text-align:right">Propane Gal</th>' : ''}<th style="text-align:right" title="Site Energy Use Intensity, kBtu per square foot per year">Site EUI kBtu/ft²</th><th style="text-align:right" title="Site Energy Use Intensity, kBtu per square foot per year">Baseline Site EUI</th><th style="text-align:right">vs Baseline</th></tr></thead>
                 <tbody>
                   ${yrsToShow
                     .map((y) => {
@@ -1890,7 +1890,7 @@ function egfxRefresh(projId) {
             <div style="font-size:12px;font-weight:700;color:var(--text2);margin-bottom:10px">🏢 Annual Summary by Building</div>
             <div style="overflow-x:auto">
               <table class="dtbl" style="min-width:600px;border-collapse:collapse">
-                <thead><tr style="background:var(--s1)"><th style="text-align:left;padding:8px 10px">Building</th><th style="padding:8px 6px">Year</th><th style="text-align:right;padding:8px 10px">kWh</th><th style="text-align:right;padding:8px 10px">kW</th><th style="text-align:right;padding:8px 10px">Gas Therms</th>${hasPropane ? '<th style="text-align:right;padding:8px 10px">Propane Gal</th>' : ''}<th style="text-align:right;padding:8px 10px">Cost</th><th style="text-align:right;padding:8px 10px">Site Energy Use Intensity</th></tr></thead>
+                <thead><tr style="background:var(--s1)"><th style="text-align:left;padding:8px 10px">Building</th><th style="padding:8px 6px">Year</th><th style="text-align:right;padding:8px 10px">kWh</th><th style="text-align:right;padding:8px 10px">kW</th><th style="text-align:right;padding:8px 10px">Gas Therms</th>${hasPropane ? '<th style="text-align:right;padding:8px 10px">Propane Gal</th>' : ''}<th style="text-align:right;padding:8px 10px">Cost</th><th style="text-align:right;padding:8px 10px" title="Site Energy Use Intensity, kBtu per square foot per year">Site EUI</th></tr></thead>
                 <tbody>
                   ${(() => {
                     let rowIdx = 0;
@@ -2227,9 +2227,9 @@ function egfxRefresh(projId) {
                     <th style="text-align:right">Age</th>
                     <th style="text-align:left">ENERGY STAR Property Type</th>
                     <th style="text-align:right">Latest Year</th>
-                    <th style="text-align:right">Median Energy Use Intensity</th>
-                    <th style="text-align:right">Top 25% Energy Use Intensity</th>
-                    <th style="text-align:right">DOE Target Energy Use Intensity</th>
+                    <th style="text-align:right" title="Site Energy Use Intensity, kBtu per square foot per year">Median Site EUI</th>
+                    <th style="text-align:right" title="Site Energy Use Intensity, kBtu per square foot per year">Top 25% Site EUI</th>
+                    <th style="text-align:right" title="Site Energy Use Intensity, kBtu per square foot per year">DOE Target Site EUI</th>
                     <th style="text-align:right">vs Median</th>
                   </tr></thead>
                   <tbody>

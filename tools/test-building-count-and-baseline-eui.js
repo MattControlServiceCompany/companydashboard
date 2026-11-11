@@ -44,7 +44,7 @@ Object.assign(ctx, {
   getBillGasCost: () => 0,
 });
 const uSrc = 'app/utility-data.js';
-vm.runInContext(['getUDProj', 'getUDBldgs', 'getIncludedBldgs', 'getBaselineEligibleBldgs', 'isBaselineExcluded', 'getProjectBaselineTotals'].map((n) => {
+vm.runInContext(['getUDProj', 'getUDBldgs', 'isUnmatchedSentinelBldg', 'getIncludedBldgs', 'getBaselineEligibleBldgs', 'isBaselineExcluded', 'getProjectBaselineTotals'].map((n) => {
   try { return fnSource(uSrc, n); } catch (e) { fail('app/utility-data.js has no function ' + n); return ''; }
 }).join('\n'), ctx);
 vm.runInContext(['isCalcCommodity', '_updateCompactHdrBaseline'].map((n) => fnSource('app/core.js', n)).join('\n'), ctx);

@@ -2120,25 +2120,35 @@ function initDashboardTab(projId) {
       if (!Object.values(qtrByYr[yr]).some((o) => qYMs.some((y) => y in o))) continue;
       actualQtrHasData[qi] = true;
       actualByQtr[qi] = qr.total;
+      measuredByQtr[qi] = qr.measured;
       Object.assign(qtrWeather, qr.weatherWaiting);
       Object.assign(qtrMissing, qr.missing); // { 'YYYY-Qn': [missing bill lines] } for the Waiting for bills chip
     }
   };
   let latestBillEnd = null;
   let latestSavYM = null; // full 'YYYY-MM' string of last month with savings data
+  let earliestSavYM = null; // first month with savings: with latestSavYM it is the period Baseline $ and Current $ cover
   const headQtr = nextQuarterToPresent(projId); // null = no bills, so no headline quarter
   const curQtr = headQtr ? headQtr.q : -1;
-  const bldgRows = bldgs.map((b) => {
+  const measuredByQtr = [0, 0, 0, 0]; // the same quarters before the $0 floor, shown beside a floored $0
+  // The table lists every building the project holds (an excluded one reads "Not in scope") but never the
+  // Unmatched Bills bucket (isUnmatchedSentinelBldg, app/utility-data.js: the same test getIncludedBldgs uses).
+  const _tblBldgs = bldgs.filter((b) => !isUnmatchedSentinelBldg(b));
+  const _ymAdd = (ym, n) => {
+    const t = Number(ym.slice(0, 4)) * 12 + Number(ym.slice(5, 7)) - 1 + n;
+    return Math.floor(t / 12) + '-' + String((t % 12) + 1).padStart(2, '0');
+  };
+  const _MON = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+  const _ymShort = (ym) => _MON[Number(ym.slice(5, 7)) - 1] + ' ' + ym.slice(2, 4); // 'Jan 26'
+  const _ymLong = (ym) => _MON[Number(ym.slice(5, 7)) - 1] + ' ' + ym.slice(0, 4); // 'Jan 2026'
+  const bldgRows = _tblBldgs.map((b) => {
     const meters = b.meters || [];
     const sqft = parseInt(b.sqft || 0);
     let blCost = 0,
       curCost = 0,
       blKwh = 0,
-      curKwh = 0,
       blTherms = 0,
-      curTherms = 0,
       blPropane = 0,
-      curPropane = 0,
       blPeriod = '',
       allCost = 0,
       allKwh = 0,
@@ -2148,6 +2158,19 @@ function initDashboardTab(projId) {
     let bldgSav = 0;
     const bldgSavByYM = {}; // current savings by month; totals go through billableSavingsWithPresented()
     const meterSavByYMs = []; // one byYM per meter, for the per-meter newest-year quarters
+    const bldgMoBase = {}; // baseline cost per calendar month (0-11), summed over the baseline meters
+    for (let i = 0; i < 12; i++) bldgMoBase[i] = 0;
+    const bldgUseByYM = {}; // { 'YYYY-MM': { kwh, therms, gal } } billed use by bill month, for Current Site EUI
+    const addUse = (m, mBills) =>
+      mBills.forEach((bill) => {
+        const ym = billMonth(bill, mBills);
+        if (!ym) return;
+        const u = (bldgUseByYM[ym] = bldgUseByYM[ym] || { kwh: 0, therms: 0, gal: 0 });
+        if (m.commodity === 'Gas') u.therms += resolveGasUsageTherms(bill);
+        else if (m.commodity === 'Propane')
+          u.gal += parseFloat(bill.gallonsDelivered) || parseFloat(bill.kwh) || parseFloat(bill.usage) || 0;
+        else u.kwh += parseFloat(bill.kwh) || parseFloat(bill.usage) || 0;
+      });
     let meterIncl = 0,
       meterExcl = 0,
       meterTotal = meters.length;
@@ -2166,8 +2189,6 @@ function initDashboardTab(projId) {
 
     if (useNormalized) {
       // Normalized path: use same calculation as Performance panel
-      const bldgMoBase = {};
-      for (let i = 0; i < 12; i++) bldgMoBase[i] = 0;
       meters.forEach((m) => {
         if (isBaselineExcluded(projId, m.id)) return;
         if (!isCalcCommodity(projId, m.commodity)) return;
@@ -2212,33 +2233,21 @@ function initDashboardTab(projId) {
         Object.entries(savResult.byYM).forEach(([ym, v]) => {
           bldgSavByYM[ym] = (bldgSavByYM[ym] || 0) + v;
           if (v !== 0 && (latestSavYM === null || ym > latestSavYM)) latestSavYM = ym;
+          if (v !== 0 && (earliestSavYM === null || ym < earliestSavYM)) earliestSavYM = ym;
         });
-        // Usage for EUI
-        const _blEndYM = bl.months.slice().sort().pop();
-        const _curBills = bills.filter((bill) => {
-          const ym = billMonth(bill, bills);
-          return ym && ym > _blEndYM;
-        });
+        // Usage for EUI: baseline months here; every billed month by bill month for Current Site EUI (trailing 12 below)
+        addUse(m, bills);
         if (m.commodity === 'Gas') {
           blBills.forEach((bill) => {
             blTherms += resolveGasUsageTherms(bill);
-          });
-          _curBills.forEach((bill) => {
-            curTherms += resolveGasUsageTherms(bill);
           });
         } else if (m.commodity === 'Propane') {
           blBills.forEach((bill) => {
             blPropane += parseFloat(bill.gallonsDelivered) || parseFloat(bill.kwh) || parseFloat(bill.usage) || 0;
           });
-          _curBills.forEach((bill) => {
-            curPropane += parseFloat(bill.gallonsDelivered) || parseFloat(bill.kwh) || parseFloat(bill.usage) || 0;
-          });
         } else {
           blBills.forEach((bill) => {
             blKwh += parseFloat(bill.kwh) || parseFloat(bill.usage) || 0;
-          });
-          _curBills.forEach((bill) => {
-            curKwh += parseFloat(bill.kwh) || parseFloat(bill.usage) || 0;
           });
         }
       });
@@ -2282,18 +2291,10 @@ function initDashboardTab(projId) {
           } else {
             curCost += parseFloat(bill.totalCost) || getBillGasCost(bill) || parseFloat(bill.cost) || 0;
           }
-          if (m.commodity === 'Gas') {
-            // Single source of truth (2026-09-22): same gas-usage helper the baseline uses
-            // (computations/savings.js resolveGasUsageTherms — therms/naturalGasTherms/
-            // naturalGasMMbtu/naturalGasCCF fallback chain) instead of a bare bill.therms read,
-            // so CSV-imported gas bills aren't silently zeroed in this "actual" EUI path.
-            curTherms += resolveGasUsageTherms(bill);
-          } else if (m.commodity === 'Propane') {
-            curPropane += parseFloat(bill.gallonsDelivered) || parseFloat(bill.kwh) || parseFloat(bill.usage) || 0;
-          } else {
-            curKwh += parseFloat(bill.kwh) || parseFloat(bill.usage) || 0;
-          }
         });
+        // Usage for Current Site EUI: every billed month by bill month (same helper as the normalized path;
+        // resolveGasUsageTherms is the one gas-usage fallback chain).
+        addUse(m, bills);
         // Tally all bills as fallback when no baseline is set
         (m.bills || []).forEach((bill) => {
           if (m.commodity === 'Electric') {
@@ -2333,6 +2334,7 @@ function initDashboardTab(projId) {
         Object.entries(_actSavResult.byYM).forEach(([ym, v]) => {
           bldgSavByYM[ym] = (bldgSavByYM[ym] || 0) + v;
           if (v !== 0 && (latestSavYM === null || ym > latestSavYM)) latestSavYM = ym;
+          if (v !== 0 && (earliestSavYM === null || ym < earliestSavYM)) earliestSavYM = ym;
         });
       });
       addBldgQuarters(projId, b.id, meterSavByYMs);
@@ -2352,31 +2354,38 @@ function initDashboardTab(projId) {
     const savPct = useCost > 0 ? (sav / useCost) * 100 : 0;
     // EUI: kBtu/sf/yr — annualized (see computations/eui.js for KBTU_FACTORS)
     const blKBtu = computeKBtu(useKwh, useTherms, usePropane);
-    const curKBtu = computeKBtu(curKwh, curTherms, curPropane);
     const _bldgBlMonths = new Set();
     meters.forEach((m) => {
       if (m.baseline && m.baseline.months) m.baseline.months.forEach((ym) => _bldgBlMonths.add(ym));
     });
     const _bldgBlMoCt = _bldgBlMonths.size || 12;
     const blEUI = computeBaselineEUI(blKBtu, _bldgBlMoCt, sqft);
-    const _curMoSet = new Set();
-    meters.forEach((m) => {
-      const incl2 = m.inclusive !== false;
-      (m.bills || []).forEach((bill) => {
-        const ym = billMonth(bill, m.bills || []);
-        if (ym && ym > (m.baseline && m.baseline.months ? m.baseline.months.slice().sort().pop() : ''))
-          _curMoSet.add(ym);
-      });
-    });
-    const _curMoCt = _curMoSet.size || 12;
-    // Require a full 12 current-period months before annualizing Current Site EUI.
-    // No existing min-months convention was found in computations/eui.js or the Baseline
-    // EUI path (computeBaselineEUI/computePeriodEUI have no sufficiency floor), so this
-    // matches the closest existing pattern: a full year. Prevents e.g. 1 month × 12
-    // producing a fake/misleading annualized value below baseline (bug 177e378d).
-    // curEUI === 0 renders as the existing "—" placeholder at the table row below.
-    const curEUI = _curMoSet.size >= 12 ? computePeriodEUI(curKBtu, _curMoCt, sqft) : 0;
-    let status = 'No Data',
+    const _blSorted = Array.from(_bldgBlMonths).sort();
+    const blEuiTip = _blSorted.length
+      ? 'Baseline months: ' + _ymLong(_blSorted[0]) + ' – ' + _ymLong(_blSorted[_blSorted.length - 1]) + ' (' + _blSorted.length + ' months), per year'
+      : 'No baseline months';
+    // Current Site EUI (Matt 2026-11-11): the trailing 12 complete bill months ending at the building's newest bill
+    // month (ENERGY STAR practice), annualized by the one period-EUI function. "—" when a month of the window has no bill.
+    const _useYMs = Object.keys(bldgUseByYM).sort();
+    let curEUI = 0,
+      curEuiTip = 'Needs 12 bill months; ' + _useYMs.length + ' so far';
+    if (_useYMs.length) {
+      const _endYM = _useYMs[_useYMs.length - 1];
+      const _win = presentedMonthRange(_ymAdd(_endYM, -11), _endYM);
+      if (_win.every((ym) => bldgUseByYM[ym])) {
+        const _sum = _win.reduce(
+          (a, ym) => ({
+            kwh: a.kwh + bldgUseByYM[ym].kwh,
+            therms: a.therms + bldgUseByYM[ym].therms,
+            gal: a.gal + bldgUseByYM[ym].gal,
+          }),
+          { kwh: 0, therms: 0, gal: 0 },
+        );
+        curEUI = computePeriodEUI(computeKBtu(_sum.kwh, _sum.therms, _sum.gal), 12, sqft);
+        curEuiTip = 'Trailing 12 months: ' + _ymLong(_win[0]) + ' – ' + _ymLong(_endYM);
+      }
+    }
+    let status = meterTotal > 0 && meterExcl === meterTotal ? 'Not in scope' : 'No Data', // every meter in scope.meterExcludeIds
       statusColor = 'var(--text3)';
     if (useCost > 0 && curCost > 0) {
       if (sav < 0) {
@@ -2410,6 +2419,11 @@ function initDashboardTab(projId) {
       savPct,
       blEUI,
       curEUI,
+      blEuiTip,
+      curEuiTip,
+      savByYM: bldgSavByYM,
+      moBase: bldgMoBase,
+      blAnnual: useCost, // the 12-month baseline cost: Savings % stays sav / blAnnual
       blPeriod: blPeriod || (useNormalized ? '—' : 'All Bills'),
       blLabel,
       status,
@@ -2420,6 +2434,26 @@ function initDashboardTab(projId) {
       meterDetails,
     };
   });
+
+  // Same period for Baseline $ and Current $ (Matt 2026-11-11, normalized mode): the months that carry savings
+  // (earliestSavYM to latestSavYM). Baseline $ = the baseline cost of THOSE calendar months; Current $ = that
+  // less the savings of those months. Savings $ and % are not touched: they stay what getMeterSavings gave.
+  const savPeriodYMs = useNormalized && earliestSavYM !== null ? presentedMonthRange(earliestSavYM, latestSavYM) : [];
+  const savPeriodLabel = savPeriodYMs.length
+    ? _ymShort(savPeriodYMs[0]) + ' – ' + _ymShort(savPeriodYMs[savPeriodYMs.length - 1])
+    : '';
+  if (useNormalized && savPeriodYMs.length) {
+    totalBl = 0;
+    totalCur = 0;
+    bldgRows.forEach((r) => {
+      r.blCost = r.blAnnual > 0 ? savPeriodYMs.reduce((s, ym) => s + (r.moBase[Number(ym.slice(5, 7)) - 1] || 0), 0) : 0;
+      r.curCost = r.blAnnual > 0 ? r.blCost - r.sav : 0;
+      r.savPct = r.blCost > 0 ? (r.sav / r.blCost) * 100 : 0; // display ratio of the two figures in the same row; r.sav is untouched
+      r.blPeriod = r.blAnnual > 0 ? savPeriodLabel : '—';
+      totalBl += r.blCost;
+      totalCur += r.curCost;
+    });
+  }
 
   // Use the directly-accumulated per-building savings (same source as Project Performance page).
   // Cumulative savings to date: the sum of the floored quarters, never the net of the building rows (billableSavingsWithPresented).
@@ -2456,6 +2490,9 @@ function initDashboardTab(projId) {
       })
     : '';
   const curQtrActual = headQtr ? actualByQtr[curQtr] : 0;
+  const curQtrMeasured = headQtr ? measuredByQtr[curQtr] : 0;
+  // The quarter card shows the billed value and, when the $0 floor applies, the measured value beside it ("-$X -> $0"): the same call as the cumulative card.
+  const _curQtrShown = savingsFlooredShown(curQtrMeasured, curQtrActual, 0, $c, 'var(--green)', 'var(--danger)', 'var(--text)');
   const curQtrWeather = headQtr ? qtrWeather[headQtr.year + '-Q' + (curQtr + 1)] || [] : [];
   const curQtrWaiting = headQtr ? qtrMissing[headQtr.year + '-Q' + (curQtr + 1)] || [] : [];
   const curQtrProjected = headQtr ? projectedByQtr[curQtr] : 0;
@@ -2519,7 +2556,7 @@ function initDashboardTab(projId) {
                 ${headQtr ? `                <div>
                   <div style="font-size:11px;color:var(--text3);text-transform:uppercase;letter-spacing:.6px">${curQtrTitle} Total Savings</div>
                   ${curQtrThrough ? '<div style="font-size:11px;color:var(--text3)">' + curQtrThrough + '</div>' : ''}
-                  <div style="font-size:28px;font-weight:800;font-family:var(--mono);color:var(--green);margin:4px 0">${curQtrWeather.length ? '<span style="font-size:15px">Waiting for weather data: ' + _escHtml(weatherWaitingLabel(curQtrWeather)) + '</span>' : $c(curQtrActual)}</div>
+                  <div style="font-size:28px;font-weight:800;font-family:var(--mono);color:${curQtrWeather.length ? 'var(--green)' : _curQtrShown.color};margin:4px 0">${curQtrWeather.length ? '<span style="font-size:15px">Waiting for weather data: ' + _escHtml(weatherWaitingLabel(curQtrWeather)) + '</span>' : _curQtrShown.text}</div>
                   ${curQtrWaiting.length ? '<div style="display:inline-block;font-size:11px;color:var(--text2);background:var(--s2);border:1px solid var(--border);border-radius:10px;padding:2px 8px;margin-bottom:4px">Waiting for bills: ' + _escHtml(curQtrWaiting.join(', ')) + '</div>' : ''}
                   <div style="font-size:12px;color:var(--text2)">${curQtrPct !== null ? '<span style="color:var(--green);font-weight:600">' + curQtrPct + '%</span> of ' + curQtrLabel + ' projected (' + $c2(curQtrProjected) + ')' : _eligBldgs.length + ' building' + (_eligBldgs.length !== 1 ? 's' : '') + ' · <span style="color:var(--text3)">' + (useNormalized ? 'Normalized' : 'Actual') + '</span>'}</div>
                 </div>` : ''}
@@ -2531,8 +2568,9 @@ function initDashboardTab(projId) {
                 </div>
               </div>
               <div style="display:flex;flex-direction:column;gap:12px;justify-content:center">
-                <div style="text-align:center"><div style="font-size:10px;color:var(--text3);text-transform:uppercase">Baseline</div><div style="font-size:16px;font-weight:700;font-family:var(--mono)">${$c(totalBl)}</div></div>
-                <div style="text-align:center"><div style="font-size:10px;color:var(--text3);text-transform:uppercase">Current</div><div style="font-size:16px;font-weight:700;font-family:var(--mono)">${$c(totalCur)}</div></div>
+                <div style="text-align:center"><div style="font-size:10px;color:var(--text3);text-transform:uppercase" title="${savPeriodLabel ? 'Baseline cost of the savings months, ' + savPeriodLabel : ''}">Baseline</div><div style="font-size:16px;font-weight:700;font-family:var(--mono)">${$c(totalBl)}</div></div>
+                <div style="text-align:center"><div style="font-size:10px;color:var(--text3);text-transform:uppercase" title="${savPeriodLabel ? 'Baseline cost less savings, for the savings months ' + savPeriodLabel : ''}">Current</div><div style="font-size:16px;font-weight:700;font-family:var(--mono)">${$c(totalCur)}</div></div>
+                ${savPeriodLabel ? '<div style="text-align:center;font-size:10px;color:var(--text3)">for ' + savPeriodLabel + '</div>' : ''}
                 ${estSavings > 0 ? '<div style="text-align:center"><div style="font-size:10px;color:var(--text3);text-transform:uppercase">Target</div><div style="font-size:16px;font-weight:700;font-family:var(--mono)">$' + Number(estSavings).toLocaleString() + '</div></div>' : ''}
                 ${ecmTotal > 0 ? '<div style="text-align:center;border-top:1px solid rgba(167,139,250,0.25);padding-top:8px;margin-top:4px"><div style="font-size:10px;color:var(--violet-label);text-transform:uppercase">ECM Projected</div><div style="font-size:16px;font-weight:700;font-family:var(--mono);color:var(--violet-text)">$' + ecmTotal.toLocaleString() + '/yr</div><div style="font-size:10px;color:var(--text3)">' + ecmCount + ' ECM' + (ecmCount !== 1 ? 's' : '') + ' saved — <button onclick="sv(\'calculators\')" style="font-size:10px;color:var(--violet-label);background:none;border:none;cursor:pointer;padding:0;text-decoration:underline">view</button></div></div>' : ''}
               </div>
@@ -2570,15 +2608,21 @@ function initDashboardTab(projId) {
                   if (va > vb) return _srt.asc ? 1 : -1;
                   return 0;
                 });
-                const _thSort = (col, label, align) => {
+                // #ptab-dashboard thead th is white-space:normal !important (energy-department.html); the inline !important keeps this table's header on one line (Matt 2026-11-11).
+                const _thSort = (col, label, align, tip) => {
                   const active = _srt.col === col;
                   const arrow = active ? (_srt.asc ? ' ↑' : ' ↓') : ' ↕';
-                  const style = `text-align:${align || 'right'};cursor:pointer;user-select:none;white-space:nowrap${active ? ';color:var(--em)' : ''}`;
-                  return `<th style="${style}" onclick="if(!window._bpSort)window._bpSort={};if(!window._bpSort['${projId}'])window._bpSort['${projId}']={col:'sqft',asc:false};var s=window._bpSort['${projId}'];if(s.col==='${col}'){s.asc=!s.asc;}else{s.col='${col}';s.asc=true;}initDashboardTab(${projId})" title="Sort by ${label}">${label}${arrow}</th>`;
+                  const style = `text-align:${align || 'right'};cursor:pointer;user-select:none;white-space:nowrap!important${active ? ';color:var(--em)' : ''}`;
+                  return `<th style="${style}" onclick="if(!window._bpSort)window._bpSort={};if(!window._bpSort['${projId}'])window._bpSort['${projId}']={col:'sqft',asc:false};var s=window._bpSort['${projId}'];if(s.col==='${col}'){s.asc=!s.asc;}else{s.col='${col}';s.asc=true;}initDashboardTab(${projId})" title="${tip || 'Sort by ' + label}">${label}${arrow}</th>`;
                 };
                 const _blLabel = bldgRows.some((r) => r.blLabel === 'Baseline') ? 'Baseline' : 'Total Cost';
-                return `<table class="dtbl" style="width:100%;font-size:12px">
-                <thead><tr><th style="width:30px">#</th>${_thSort('name', 'Building', 'left')}<th style="text-align:right;cursor:pointer;user-select:none;white-space:nowrap${_srt.col === 'sqft' ? ';color:var(--em)' : ''}" onclick="if(!window._bpSort)window._bpSort={};if(!window._bpSort['${projId}'])window._bpSort['${projId}']={col:'sqft',asc:false};var s=window._bpSort['${projId}'];if(s.col==='sqft'){s.asc=!s.asc;}else{s.col='sqft';s.asc=true;}initDashboardTab(${projId})" title="Sort by Sq Ft">Sq Ft${_srt.col === 'sqft' ? (_srt.asc ? ' ↑' : ' ↓') : ' ↕'}</th><th style="text-align:center">Baseline</th><th style="text-align:right">Baseline Period</th>${_thSort('blCost', _blLabel + ' $/yr', 'right')}${_thSort('blEUI', 'Baseline Site Energy Use Intensity', 'right')}${_thSort('curCost', 'Current Cost', 'right')}${_thSort('curEUI', 'Current Site Energy Use Intensity', 'right')}${_thSort('sav', 'Savings $', 'right')}${_thSort('savPct', '%', 'right')}<th style="text-align:center">Status</th></tr></thead>
+                // Matt 2026-10-28 rule: internal screens may say EUI with a hover tooltip giving the full words.
+                const _euiTip = 'Site Energy Use Intensity, kBtu per square foot per year';
+                const _perTip = savPeriodLabel
+                  ? 'The months of savings. Baseline $ is the baseline cost of these months; Current $ is that less the savings of these months. The Site EUI columns cover 12 months: hover a value for its months.'
+                  : 'The baseline months of each building';
+                return `<table class="dtbl bp-tbl" style="width:100%;font-size:12px">
+                <thead><tr><th style="width:30px;white-space:nowrap!important">#</th>${_thSort('name', 'Building', 'left')}<th style="text-align:right;cursor:pointer;user-select:none;white-space:nowrap!important${_srt.col === 'sqft' ? ';color:var(--em)' : ''}" onclick="if(!window._bpSort)window._bpSort={};if(!window._bpSort['${projId}'])window._bpSort['${projId}']={col:'sqft',asc:false};var s=window._bpSort['${projId}'];if(s.col==='sqft'){s.asc=!s.asc;}else{s.col='sqft';s.asc=true;}initDashboardTab(${projId})" title="Sort by Sq Ft">Sq Ft${_srt.col === 'sqft' ? (_srt.asc ? ' ↑' : ' ↓') : ' ↕'}</th><th style="text-align:center;white-space:nowrap!important">Baseline</th><th style="text-align:right;white-space:nowrap!important" title="${_perTip}">Period</th>${_thSort('blCost', useNormalized ? _blLabel + ' $' : _blLabel + ' $/yr', 'right')}${_thSort('blEUI', 'Baseline <span class="bp-long">Site </span>EUI', 'right', _euiTip)}${_thSort('curCost', useNormalized ? 'Current $' : 'Current Cost', 'right')}${_thSort('curEUI', 'Current <span class="bp-long">Site </span>EUI', 'right', _euiTip)}${_thSort('sav', 'Savings $', 'right')}${_thSort('savPct', '%', 'right')}<th style="text-align:center;white-space:nowrap!important">Status</th></tr></thead>
                 <tbody>${sortedRows
                   .map((r, _ri) => {
                     const blIcon = r.meterIncl > 0 ? (r.meterExcl > 0 ? '◐' : '●') : '○';
@@ -2601,11 +2645,11 @@ function initDashboardTab(projId) {
                   <td style="font-weight:600">${_escHtml(r.name || '—')}</td>
                   <td style="text-align:right;font-size:11px;color:var(--text2)">${r.sqft ? Number(r.sqft).toLocaleString() : '—'}</td>
                   <td style="text-align:center;cursor:help" title="${blTip}"><span style="color:${blColor};font-size:13px">${blIcon}</span> <span style="font-size:10px;color:var(--text2)">${r.meterIncl}/${r.meterTotal}</span></td>
-                  <td style="text-align:right;font-size:11px;color:var(--text2)">${r.blPeriod || '—'}</td>
+                  <td style="text-align:right;font-size:11px;color:var(--text2);white-space:nowrap">${r.blPeriod || '—'}</td>
                   <td style="text-align:right;font-family:var(--mono)">${r.blCost > 0 ? $c(r.blCost) : '—'}</td>
-                  <td style="text-align:right;font-family:var(--mono);font-size:11px;color:var(--text2)">${r.blEUI > 0 ? r.blEUI.toFixed(1) : '—'}</td>
+                  <td style="text-align:right;font-family:var(--mono);font-size:11px;color:var(--text2);cursor:help" title="${_escHtml(r.blEuiTip)}">${r.blEUI > 0 ? r.blEUI.toFixed(1) : '—'}</td>
                   <td style="text-align:right;font-family:var(--mono)">${r.curCost > 0 ? $c(r.curCost) : '—'}</td>
-                  <td style="text-align:right;font-family:var(--mono);font-size:11px;color:var(--text2)">${r.curEUI > 0 ? r.curEUI.toFixed(1) : '—'}</td>
+                  <td style="text-align:right;font-family:var(--mono);font-size:11px;color:var(--text2);cursor:help" title="${_escHtml(r.curEuiTip)}">${r.curEUI > 0 ? r.curEUI.toFixed(1) : '—'}</td>
                   <td style="text-align:right;font-family:var(--mono);color:${savingsSignColor(r.sav, 0, 'var(--green)', 'var(--danger)', 'var(--text)')}">${r.blCost > 0 ? savingsSign(r.sav, 0, true) + $c(r.sav) : '—'}</td>
                   <td style="text-align:right;font-family:var(--mono)">${r.blCost > 0 ? r.savPct.toFixed(1) + '%' : '—'}</td>
                   <td style="text-align:center;font-weight:600;color:${r.statusColor}">${r.status}</td>
