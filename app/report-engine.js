@@ -27360,6 +27360,7 @@ function openASHRAE36ReportModal(projId, type) {
       '<input type="file" id="a36PictureCsv" accept=".csv" style="display:none" onchange="_a36PictureCsvChosen(this)">' +
       '<button type="button" id="a36PictureBtn" class="btn btn-em btn-sm" onclick="_a36PictureOpen(1)">Choose picture folder</button>' +
       '<div id="a36PictureStatus" style="font-size:12px;color:var(--text);margin-top:8px"></div>' +
+      '<div id="a36PictureAllowBox" style="display:none;margin-top:8px"><button type="button" id="a36PictureAllowBtn" class="btn btn-em btn-sm" onclick="_a36PictureAllow()"></button></div>' +
       '<div id="a36PictureNoList" style="display:none;margin-top:8px">' +
       '<div style="font-size:12px;color:var(--text);margin-bottom:6px">No picture list yet.</div>' +
       '<button type="button" id="a36PictureCsvBtn" class="btn btn-ghost btn-sm" onclick="_a36PictureOpen(0)">Import picture list (CSV)</button>' +
@@ -27433,7 +27434,10 @@ function _a36StyleChanged() {
   var detailed = !!checked && checked.value === 'detailed';
   var box = document.getElementById('a36PictureBox');
   if (box) box.style.display = detailed ? '' : 'none';
-  if (detailed) _a36PictureStatus();
+  if (detailed) {
+    _a36PictureStatus();
+    _a36PictureRestore();
+  }
   document.querySelectorAll('.a36SecCheck').forEach(function (cb) {
     if (detailed && (cb.dataset.key === 'pointInventory' || cb.dataset.key === 'setpointReview')) cb.checked = true;
   });
@@ -27447,7 +27451,18 @@ function _a36PictureStatus() {
   if (!st) return;
   var map = typeof faLoad === 'function' ? faLoad(window._a36PicPid).pictureMap || [] : [];
   var dir = document.getElementById('a36PictureDir');
-  var files = dir && dir.files ? dir.files : [];
+  var inputFiles = dir && dir.files ? dir.files : [];
+  // Files on the input win over the remembered folder (app/picture-folder.js).
+  var remembered = typeof pictureFolderCurrent === 'function' ? pictureFolderCurrent(window._a36PicPid) : { name: '', permission: 'none', files: [] };
+  var useInput = inputFiles.length > 0;
+  var files = useInput ? inputFiles : remembered.files;
+  var needsAllow = !useInput && remembered.permission === 'prompt';
+  var allowBox = document.getElementById('a36PictureAllowBox');
+  var allowBtn = document.getElementById('a36PictureAllowBtn');
+  if (allowBox) allowBox.style.display = needsAllow ? '' : 'none';
+  if (allowBtn) allowBtn.textContent = 'Allow access to ' + remembered.name;
+  var chooseBtn = document.getElementById('a36PictureBtn');
+  if (chooseBtn) chooseBtn.textContent = !useInput && remembered.name ? 'Change folder' : 'Choose picture folder';
   var noList = document.getElementById('a36PictureNoList');
   if (noList) noList.style.display = map.length ? 'none' : '';
   if (!map.length) {
@@ -27460,7 +27475,8 @@ function _a36PictureStatus() {
   });
   var total = Object.keys(listed).length;
   if (!files.length) {
-    st.textContent = total + (total === 1 ? ' picture' : ' pictures') + ' in the picture list';
+    st.textContent =
+      total + (total === 1 ? ' picture' : ' pictures') + ' in the picture list' + (needsAllow ? ' (remembered folder: ' + remembered.name + ')' : '');
     return;
   }
   var found = 0;
@@ -27469,18 +27485,56 @@ function _a36PictureStatus() {
   Object.keys(listed).forEach(function (f) {
     if (have[f]) found++;
   });
-  var folder = files[0].webkitRelativePath ? files[0].webkitRelativePath.split('/')[0] : '';
+  var folder = useInput ? (files[0].webkitRelativePath ? files[0].webkitRelativePath.split('/')[0] : '') : remembered.name;
   st.textContent =
     (found === 0 ? 'No listed pictures found in this folder' : found + ' of ' + total + ' pictures found in the folder') +
     (folder ? ' (folder: ' + folder + ')' : '');
 }
 window._a36PictureStatus = _a36PictureStatus;
 
+// Folder button (folder = 1) and CSV button (folder = 0). The folder picker of app/picture-folder.js is called straight
+// from the click (no await before it: the picker needs the user activation). Without showDirectoryPicker the hidden input opens.
 function _a36PictureOpen(folder) {
+  if (folder && typeof pictureFolderPickerSupported === 'function' && pictureFolderPickerSupported()) {
+    pictureFolderPick(window._a36PicPid)
+      .then(function () {
+        _a36PictureStatus();
+      })
+      .catch(function (err) {
+        showToast('Could not use the picture folder: ' + (err && err.message ? err.message : err), 'error', 8000);
+      });
+    return;
+  }
   var el = document.getElementById(folder ? 'a36PictureDir' : 'a36PictureCsv');
   if (el) el.click();
 }
 window._a36PictureOpen = _a36PictureOpen;
+
+// "Allow access to <folder>" button: one click asks the browser for read access to the remembered folder, no picker.
+function _a36PictureAllow() {
+  pictureFolderRequestAccess(window._a36PicPid)
+    .then(function (state) {
+      if (state.permission !== 'granted') showToast('Access to the picture folder was not allowed.', 'info');
+      _a36PictureStatus();
+    })
+    .catch(function (err) {
+      showToast('Could not use the picture folder: ' + (err && err.message ? err.message : err), 'error', 8000);
+    });
+}
+window._a36PictureAllow = _a36PictureAllow;
+
+// Looks for the remembered folder of this project (no prompt) and updates the picture panel.
+function _a36PictureRestore() {
+  if (typeof pictureFolderRestore !== 'function') return;
+  pictureFolderRestore(window._a36PicPid)
+    .then(function () {
+      _a36PictureStatus();
+    })
+    .catch(function (err) {
+      showToast('Could not read the remembered picture folder: ' + (err && err.message ? err.message : err), 'error', 8000);
+    });
+}
+window._a36PictureRestore = _a36PictureRestore;
 
 function _a36PictureCsvChosen(input) {
   faImportPictureList(window._a36PicPid, input, _a36PictureStatus);
@@ -27576,12 +27630,21 @@ function generateASHRAE36Preview() {
     var picMap = typeof faLoad === 'function' ? faLoad(projId).pictureMap : [];
     data._a36PictureMap = picMap;
     var dirEl = document.getElementById('a36PictureDir');
-    if (dirEl && dirEl.files && dirEl.files.length && picMap.length) {
+    if (picMap.length && typeof pictureFolderHasChoice === 'function' && pictureFolderHasChoice(projId, dirEl)) {
       showToast('Reading pictures...', 'info');
-      _a36DetLoadPictures(dirEl.files, _a36DetNeededPictureFiles(data, picMap, _a36DetRowsById(projId))).then(function (pics) {
-        data._a36Pictures = pics;
-        finish();
-      });
+      pictureFolderFiles(projId, dirEl)
+        .then(function (pictureFiles) {
+          return _a36DetLoadPictures(pictureFiles, _a36DetNeededPictureFiles(data, picMap, _a36DetRowsById(projId)));
+        })
+        .then(
+          function (pics) {
+            data._a36Pictures = pics;
+          },
+          function (err) {
+            showToast('Could not read the picture folder: ' + (err && err.message ? err.message : err) + '. The report has no pictures.', 'error', 8000);
+          }
+        )
+        .then(finish);
       return;
     }
   }

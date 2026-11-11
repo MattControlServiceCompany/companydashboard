@@ -212,6 +212,26 @@ function _rptPdfFlattenTables(root, win) {
 }
 
 /**
+ * _rptPdfSetButtonsBusy - disables every Download PDF button and shows "Building PDF..." on it
+ * while a PDF builds, then restores the button. The one owner of the busy look of the button.
+ */
+function _rptPdfSetButtonsBusy(isBusy) {
+  var buttons = document.querySelectorAll('button[onclick="downloadReportPdf()"]');
+  for (var bi = 0; bi < buttons.length; bi++) {
+    var button = buttons[bi];
+    if (isBusy) {
+      button.setAttribute('data-rpt-pdf-label', button.textContent);
+      button.textContent = 'Building PDF...';
+      button.disabled = true;
+    } else {
+      if (button.hasAttribute('data-rpt-pdf-label')) button.textContent = button.getAttribute('data-rpt-pdf-label');
+      button.removeAttribute('data-rpt-pdf-label');
+      button.disabled = false;
+    }
+  }
+}
+
+/**
  * downloadReportPdf - saves the open report as a PDF file with one click. See the file header.
  */
 async function downloadReportPdf() {
@@ -232,8 +252,12 @@ async function downloadReportPdf() {
     showToast('No report pages to export');
     return;
   }
-  if (window._rptPdfBusy) return;
+  if (window._rptPdfBusy) {
+    showToast('A PDF is already being built. Please wait.', 'info');
+    return;
+  }
   window._rptPdfBusy = true;
+  _rptPdfSetButtonsBusy(true);
   var filename = rptReportFileName(data, '.pdf');
   var restoreTierPanels = _rptForceOpenTierPanels(found.pagesRoot);
   try {
@@ -346,6 +370,7 @@ async function downloadReportPdf() {
   } finally {
     restoreTierPanels();
     window._rptPdfBusy = false;
+    _rptPdfSetButtonsBusy(false);
   }
 }
 window.downloadReportPdf = downloadReportPdf;

@@ -897,7 +897,7 @@
         pointer-events: none; /* a hidden toast must not catch clicks meant for the header tabs */
         left: 50%;
         transform: translateX(-50%) translateY(-80px);
-        z-index: 999;
+        z-index: 100000; /* above .report-overlay (99999): a toast must show over every overlay */
         background: var(--s3);
         border: 1px solid var(--accent);
         border-radius: 10px;
@@ -6997,7 +6997,7 @@
         pointer-events: none; /* a hidden toast must not catch clicks meant for the header tabs */
         left: 50%;
         transform: translateX(-50%) translateY(-80px);
-        z-index: 999;
+        z-index: 100000; /* above .report-overlay (99999): a toast must show over every overlay */
         background: var(--s3);
         border: 1px solid var(--em);
         border-radius: 10px;
@@ -16795,11 +16795,12 @@
     <script src="app/docx-skeleton.js?v=939b4e69"></script>
     <script src="app/docx-writer.js?v=9edf3193"></script>
     <script src="app/meeting-export.js?v=3a99c987"></script>
-    <script src="app/report-engine.js?v=46693798"></script>
+    <script src="app/picture-folder.js?v=136108d1"></script>
+    <script src="app/report-engine.js?v=0e6e9993"></script>
     <script src="app/report-printed.js?v=9212dd7b"></script>
     <script src="app/report-engine-woodland.js?v=ff6ebd7c"></script>
     <script src="app/report-preview.js?v=fc2af226"></script>
-    <script src="app/report-pdf.js?v=4b0c5a48"></script>
+    <script src="app/report-pdf.js?v=9e616f44"></script>
     <script src="app/presented-savings.js?v=644877c3"></script>
     <script src="app/data/bas-weather-bins.js?v=44a36437"></script>
     <script src="app/calc-autofill.js?v=7e902f22"></script>
