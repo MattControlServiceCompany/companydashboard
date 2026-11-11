@@ -3098,12 +3098,16 @@ function emVerifyTypeByPoints(group) {
   // DX backup coil — condenser/evaporator pressure, DX heating capacity, suction line temp all
   // present) satisfied this rule's airflow+damper+air-source-mode signature and were wrongly
   // point-verified as 'vav'. A genuine VAV terminal box never has a refrigerant circuit.
+  // 2026-11-11 (143b0aa2): also never its own supply fan or VFD. Without this, a combined AHU/ERV unit
+  // ("ERV Outside Air CFM", "EF Isolation Damper Position", "Air Source Mode") was typed 'vav'.
   if (
     hasAirFlow &&
     hasPoint(/damper position|zone damper/) &&
     hasPoint(/air source mode/) &&
     !hasTermFan &&
-    !hasDxSignal
+    !hasDxSignal &&
+    !hasSupplyFan &&
+    !hasVfdSignal
   )
     return { category: 'vav', subtype: '', rule: '8', confidence: 'strong' };
 
