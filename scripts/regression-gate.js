@@ -46,6 +46,10 @@ const REPO_ROOT = path.resolve(__dirname, '..');
 const DOWNLOADS = path.join(os.homedir(), 'Downloads').split(path.sep).join('/');
 const CTX_DIR = (process.env.CH_CONTEXT_DIR || path.join(os.homedir(), 'AI', '_context')).split(path.sep).join('/');
 const DEFAULT_ORACLE = CTX_DIR + '/reference/known-good-values/regression-oracle.json';
+// The OCR tests (tools/test-ocr-hidden-tab.js, tools/test-meeting-preview-blob.js) read pdf.js from a local cache folder named by CH_PDFJS_CACHE.
+// Default to the permanent cache in the context dir when the variable is unset and the folder exists.
+const DEFAULT_PDFJS_CACHE = CTX_DIR + '/tools/2026-11-03-pdfjs-3.11.174-cache';
+if (!process.env.CH_PDFJS_CACHE && fs.existsSync(DEFAULT_PDFJS_CACHE)) process.env.CH_PDFJS_CACHE = DEFAULT_PDFJS_CACHE;
 
 // ---- playwright: no node_modules in the repo. Resolve from CH_PLAYWRIGHT_NODE_MODULES (default: the
 // permanent copy in _context/tools/playwright-runtime), then this tree's own install. The same dir goes to child tests as NODE_PATH. ----

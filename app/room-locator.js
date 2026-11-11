@@ -99,24 +99,17 @@
   var api = { RESULT_MAX: RESULT_MAX, NO_AREA: NO_AREA, search: search };
 
   // --- page part (browser only) ----------------------------------------------------------------
-  function esc(s) {
-    return String(s == null ? '' : s)
-      .replace(/&/g, '&amp;')
-      .replace(/</g, '&lt;')
-      .replace(/>/g, '&gt;')
-      .replace(/"/g, '&quot;');
-  }
   function resultsHtml(res, query) {
-    if (!res.total) return '<div style="padding:16px 20px;font-size:12px;color:var(--text)">Nothing in the Building Automation System data matches "' + esc(query.trim()) + '".</div>';
+    if (!res.total) return '<div style="padding:16px 20px;font-size:12px;color:var(--text)">Nothing in the Building Automation System data matches "' + _escHtml(query.trim()) + '".</div>';
     var T = root.pcalUi;
     var html = '<div style="padding:8px 20px 16px">';
     res.groups.forEach(function (g) {
       html +=
-        '<div style="margin-top:10px;font-size:12px;font-weight:700;color:var(--text)">' + esc(g.building) + ' (' + g.items.length + ')</div>' +
+        '<div style="margin-top:10px;font-size:12px;font-weight:700;color:var(--text)">' + _escHtml(g.building) + ' (' + g.items.length + ')</div>' +
         T.table(
           [['Building', '14%'], ['Area', '15%'], ['WebCTRL tree path', '27%'], ['Equipment or program', '22%'], ['Air source', '22%']],
           g.items.map(function (it) {
-            return [esc(it.building), esc(it.area), esc(it.path), esc(it.name) + (it.space ? ' (calendar space: ' + esc(it.space) + ')' : ''), it.airText ? '<span title="' + esc(it.airHint) + '">' + esc(it.airText) + '</span>' : ''];
+            return [_escHtml(it.building), _escHtml(it.area), _escHtml(it.path), _escHtml(it.name) + (it.space ? ' (calendar space: ' + _escHtml(it.space) + ')' : ''), it.airText ? '<span title="' + _escHtml(it.airHint) + '">' + _escHtml(it.airText) + '</span>' : ''];
           }),
         );
     });

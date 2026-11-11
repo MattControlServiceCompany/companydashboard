@@ -2,7 +2,7 @@
 // a Back/Forward restore from the page cache (pageshow with persisted=true) checks the live version.
 //  1. same version        -> one site-ui.js check, NO second document load
 //  2. persisted=false     -> no check at all
-//  3. new version served  -> the page reloads (second document load)
+//  3. new version served  -> no reload while the user is on the page; the page reloads once the user is away (second document load)
 //  4. check fails (500)   -> no reload
 // Run: node test-pageshow-version-check.js
 const { launchBrowser } = require('./tools/launch-browser.js');
@@ -68,10 +68,18 @@ const wait = (ms) => new Promise((r) => setTimeout(r, ms));
     ok(verChecks === v0 + 1, 'failed check: the check ran');
     ok(docLoads === 1, 'failed check: no reload');
 
+    // Rule since v.270 (tools/test-update-reload-state.js owns it): the update reload runs only while the user is away.
     mode = 'new';
     await fire(true);
     await wait(6000);
-    ok(docLoads === 2, 'new version served: the page reloaded (second document load)');
+    ok(docLoads === 1, 'new version served, user still on the page: no reload');
+    const secondLoad = page.waitForNavigation({ waitUntil: 'load', timeout: 15000 }).catch(() => null);
+    await page.evaluate(() => {
+      document.hasFocus = () => false;
+      window.dispatchEvent(new Event('blur'));
+    });
+    await secondLoad;
+    ok(docLoads === 2, 'new version served, user away: the page reloaded (second document load)');
   } finally {
     if (ctx) await ctx.close();
     web.close();

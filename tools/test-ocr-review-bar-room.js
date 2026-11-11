@@ -38,8 +38,10 @@ const opens = (between.match(/<div\b/g) || []).length;
 const closes = (between.match(/<\/div>/g) || []).length;
 ok(closes - opens === 1, 'the scroller closes between the values grid and the bar (bar is outside it)');
 ok(/id="extractedFieldsGrid"[^>]*><\/div>\s*<\/div>/.test(src), 'extractedFieldsGrid is the last child of the scroller');
-ok(src.indexOf('id="pdfTopBar"') > sc && src.indexOf('id="pdfTopBar"') < gi, 'the file bar is inside the scroller (it sticks at the top of it)');
-ok(/#pdfValuesScroll \.pdf-topbar\s*\{[^}]*top\s*:\s*0/.test(src), 'the file bar sticks flush with the top of the scroller');
+// Layout since 41a1249c (2026-11-10): the file bar is in the frozen block above the scroller, not inside it.
+const frozenBlockAt = src.indexOf('id="pdfFrozen"');
+ok(frozenBlockAt > lc && frozenBlockAt < sc && src.indexOf('id="pdfTopBar"') > frozenBlockAt && src.indexOf('id="pdfTopBar"') < sc, 'the file bar is in #pdfFrozen, above the scroller (it never moves)');
+ok(/#pdfFrozen \.pdf-topbar\s*\{[^}]*position\s*:\s*static/.test(src), 'the file bar is static inside the frozen block');
 
 if (fails.length) {
   console.log(pass + ' passed, ' + fails.length + ' failed');

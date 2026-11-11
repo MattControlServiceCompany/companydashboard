@@ -1031,7 +1031,8 @@ function enterApp() {
       } catch (e) {}
       // The login screen was hidden for a load after an automatic update (energy-department.html).
       // The session is gone (not entered): show it again.
-      if (!document.getElementById('app').classList.contains('visible')) document.documentElement.removeAttribute('data-resuming');
+      const appShell = document.getElementById('app');
+      if (appShell && !appShell.classList.contains('visible')) document.documentElement.removeAttribute('data-resuming');
     });
 })();
 

@@ -456,7 +456,7 @@ The app Restore path (6c) is on main only, not in stable (v87), until the Nov 2 
   test, for example `$env:CH_TMP_ROOT = '<context dir>\temp\<dated-folder>\run'` (PowerShell); the folder is made when needed. Delete it
   when you finish with `python -I "<context dir>\tools\2026-11-03-clean-temp.py" <path>`. `rmTmp` deletes with `fs.rmSync` and 20 retries
   at 500 ms, so a Windows EPERM or EBUSY (a browser still holds a file) is retried before it fails. `tools/test-ocr-hidden-tab.js` also needs
-  `CH_PDFJS_CACHE`: a folder with `pdf.min.js` and `pdf.worker.min.js` (pdf.js 3.11.174, saved once from cdnjs; the test never downloads and
+  `CH_PDFJS_CACHE`: a folder with `pdf.min.js` and `pdf.worker.min.js` (pdf.js 3.11.174, saved once from cdnjs; `scripts/regression-gate.js` sets it to `<context dir>/tools/2026-11-03-pdfjs-3.11.174-cache` when it is unset and that folder exists; the test never downloads and
   never writes into that folder).
   Keep the `CH_TMP_ROOT` path short (2026-11-08): the browser profile is `<root>/<tag>/<tag>-<task>-profile-<ms>-<pid>`. When that path is about 180 characters or more (for example a root inside a long dated worktree folder), Chromium cannot store page data on Windows (path limit 260), and `tools/test-matrix-sync-write-and-view.js` fails with `waiting for locator('#em-raw-btn')` while it passes alone. Use a short root such as `<context dir>	emp\<date>-g`. Check: the same test passes with a short root and fails with a long root.
   Temp-leak guard: the gate needs `CH_TMP_ROOT`. It makes a run tag `ch-gate-<pid>-<start ms>`, makes ONE run folder `<CH_TMP_ROOT>/<tag>`,

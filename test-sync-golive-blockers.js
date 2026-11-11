@@ -3984,7 +3984,7 @@ await t(
   },
 );
 await t(
-  "CREDIT7 version check: no timer, one small Range GET of site-ui.js, compares CH_VERSION, 60 s limit, never hidden",
+  "CREDIT7 version check: no timer, one small Range GET of site-ui.js, compares CH_VERSION, 60 s limit, reload only while the user is away",
   async () => {
     const src = fs.readFileSync(path.join(__dirname, "app", "report-engine.js"), "utf8");
     const a = src.indexOf("let _chVerLastCheck");
@@ -4000,8 +4000,9 @@ await t(
     assert.strictEqual(gets.length, 1, "exactly one request");
     assert.ok(/CH_VERSION/.test(block) && /loadedVer !== fetchedVer/.test(block), "compares the version string");
     assert.ok(/_CH_VER_MIN_GAP_MS\s*=\s*60 \* 1000/.test(block), "60 second limit");
-    assert.ok(/if \(document\.hidden\) return;/.test(init), "never while hidden");
-    assert.ok(/addEventListener\('visibilitychange'/.test(init) && /addEventListener\('focus'/.test(init));
+    // Rule since v.270: the reload (not the check) runs only while the user is away; see CREDIT8 and tools/test-update-reload-state.js.
+    assert.ok(/_userIsAway\(\)/.test(src.slice(src.indexOf("function _reloadForNewVersionWhenSafe"), b)), "the update reload waits for the user to be away");
+    assert.ok(/addEventListener\('visibilitychange'/.test(init) && /addEventListener\('focus'/.test(init) && /addEventListener\('blur'/.test(init));
   },
 );
 
@@ -4030,18 +4031,21 @@ await t(
       return { sandbox, log };
     }
     const base = () => ({ DB: { getQueueDepth: () => 0, hasPendingWrites: () => false } });
-    // safe: toast, then one reload after 2 s
-    let r = run(base());
+    // The user is away (tab hidden): the reload may run. The user is looking at the page: it must not (v.270 rule).
+    const away = { hidden: true };
+    let r = run(base(), { hidden: false });
     r.sandbox.go("v999");
-    assert.deepStrictEqual(r.log.toasts, ["Updating to the new version"]);
-    assert.strictEqual(r.log.timers.length, 1);
-    assert.strictEqual(r.log.reloads, 0);
-    r.log.timers[0].f();
+    assert.strictEqual(r.log.toasts.length + r.log.timers.length + r.log.reloads, 0, "page visible and focused: no reload");
+    // safe and away: no toast, no timer; the page state is saved and the page reloads at once (the user does not see it)
+    r = run(base(), away);
+    r.sandbox.go("v999");
+    assert.deepStrictEqual(r.log.toasts, []);
+    assert.strictEqual(r.log.timers.length, 0);
     assert.strictEqual(r.log.reloads, 1);
     assert.strictEqual(r.log.saves, 1, "page state saved before the reload");
     // second time for the same version in this session: no loop
     r.sandbox.go("v999");
-    assert.strictEqual(r.log.timers.length, 1, "no second reload for the same version");
+    assert.strictEqual(r.log.reloads, 1, "no second reload for the same version");
     // each blocker stops the reload
     const blockers = {
       "queued write": (w) => (w.DB.getQueueDepth = () => 1),
@@ -4054,27 +4058,24 @@ await t(
     for (const name of Object.keys(blockers)) {
       const w = base();
       blockers[name](w);
-      r = run(w);
+      r = run(w, away);
       r.sandbox.go("v999");
       assert.strictEqual(r.log.toasts.length + r.log.timers.length + r.log.reloads, 0, name + ": no toast, no reload");
       assert.strictEqual(r.sandbox.safe(), false, name + ": not safe");
     }
-    // work starts during the 2 s toast: the reload is cancelled
-    const w = base();
-    r = run(w);
-    r.sandbox.go("v999");
-    w.chViewIsDirty = () => true;
-    r.log.timers[0].f();
-    assert.strictEqual(r.log.reloads, 0, "edit during the toast cancels the reload");
     // blocker cleared: the next retry reloads
+    const w = base();
+    w.chViewIsDirty = () => true;
+    r = run(w, away);
+    r.sandbox.go("v999");
+    assert.strictEqual(r.log.reloads, 0, "dirty view: no reload");
     w.chViewIsDirty = () => false;
     r.sandbox.go("v999");
-    r.log.timers[r.log.timers.length - 1].f();
     assert.strictEqual(r.log.reloads, 1, "reload after the blocker clears");
-    // hidden tab: no reload
-    r = run(base(), { hidden: true });
+    // window lost focus to another program (tab still visible): the user is away, so the reload runs
+    r = run(base(), { hidden: false, hasFocus: () => false, activeElement: null });
     r.sandbox.go("v999");
-    assert.strictEqual(r.log.reloads + r.log.timers.length, 0, "hidden tab: nothing");
+    assert.strictEqual(r.log.reloads, 1, "window without focus: the page reloads");
   },
 );
 
@@ -4593,6 +4594,7 @@ await t(
       sessionStorage: stor(ss),
       localStorage: stor({}),
       navigator: {},
+      document: { getElementById: () => null }, // the test page has no #app (core.js skips the login-screen reset then)
       fetch: async () => ({ ok: false, status: 500, json: async () => ({}) }),
       setTimeout,
       setInterval: () => 0,

@@ -30,7 +30,7 @@
 // Then it scrapes the ACTUAL rendered cover stat cards out of the real DOM and compares.
 //
 // Checks:
-//   1. Full selection (all 27 buildings) is unchanged: cover shows 1,285 sequences / 1,291
+//   1. Full selection (all 27 buildings) is unchanged: cover shows 1,226 sequences / 1,292
 //      sensors (the known-good Client D figures from the 2026-09-25 bug report / dashboardlogic).
 //   2. One-building selection ("Client D Elections Office", 8 equipment): the cover's two totals
 //      equal the SUM, over just that building's rows in the unscoped catalog, of the same
@@ -68,9 +68,11 @@ const RUN_DIR =
   process.env.ASHRAE36_TEST_RUN_DIR ||
   path.join(CTX_DIR, 'temp', '2026-09-25-ashrae36-cover-scope', 'test-run');
 
-const EXPECTED_FULL_SEQUENCES = 1285;
-const EXPECTED_FULL_SENSORS = 1291;
-const ONE_BUILDING_NAME = 'Jo Co Elections Office';
+// was 1285/1291 before 99d2c573 point map (2026-11-11)
+const EXPECTED_FULL_SEQUENCES = 1226;
+const EXPECTED_FULL_SENSORS = 1292;
+// The one-building case uses the first building of the restored data (set after the full-selection run); no building name is kept in this file.
+let oneBuildingName = null;
 
 let passed = 0;
 let failed = 0;
@@ -146,8 +148,17 @@ async function runScope(h, projId, selectOnlyNames) {
   console.log('Testing against project: ' + proj.projName);
   const projId = proj.projId;
 
+  console.log('\n-- Full selection (all buildings) --');
+  const full = await runScope(h, projId, null);
+  console.log('  ' + JSON.stringify(full));
+  assertEq(full.coverSequences, EXPECTED_FULL_SEQUENCES, 'full-selection cover Sequences to Program unchanged');
+  assertEq(full.coverSensors, EXPECTED_FULL_SENSORS, 'full-selection cover Devices to Install unchanged');
+
+  oneBuildingName = full.buildings[0];
+  if (!oneBuildingName) throw new Error('restored data has no building for the one-building check');
+
   // Independent expected value for the one-building case: sum the SAME predicates the cover
-  // uses (phase===1&&!ioOnly / phase===2&&seqKey), but filtered to ONE_BUILDING_NAME's rows out
+  // uses (phase===1&&!ioOnly / phase===2&&seqKey), but filtered to the chosen building's rows out
   // of the full, UNSCOPED catalog -- i.e. computed a different way than the app's own scoped
   // call path (_a36ScopedCatalogRows), so this is a real cross-check, not a tautology.
   const expected = await h.page.evaluate(
@@ -162,20 +173,15 @@ async function runScope(h, projId, selectOnlyNames) {
       });
       return { sensors, sequences };
     },
-    { bName: ONE_BUILDING_NAME, projId: projId },
+    { bName: oneBuildingName, projId: projId },
   );
   console.log(
     'Independent expected one-building totals (from unscoped buildCatalogRows, filtered): ' + JSON.stringify(expected),
   );
 
-  console.log('\n-- Full selection (all buildings) --');
-  const full = await runScope(h, projId, null);
-  console.log('  ' + JSON.stringify(full));
-  assertEq(full.coverSequences, EXPECTED_FULL_SEQUENCES, 'full-selection cover Sequences to Program unchanged');
-  assertEq(full.coverSensors, EXPECTED_FULL_SENSORS, 'full-selection cover Devices to Install unchanged');
 
-  console.log('\n-- One-building selection (' + ONE_BUILDING_NAME + ') --');
-  const one = await runScope(h, projId, [ONE_BUILDING_NAME]);
+  console.log('\n-- One-building selection (' + oneBuildingName + ') --');
+  const one = await runScope(h, projId, [oneBuildingName]);
   console.log('  ' + JSON.stringify(one));
   assertEq(one.totalBuildings, 1, 'one-building selection scopes Buildings Assessed to 1');
   assertEq(
