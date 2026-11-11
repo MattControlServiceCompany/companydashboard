@@ -2522,10 +2522,13 @@ function _pricingSelectZoneSensorSku(needCO2, features) {
    cover, callouts, per-building detail, executive summary) must pass its own scoped
    building-name list here rather than filtering buildCatalogRows' OUTPUT a second way —
    see _a36ScopedCatalogRows in report-engine.js, the one place that does this.
+
+   opts (optional): passed straight through to collectASHRAE36Data. Only the Detailed Audit Report passes it
+   ({ plantsByName: true }); every other caller omits it and gets the stored categories.
    ─────────────────────────────────────────────────────────────────────────── */
-function buildCatalogRows(projId, buildingNames) {
+function buildCatalogRows(projId, buildingNames, opts) {
   if (typeof collectASHRAE36Data !== 'function') return [];
-  var ashData = collectASHRAE36Data(projId, null, buildingNames);
+  var ashData = collectASHRAE36Data(projId, null, buildingNames, opts);
   if (!ashData || !ashData.buildings) return [];
 
   var catalog = sget('en_pricing_catalog', null);

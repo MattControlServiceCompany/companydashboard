@@ -11,6 +11,7 @@
 //   8. No picture folder: the report is complete and has no figures.
 //   9. Word: the figure pictures and captions are in the translated document.
 //  10. Simple style: no Detailed page and no figure; same HTML as before (see A36_SIMPLE_DUMP).
+//  11. D4: a heating hot water plant and a chilled water plant print in Detailed (overview, description, findings, no schedule finding); domestic hot water does not; Simple keeps the stored categories.
 'use strict';
 const path = require('path');
 const fs = require('fs');
@@ -422,6 +423,58 @@ const ok = (c, m) => {
       return Array.from(document.querySelectorAll('#reportPages .rpt-page')).map((p) => p.getAttribute('data-section'));
     }, seed);
     ok(simpleModal.length > 2 && simpleModal.indexOf('detailedLibrary') < 0 && simpleModal.indexOf('detailedAppendixA') < 0, 'Simple style through the modal prints no Detailed page (' + simpleModal.join(',') + ')');
+    // ---- 11. D4: heating and chilled water plants print in Detailed only; domestic hot water never prints ----
+    const PID2 = await page.evaluate(async () => {
+      const PID = 900002;
+      const pl = (id, name, cat, p) => ({ id, building: 'Gamma Library', category: cat, equipName: name, location: '', controllerType: 'Sample Controller', points: p });
+      const rows = [
+        pl('g1', 'AHU-1', 'ahu', { 'Supply Air Temp': '55.2 °F', 'Return Air Temp': '72.1 °F', 'Duct Static Pressure': '1.1 in H2O', 'Outside Air Temp': '61 °F' }),
+        pl('g2', 'Hot Water System - Gamma', 'plumbing', { 'Hot Water Supply Temperature': '150.2 °F', 'Hot Water Return Temperature': '130.0 °F', 'Hot Water Set Point': '160', 'Boiler 1 Status': 'On', 'Hot Water Pump 1 Enable': 'On', 'Heat Request 1': '1' }),
+        pl('g3', 'Chilled Water System - Gamma', 'controls', { 'Chilled Water Supply Temperature': '44.1 °F', 'Chilled Water Return Temperature': '54.0 °F', 'Chilled Water Setpoint': '44', 'Chiller 1 Enable': 'On', 'Chilled Water Pump 1 Enable': 'On', 'Cool Request 1': '1' }),
+        pl('g4', 'Domestic Hot Water', 'plumbing', { 'Domestic Hot Water Temperature': '120.0 °F', 'Recirculation Pump Status': 'On' }),
+        pl('g5', 'Hot Water Loop Bypass Valve', 'plumbing', { 'Bypass Valve Position': '20 %' }),
+      ];
+      projects.push({ id: PID, name: 'Synthetic Plant District', client: 'Synthetic Plant District', type: 'K-12', start: '2025-01-01' });
+      await sset('en_eqmatrix_' + PID, { rows: rows, importedAt: null, buildings: ['Gamma Library'] });
+      await sset('en_audit_' + PID, { findings: [], edits: {}, evidence: {} });
+      return PID;
+    });
+    const rule = await page.evaluate(() => [
+      ['Hot Water System -  BVL', 'plumbing'], ['Hot Water - Lenexa CCL', 'other'], ['Chilled Water System - Central', 'controls'], ['Heating Water System - Central', 'plumbing'],
+      ['Domestic Hot Water System - ADC', 'plumbing'], ['Domestic Hot Water', 'plumbing'], ['Hot Water Loop Bypass Valve', 'plumbing'], ['Hot Water System Differential Pressure', 'plumbing'],
+      ['Hot Water System BTU Meter', 'plumbing'], ['Hot Water Makeup Water Meter', 'meter'], ['Chiller Integration', 'controls'], ['Hot Water System - HS', 'ahu'],
+    ].map((x) => _a36PlantCategoryByName(x[0], x[1])));
+    ok(rule.join(',') === 'hwp,hwp,chwp,hwp,plumbing,plumbing,plumbing,plumbing,plumbing,meter,controls,ahu', 'D4: the plant rule: "Hot Water System - X", "Hot Water - X", "Chilled Water System - X" are plants; domestic, bypass valve, pressure, BTU meter, makeup meter and integration stub are not (' + rule.join(',') + ')');
+    const simplePlants = await page.evaluate((PID) => {
+      const d = collectASHRAE36Data(PID, '2026-11-10', null);
+      const html = generateASHRAE36AuditHTML(d, { cover: true, executive: true, costEstimate: true, building: true, setpointReview: true, pointInventory: true });
+      return { cats: d.buildings[0].equipResults.map((e) => e.category).sort().join(','), flag: d.plantsByName, plantText: /Hot Water Plant|Chilled Water Plant/.test(html) };
+    }, PID2);
+    ok(simplePlants.cats === 'ahu' && simplePlants.flag === false && !simplePlants.plantText, 'D4: Simple and every other caller keep the stored categories: only the air handler is audited (' + simplePlants.cats + ')');
+    await page.evaluate(() => { document.getElementById('reportOverlay').style.display = 'none'; document.getElementById('reportPages').innerHTML = ''; });
+    const plants = await page.evaluate(async (PID) => {
+      openASHRAE36ReportModal(PID, 'audit');
+      document.querySelector('input[name="a36Style"][value="detailed"]').checked = true;
+      _a36StyleChanged();
+      generateASHRAE36Preview();
+      for (let i = 0; i < 100 && !document.querySelector('#reportPages .rpt-page'); i++) await new Promise((r) => setTimeout(r, 100));
+      await new Promise((r) => setTimeout(r, 300));
+      const text = Array.from(document.querySelectorAll('#reportPages .rpt-page[data-section="detailedLibrary"]')).map((p) => p.textContent).join('\n');
+      return { text, cats: window._currentReportData.buildings[0].equipResults.map((e) => e.category).sort().join(',') };
+    }, PID2);
+    const pt = plants.text;
+    ok(plants.cats === 'ahu,chwp,hwp', 'D4: Detailed audits the air handler and the two plants: ' + plants.cats);
+    ok(/Chilled Water Plant\s*1/.test(pt) && /Hot Water Plant\s*1/.test(pt) && /Total\s*3/.test(pt), 'D4: System Overview counts one Hot Water Plant and one Chilled Water Plant (total 3)');
+    ok(/Hot Water Plant\.\s*1 unit: Hot Water System - Gamma\./.test(pt) && /Chilled Water Plant\.\s*1 unit: Chilled Water System - Gamma\./.test(pt), 'D4: Equipment Descriptions name the heating hot water plant and the chilled water plant');
+    ok(/Readings at the time of the audit on Hot Water System - Gamma: .*Hot Water Supply Temperature 150\.2°F/.test(pt) && /Readings at the time of the audit on Chilled Water System - Gamma: .*Chilled Water Supply Temperature 44\.1°F/.test(pt), 'D4: plants print their readings');
+    ok(!/Domestic Hot Water/.test(pt) && !/Loop Bypass/.test(pt) && !/Plumbing/.test(pt), 'D4: domestic hot water and the bypass valve do not print');
+    const fStart = pt.indexOf('Findings');
+    const fEnd = pt.indexOf('Gamma Library: Recommended Work');
+    const findAll = pt.slice(fStart, fEnd);
+    const findPlants = findAll.slice(0, findAll.indexOf('Air Handling Unit'));
+    ok(fStart > 0 && fEnd > fStart && /Chilled Water Plant/.test(findPlants) && /Hot Water Plant/.test(findPlants), 'D4: Findings has a Chilled Water Plant block and a Hot Water Plant block');
+    ok(!/schedul/i.test(findPlants) && !/Occupied schedule/.test(pt), 'D4: plants get no schedule finding and no schedule line');
+    ok(/Chilled Water Supply Temperature Reset/.test(findPlants) && /Hot Water Supply Temperature Reset/.test(findPlants), 'D4: plant findings include the supply temperature reset sequence of each plant (same treatment as the plants Detailed already printed)');
     ok(errs.length === 0, 'no page errors' + (errs.length ? ': ' + errs[0] : ''));
   } finally {
     await ctx.close();

@@ -16792,10 +16792,23 @@ function _a36DisplayName(b) {
  * @param {number|string} projId
  * @returns {object|null}
  */
+// _a36PlantCategoryByName -- the ONE rule that says a row is a heating hot water or chilled water PLANT although the Equipment
+// Matrix files it under plumbing / other / controls. Used only by the Detailed Audit Report (collectASHRAE36Data option
+// plantsByName); the Simple report, Cost Estimate and Equipment Matrix keep the stored category. A plant name has the shape
+// "Hot Water System - X", "Hot Water - X", "Heating Water System - X" or "Chilled Water System - X". Domestic hot water is
+// never a plant. Returns 'hwp', 'chwp', or the stored category unchanged.
+function _a36PlantCategoryByName(nameStr, storedCat) {
+  if (storedCat !== 'plumbing' && storedCat !== 'other' && storedCat !== 'controls') return storedCat;
+  var n = String(nameStr || '').trim();
+  if (/\b(?:domestic|dhw)\b/i.test(n)) return storedCat;
+  if (!/^(?:hot|heating|chilled)\s+water(?:\s+(?:system|plant))?\s+-\s*\S/i.test(n)) return storedCat;
+  return /^chilled/i.test(n) ? 'chwp' : 'hwp';
+}
+
 // buildingNames (optional): the ASHRAE 36 modal's building selection. Equipment rows carry a
 // building NAME (row.building), not an id, so the filter keys on the exact string the grouping
 // below uses. null/empty = every building (all non-modal callers: agreement, pricing estimator).
-function collectASHRAE36Data(projId, reportDate, buildingNames) {
+function collectASHRAE36Data(projId, reportDate, buildingNames, opts) {
   if (typeof emLoadMatrix !== 'function') return null;
   var matData = emLoadMatrix(projId);
   if (!matData || !matData.rows || !matData.rows.length) return null;
@@ -17033,6 +17046,11 @@ function collectASHRAE36Data(projId, reportDate, buildingNames) {
     function _emReclassifyRow(r) {
       if (r.category === 'hwp' && _UH_ABBREV_RE.test((r.equipName || '').trim())) {
         return Object.assign({}, r, { category: 'heater' });
+      }
+      // Detailed Audit Report only (opts.plantsByName): a heating or chilled water plant stored as plumbing / other / controls.
+      if (opts && opts.plantsByName) {
+        var _plantCat = _a36PlantCategoryByName(r.equipName, r.category);
+        if (_plantCat !== r.category) return Object.assign({}, r, { category: _plantCat });
       }
       return r;
     }
@@ -17588,6 +17606,7 @@ function collectASHRAE36Data(projId, reportDate, buildingNames) {
     project: { name: projName, id: projId },
     date: dateStr,
     rawDate: rawDate,
+    plantsByName: !!(opts && opts.plantsByName), // Detailed Audit Report: _a36ScopedCatalogRows scopes the priced rows the same way
     buildings: buildingsData,
     portfolio: {
       composite: portfolioComposite,
@@ -17889,7 +17908,9 @@ function _a36ScopedCatalogRows(d) {
       return b.name;
     });
     d._a36CatalogRowsCache =
-      typeof buildCatalogRows === 'function' ? buildCatalogRows(d.project.id, _scopeNames) || [] : [];
+      typeof buildCatalogRows === 'function'
+        ? buildCatalogRows(d.project.id, _scopeNames, d.plantsByName ? { plantsByName: true } : undefined) || []
+        : [];
   }
   return d._a36CatalogRowsCache;
 }
@@ -26717,7 +26738,9 @@ function generateASHRAE36Preview() {
     showToast('Select at least one building', 'warning');
     return;
   }
-  var data = collectASHRAE36Data(projId, reportDate, buildingNames);
+  var styleChosen = modal.querySelector('input[name="a36Style"]:checked');
+  var detailedStyle = type !== 'proposal' && !!styleChosen && styleChosen.value === 'detailed';
+  var data = collectASHRAE36Data(projId, reportDate, buildingNames, detailedStyle ? { plantsByName: true } : undefined);
   if (!data) {
     showToast('No equipment matrix data found. Import a BAS point list on the Equipment tab first.', 'error');
     return;
@@ -26738,8 +26761,7 @@ function generateASHRAE36Preview() {
   });
 
   // Detailed style (audit only): the picture list and the files chosen in the folder picker become figures.
-  var styleEl = modal.querySelector('input[name="a36Style"]:checked');
-  var detailed = type !== 'proposal' && !!styleEl && styleEl.value === 'detailed';
+  var detailed = detailedStyle;
   if (detailed) selectedSections.detailed = true;
 
   function finish() {
