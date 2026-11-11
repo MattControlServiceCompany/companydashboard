@@ -62,7 +62,7 @@ const state = () => ({
       },
       {
         en_projects: [
-          { id: 999000416, name: 'Louisburg SYNTHETIC', client: 'S', addr: '', type: 'Test', status: 'active', phase: '', contacts: [], savingsData: { measures: [] } },
+          { id: 999000416, name: 'Alpha SYNTHETIC', client: 'S', addr: '', type: 'Test', status: 'active', phase: '', contacts: [], savingsData: { measures: [] } },
         ],
         ch_settings: { showQuickStart: false },
         ch_theme: 'dark',
@@ -76,7 +76,7 @@ const state = () => ({
     const fresh = await page.evaluate(state);
     eq(fresh.whatsNewOpen, true, 'fresh visit: What\'s New opens as today');
     await page.getByText('Got it', { exact: true }).click({ timeout: 2000 }).catch(() => {});
-    // 1. open Louisburg, Equipment Matrix tab, Set Points sub-tab
+    // 1. open the synthetic project, Equipment Matrix tab, Set Points sub-tab
     await page.evaluate((pid) => {
       openDetail(pid);
       sPTab('eq-matrix', document.querySelector('.pdt[data-tab="eq-matrix"]'), 'setpoints');

@@ -2507,6 +2507,13 @@ async function siteResetAllMeterTableSettings() {
    site-ui.js delegates to this array and should NOT maintain its own copy.
 */
 var RELEASE_NOTES = [
+  { v: 'v2026.11.11.269', date: '2026-11-11', title: 'Updates keep your page; more air source links',
+    items: [
+      { type: 'fix', text: 'When the site updates itself, you stay signed in and on the same page, project and tab. Before, the sign-in screen showed and you landed on the Projects list.' },
+      { type: 'change', text: "The What's New window no longer opens after an automatic update. A short message names the new version. Select What's New in the sidebar to read the changes." },
+      { type: 'fix', text: 'Where is it?: Library Office now links to the Media Center air handler. Library and Media Center name the same space.' },
+      { type: 'fix', text: 'Where is it?: when one air handler has no other terminal units and the only terminal units left are in one Area, they link to that air handler (for example the High School Area G rooms and AHU-3 Lower Gym).' }
+    ] },
   { v: 'v2026.11.11.268', date: '2026-11-11', title: 'Where is it? shows the air source of each unit',
     items: [
       { type: 'new', text: 'Equipment Matrix: the Where is it? list has a new Air source column. A terminal unit shows the air handler that feeds it. An air handler shows how many terminal units it feeds, or that it serves its space directly.' },
