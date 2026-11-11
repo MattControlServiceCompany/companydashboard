@@ -94,6 +94,15 @@
     var m = BasDiff.areaOf(location).match(/\barea\s*'?([a-z])'?(?:\s|$)/i);
     return m ? m[1].toUpperCase() : '';
   }
+  // Words that name the same kind of space. A word in a group also stands for the other words of its group.
+  // Used by the space rule below and by the "Where is it?" search (app/room-locator.js).
+  var SAME_SPACE = [['library', 'media']];
+  function alternatives(w) {
+    for (var i = 0; i < SAME_SPACE.length; i++) {
+      if (SAME_SPACE[i].some(function (x) { return w.indexOf(x) === 0; })) return SAME_SPACE[i].concat([w]);
+    }
+    return [w];
+  }
   // The space words of an air handler named for a space: "AHU-8 Media Center" -> ['media', 'center']. [] when the
   // name lists Areas or has no space words. Direction words (lower, north ...) do not name a space by themselves.
   var NOT_SPACE = { lower: 1, upper: 1, north: 1, south: 1, east: 1, west: 1, main: 1, room: 1, area: 1, areas: 1 };
@@ -146,7 +155,10 @@
     });
     var bySpace = {};
     sources.forEach(function (s) {
-      var ws = spaceWords(s.equipName);
+      var ws = [];
+      spaceWords(s.equipName).forEach(function (w) {
+        ws = ws.concat(alternatives(w));
+      });
       if (!ws.length) return;
       var b = buildingOfRow(s);
       var hit = (rows || []).filter(function (r) {
@@ -226,6 +238,32 @@
       counts.linked++;
       if (src.bacnetLocation !== undefined) info[snapKey(src)].feeds++;
     });
+    // Leftover rule: in a building where every source is named, ONE source that feeds no terminal and is not named in
+    // a shared link takes the terminals still not linked, when they all sit in one tree Area.
+    Object.keys(allNamed).forEach(function (b) {
+      if (!allNamed[b]) return;
+      var shared = {};
+      Object.keys(info).forEach(function (k) {
+        if (info[k].basis === 'name-shared') info[k].source.split(' or ').forEach(function (n) { shared[n] = true; });
+      });
+      var idle = sources.filter(function (s) {
+        return buildingOfRow(s) === b && info[snapKey(s)].feeds === 0 && !shared[s.equipName];
+      });
+      var open = (rows || []).filter(function (r) {
+        var i = info[snapKey(r)];
+        return i.kind === 'terminal' && !i.source && buildingOfRow(r) === b;
+      });
+      var areas = {};
+      open.forEach(function (r) { areas[areaLetter(r.bacnetLocation)] = true; });
+      if (idle.length !== 1 || !open.length || Object.keys(areas).length !== 1 || areas['']) return;
+      open.forEach(function (r) {
+        info[snapKey(r)].source = idle[0].equipName;
+        info[snapKey(r)].basis = 'leftover';
+        info[snapKey(idle[0])].feeds++;
+        counts.linked++;
+        counts.notLinked--;
+      });
+    });
     return { byKey: info, counts: counts };
   }
 
@@ -235,6 +273,7 @@
     number: 'Matched by the unit number in the program name',
     name: 'Matched by the Area in the air handler name',
     space: 'Matched by the space in the air handler name, or the same room number',
+    leftover: 'The only air handler of the building with no other terminal units; these are the only terminal units left, all in one Area',
     'name-shared': 'More than one air handler name lists this Area',
   };
   var NOT_KNOWN_HINT = 'The BAS data does not name its air handler';
@@ -263,6 +302,7 @@
     namedAreas: namedAreas,
     areaLetter: areaLetter,
     spaceWords: spaceWords,
+    alternatives: alternatives,
     roomNumber: roomNumber,
     analyze: analyze,
     sourceOf: function (terminal, rows, ctx) {

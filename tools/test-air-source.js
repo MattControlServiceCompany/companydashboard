@@ -171,5 +171,29 @@ t('name rules: Area in the air handler name, shared Areas, space words with room
   assert.strictEqual(b[AS.snapKey(hs[4])].source, '');
   assert.strictEqual(b[AS.snapKey(hs[6])].source, 'AHU-8 Media Center');
 });
+t('library counts as the media center space; leftover source takes the one remaining Area', () => {
+  const H = D + '/High';
+  const HA = H + "/AREA 'A' SUMMARY";
+  const HG = H + "/AREA 'G' SUMMARY";
+  const hs = [
+    unit(H, 'AHU-7 Area A', 'ahu', true),
+    unit(H, 'AHU-8 Media Center', 'ahu', true),
+    unit(H, 'AHU-3 Lower Gym', 'ahu', true),
+    term(HA, 'Library Office', 'lib'),
+    term(HA, 'Room A300', 'a300'),
+    term(HG, 'Room G02', 'g02'),
+    term(HG, 'Girls Locker Room', 'glr'),
+  ];
+  const a = AS.analyze(hs, { snaps: { '2026-10-30': { rows: { x: [] } } }, audit: null, links: null }).byKey;
+  const src = (nm) => a[AS.snapKey(hs.find((r) => r.equipName === nm))];
+  assert.strictEqual(src('Library Office').source, 'AHU-8 Media Center');
+  assert.strictEqual(src('Room A300').source, 'AHU-7 Area A');
+  assert.strictEqual(src('Room G02').source, 'AHU-3 Lower Gym');
+  assert.strictEqual(src('Room G02').basis, 'leftover');
+  assert.strictEqual(src('AHU-3 Lower Gym').feeds, 2);
+  const two = hs.concat([term(HA.replace("'A'", "'C'"), 'Room C1', 'c1')]);
+  const b = AS.analyze(two, { snaps: { '2026-10-30': { rows: { x: [] } } }, audit: null, links: null }).byKey;
+  assert.strictEqual(b[AS.snapKey(two[5])].source, '');
+});
 console.log(pass + ' passed, ' + fail + ' failed');
 process.exit(fail ? 1 : 0);

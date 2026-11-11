@@ -24,18 +24,11 @@
       .filter(Boolean);
   }
   // Words that name the same kind of space. A search word in a group also finds the other words of its group.
-  var SAME_SPACE = [['library', 'media']];
-  function alternatives(w) {
-    for (var i = 0; i < SAME_SPACE.length; i++) {
-      if (SAME_SPACE[i].some(function (x) { return w.indexOf(x) === 0; })) return SAME_SPACE[i].concat([w]);
-    }
-    return [w];
-  }
   // Every word of the search must appear somewhere in the text (a word may be part of "F114" or "Math 114").
   function matches(text, ws) {
     var t = String(text || '').toLowerCase();
     return ws.length > 0 && ws.every(function (w) {
-      return alternatives(w).some(function (a) { return t.indexOf(a) !== -1; });
+      return AirSource.alternatives(w).some(function (a) { return t.indexOf(a) !== -1; });
     });
   }
   function item(building, path, name, category, space, air) {
