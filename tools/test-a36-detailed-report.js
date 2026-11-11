@@ -246,8 +246,8 @@ const ok = (c, m) => {
     ok(u.norm, 'D5: picture names match with case and runs of spaces ignored');
     ok(u.cap.join(' / ') === 'Properties: control program tab, top (control program) / Schedules: view all / Graphic (VAV box)', 'D11: captions drop program identifiers and start with a capital: ' + u.cap.join(' / '));
     ok(u.sched.join(' / ') === '24 hours / 6:00 AM-9:00 PM', 'D8: schedule block helper');
-    const n2 = await page.evaluate(() => [['Supply Air Temperature', '117.5625 F'], ['Fan Current', '0.0625 A'], ['Damper', '49.375%'], ['CO2', '513.1875 ppm'], ['Humidity', '60.9375 %rh'], ['Zone Temp', '68.4375'], ['Count', '12 units']].map((x) => _a36DetReadingValue(x[0], x[1])));
-    ok(n2.join(' / ') === '117.6°F / 0.1 A / 49.4% / 513.2 ppm / 60.9% RH / 68.4°F / 12 units', 'N2: readings print one decimal at most; %rh prints "% RH": ' + n2.join(' / '));
+    const n2 = await page.evaluate(() => [['Supply Air Temperature', '117.5625 F'], ['Fan Current', '0.0625 A'], ['Damper', '49.375%'], ['CO2', '513.1875 ppm'], ['Humidity', '60.9375 %rh'], ['Zone Temp', '68.4375'], ['Count', '12 units'], ['Building Static Pressure', '-0.004 in H2O'], ['Valve', '0.0 %'], ['Duct Static', '1.1 in H2O']].map((x) => _a36DetReadingValue(x[0], x[1])));
+    ok(n2.join(' / ') === '117.6°F / 0.06 A / 49.4% / 513.2 ppm / 60.9% / 68.4°F / 12 units / 0.00 in H2O / 0.0% / 1.1 in H2O', 'N2/N4: 1 decimal from 1 up, 2 below 1, never more than the source, no negative zero; %rh prints "%": ' + n2.join(' / '));
     const n1 = await page.evaluate(() => _a36DetListToks(['a', 'b', 'c', 'd', 'e', 'f']).map((t) => (/margin:0 0 (\d+)px 0/.exec(t.html) || [])[1]));
     ok(n1.join(',') === '0,4', 'N1: the bullet blocks of one list have no gap between them, only below the last block (' + n1.join(',') + ')');
     ok(!/\)s\b|Airs\b|Resets\b/.test(t) && !/\| ?(VAV|AHU|FPB|VRF)/.test(t), 'D1/D3: no double plural ("(Zone Terminals)s"), no raw "Room | TAG" name in the chapters');

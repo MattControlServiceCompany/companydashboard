@@ -25424,7 +25424,12 @@ function _a36DetReadingValue(label, raw) {
   var m = /^(-?\d+(?:\.\d+)?)\s*(\S.*)?$/.exec(v);
   if (!m) return v;
   var unit = (m[2] || '').trim();
-  var num = m[1].indexOf('.') === -1 ? m[1] : parseFloat(m[1]).toFixed(1); // one decimal: "117.5625" prints "117.6", "0.0" stays "0.0"
+  // Decimals: never more than the source has; 1 for a value of 1 or more ("117.5625" -> "117.6"), 2 below 1 ("0.0625" -> "0.06").
+  // A value that rounds to zero prints without a minus sign ("-0.004" -> "0.00").
+  var src = m[1].indexOf('.') === -1 ? 0 : m[1].length - m[1].indexOf('.') - 1;
+  var x = parseFloat(m[1]);
+  var num = x.toFixed(Math.min(src, Math.abs(x) < 1 ? 2 : 1));
+  if (parseFloat(num) === 0) num = num.replace('-', '');
   if (unit === '') {
     var isTemp = /temperature|temp|setpoint|set point/i.test(label) && !/flow|pressure|humidity|position|speed|co2|damper|valve|request|mode|status/i.test(label);
     return isTemp ? num + '°F' : null;
@@ -25433,7 +25438,7 @@ function _a36DetReadingValue(label, raw) {
   if (/^°?\s*F$/i.test(unit)) return num + '°F';
   if (/^°\s*C$/i.test(unit)) return num + '°C';
   if (unit === '%') return num + '%';
-  if (/^%\s*rh$/i.test(unit)) return num + '% RH';
+  if (/^%\s*rh$/i.test(unit)) return num + '%'; // humidity prints like the other humidity readings ("60.9%")
   return num + ' ' + unit;
 }
 
