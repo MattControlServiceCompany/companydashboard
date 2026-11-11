@@ -2924,6 +2924,8 @@ function saveBuilding() {
     showToast('Building added ✓');
   }
   saveUtilityData();
+  // A ZIP typed or changed here has no weather yet: fetch it now (computations/weather-refresh.js), not at the next page load.
+  if (typeof wddRefreshProjectWeather === 'function') wddRefreshProjectWeather(udSelProjId);
   closeBldgModal();
   renderUDProjList();
   renderUDDetail();
@@ -5320,6 +5322,8 @@ function importBuildingList() {
 
   sset('en_projects', projects);
   saveUtilityData(_biProj.id);
+  // Imported buildings can carry new ZIPs: fetch their weather now, not at the next page load.
+  if (typeof wddRefreshProjectWeather === 'function') wddRefreshProjectWeather(_biProj.id);
   renderUDProjList();
   if (typeof renderUDDetail === 'function') renderUDDetail();
   refreshOpenProjDetail();
