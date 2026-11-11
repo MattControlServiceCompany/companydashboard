@@ -1609,7 +1609,7 @@ const VERIFICATION_TESTS = {
         {
           id: 'cal01',
           backlogUuid: null,
-          name: 'District Calendar captures 30+ events',
+          name: 'Calendar captures 30+ events',
           depth: 'observe',
           check: {
             type: 'evaluate',
@@ -1628,7 +1628,7 @@ const VERIFICATION_TESTS = {
         {
           id: 'cal02',
           backlogUuid: null,
-          name: 'District Calendar calendar view toggle works',
+          name: 'Calendar calendar view toggle works',
           depth: 'interact',
           steps: [{ action: 'click', selector: "button[onclick*='calView'], .cal-view-toggle" }],
           check: {

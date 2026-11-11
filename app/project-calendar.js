@@ -314,7 +314,7 @@
     var today = todayOf(tzOf(pid));
     var onToday = per.from <= today && today <= per.to;
     host.innerHTML =
-      '<div class="card pcal" style="margin-bottom:16px"><div class="card-hdr"><span class="card-title">District calendar</span></div>' +
+      '<div class="card pcal" style="margin-bottom:16px"><div class="card-hdr"><span class="card-title">Calendar</span></div>' +
       '<div style="padding:16px"><div class="pcal-nav" style="margin-top:0">' +
       VIEWS.map(function (x) { return btn(x[1], s.view === x[0], 'pcalView(' + pid + ",'" + x[0] + "')", VIEW_HINT[x[0]]); }).join('') +
       '<button class="btn btn-ghost btn-sm" aria-label="Previous ' + per.view + '" title="Go back one ' + per.view + '" onclick="pcalStep(' + pid + ',-1)">&#9664;</button>' +

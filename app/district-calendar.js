@@ -525,7 +525,7 @@ function dcExtractEvents(text) {
 
 // ── Render everything ──
 function dcRenderAll() {
-  const dist = document.getElementById('dist-name').value || 'District Calendar';
+  const dist = document.getElementById('dist-name').value || 'Calendar';
   const yr = document.getElementById('dist-year').value || '';
   document.getElementById('dcCalTitle').textContent = '📅 ' + dist + (yr ? ' — ' + yr : '');
 
@@ -697,7 +697,7 @@ function dcExport() {
   const blob = new Blob([txt], { type: 'text/plain' });
   const a = document.createElement('a');
   a.href = URL.createObjectURL(blob);
-  const dist = (document.getElementById('dist-name').value || 'District').replace(/\s+/g, '_');
+  const dist = (document.getElementById('dist-name').value || 'Calendar').replace(/\s+/g, '_');
   a.download = dist + '_Calendar_Schedule.txt';
   a.click();
   showToast('Exported ✓');
@@ -1757,7 +1757,7 @@ async function parseProjDistCal(projId) {
   const oe = document.getElementById('dist-occ-e-' + projId)?.value || '5:00 PM';
   const sh = document.getElementById('dist-sh-' + projId)?.value || 60;
   const sc = document.getElementById('dist-sc-' + projId)?.value || 85;
-  const dist = document.getElementById('dist-name-' + projId)?.value || 'District';
+  const dist = document.getElementById('dist-name-' + projId)?.value || 'Calendar';
   const lines = events.map((ev) => {
     const d = new Date(ev.date + 'T12:00:00').toLocaleDateString('en-US', {
       month: '2-digit',

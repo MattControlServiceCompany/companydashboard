@@ -2875,7 +2875,7 @@ function renderSetpointsTab(projId) {
               }
               ${
                 !isAvg && !isViewingSnapshot
-                  ? `<div style="font-size:12px;color:var(--text2);margin-bottom:16px">Set points and schedules come from the Equipment Matrix. WebCTRL schedules are imported once, on the <a href="#" style="color:var(--accent)" onclick="sPTab('district',document.querySelector('.pdt[data-tab=&quot;district&quot;]'));return false">District Calendar</a> tab. Use Pull from Equipment Matrix to refresh the rows below.</div>`
+                  ? `<div style="font-size:12px;color:var(--text2);margin-bottom:16px">Set points and schedules come from the Equipment Matrix. WebCTRL schedules are imported once, on the <a href="#" style="color:var(--accent)" onclick="sPTab('district',document.querySelector('.pdt[data-tab=&quot;district&quot;]'));return false">Calendar</a> tab. Use Pull from Equipment Matrix to refresh the rows below.</div>`
                   : ''
               }
               ${isViewingSnapshot ? `<div style="margin-bottom:12px;padding:8px 12px;background:var(--s2);border:1px solid var(--border2);border-radius:6px;font-size:11px;color:var(--text2)">Viewing saved snapshot: <strong style="color:var(--text)">${_escHtml(activeSnapData.label)}</strong> — switch to <a href="#" style="color:var(--accent);text-decoration:none" onclick="event.preventDefault();spViewSnapshot('${projId}',null)">Current</a> to edit</div>` : ''}

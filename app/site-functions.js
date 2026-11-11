@@ -2507,6 +2507,12 @@ async function siteResetAllMeterTableSettings() {
    site-ui.js delegates to this array and should NOT maintain its own copy.
 */
 var RELEASE_NOTES = [
+  { v: 'v2026.11.11.263', date: '2026-11-11', title: 'Calendar: clearer list of BAS changes',
+    items: [
+      { type: 'change', text: 'Project page: the "District Calendar" tab is now called "Calendar", so the name fits every client. Your saved calendar data does not change.' },
+      { type: 'fix', text: 'Calendar > What needs to change: "Where" names every unit of a BAS group, each line shows the group schedules that are in the BAS now, and the list shows how old the calendar copy is.' }
+    ]
+  },
   { v: 'v2026.11.09.262', date: '2026-11-09', title: 'Quarterly report: baseline cost at baseline use',
     items: [
       { type: 'fix', text: 'Reports > Quarterly report: baseline cost is the baseline use and baseline kW at the rates of the same months of 2025, not the 2025 bill amounts. The savings do not change.' }

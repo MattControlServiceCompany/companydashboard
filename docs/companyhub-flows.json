@@ -199,8 +199,8 @@
         },
         {
           "id": "project-calendar-feed",
-          "name": "Project page, District Calendar tab: calendar feed and what changed",
-          "description": "The Calendar feed panel (app/project-calendar.js, container pcal-panel-<pid> in the District Calendar tab) shows the feed copy and the changes since the last sync. Opening the page or the tab makes no call. Only the Sync button calls the Netlify function calendar-fetch (netlify/functions/calendar-fetch.mjs, same sign-in check as kv-sync via netlify/lib/auth.js), which downloads and reads the feed (netlify/functions/lib/calendar/). The browser compares the new copy with the stored copy with CalendarDiff.diffSnapshots (app/calendar-diff.js, the only comparison). A change is a different title, start, end, all-day flag or location. Only events inside the overlap of the old and new sync windows count as added or removed. Stored in three shared keys per project: en_cal_cfg_<pid> (feed address), en_cal_snap_<pid> (last copy), en_cal_hist_<pid> (sync history, merged by id).",
+          "name": "Project page, Calendar tab: calendar feed and what changed",
+          "description": "The Calendar feed panel (app/project-calendar.js, container pcal-panel-<pid> in the Calendar tab) shows the feed copy and the changes since the last sync. Opening the page or the tab makes no call. Only the Sync button calls the Netlify function calendar-fetch (netlify/functions/calendar-fetch.mjs, same sign-in check as kv-sync via netlify/lib/auth.js), which downloads and reads the feed (netlify/functions/lib/calendar/). The browser compares the new copy with the stored copy with CalendarDiff.diffSnapshots (app/calendar-diff.js, the only comparison). A change is a different title, start, end, all-day flag or location. Only events inside the overlap of the old and new sync windows count as added or removed. Stored in three shared keys per project: en_cal_cfg_<pid> (feed address), en_cal_snap_<pid> (last copy), en_cal_hist_<pid> (sync history, merged by id).",
           "steps": [
             "User enters the feed address (stored in en_cal_cfg_<pid>) and chooses Save and sync, or chooses Sync now; opening the tab only reads the feed (when the copy is older than 1 hour) and offers Sync now, it saves nothing",
             "pcalSync POSTs the address to calendar-fetch with the sign-in token",
@@ -213,7 +213,7 @@
         },
         {
           "id": "project-bas-schedules",
-          "name": "Project page, District Calendar tab: BAS schedules and what changed",
+          "name": "Project page, Calendar tab: BAS schedules and what changed",
           "description": "The BAS schedules card (app/bas-schedules.js, container bas-panel-<pid>) keeps one copy of the WebCTRL Effective Schedules per covered date and lists what changed between copies and who imported them. It also keeps the scheduling groups. No network call; files are read in the browser.",
           "steps": [
             "User chooses Import schedules and picks one or more Effective Schedules CSV files; emParseEffectiveSchedulesCSV reads them and _emScheduleBlocks reads the times",
@@ -228,7 +228,7 @@
         },
         {
           "id": "project-space-map",
-          "name": "Project page, District Calendar tab: Space map and BAS column",
+          "name": "Project page, Calendar tab: Space map and BAS column",
           "description": "The Space map card (app/space-map.js, container space-panel-<pid>) says which BAS program(s) serve each calendar space, or Off-site. The events list BAS column is computed by BasCoverage.eventCoverage (computations/bas-coverage.js): event space x confirmed map entry x that date's saved BAS schedule. Serving units are never checked. No network call.",
           "steps": [
             "The tab draws the Space map from the spaces of the upcoming events (en_cal_snap_<pid>) and en_space_map_<pid>; a space with no entry shows a name suggestion from BasCoverage.suggestPrograms",
@@ -240,7 +240,7 @@
         },
         {
           "id": "project-sched-actions",
-          "name": "Project page, District Calendar tab: What needs to change",
+          "name": "Project page, Calendar tab: What needs to change",
           "description": "The card at the top of the tab (app/sched-actions.js, container sact-panel-<pid>) lists one action per Not covered upcoming event, with Done / Open again, and BAS programs occupied all day with no event. Rules are in computations/sched-actions.js; the coverage check is BasCoverage.eventCoverage.",
           "steps": [
             "The tab works out the list in memory from en_cal_snap_<pid>, en_space_map_<pid>, en_bas_snap_<pid>, en_bas_groups_<pid> and en_sched_actions_<pid> (SchedActions.reconcile)",

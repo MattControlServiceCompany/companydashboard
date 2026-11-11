@@ -5038,7 +5038,7 @@ function emRenderToolbar(data, pid, projBadge) {
     '<button id="em-export-setpoints-btn" class="btn btn-ghost btn-sm" style="height:28px;font-size:11px">Export Setpoints &amp; Schedules</button>' +
     // Escaping (2026-09-23, item 5ar): id="..." here so wiring is attached via addEventListener
     // (see emRenderMatrix) instead of interpolating pid into an onclick string.
-    '<button id="em-schedules-link" class="btn btn-ghost btn-sm" style="height:28px;font-size:11px" title="WebCTRL schedules are imported once, on the District Calendar tab, under BAS schedules.">Schedules: import on District Calendar</button>' +
+    '<button id="em-schedules-link" class="btn btn-ghost btn-sm" style="height:28px;font-size:11px" title="WebCTRL schedules are imported once, on the Calendar tab, under BAS schedules.">Schedules: import on Calendar</button>' +
     '<button id="em-add-row-btn" class="btn btn-ghost btn-sm" style="height:28px;font-size:11px">+ Add Row</button>' +
     '<button class="btn btn-ghost btn-sm" onclick="emAddCustomCol(\'' +
     pid +

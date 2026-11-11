@@ -1782,7 +1782,7 @@ function renderDetail(p) {
                           <input class="fi" id="distcal-url-${p.id}" placeholder="https://...calendar.pdf" style="flex:1">
                           <button class="btn btn-em btn-sm" onclick="distCalLoadURL(${p.id})">Load</button>
                         </div>
-                        <div style="font-size:11px;color:var(--text3)">Paste a direct link to the district's PDF calendar. If the link does not load, use PDF Upload instead.</div>
+                        <div style="font-size:11px;color:var(--text3)">Paste a direct link to the PDF calendar. If the link does not load, use PDF Upload instead.</div>
                       </div>
                       <div id="distcal-import-pdf-${p.id}" style="display:none">
                         <div style="border:2px dashed var(--border2);border-radius:8px;padding:20px;text-align:center;cursor:pointer;margin-bottom:8px"
@@ -3168,7 +3168,7 @@ const PROJ_TABS_DEFAULT = [
   { id: 'hvacload', label: 'HVAC Load Estimate' },
   { id: 'savings', label: 'Energy Savings' },
   { id: 'energygfx', label: 'Energy Graphics' },
-  { id: 'district', label: 'District Calendar' },
+  { id: 'district', label: 'Calendar' },
   { id: 'cost-estimate', label: 'Cost Estimate' },
   // Fix 128f49b2: Project Settings moved to the END of the bar (settings tabs
   // conventionally sit last). It used to sit mid-bar (before Cost Estimate) purely

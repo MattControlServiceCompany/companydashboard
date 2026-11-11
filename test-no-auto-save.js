@@ -65,7 +65,7 @@ function session(srv, o) {
     visibilityState: 'visible',
     addEventListener: (t, f) => (listeners[t] = (listeners[t] || []).concat([f])),
     querySelector: (sel) =>
-      sel === '.view.active' ? { id: 'view-projects' } : sel === '.pdt.active' ? { textContent: 'District Calendar' } : null,
+      sel === '.view.active' ? { id: 'view-projects' } : sel === '.pdt.active' ? { textContent: 'Calendar' } : null,
     getElementById: () => null,
   };
   const win = {
@@ -178,12 +178,12 @@ const seed = () => ({
     const srv = makeServer(seed());
     const A = session(srv);
     await A.start();
-    A.click(); // "District Calendar: Sync now"
+    A.click(); // "Calendar: Sync now"
     await A.DB.set('en_cal_snap_1', Object.assign(snap0(), { count: 1 }));
     await settle();
     assert.strictEqual(srv.puts.length, 1);
-    assert.strictEqual(srv.puts[0].cause, 'District Calendar: Sync now');
-    assert.strictEqual(srv.rows['en_cal_snap_1'].cause, 'District Calendar: Sync now');
+    assert.strictEqual(srv.puts[0].cause, 'Calendar: Sync now');
+    assert.strictEqual(srv.rows['en_cal_snap_1'].cause, 'Calendar: Sync now');
   });
 
   await t('Page load, refresh and recompute write nothing: a save with no user action stays in this browser', async () => {
@@ -267,7 +267,7 @@ const seed = () => ({
     assert.strictEqual(B.DB.get('en_projects')[0].note, 'imported', 'B shows the imported data');
     assert.strictEqual(B.DB.get('en_cal_snap_1').count, 7, 'B shows the data A saved');
     assert.strictEqual(srv.rows['en_projects'].cause, 'script: import', 'the service row was not overwritten by B');
-    assert.strictEqual(srv.rows['en_cal_snap_1'].cause, 'Page: Sync now'.replace('Page', 'District Calendar'));
+    assert.strictEqual(srv.rows['en_cal_snap_1'].cause, 'Page: Sync now'.replace('Page', 'Calendar'));
   });
 
   await t('A page that only reads the feed saves no copy, no history record and no actions', async () => {
@@ -352,7 +352,7 @@ const seed = () => ({
     await settle();
     const q = B.DB.__t._queue();
     assert.strictEqual(q.length, 1);
-    assert.strictEqual(q[0].cause, 'District Calendar: Sync now', 'the queue keeps the cause');
+    assert.strictEqual(q[0].cause, 'Calendar: Sync now', 'the queue keeps the cause');
   });
 
   await t('Old archive entries that were not real conflicts clear by themselves; real ones stay', async () => {
