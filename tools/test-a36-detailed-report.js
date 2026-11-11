@@ -52,9 +52,10 @@ const ok = (c, m) => {
         ahu('r7', 'Beta Library', 'AHU-3', pts(full)),
         vav('r8', 'Beta Library', 'VAV-201', pts(zone)),
       ];
-      const occ = (a, b) => ({ startMin: 0, stopMin: 0, startStr: '', stopStr: '', rawText: 'Unoccupied from 12:00 AM to ' + a + '\nOccupied from ' + a + ' to ' + b + '\nUnoccupied from ' + b + ' to 12:00 AM' });
-      rows[2].existingSchedule = occ('6:00 AM', '9:00 PM');
-      rows[3].existingSchedule = occ('7:00 AM', '6:00 PM');
+      const occ = (a, b, sm, em) => ({ startMin: sm, stopMin: em, startStr: '', stopStr: '', rawText: 'Unoccupied from 12:00 AM to ' + a + '\nOccupied from ' + a + ' to ' + b + '\nUnoccupied from ' + b + ' to 12:00 AM' });
+      rows[2].existingSchedule = occ('6:00 AM', '9:00 PM', 360, 1260);
+      rows[3].existingSchedule = occ('7:00 AM', '6:00 PM', 420, 1080);
+      rows[7].existingSchedule = { startMin: 0, stopMin: 0, startStr: '0:00', stopStr: '0:00', rawText: 'Occupied from 12:00 AM to 12:00 AM' }; // BAS all-day schedule: start 0, stop 0
       rows[4].existingSchedule = { rawText: 'Unoccupied from 12:00 AM to 12:00 AM' }; // no occupied period: not counted
       projects.push({ id: PID, name: 'Synthetic Library District', client: 'Synthetic Library District', type: 'K-12', start: '2025-01-01' });
       await sset('en_eqmatrix_' + PID, { rows: rows, importedAt: null, buildings: ['Alpha Library', 'Beta Library'] });
@@ -95,6 +96,7 @@ const ok = (c, m) => {
     }, seed);
     if (process.env.A36_SIMPLE_DUMP) fs.writeFileSync(process.env.A36_SIMPLE_DUMP, simple.html);
     ok(simple.html.length > 1000 && !/data-section="detailedLibrary"/.test(simple.html) && !/Figure \d/.test(simple.html), 'Simple style: no Detailed page, no figure');
+    ok(/Mon–Fri 12:00 AM–12:00 AM/.test(simple.html.replace(/<[^>]+>/g, '')) && !/24 hours/.test(simple.html), 'Simple style: the Setpoint Programming Review keeps its clock times (the 24 hours wording is Detailed only)');
 
     // ---- 2. modal ----
     const modal = await page.evaluate((PID) => {
@@ -213,32 +215,76 @@ const ok = (c, m) => {
     ok(s[0] === 'cover' && s.indexOf('executive') > 0 && s.indexOf('costEstimate') > s.indexOf('executive') && firstLib > s.indexOf('costEstimate'), 'order: cover, executive summary, sequences, then the library chapters (' + s.join(',') + ')');
     ok(s.indexOf('building') < 0, 'Detailed has no Per-Building Detail pages');
     ok(s.filter((x) => x === 'detailedLibrary').length >= 2, 'at least one chapter page per library (' + s.filter((x) => x === 'detailedLibrary').length + ' chapter pages)');
-    ok(s.indexOf('detailedAppendixA') > s.lastIndexOf('detailedLibrary') && s.indexOf('pointInventory') > s.indexOf('detailedAppendixA'), 'Appendix A (deficiencies) then Appendix B (point inventory) after the chapters');
+    ok(s.indexOf('detailedAppendixA') < 0 && s.indexOf('pointInventory') > s.lastIndexOf('detailedLibrary'), 'a short Appendix A shares the first page of Appendix B (no page of its own); Appendix B follows the chapters');
     ok(/Appendix A: Deficiency List/.test(det.text) && /Fan runs at night/.test(det.text) && /Appendix B: Point Inventory/.test(det.text), 'Appendix A lists the deficiency, Appendix B has its heading');
+    ok(det.text.indexOf('Appendix A: Deficiency List') < det.text.indexOf('Appendix B: Point Inventory'), 'Appendix A comes before Appendix B on that page');
     ok(s.indexOf('setpointReview') > s.indexOf('pointInventory') && /Appendix C: Setpoint Programming Review/.test(det.text), 'Appendix C prints last when zone set point data exists (Detailed turns the review on by itself)');
     const t = det.libText;
     ['Alpha Library: System Overview', 'Beta Library: System Overview', 'Equipment Descriptions', 'Findings', 'Alpha Library: Recommended Work', 'Beta Library: Recommended Work', 'Missing against ASHRAE 36'].forEach((x) => ok(t.indexOf(x) >= 0, 'chapters contain "' + x + '"'));
     ok(/Air Handling Unit[^\n]*2/.test(t) || /Air Handling Unit.{0,40}2/.test(t), 'System Overview counts the 2 air handling units of Alpha Library');
     ok(/Total\s*6/.test(t) && /Total\s*2/.test(t), 'System Overview totals: Alpha Library 6, Beta Library 2');
     ok(/Building automation controller: Sample Controller \(5 of 6 units\)/.test(t), 'BAS controller line from the rows (5 of 6 units in Alpha Library: the exhaust fan row has none)');
-    ok(/Readings at the time of the audit on AHU-1: .*55\.2 °F/.test(t), 'Equipment Descriptions: readings from the row data with units as stored');
+    ok(/Readings at the time of the audit on AHU-1: .*55\.2°F/.test(t), 'Equipment Descriptions: readings from the row data, temperature as 55.2°F');
+    ok(!/\d ?F\b/.test(t.replace(/°F/g, '')), 'D2: no temperature prints as "<n> F" (every temperature has °F)');
     ok(/VAV[^\n]*Occupied schedule: 6:00 AM-9:00 PM \(1 unit\), 7:00 AM-6:00 PM \(1 unit\)\./.test(t), 'Equipment Descriptions: occupied schedule line lists each distinct schedule with its unit count');
-    ok((t.match(/Occupied schedule:/g) || []).length === 1, 'groups with no schedule print nothing about schedules (one schedule line in all chapters)');
+    ok((t.match(/Occupied schedule:/g) || []).length === 2, 'groups with no schedule print nothing about schedules (one schedule line per group that has one: 2)');
+    ok(/Occupied schedule: 24 hours\./.test(t) && !/12:00 AM-12:00 AM/.test(t), 'D8: an all-day schedule (start 0, stop 0) prints "24 hours", never 12:00 AM-12:00 AM');
+    ok(/Beta Library[\s\S]{0,40}Mon–Fri 24 hours/.test(det.text.slice(det.text.indexOf('Appendix C: Setpoint Programming Review'))), 'D8: Appendix C prints the all-day schedule of Beta Library as "Mon–Fri 24 hours"');
     ok(!/Demand Level 0/.test(t) && /Readings at the time of the audit on AHU-1: .*Heat Source Supply Temperature/.test(t), 'a coded reading (Demand Level 0.0) is left out while the other readings stay');
     ok(/Heat Source Supply Temperature 167\.0°F/.test(t), 'a bare temperature reading gets °F');
     const rv = await page.evaluate(() => ['Supply Air Temperature|55.2', 'Airflow Setpoint|580.0', 'Air Source Mode|2.0', 'Duct Static Pressure|1.1 in H2O', 'Fan Status|On', 'Zone Status|?'].map((x) => String(_a36DetReadingValue(x.split('|')[0], x.split('|')[1]))));
     ok(rv.join(' / ') === '55.2°F / null / null / 1.1 in H2O / On / null', 'reading rule: temperature gets °F; bare airflow set point and mode codes dropped; units and words kept (' + rv.join(' / ') + ')');
-    ok(!/\$|\bhours?\b|\bprice\b|\bcost\b/i.test(t), 'no price, no hours, no cost text in the Detailed chapters');
+    const u = await page.evaluate(() => ({
+      rd: [['Mixed Air Temperature', '72.3 F'], ['Zone Air Temperature', '69.7 °F'], ['Outdoor Air Temperature', '64.5°F'], ['Heating Valve', '0.0 %'], ['CO2', '574.8 ppm'], ['Zone Temp', '70']].map((x) => _a36DetReadingValue(x[0], x[1])),
+      names: ['Adult Area | VAV-1-21', 'Meeting Room 009| VRF-02', 'VRF Condenser| HP-1', 'AHU-1 - BVL', '| X', ''].map(_a36DetEquipName),
+      norm: _a36DetNorm('Hot Water System -  BVL') === _a36DetNorm(' hot water system - bvl '),
+      cap: [_a36DetCaptionPage('properties: control program tab, top (control program ata29_ddzs_ds_bvl)'), _a36DetCaptionPage('schedules: view all'), _a36DetCaptionPage('graphic (VAV box)')],
+      sched: [_a36DetScheduleBlock('12:00 AM-12:00 AM'), _a36DetScheduleBlock('6:00 AM-9:00 PM')],
+    }));
+    ok(u.rd.join(' / ') === '72.3°F / 69.7°F / 64.5°F / 0.0% / 574.8 ppm / 70°F', 'D2: one reading formatter: ' + u.rd.join(' / '));
+    ok(u.names.join(' / ') === 'VAV-1-21 (Adult Area) / VRF-02 (Meeting Room 009) / HP-1 (VRF Condenser) / AHU-1 - BVL / | X / ', 'D3: "Room | TAG" prints as "TAG (Room)": ' + u.names.join(' / '));
+    ok(u.norm, 'D5: picture names match with case and runs of spaces ignored');
+    ok(u.cap.join(' / ') === 'Properties: control program tab, top (control program) / Schedules: view all / Graphic (VAV box)', 'D11: captions drop program identifiers and start with a capital: ' + u.cap.join(' / '));
+    ok(u.sched.join(' / ') === '24 hours / 6:00 AM-9:00 PM', 'D8: schedule block helper');
+    ok(!/\)s\b|Airs\b|Resets\b/.test(t) && !/\| ?(VAV|AHU|FPB|VRF)/.test(t), 'D1/D3: no double plural ("(Zone Terminals)s"), no raw "Room | TAG" name in the chapters');
+    const recEq = await page.evaluate(() => {
+      const libs = {};
+      let lib = null;
+      Array.from(document.querySelectorAll('#reportPages .rpt-page[data-section="detailedLibrary"]')).forEach((pg) => {
+        pg.querySelectorAll('h2, table tr').forEach((el) => {
+          if (el.tagName === 'H2') {
+            const m = /^(.*): (System Overview|Recommended Work)$/.exec(el.textContent.trim());
+            if (m) lib = m[1];
+            return;
+          }
+          if (!lib) return;
+          const c = el.querySelectorAll('td');
+          if (c.length === 2 && !/^Total/.test(c[0].textContent)) (libs[lib + '|type'] = libs[lib + '|type'] || []).push(c[0].textContent.trim());
+          if (c.length === 3 && /^(Install sensor|Program sequence)/.test(c[2].textContent)) (libs[lib + '|rec'] = libs[lib + '|rec'] || []).push(c[1].textContent.trim());
+        });
+      });
+      const bad = [];
+      let n = 0;
+      Object.keys(libs).filter((k) => /\|rec$/.test(k)).forEach((k) => libs[k].forEach((e) => {
+        n++;
+        if (!e || !e.split(', ').every((x) => x === 'Building-wide' || (libs[k.replace('|rec', '|type')] || []).indexOf(x) >= 0)) bad.push(k + ': ' + e);
+      }));
+      return { bad, n };
+    });
+    ok(recEq.n > 0 && recEq.bad.length === 0, 'D1: every Recommended Work Equipment cell (' + recEq.n + ' rows) is made of System Overview type names of that library (or Building-wide)' + (recEq.bad.length ? ': ' + JSON.stringify(recEq.bad) : ''));
+    ok(!/\$|\bhours?\b|\bprice\b|\bcost\b/i.test(t.replace(/24 hours/g, '')), 'no price, no hours, no cost text in the Detailed chapters');
     ok(!/metered kW|Next Steps/i.test(t), 'no "metered kW", no Next Steps');
 
     // figures
     const nums = (det.figs.join('\n').match(/Figure (\d+):/g) || []).map((x) => parseInt(x.replace(/\D/g, ''), 10));
     ok(nums.length === 4 && nums.every((v, i) => v === i + 1), 'figure numbers run 1..N in page order (' + nums.join(',') + ')');
     ok(det.imgInfo.length === 4 && det.imgInfo.every((i) => i.src === 'data:image/jpeg;base64,'.slice(0, 22) && i.w > 0 && i.w <= 1000), 'figures are JPEG data: URLs at most 1000 px wide (' + det.imgInfo.map((i) => i.w).join(',') + ')');
-    ok(det.figs.some((f) => /Figure \d+: AHU-1, graphic \(air handler\)/.test(f)), 'caption names the equipment and the page shown');
+    ok(det.figs.some((f) => /Figure \d+: AHU-1, Graphic \(air handler\)/.test(f)), 'caption names the equipment and the page shown');
     ok(!/syn-5/.test(det.text) && det.figs.length === 4, 'the skipped "Not used" picture is not used');
     ok(det.figs.filter((f) => /AHU-1/.test(f)).length === 2 && det.figs.filter((f) => /VAV-101/.test(f)).length === 1 && det.figs.filter((f) => /AHU-3/.test(f)).length === 1, 'at most 2 figures per equipment group, from that group equipment');
-    ok(/Figure 1: AHU-1, graphic \(air handler\)/.test(det.figs[0]), 'cited picture comes first');
+    ok(/Figure 1: AHU-1, Graphic \(air handler\)/.test(det.figs[0]), 'cited picture comes first');
+    ok(/Pictures: Figure 1, Figure 2\./.test(t) && /Picture: Figure 3\./.test(t) && /Picture: Figure 4\./.test(t), 'D6: each group that has pictures cites them by figure number in its findings');
+    ok(!/\(1 of 1 unit\)/.test(t) && !/\((\d+) of \1 units\)/.test(t.replace(/Building automation controller[^\n]*/g, '')), 'D6: no "(N of N units)" noise in the findings');
 
     // fit
     const bad2 = det.fit.filter((f) => f.over > 1 || f.scrollOver > 1);
@@ -345,7 +391,10 @@ const ok = (c, m) => {
         const foot = p.querySelector('.rpt-pg-footer');
         let maxBottom = 0;
         body.querySelectorAll('*').forEach((e) => { const bb = e.getBoundingClientRect(); if (bb.height > 0) maxBottom = Math.max(maxBottom, bb.bottom); });
-        return { section: p.getAttribute('data-section'), gap: Math.round(foot.getBoundingClientRect().top - maxBottom), scrollOver: body.scrollHeight - body.clientHeight };
+        // last block of the page: a heading is an h2, or a bold line (group heading, In place, Missing against ASHRAE 36)
+        const last = Array.from(body.children).filter((e) => e.getBoundingClientRect().height > 0).pop();
+        const lastHead = !!last && (last.tagName === 'H2' || (last.tagName === 'DIV' && !last.querySelector('img') && /^(600|700)$/.test(getComputedStyle(last).fontWeight)));
+        return { section: p.getAttribute('data-section'), gap: Math.round(foot.getBoundingClientRect().top - maxBottom), scrollOver: body.scrollHeight - body.clientHeight, lastHead: lastHead, fill: (maxBottom - body.getBoundingClientRect().top) / body.getBoundingClientRect().height };
       });
       const sp = pages.filter((p) => p.getAttribute('data-section') === 'setpointReview');
       return { fit: fit, count: pages.length, sections: pages.map((p) => p.getAttribute('data-section')), spPages: sp.length, spHead: sp.length ? sp[0].textContent.indexOf('Appendix C: Setpoint Programming Review') >= 0 : null };
@@ -353,6 +402,10 @@ const ok = (c, m) => {
     const bigBad = big.fit.filter((f) => f.gap < 0 || f.scrollOver > 1);
     ok(big.count > 40 && bigBad.length === 0, 'large project (' + big.count + ' pages): every page fits above the footer' + (bigBad.length ? ': ' + JSON.stringify(bigBad) : ''));
     console.log('INFO Appendix C pages in the large project: ' + big.spPages);
+    const bigLib = big.fit.filter((f) => f.section === 'detailedLibrary');
+    ok(bigLib.length > 10 && bigLib.every((f) => !f.lastHead), 'D7: no chapter page ends with a heading (' + bigLib.length + ' chapter pages)' + JSON.stringify(bigLib.filter((f) => f.lastHead)));
+    const sparse = bigLib.slice(0, -1).filter((f) => f.fill < 0.35);
+    ok(sparse.length === 0, 'D7: no chapter page except the last is less than 35 percent full: ' + bigLib.map((f) => Math.round(f.fill * 100)).join(','));
     ok(big.spPages === 0 || big.spHead === true, 'Appendix C, when printed, starts with its heading');
     ok(big.sections.filter((x) => x === 'detailedAppendixA').length >= 2, 'a long Appendix A runs over more than one page');
 
