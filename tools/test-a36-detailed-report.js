@@ -15,6 +15,8 @@
 //   8. No picture folder: the report is complete and has no figures.
 //   9. Word: the figure pictures and captions are in the translated document.
 //  10. Simple style: no Detailed page and no figure; same HTML as before (see A36_SIMPLE_DUMP).
+//  12. Round 4 (2026-11-11): System Overview is one paragraph (no table); description sentences in an engineering voice; the Appendix A sentence once per chapter; "(Figure N)" in the sentence;
+//      figure crop (_a36DetCropGraphic), graphic ranks before cited pages, full-width figures, unreadable-size drawings left out; carbon dioxide counts (air handlers = ahu + rtu, zones without monitoring-only units); infrastructure wording.
 //  11. D4: a heating hot water plant and a chilled water plant print in Detailed (overview, description, findings, no schedule finding); domestic hot water does not; Simple keeps the stored categories.
 'use strict';
 const path = require('path');
@@ -185,8 +187,8 @@ const ok = (c, m) => {
               for (let yy = 20; yy < h; yy += 30) for (let xx = 20; xx < w - 100; xx += 90) c.fillText('Value ' + ((xx + yy) % 97), xx, yy);
               return new Promise((res) => cv.toBlob((b) => res(new File([b], name, { type: 'image/png' })), 'image/png'));
             };
-            dt.items.add(await mk('syn-1.png', 1600, 900, '#123'));
-            dt.items.add(await mk('syn-2.png', 1200, 700, '#231'));
+            dt.items.add(await mk('syn-1.png', 1000, 560, '#123'));
+            dt.items.add(await mk('syn-2.png', 900, 520, '#231'));
             dt.items.add(await mk('syn-3.png', 800, 600, '#312'));
             dt.items.add(await mk('syn-4.png', 800, 600, '#222'));
             dt.items.add(await mk('syn-5.png', 800, 600, '#888'));
@@ -219,15 +221,30 @@ const ok = (c, m) => {
               }
               if (e.querySelector('p, div, img')) return;
               const tx = e.textContent.trim();
-              let m = /^The building automation graphic of (\S+) is shown/.exec(tx);
+              let m = /\(Figure (\d+)\)/.exec(tx);
               if (m) mark = 'desc:' + m[1];
               m = /^Finding \d+: [^,]+, (.*)$/.exec(tx);
               if (m) mark = 'find:' + m[1];
             });
           });
+          let inOverview = false;
+          let tableInOverview = false;
+          pages.filter((p) => p.getAttribute('data-section') === 'detailedLibrary').forEach((p) => {
+            p.querySelectorAll('h2, table').forEach((e) => {
+              if (e.tagName === 'H2') inOverview = /System Overview/.test(e.textContent);
+              else if (inOverview) tableInOverview = true;
+            });
+          });
+          const joins = [];
+          pages.filter((p) => p.getAttribute('data-section') === 'detailedLibrary').forEach((p) => {
+            p.querySelectorAll('p').forEach((e) => {
+              if (/[a-z0-9°%)]\.[A-Z]/.test(e.textContent)) joins.push(e.textContent.slice(0, 80));
+            });
+          });
+          const overviewNoTable = !tableInOverview && /System Overview/.test(pages.map((p) => p.textContent).join('\n'));
           const text = pages.map((p) => p.textContent).join('\n');
           const hasOverlay = document.getElementById('reportOverlay').style.display;
-          return { shown, order, sections, imgInfo, figs, libText, fit, text, hasOverlay, html: document.getElementById('reportPages').innerHTML.length };
+          return { shown, order, joins, overviewNoTable, sections, imgInfo, figs, libText, fit, text, hasOverlay, html: document.getElementById('reportPages').innerHTML.length };
         },
         { PID: seed, withFolder },
       );
@@ -251,13 +268,16 @@ const ok = (c, m) => {
     ok(!/Recommended Work/.test(t), 'cut 1: no per-chapter Recommended Work table (each finding has its own Recommendation line)');
     ok(!/\bIssue\./.test(t) && /sequence \(ASHRAE Guideline 36, Section [\d.]+\) is not fully in place/.test(t), 'cut 2: no Issue line; the Guideline 36 section number is in the Observed line');
     ok(!/This system has/.test(t), 'cut 3: no "This system has N units" sentence (the System Overview table lists the units)');
-    ok(/Air Handling Unit[^\n]*2/.test(t) || /Air Handling Unit.{0,40}2/.test(t), 'System Overview counts the 2 air handling units of Alpha Library');
-    ok(/Total\s*6/.test(t) && /Total\s*2/.test(t), 'System Overview totals: Alpha Library 6, Beta Library 2');
+    ok(/Alpha Library is served by [^.]*two air handling units \(AHU-1, AHU-2\)/.test(t), 'System Overview (a paragraph): names and counts the 2 air handling units of Alpha Library');
+    ok(/Beta Library is served by one air handling unit \(AHU-3\)/.test(t) && /three variable air volume terminals/.test(t) && !/Total\s*6/.test(t), 'System Overview: one unit is named, more than 3 are counted only, no Total line');
+    ok(det.overviewNoTable === true, 'item 1: the System Overview has no <table> (the Findings Summary keeps its table)');
     ok(/Building automation controller: Sample Controller \(5 of 6 units\)/.test(t), 'BAS controller line from the rows (5 of 6 units in Alpha Library: the exhaust fan row has none)');
-    ok(/The supply air temperature is measured \(55\.2°F\)\./.test(t) && !/showed:/.test(t), 'a: System Descriptions: the reading is inside the sentence (55.2°F), no "showed:" list');
-    ok(/Every point of this equipment is listed in Appendix A\./.test(t) && !/provides [^.]*, [^.]*, /.test(t), 'a: no "the building automation system provides A, B, C" inventory sentence');
+    ok(/The building automation system monitors the supply air temperature \(55\.2°F\)\./.test(t) && !/showed:/.test(t), 'a: System Descriptions: the reading is inside the sentence (55.2°F), no "showed:" list');
+    ok(!/provides [^.]*, [^.]*, /.test(t), 'a: no "the building automation system provides A, B, C" inventory sentence');
+    ok(!/Every point of this equipment/.test(t) && (t.match(/Appendix A lists every building automation point reviewed for each system\./g) || []).length === 2, 'item 3: no "Every point of this equipment" sentence; the Appendix A sentence is once per chapter (2 chapters)');
+    ok(det.joins.length === 0, 'item 2: no missing space after a full stop inside a paragraph of the chapters: ' + det.joins.join(' | '));
     ok(!/\d ?F\b/.test(t.replace(/°F/g, '')), 'D2: no temperature prints as "<n> F" (every temperature has °F)');
-    ok(/The occupied schedule is 6:00 AM-9:00 PM \(1 unit\), 7:00 AM-6:00 PM \(1 unit\)\./.test(t), 'System Descriptions: the occupied schedule sentence lists each distinct schedule with its unit count');
+    ok(/The occupied schedule is 6:00 AM-9:00 PM \(1 unit\), 7:00 AM-6:00 PM \(1 unit\)( \(Figure \d+\))?\./.test(t), 'System Descriptions: the occupied schedule sentence lists each distinct schedule with its unit count');
     ok((t.match(/The occupied schedule is/g) || []).length === 2, 'groups with no schedule print nothing about schedules (one schedule sentence per group that has one: 2)');
     ok(/The occupied schedule is 24 hours\./.test(t) && !/12:00 AM-12:00 AM/.test(t), 'D8: an all-day schedule (start 0, stop 0) prints "24 hours", never 12:00 AM-12:00 AM');
     ok(/Beta Library[\s\S]{0,40}Mon–Fri 24 hours/.test(det.text.slice(det.text.indexOf('Appendix B: Setpoint Programming Review'))), 'D8: Appendix B prints the all-day schedule of Beta Library as "Mon–Fri 24 hours"');
@@ -289,9 +309,9 @@ const ok = (c, m) => {
     ok(det.figs.some((f) => /Figure \d+: AHU-1, Graphic \(air handler\)/.test(f)), 'caption names the equipment and the page shown');
     ok(!/syn-5/.test(det.text) && det.figs.length === 4, 'the skipped "Not used" picture is not used');
     // the graphic of a unit sits directly under its own description; a finding figure sits directly under its own finding
-    ok(det.order.join('|') === 'desc:AHU-1|desc:VAV-101|find:Economizer|desc:AHU-3', 'every figure is directly under its own description or finding: ' + det.order.join('|'));
+    ok(det.order.join('|') === 'desc:1|desc:2|find:Economizer|desc:4', 'every figure is directly under its own description or finding: ' + det.order.join('|'));
     ok(/Figure 3: Economizer: AHU-1, Properties: economizer logic/.test(det.figs.join('\n')), 'the finding figure caption names the condition: ' + det.figs.join(' / '));
-    ok(/The building automation graphic of AHU-1 is shown in Figure 1\./.test(t) && /The Economizer sequence( \(ASHRAE Guideline 36, Section [\d.]+\))? is not fully in place/.test(t), 'the text cites the figure it introduces');
+    ok(/\(Figure 1\)\./.test(t) && !/graphic of [^.]* is shown in Figure/.test(t) && /The Economizer sequence( \(ASHRAE Guideline 36, Section [\d.]+\))? is not fully in place/.test(t), 'the text cites the figure it introduces, in the sentence: "(Figure N)." (item 4)');
     ok(!/Pictures?: Figure/.test(t), 'no "Pictures: Figure" list under the findings');
     ok(!/\(1 of 1 unit\)/.test(t) && !/\((\d+) of \1 units\)/.test(t.replace(/Building automation controller[^\n]*/g, '')), 'D6: no "(N of N units)" noise in the text');
 
@@ -510,6 +530,9 @@ const ok = (c, m) => {
       // 1. a DOAS whose set point points and outdoor air temperature have no reading
       out.doas = run('doas', 'Dedicated Outdoor Air System', ['sat', 'satCoolSp', 'satHtgSp', 'oat', 'rat', 'co2'], { sat: '58.5°F', rat: '70.1°F' }, null, 1).map((s) => s.text);
       out.hw = run('hwp', 'Hot Water Plant', ['hwst', 'hwrt'], {}, null, 1).map((s) => s.text);
+      // a status word in a temperature point is not a temperature (live: a chilled water supply point read "Normal")
+      out.chwStatusWord = run('chwp', 'Chilled Water Plant', ['chwst', 'chwSetpoint'], { chwst: 'Normal', chwSetpoint: '44.0°F' }, null, 1).map((s) => s.text);
+      out.hwStatusWord = run('hwp', 'Hot Water Plant', ['hwst', 'hwrt'], { hwst: 'Normal', hwrt: '130.0°F' }, null, 1).map((s) => s.text);
       // 2. adjustment 0.0 is not printed
       const termKeys = ['discFlow', 'dampCmd', 'zoneTemp', 'htgSP', 'coolSP', 'htgAdj', 'coolAdj'];
       out.adjZero = run('vav', 'Variable Air Volume Terminal', termKeys, { zoneTemp: '71.0°F', htgSP: '68.0°F', coolSP: '73.0°F', htgAdj: '0.0°F', coolAdj: '0.0°F' }, null, 4).map((s) => s.text);
@@ -558,13 +581,14 @@ const ok = (c, m) => {
     const allText = (a) => a.join(' ');
     ok(!/ \./.test(allText(r3.doas)) && !/(are|is) \./.test(allText(r3.doas)) && !/outdoor air\./.test(allText(r3.doas)) && /return air 70\.1°F/.test(allText(r3.doas)) && !/set points are/.test(allText(r3.doas)),
       '1: a clause whose value is empty is never printed (DOAS: no "set points are .", no "outdoor air."): ' + allText(r3.doas));
+    ok(!/Normal/.test(allText(r3.chwStatusWord)) && !/Normal/.test(allText(r3.hwStatusWord)) && /return was 130\.0°F/.test(allText(r3.hwStatusWord)), 'a status word in a temperature point is never printed as a temperature (' + allText(r3.chwStatusWord) + ' | ' + allText(r3.hwStatusWord) + ')');
     ok(r3.hw.length === 0, '1: the hot water temperature sentence is not printed when neither reading exists (' + allText(r3.hw) + ')');
     ok(r3.adjZero.some((x) => x === 'The zone sensor can adjust the set points.') && !/0\.0/.test(allText(r3.adjZero).replace(/68\.0|73\.0|71\.0/g, '')), '2: a 0.0 adjustment is omitted: ' + r3.adjZero.filter((x) => /adjust/.test(x)).join(''));
     ok(r3.adjSome.some((x) => x === 'The zone sensor can adjust the set points (heating 1.5°F).'), '2: a non-zero adjustment is printed, the 0.0 one is not: ' + r3.adjSome.filter((x) => /adjust/.test(x)).join(''));
     ok(!/resets between/.test(allText(r3.noProof)) && /resets between its minimum and maximum/.test(allText(r3.proof)), '7: "airflow set point resets between minimum and maximum" only with the stored minimum and maximum airflow set points');
     ok(r3.proofRows.join(',') === 'true,false,true', '7: proof = a minimum and a maximum airflow point of the unit; the Air Source Minimum point does not count (' + r3.proofRows.join(',') + ')');
-    ok(/reports its speed \(76\.2%\)/.test(allText(r3.fanReading.map((s) => s.text))) && !/variable speed|speed is varied/.test(allText(r3.fanReading.map((s) => s.text))), 'A: a supply fan speed reading alone is "reports its speed", not variable speed under control: ' + r3.fanReading.map((s) => s.text).filter((x) => /fan/.test(x)).join(' '));
-    ok(/run at variable speed by a speed command \(60\.0%\)/.test(allText(r3.fanCmd.map((s) => s.text))) && /speed is varied to hold the duct static pressure \(1\.1 in H2O\)/.test(allText(r3.fanCmd.map((s) => s.text))), 'A: with a speed command point the fan is run at variable speed and the speed holds the duct static pressure');
+    ok(/monitors its speed \(76\.2%\)/.test(allText(r3.fanReading.map((s) => s.text))) && !/variable speed|speed is varied|varies/.test(allText(r3.fanReading.map((s) => s.text))), 'A: a supply fan speed reading alone is "monitors its speed", not variable speed under control: ' + r3.fanReading.map((s) => s.text).filter((x) => /fan/.test(x)).join(' '));
+    ok(/varies its speed by a speed command \(60\.0%\)/.test(allText(r3.fanCmd.map((s) => s.text))) && /varies the supply fan speed to hold the duct static pressure \(1\.1 in H2O\)/.test(allText(r3.fanCmd.map((s) => s.text))), 'A: with a speed command point the fan is run at variable speed and the speed holds the duct static pressure');
     const fns = r3.fanReading.map((s) => s.fn);
     ok(fns.join(',') === fns.slice().sort((a, b) => ['temp', 'air', 'oa', 'other'].indexOf(a) - ['temp', 'air', 'oa', 'other'].indexOf(b)).join(',') && new Set(fns).size === 4, '6: air handler sentences are grouped by function (temperature, airflow and static, outside air, other): ' + fns.join(','));
     ok(r3.th.length >= 4 && r3.th.length % 4 === 0 && r3.th.every((x) => x.over <= 1 && x.inside), '3: every Findings Summary header cell holds its text (ATTRIBUTE inside the table): ' + JSON.stringify(r3.th));
@@ -668,7 +692,7 @@ const ok = (c, m) => {
     }, PID2);
     const pt = plants.text;
     ok(plants.cats === 'ahu,chwp,hwp', 'D4: Detailed audits the air handler and the two plants: ' + plants.cats);
-    ok(/Chilled Water Plant\s*1/.test(pt) && /Hot Water Plant\s*1/.test(pt) && /Total\s*3/.test(pt), 'D4: System Overview counts one Hot Water Plant and one Chilled Water Plant (total 3)');
+    ok(/one chilled water plant \(Chilled Water System - Gamma\)/.test(pt) && /one hot water plant \(Hot Water System - Gamma\)/.test(pt) && /one air handling unit/.test(pt), 'D4: System Overview counts one hot water plant and one chilled water plant and names them');
     ok(/Hot Water System - Gamma/.test(pt) && /Chilled Water System - Gamma/.test(pt) && /Hot Water Plant/.test(pt) && /Chilled Water Plant/.test(pt), 'D4: the System Overview names the heating hot water plant and the chilled water plant');
     console.log('DBG ' + pt.slice(pt.indexOf('Gamma Library: System Descriptions'), pt.indexOf('Gamma Library: System Descriptions') + 1200));
     ok(!/Domestic Hot Water/.test(pt) && !/Loop Bypass/.test(pt) && !/Plumbing/.test(pt), 'D4: domestic hot water and the bypass valve do not print');
@@ -679,6 +703,111 @@ const ok = (c, m) => {
     ok(fStart > 0 && fEnd > fStart && /Chilled Water Plant/.test(findPlants) && /Hot Water Plant/.test(findPlants), 'D4: Findings has a Chilled Water Plant block and a Hot Water Plant block');
     ok(!/schedul/i.test(findPlants) && !/Occupied schedule/.test(pt), 'D4: plants get no schedule finding and no schedule line');
     ok(/Chilled Water Supply Temperature Reset/.test(findPlants) && /Hot Water Supply Temperature Reset/.test(findPlants), 'D4: plant findings include the supply temperature reset sequence of each plant (same treatment as the plants Detailed already printed)');
+    ok(/The hot water plant serves the building heating system\. The building automation system monitors the boiler run status, and enables the primary hot water pump\. At the time of the audit the plant supplied hot water at 150\.2°F with a 130\.0°F return( \(Figure \d+\))?\./.test(pt), 'item 2: a plant description is connected sentences in an engineering voice (what it serves, what the system enables and monitors, the readings)');
+    ok(!/primary hot water pump (has|has a)|status point/.test(pt), 'item 2: no "has an enable command" or "status point" wording');
+
+    // ---- 12. Round 4 (2026-11-11): figure crop, picture rank, carbon dioxide counts, power meter wording ----
+    const round4 = await page.evaluate(async () => {
+      const out = {};
+      function mk(w, h, fn) {
+        const cv = document.createElement('canvas');
+        cv.width = w;
+        cv.height = h;
+        const g = cv.getContext('2d');
+        g.fillStyle = '#000';
+        g.fillRect(0, 0, w, h);
+        fn(g, w, h);
+        const data = g.getImageData(0, 0, w, h).data;
+        return (x, y) => data[(y * w + x) * 4];
+      }
+      // a dark graphic: header strip (small text across the width), a thin lit line on the left edge, the drawing centered
+      const drawing = { x: 400, y: 220, w: 400, h: 300 };
+      const fig = mk(1200, 700, (g) => {
+        g.fillStyle = '#ddd';
+        for (let line = 0; line < 3; line++) for (let xx = 100; xx < 1100; xx += 40) g.fillRect(xx, 8 + line * 12, 28, 5); // header text lines
+        g.fillRect(0, 0, 2, 700); // a thin lit line along the left edge
+        g.fillRect(drawing.x, drawing.y, drawing.w, 6);
+        g.fillRect(drawing.x, drawing.y + drawing.h - 6, drawing.w, 6);
+        for (let yy = drawing.y; yy < drawing.y + drawing.h; yy += 20) g.fillRect(drawing.x + 40, yy, 300, 8);
+        g.fillRect(drawing.x, drawing.y, 6, drawing.h);
+        g.fillRect(drawing.x + drawing.w - 6, drawing.y, 6, drawing.h);
+      });
+      out.crop = _a36DetCropGraphic(1200, 700, fig);
+      out.drawing = drawing;
+      const noHeader = mk(1200, 700, (g) => {
+        g.fillStyle = '#ddd';
+        g.fillRect(300, 100, 600, 6);
+        for (let yy = 100; yy < 500; yy += 20) g.fillRect(320, yy, 500, 8);
+      });
+      out.cropNoHeader = _a36DetCropGraphic(1200, 700, noHeader);
+      out.cropLight = _a36DetCropGraphic(300, 200, mk(300, 200, (g, w, h) => { g.fillStyle = '#fff'; g.fillRect(0, 0, w, h); g.fillStyle = '#000'; g.fillRect(10, 10, 100, 10); }));
+      // rank: a graphic page of the unit comes before a cited logic page
+      const picMap = [
+        { file: 'logic.png', page: 'logic (defaults)', cited: true, building: 'Zeta Library', equipName: 'AHU-1' },
+        { file: 'graphic.png', page: 'graphic', cited: false, building: 'Zeta Library', equipName: 'AHU-1' },
+        { file: 'props.png', page: 'properties', cited: true, building: 'Zeta Library', equipName: 'AHU-1' },
+      ];
+      out.rank = _a36DetPickPictures(picMap, ['Zeta Library'], ['AHU-1'], null, { limit: 3 }).map((p) => p.file);
+      // the print size: a drawing printed under the readable scale is left out; every figure prints at the text width (624 px) at most 432 px tall
+      async function file(w, h) {
+        const cv = document.createElement('canvas');
+        cv.width = w;
+        cv.height = h;
+        const g = cv.getContext('2d');
+        g.fillStyle = '#000';
+        g.fillRect(0, 0, w, h);
+        g.fillStyle = '#ddd';
+        for (let yy = 20; yy < h - 20; yy += 14) for (let xx = 20; xx < w - 80; xx += 80) g.fillRect(xx, yy, 60, 4);
+        const blob = await new Promise((res) => cv.toBlob(res, 'image/png'));
+        return new File([blob], 'x.png', { type: 'image/png' });
+      }
+      const wide = await _a36DetScalePicture(await file(2400, 1300));
+      const narrow = await _a36DetScalePicture(await file(1000, 600));
+      out.wideBad = wide && wide.bad;
+      out.narrowBad = narrow && narrow.bad;
+      out.figW = A36_DET_FIG_SHOW_W;
+      out.figH = A36_DET_FIG_SHOW_H;
+      return out;
+    });
+    const cr = round4.crop;
+    const dr = round4.drawing;
+    ok(cr.x <= dr.x && cr.x >= dr.x - 60 && cr.x + cr.w >= dr.x + dr.w && cr.x + cr.w <= dr.x + dr.w + 60 && cr.y <= dr.y && cr.y >= dr.y - 60 && cr.y + cr.h >= dr.y + dr.h && cr.y + cr.h <= dr.y + dr.h + 60, 'item 5: the crop is the drawing plus a margin on all four sides (header strip and edge line left out): ' + JSON.stringify(cr));
+    ok(round4.cropNoHeader.y >= 100 - 25 && round4.cropNoHeader.y <= 100 && round4.cropNoHeader.x >= 300 - 40 && round4.cropNoHeader.x <= 300, 'item 5: a graphic with no header strip is cropped to its drawing on all sides: ' + JSON.stringify(round4.cropNoHeader));
+    ok(round4.cropLight.w === 300 && round4.cropLight.h === 200, 'item 5: a light page is not cropped');
+    ok(round4.rank.join(',') === 'graphic.png,logic.png,props.png', 'item 5: a graphic page ranks before a cited logic or properties page, cited first inside each kind: ' + round4.rank.join(','));
+    ok(round4.wideBad === 'too small to read' && round4.narrowBad === '', 'item 5: a drawing that would print under the readable scale (2400 px wide for 6.5 in) is left out; a 1000 px drawing is kept: ' + round4.wideBad + ' / ' + round4.narrowBad);
+    ok(round4.figW === 624 && round4.figH === 432, 'item 5: figures print 6.5 in wide, at most 4.5 in tall');
+
+    // item 7: carbon dioxide counts through the one owner (collectASHRAE36Data), item 6: the building infrastructure wording
+    const PID3 = await page.evaluate(async () => {
+      const PID = 900003;
+      const row = (id, name, cat, p) => ({ id, building: 'Delta Library', category: cat, equipName: name, location: '', controllerType: 'Sample Controller', points: p });
+      const zone = { 'Zone Temp': '72.4 °F', 'Zone Cooling Setpoint': '74', 'Zone Heating Setpoint': '70' };
+      const rows = [
+        row('d1', 'AHU-1', 'ahu', { 'Supply Air Temp': '55.2 °F' }),
+        row('d2', 'RTU-1', 'rtu', { 'Supply Air Temp': '56.0 °F' }),
+        row('d3', 'RTU-2', 'rtu', { 'Supply Air Temp': '56.0 °F', 'Return Air CO2': '600 ppm' }),
+        row('d4', 'VAV-1', 'vav', Object.assign({}, zone)),
+        row('d5', 'VAV-2', 'vav', { 'Zone Temp': '71.0 °F' }), // monitors only: no cooling and no heating set point
+        row('d6', 'VAV-3', 'vav', Object.assign({}, zone, { 'Zone CO2': '500 ppm' })),
+      ];
+      projects.push({ id: PID, name: 'Synthetic Delta District', client: 'Synthetic Delta District', type: 'K-12', start: '2025-01-01' });
+      await sset('en_eqmatrix_' + PID, { rows: rows, importedAt: null, buildings: ['Delta Library'] });
+      await sset('en_audit_' + PID, { findings: [], edits: {}, evidence: {} });
+      return PID;
+    });
+    const co2 = await page.evaluate((PID) => {
+      const d = collectASHRAE36Data(PID, '2026-11-10', null);
+      const html = generateASHRAE36AuditHTML(d, { cover: true, executive: true, costEstimate: true, building: true, buildingInfra: true, setpointReview: true, pointInventory: true });
+      const text = new DOMParser().parseFromString('<div>' + html + '</div>', 'text/html').body.textContent;
+      return { dcv: d.portfolio.dcv, text, cats: d.buildings[0].equipResults.map((e) => e.category).sort().join(',') };
+    }, PID3);
+    ok(co2.cats === 'ahu,rtu,rtu,vav,vav,vav', 'item 7 setup: the project has 1 air handling unit, 2 rooftop units, 3 variable air volume zones (' + co2.cats + ')');
+    ok(co2.dcv.totalAHU === 3 && co2.dcv.ahuMissingCO2 === 2, 'item 7: air handlers count air handling units and rooftop units: ' + JSON.stringify(co2.dcv));
+    ok(co2.dcv.totalZones === 2 && co2.dcv.zonesMissingCO2 === 1, 'item 7: zones leave out the monitoring-only unit (no cooling and no heating set point): ' + JSON.stringify(co2.dcv));
+    ok(/2 of 3 air handlers and 1 of 2 zones have no carbon dioxide sensor/.test(co2.text), 'item 7: the Executive Summary sentence uses those counts');
+    ok(/Dedicated building automation system power monitoring meter:\s*Not installed\. Installation recommended\./.test(co2.text) && /Dedicated outdoor air sensors:\s*(Not installed\. Installation recommended\.|Installed)/.test(co2.text) && !/None in the reviewed points/.test(co2.text), 'item 6: infrastructure lines read "Not installed. Installation recommended." (no abbreviations)');
+
     ok(errs.length === 0, 'no page errors' + (errs.length ? ': ' + errs[0] : ''));
   } finally {
     await ctx.close();
