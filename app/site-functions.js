@@ -2507,6 +2507,12 @@ async function siteResetAllMeterTableSettings() {
    site-ui.js delegates to this array and should NOT maintain its own copy.
 */
 var RELEASE_NOTES = [
+  { v: 'v2026.11.11.264', date: '2026-11-11', title: 'Weather loads for new building ZIP codes',
+    items: [
+      { type: 'fix', text: 'Utility data: when you save or import a building ZIP code, the site now gets the weather for that ZIP right away. Before, it waited for the next page load.' },
+      { type: 'fix', text: 'Weather: if the weather source does not answer, the site tries again at the next page load. Before, one failed try stopped all tries for the rest of the day.' }
+    ]
+  },
   { v: 'v2026.11.11.263', date: '2026-11-11', title: 'Calendar: clearer list of BAS changes',
     items: [
       { type: 'change', text: 'Project page: the "District Calendar" tab is now called "Calendar", so the name fits every client. Your saved calendar data does not change.' },
