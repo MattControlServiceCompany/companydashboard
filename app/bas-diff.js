@@ -279,6 +279,26 @@
       return on[i];
     }).join(', ');
   }
+  // The inverse of daysText and clock for one stored group schedule { type, mode, days, start, end }: the Weekly Occupied ones
+  // become { days:['Mon','Wed'], from, to } (minutes of a day; an end at or before the start runs to midnight). null for any other
+  // type or mode (Dated Weekly, Wildcard, not opened, unreadable). The ONE reader of the stored group schedule text.
+  function groupScheduleBlock(s) {
+    if (!s || norm(s.type) !== 'Weekly' || norm(s.mode) !== 'Occupied') return null;
+    var at = function (t) {
+      var m = norm(t).match(/^(\d{1,2}):(\d{2})\s*(AM|PM)$/i);
+      return m ? (+m[1] % 12) * 60 + +m[2] + (m[3].toUpperCase() === 'PM' ? 720 : 0) : null;
+    };
+    var from = at(s.start);
+    var to = at(s.end);
+    if (from === null || to === null) return null;
+    var text = norm(s.days);
+    var days = [];
+    if (/^every day$/i.test(text)) days = DAY_NAMES.slice();
+    else if (/^mon-fri$/i.test(text)) days = DAY_NAMES.slice(0, 5);
+    else days = text.split(/\s*,\s*/).filter(function (d) { return DAY_NAMES.indexOf(d) !== -1; });
+    if (!days.length) return null;
+    return { days: days, from: from, to: to <= from ? 1440 : to };
+  }
   // rows2d = a parsed CSV (arrays). Returns { kind:'schedules'|'members'|'', items:[] }. Columns are found by header name.
   function readGroupRows(rows2d) {
     if (!rows2d || !rows2d.length) return { kind: '', items: [] };
@@ -488,6 +508,7 @@
     pickBaseline: pickBaseline,
     applyScheduleImport: applyScheduleImport,
     daysText: daysText,
+    groupScheduleBlock: groupScheduleBlock,
     readableDates: readableDates,
     readableHours: readableHours,
     readGroupRows: readGroupRows,

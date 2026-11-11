@@ -9,7 +9,7 @@
 // Data (shared keys, read and written only through DB.get / DB.set):
 //   en_sched_actions_<pid>  { actions:{ "<event id>": { id, date, text, program, status, openedAt, doneBy, doneAt, closedAt, note } } }  class SYNCED
 //   en_bas_acthist_<pid>    one record (kind 'action') for each save that changed an action: who, when, what. Its own list (50), so actions never push out BAS import history (en_bas_hist_).
-// Reads en_cal_snap_<pid>, en_cal_cfg_<pid>, en_space_map_<pid>, en_bas_snap_<pid>, en_bas_groups_<pid>.
+// Reads en_cal_snap_<pid>, en_cal_cfg_<pid>, en_space_map_<pid>, en_bas_snap_<pid>, en_bas_groups_<pid>, en_bas_auditevents_<pid> (only through BasAuditLog.changeList).
 //
 // Network: none. Opening the tab only reads saved data and works out the list in memory. The list is saved
 // after a calendar sync (project-calendar.js), after a BAS import (bas-schedules.js), and when a person chooses Done or Open.
@@ -36,7 +36,11 @@
     if (!snaps || typeof snaps !== 'object' || Array.isArray(snaps)) snaps = {};
     var tz = (cfg && cfg.timezone) || 'America/Chicago';
     var g = DB.get('en_bas_groups_' + pid, null);
+    // The imported WebCTRL audit log, read only through BasAuditLog.changeList: its schedule rows and its newest day.
+    var log = window.BasAuditLog ? window.BasAuditLog.changeList(DB.get('en_bas_auditevents_' + pid, null), {}) : { lastDay: '', rows: [] };
     return {
+      scheduleEdits: log.rows.filter(function (r) { return /^Schedule/.test(r.type); }),
+      auditLastDay: log.lastDay,
       events: Object.assign({}, (snap && snap.events) || {}, typeof distCalManualRows === 'function' ? distCalManualRows(pid) : {}),
       map: DB.get('en_space_map_' + pid, null),
       snaps: snaps,
@@ -103,7 +107,7 @@
     });
     var nOpen = needs.filter(function (n) {
       var s = v.stored.actions[n.id];
-      return !s || s.status === 'open';
+      return (!s || s.status === 'open') && !n.webctrl;
     }).length;
     var st = pv.status;
     var reasons = st.reasons.length
@@ -129,7 +133,7 @@
     var trows = needs.map(function (n, i) {
       var s = v.stored.actions[n.id];
       var done = s && s.status === 'done';
-      var who = done ? 'Done by ' + (s.doneBy || 'someone') + ', ' + CalendarDiff.calendarDay(s.doneAt, inp.tz) : 'To do';
+      var who = done ? 'Done by ' + (s.doneBy || 'someone') + ', ' + CalendarDiff.calendarDay(s.doneAt, inp.tz) : n.webctrl ? n.webctrl.text : 'To do';
       var b = done
         ? '<button class="btn btn-ghost btn-sm" onclick="sactSet(' + pid + ',' + i + ",'open')\">Open again</button>"
         : '<button class="btn btn-em btn-sm" onclick="sactSet(' + pid + ',' + i + ",'done')\">Done</button>";
@@ -169,7 +173,7 @@
     host.innerHTML =
       '<div class="card pcal" style="margin-bottom:16px"><div class="card-hdr"><span class="card-title" title="Events in the shown period that the BAS schedule does not cover. After the next BAS import or calendar sync, a fixed line closes by itself and a Done line that is still not covered opens again.">What needs to change: ' + esc(per.label) + '</span></div>' +
       '<div style="padding:16px"><div class="pcal-sum" style="margin-top:0">' + esc(headline(st, needs.length, nOpen, per)) + '</div>' +
-      '<div class="pcal-chg">' + esc(SchedActions.copyNote({ snapFetchedAt: inp.snapFetchedAt, snaps: inp.snaps, tz: inp.tz, today: inp.today })) + '</div>' +
+      '<div class="pcal-chg">' + esc(SchedActions.copyNote({ snapFetchedAt: inp.snapFetchedAt, snaps: inp.snaps, tz: inp.tz, today: inp.today, auditLastDay: inp.auditLastDay, scheduleEdits: inp.scheduleEdits })) + '</div>' +
       reasons + places + tbl + closedHtml + wasteHtml + '</div></div>';
   }
 

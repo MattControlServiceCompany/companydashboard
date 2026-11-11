@@ -384,6 +384,14 @@
     return b ? blockText(b) : fallback;
   }
   var KIND_TYPE = { A: 'Schedule added', U: 'Schedule changed', D: 'Schedule deleted', S: 'Set point' };
+  // The Weekly block an added or changed schedule has AFTER the edit ({ name, days, iv } from parseBlock), else null
+  // (deleted, set point, or a schedule type that is not Weekly). The Calendar "What needs to change" card reads it to see if an edit spans an event.
+  function newBlockOf(kind, text) {
+    if (kind === 'A') return parseBlock(text);
+    if (kind !== 'U') return null;
+    var j = text.indexOf('New values:');
+    return j < 0 ? null : parseBlock(text.slice(j));
+  }
   // 'Occupied heating 63\u00B0F \u2192 66\u00B0F; Occupied cooling 68\u00B0F \u2192 73\u00B0F' from the stored lines 'H 63 66' and 'C 68 73'.
   function setPointWords(text) {
     return String(text).split('\n').map(function (ln) {
@@ -393,7 +401,7 @@
   }
   // The schedule and set point events of a stored audit log, newest first, for the Calendar tab.
   // opts.today (YYYY-MM-DD) with opts.days gives the range: events on or after today minus days. No days = every stored event.
-  // Returns { has, lastDay, total, rows:[{ iso, ymd, type, building, area, what, operator }] }. has is false when nothing was imported.
+  // Returns { has, lastDay, total, rows:[{ iso, ymd, type, building, area, what, operator, block }] }. block = newBlockOf (schedule added or changed, else null). has is false when nothing was imported.
   // operator is '' when the stored log came from an import made before names were kept (import the file again).
   function changeList(store, opts) {
     var o = opts || {};
@@ -413,6 +421,7 @@
         area: BD.areaOf(loc),
         what: t[1] === 'S' ? setPointWords(t[3]) : scheduleText(t[1], t[3]),
         operator: ops[t[4]] || '',
+        block: newBlockOf(t[1], t[3]),
       });
     });
     rows.reverse(); // the store is oldest first

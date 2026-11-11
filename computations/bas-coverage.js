@@ -298,9 +298,45 @@
     }, 0);
   }
 
+  // --- scheduling groups ----------------------------------------------------------------------
+  // en_bas_groups_<pid> { "building|group": { building, group, schedules, members:["Roof / RTU-8 Gym", ...] } }.
+  // A member names the program as its last part, after the area. Returns the group entry of a program row key, or null.
+  function groupEntryFor(groups, key) {
+    var p = BD.splitKey(key);
+    var prog = norm(programOfKey(key));
+    var parts = p.location.split('/').map(norm).filter(Boolean);
+    var area = parts[parts.length - 1] || '';
+    var found = null;
+    Object.keys(groups || {}).some(function (gk) {
+      var g = groups[gk];
+      var hit = (g.members || []).some(function (m) {
+        var mp = String(m).split(' / ').map(norm);
+        if (mp.pop() !== prog) return false;
+        return !mp.length || mp[mp.length - 1] === area;
+      });
+      if (hit) found = g;
+      return hit;
+    });
+    return found;
+  }
+  // The occupied blocks [[from,to,'occ']] that the Weekly schedules of a program's scheduling group add on one weekday.
+  // The BAS copy is the effective schedule as exported on its day; a Weekly group schedule for another weekday (Mon-Thu copies
+  // are borrowed for Mon, Tue, Wed) is invisible in it, so the group schedules are read here as well.
+  var DAY_ABBR = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+  function groupBlocksOn(groups, key, ymd) {
+    var g = groupEntryFor(groups, key);
+    var out = [];
+    ((g && g.schedules) || []).forEach(function (s) {
+      var b = BD.groupScheduleBlock(s);
+      if (b && b.days.indexOf(DAY_ABBR[dow(ymd)]) !== -1) out.push([b.from, b.to, 'occ']);
+    });
+    return out;
+  }
+
   // --- the one coverage function --------------------------------------------------------------
   // eventCoverage(row, ctx) -> { status, label, space, short, program, from, exact }
-  //   row = [title, start, end, allDay, location]; ctx = { tz, map, snaps }
+  //   row = [title, start, end, allDay, location]; ctx = { tz, map, snaps, groups }
+  //   groups (en_bas_groups) is optional: the Weekly schedules of a program's scheduling group that list the event weekday count as occupied.
   //   short = minutes the worst mapped program is unoccupied during the event; program = its row key; gaps = those stretches.
 //   fromMin/toMin = the event as minutes of that day.
   function eventCoverage(row, ctx) {
@@ -334,11 +370,12 @@
     res.fromMin = from;
     res.toMin = to;
     keys.forEach(function (k) {
-      var m = minutesShort(snap.rows[k], from, to);
+      var blocks = (snap.rows[k] || []).concat(groupBlocksOn(ctx.groups, k, date));
+      var m = minutesShort(blocks, from, to);
       if (m > res.short) {
         res.short = m;
         res.program = k;
-        res.gaps = gapsOf(snap.rows[k], from, to);
+        res.gaps = gapsOf(blocks, from, to);
       }
     });
     if (!res.short) return done('covered', 'Covered');
@@ -419,6 +456,7 @@
     minutesShort: minutesShort,
     gapsOf: gapsOf,
     eventCoverage: eventCoverage,
+    groupEntryFor: groupEntryFor,
   };
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
   else root.BasCoverage = api;
