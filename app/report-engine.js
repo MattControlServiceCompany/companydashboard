@@ -15051,14 +15051,28 @@ function initUtilityTool() {
   // that are never explicitly re-focused (e.g. a second monitor that's always visible).
   // Netlify credit cost (2026-10-07): no timer. Check on load, and on visible or focus at most once per 60 s.
   // A new version that waits for a safe moment is tried again here (no server call), and on dataUpdated / chViewChanged.
+  // The update reload runs only while the user is NOT looking at the page (bd22df0d, Matt 2026-11-11: "Anyway we can
+  // do this without reloading pages?"): the tab is hidden, or the window lost focus to another program. The user never
+  // sees the reload; on return the new version is already there. Checks: on visible/focus (at most once per 60 s)
+  // and on leaving the page (same gap), so a version found while visible waits for the user to leave.
   const _verRecheck = () => {
-    if (document.hidden) return;
-    if (_chPendingVer) _reloadForNewVersionWhenSafe();
+    if (_chPendingVer) {
+      _reloadForNewVersionWhenSafe();
+      return;
+    }
     if (Date.now() - _chVerLastCheck < _CH_VER_MIN_GAP_MS) return;
     _checkForVersionUpdate();
   };
   document.addEventListener('visibilitychange', _verRecheck);
   window.addEventListener('focus', _verRecheck);
+  // Focus moved into a frame of this page (a PDF view) is not "away": only another program or tab counts.
+  window.addEventListener('blur', () => {
+    setTimeout(() => {
+      const a = document.activeElement;
+      if (a && a.tagName === 'IFRAME') return;
+      _verRecheck();
+    }, 0);
+  });
   // Back/Forward restore from the browser's page cache (Firefox bfcache) keeps the OLD code with no reload.
   // Check the live version then, without the 60 s gap. Same version or a failed fetch = nothing happens.
   // A back/forward that loads the page again (no page cache) is already covered by the check on load above.
@@ -15081,7 +15095,7 @@ const _CH_VER_MIN_GAP_MS = 60 * 1000;
 /* Version check: ONE small GET of the first 4 KB of site-ui.js (Range request, no-store). CH_VERSION is on line 9 of
    that file, so it is the one source of truth for the live version. The version is compared with the version this tab
    loaded (RELEASE_NOTES[0].v). A HEAD ETag is not used: a local server gives the same ETag every time, so a stale tab
-   never saw an update. Runs on page load and on tab focus or visible (at least 60 s apart), never while hidden. */
+   never saw an update. Runs on page load, on tab focus or visible, and when the user leaves the page (at least 60 s apart). */
 function _checkForVersionUpdate() {
   _chVerLastCheck = Date.now();
   fetch('site-ui.js', { cache: 'no-store', headers: { Range: 'bytes=0-4095' } })
@@ -15114,26 +15128,23 @@ function chSafeToReload() {
   return true;
 }
 
-/* A newer version is live (_chPendingVer). When it is safe: short toast, save the page state, reload.
-   When it is not safe: the sidebar link stays and this runs again on focus, dataUpdated and chViewChanged.
+/* A newer version is live (_chPendingVer). When it is safe AND the user is away (tab hidden or another program has
+   focus): save the page state, reload. Otherwise the sidebar link stays and this runs again on leave, focus,
+   dataUpdated and chViewChanged.
    Once per version per tab session (sessionStorage), so a server that never matches cannot cause a reload loop. */
 let _chPendingVer = null;
-let _chReloadTimer = null;
+function _userIsAway() {
+  if (document.hidden) return true;
+  return typeof document.hasFocus === 'function' && !document.hasFocus() && !(document.activeElement && document.activeElement.tagName === 'IFRAME');
+}
 function _reloadForNewVersionWhenSafe() {
-  if (!_chPendingVer || _chReloadTimer || document.hidden || !chSafeToReload()) return;
+  if (!_chPendingVer || !_userIsAway() || !chSafeToReload()) return;
   try {
     if (sessionStorage.getItem('ch_auto_reload_ver') === _chPendingVer) return;
+    sessionStorage.setItem('ch_auto_reload_ver', _chPendingVer);
   } catch (e) {}
-  showToast('Updating to the new version', null, 2000);
-  _chReloadTimer = setTimeout(function () {
-    _chReloadTimer = null;
-    if (!chSafeToReload()) return; // work started during the toast: keep the link
-    try {
-      sessionStorage.setItem('ch_auto_reload_ver', _chPendingVer);
-    } catch (e) {}
-    _savePageStateForVersionUpdate();
-    location.reload();
-  }, 2000);
+  _savePageStateForVersionUpdate();
+  location.reload();
 }
 
 /* The version baked into the code this tab already has (RELEASE_NOTES ships with app/site-functions.js),

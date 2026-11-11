@@ -86,10 +86,18 @@ const state = () => ({
     eq([before.view, before.detail, before.proj, before.tab, before.sub], ['view-projects', true, PID, 'eq-matrix', 'setpoints'], 'before update: project, tab, sub-tab');
     // 2. a new version is live: use the real auto-update path and wait for the reload
     await page.evaluate(() => localStorage.setItem('ch_seen_version', 'v0.0.0.0')); // user has not read the new notes
-    const nav = page.waitForNavigation({ waitUntil: 'load', timeout: 15000 });
-    await page.evaluate(() => {
+    // While the user looks at the page, no reload happens.
+    const stayed = await page.evaluate(() => {
       _chPendingVer = 'v9999.01.01.1';
       _reloadForNewVersionWhenSafe();
+      return !sessionStorage.getItem('ch_update_reload');
+    });
+    eq(stayed, true, 'no reload while the user is on the page');
+    // The user leaves (another program takes focus): the reload runs then.
+    const nav = page.waitForNavigation({ waitUntil: 'load', timeout: 15000 });
+    await page.evaluate(() => {
+      document.hasFocus = () => false;
+      window.dispatchEvent(new Event('blur'));
     });
     await nav;
     await page.waitForTimeout(3500);

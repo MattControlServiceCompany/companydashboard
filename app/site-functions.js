@@ -2507,6 +2507,10 @@ async function siteResetAllMeterTableSettings() {
    site-ui.js delegates to this array and should NOT maintain its own copy.
 */
 var RELEASE_NOTES = [
+  { v: 'v2026.11.11.270', date: '2026-11-11', title: 'Updates load while you are away',
+    items: [
+      { type: 'change', text: 'A new site version now loads only while you are away from the tab: another tab or another program is in front. When you come back, the new version is there on the same page. You do not see the reload.' }
+    ] },
   { v: 'v2026.11.11.269', date: '2026-11-11', title: 'Updates keep your page; more air source links',
     items: [
       { type: 'fix', text: 'When the site updates itself, you stay signed in and on the same page, project and tab. Before, the sign-in screen showed and you landed on the Projects list.' },
