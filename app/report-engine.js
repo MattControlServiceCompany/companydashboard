@@ -20854,7 +20854,7 @@ function rptPageASHRAE36SetpointReview(n, d, detailedTitle) {
     );
   }
   var _spColDefs = [
-    { w: 13, th: 'Building', td: tdBase, cell: function (r) { return '<span style="font-weight:600;color:var(--rpt-page-text)">' + _a36DisplayName(r) + '</span>'; } },
+    { w: 13, th: 'Building', td: tdBase, cell: function (r) { return '<span style="font-weight:600;color:var(--rpt-page-text)">' + _escHtml(_a36DisplayName(r)) + '</span>'; } },
     { w: 17, th: 'Occupied' + thSub + 'Existing average</span>', td: tdCenter, cell: function (r) { return _pairText(r.avgHeat, r.avgCool, _fmtAvg); } },
     { w: 17, th: 'Unoccupied' + thSub + 'Existing average</span>', td: tdCenter, cell: function (r) { return _pairText(r.avgUnoccHeat, r.avgUnoccCool, _fmtAvg); } },
     { w: 17, th: 'ASHRAE 36<br>Default', td: tdCenter, cell: _refCellFor, uniformNote: function (h) { var p = h.split('<br>'); return '<strong>ASHRAE 36 default:</strong> ' + p[0].replace(/^Occupied/, 'occupied') + '; ' + p[1].replace(/^Unoccupied/, 'unoccupied'); } },
@@ -20947,7 +20947,7 @@ function rptPageASHRAE36SetpointReview(n, d, detailedTitle) {
   function _libraryNames(list) {
     return _a36DetJoin(
       list.map(function (b) {
-        return _a36DisplayName(b);
+        return _escHtml(_a36DisplayName(b));
       }),
     );
   }
