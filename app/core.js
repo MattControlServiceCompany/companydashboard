@@ -2040,8 +2040,8 @@ function initDashboardTab(projId) {
   const hdrWrap = document.getElementById('dash-hdr-' + projId);
   const perfWrap = document.getElementById('dash-perf-' + projId);
   if (!perfWrap) return;
-  const bldgs = getUDBldgs(projId);
   const _eligBldgs = getIncludedBldgs(projId); // the one building list the Dashboard counts and sizes (no sqft test)
+  const bldgs = _eligBldgs; // header counts, bill count and Building Performance rows use the same list
     // 2026-09-15 (SA-gate fix): the project-form "Est. Savings $/yr" target and the ECM
   // projected $ are savings dollars — hidden for a project with no Service Agreement.
   const _hasContract = projHasContract(projId);
@@ -2068,8 +2068,16 @@ function initDashboardTab(projId) {
           </div>`;
   }
 
-  if (!bldgs.length || !bldgs.some((b) => (b.meters || []).some((m) => (m.bills || []).length > 0))) {
-    perfWrap.innerHTML =
+  const _hasBills = (list) => list.some((b) => (b.meters || []).some((m) => (m.bills || []).length > 0));
+  if (!bldgs.length || !_hasBills(bldgs)) {
+    // Buildings with bills exist in scope, but every one is excluded (all calc meters excluded, or the
+    // Unmatched Bills holder): say so, instead of asking the user to add data that is already there.
+    const _exclWithBills = getUDBldgs(projId).filter((b) => !bldgs.includes(b) && _hasBills([b])).length;
+    perfWrap.innerHTML = _exclWithBills
+      ? '<div class="card"><div style="padding:40px;text-align:center;color:var(--text3);font-size:13px">No counted building has bills. ' +
+        _exclWithBills + ' building' + (_exclWithBills !== 1 ? 's have' : ' has') +
+        ' bills, but all of their meters are excluded from savings.</div></div>'
+      :
       '<div class="card"><div style="padding:40px;text-align:center;color:var(--text3);font-size:13px">Add buildings and utility data to see performance summary.<br><span style="font-size:11px">Use the <strong style="color:var(--accent)">Utility Data</strong> tab to get started.</span></div></div>';
     return;
   }
@@ -2079,6 +2087,7 @@ function initDashboardTab(projId) {
   const projectedByQtr = [0, 0, 0, 0];
   let projectedAnnual = 0;
   const actualByQtr = [0, 0, 0, 0];
+  const measuredByQtr = [0, 0, 0, 0]; // the same quarters before the $0 floor, shown beside a floored $0
   const actualQtrHasData = [false, false, false, false]; // a quarter with savings months shows $0.00, not a dash, when floored
   const qtrMissing = {};
   const qtrWeather = {}; // { 'YYYY-Qn': [ym] } months with no weather yet: the quarter shows words, not a dollar figure
@@ -2120,6 +2129,7 @@ function initDashboardTab(projId) {
       if (!Object.values(qtrByYr[yr]).some((o) => qYMs.some((y) => y in o))) continue;
       actualQtrHasData[qi] = true;
       actualByQtr[qi] = qr.total;
+      measuredByQtr[qi] = qr.measured;
       Object.assign(qtrWeather, qr.weatherWaiting);
       Object.assign(qtrMissing, qr.missing); // { 'YYYY-Qn': [missing bill lines] } for the Waiting for bills chip
     }
@@ -2456,6 +2466,8 @@ function initDashboardTab(projId) {
       })
     : '';
   const curQtrActual = headQtr ? actualByQtr[curQtr] : 0;
+  const curQtrMeasured = headQtr ? measuredByQtr[curQtr] : 0;
+  const _curQtrShown = savingsFlooredShown(curQtrMeasured, curQtrActual, 0, $c, 'var(--green)', 'var(--danger)', 'var(--text)');
   const curQtrWeather = headQtr ? qtrWeather[headQtr.year + '-Q' + (curQtr + 1)] || [] : [];
   const curQtrWaiting = headQtr ? qtrMissing[headQtr.year + '-Q' + (curQtr + 1)] || [] : [];
   const curQtrProjected = headQtr ? projectedByQtr[curQtr] : 0;
@@ -2519,7 +2531,7 @@ function initDashboardTab(projId) {
                 ${headQtr ? `                <div>
                   <div style="font-size:11px;color:var(--text3);text-transform:uppercase;letter-spacing:.6px">${curQtrTitle} Total Savings</div>
                   ${curQtrThrough ? '<div style="font-size:11px;color:var(--text3)">' + curQtrThrough + '</div>' : ''}
-                  <div style="font-size:28px;font-weight:800;font-family:var(--mono);color:var(--green);margin:4px 0">${curQtrWeather.length ? '<span style="font-size:15px">Waiting for weather data: ' + _escHtml(weatherWaitingLabel(curQtrWeather)) + '</span>' : $c(curQtrActual)}</div>
+                  <div style="font-size:28px;font-weight:800;font-family:var(--mono);color:${_curQtrShown.floored ? _curQtrShown.color : 'var(--green)'};margin:4px 0">${curQtrWeather.length ? '<span style="font-size:15px">Waiting for weather data: ' + _escHtml(weatherWaitingLabel(curQtrWeather)) + '</span>' : _curQtrShown.text}</div>
                   ${curQtrWaiting.length ? '<div style="display:inline-block;font-size:11px;color:var(--text2);background:var(--s2);border:1px solid var(--border);border-radius:10px;padding:2px 8px;margin-bottom:4px">Waiting for bills: ' + _escHtml(curQtrWaiting.join(', ')) + '</div>' : ''}
                   <div style="font-size:12px;color:var(--text2)">${curQtrPct !== null ? '<span style="color:var(--green);font-weight:600">' + curQtrPct + '%</span> of ' + curQtrLabel + ' projected (' + $c2(curQtrProjected) + ')' : _eligBldgs.length + ' building' + (_eligBldgs.length !== 1 ? 's' : '') + ' · <span style="color:var(--text3)">' + (useNormalized ? 'Normalized' : 'Actual') + '</span>'}</div>
                 </div>` : ''}

@@ -983,11 +983,13 @@ function getUDBldgByCustomer(customerId, bldgId) {
 }
 
 // Buildings the project counts: in scope and not excluded (every calc-commodity meter excluded via
-// isBaselineExcluded() drops the building, like a maintenance-only building). Square footage is NOT a test here, so a
+// isBaselineExcluded() drops the building, like a maintenance-only building; the bill-import "Unmatched Bills"
+// sentinel, _unmatchedSentinel === true, is never a building). Square footage is NOT a test here, so a
 // first building with no sqft still counts. The Dashboard building count and sf total use this list.
 // Do NOT repoint getUDBldgs() itself -- management/data-entry screens must keep showing ALL in-scope buildings.
 function getIncludedBldgs(pid) {
   return getUDBldgs(pid).filter((b) => {
+    if (b._unmatchedSentinel === true) return false;
     const calc = (b.meters || []).filter((m) => isCalcCommodity(pid, m.commodity));
     return !(calc.length && calc.every((m) => isBaselineExcluded(pid, m.id)));
   });
