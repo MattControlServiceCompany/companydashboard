@@ -46,6 +46,7 @@
       stored: DB.get('en_sched_actions_' + pid, null),
       now: new Date().toISOString(),
       latestImport: SchedActions.latestImport(snaps, snap && snap.fetchedAt),
+      snapFetchedAt: (snap && snap.fetchedAt) || '',
     };
   }
   async function writeHistory(pid, changes, by) {
@@ -135,9 +136,9 @@
       var note = s && s.note ? '<div class="pcal-chg">' + esc(s.note) + '</div>' : '';
       var rep = n.repeats ? ' <span class="pcal-badge" title="The same change repeats every week. Add one repeating schedule to the scheduling group instead of one line for each date.">Repeats weekly</span>' : '';
       return [
-        '<b>' + esc(n.change) + '</b>' + rep + '<div class="pcal-chg">For: ' + esc(n.forText) + '</div>' + note,
+        '<b>' + esc(n.change) + '</b>' + rep + '<div class="pcal-chg">Where: ' + esc(n.where) + '</div><div class="pcal-chg">For: ' + esc(n.forText) + '</div>' + note,
         esc(n.dates),
-        esc(n.inBas || 'No BAS copy for this day'),
+        esc(n.inBas || 'No BAS copy for this day') + (n.groupNow ? '<div class="pcal-chg">Group schedules now: ' + esc(n.groupNow) + '</div>' : ''),
         esc(who) + '<div style="margin-top:4px">' + b + '</div>',
       ];
     });
@@ -168,6 +169,7 @@
     host.innerHTML =
       '<div class="card pcal" style="margin-bottom:16px"><div class="card-hdr"><span class="card-title" title="Events in the shown period that the BAS schedule does not cover. After the next BAS import or calendar sync, a fixed line closes by itself and a Done line that is still not covered opens again.">What needs to change: ' + esc(per.label) + '</span></div>' +
       '<div style="padding:16px"><div class="pcal-sum" style="margin-top:0">' + esc(headline(st, needs.length, nOpen, per)) + '</div>' +
+      '<div class="pcal-chg">' + esc(SchedActions.copyNote({ snapFetchedAt: inp.snapFetchedAt, snaps: inp.snaps, tz: inp.tz, today: inp.today })) + '</div>' +
       reasons + places + tbl + closedHtml + wasteHtml + '</div></div>';
   }
 

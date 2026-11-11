@@ -36,12 +36,12 @@
   // --- scheduling group of a program ----------------------------------------------------------
   // en_bas_groups_<pid> { "building|group": { building, group, schedules, members:["Roof / RTU-8 Gym", ...] } }.
   // A member names the program as its last part, after the area. Returns the group name or ''.
-  function groupFor(groups, key) {
+  function groupEntryFor(groups, key) {
     var p = BD.splitKey(key);
     var prog = norm(programName(key));
     var parts = p.location.split('/').map(norm).filter(Boolean);
     var area = parts[parts.length - 1] || '';
-    var name = '';
+    var found = null;
     Object.keys(groups || {}).some(function (gk) {
       var g = groups[gk];
       var hit = (g.members || []).some(function (m) {
@@ -49,10 +49,33 @@
         if (mp.pop() !== prog) return false;
         return !mp.length || mp[mp.length - 1] === area;
       });
-      if (hit) name = g.group;
+      if (hit) found = g;
       return hit;
     });
-    return name;
+    return found;
+  }
+  function groupFor(groups, key) {
+    var g = groupEntryFor(groups, key);
+    return g ? g.group : '';
+  }
+
+  // The schedules saved for one scheduling group, as plain text ('' when none was read): 'LRC Volleyball Games Mon, Tue, Wed 4:00 PM - 10:00 PM'.
+  // Entries the import could not read ('not opened') are left out.
+  function groupScheduleText(groups, key) {
+    var g = groupEntryFor(groups, key);
+    if (!g) return '';
+    return (g.schedules || [])
+      .filter(function (x) { return x.start && x.start !== 'not opened' && x.start !== 'unreadable' && x.end !== 'unreadable'; })
+      .map(function (x) {
+        return (x.description ? x.description + ' ' : '') + (x.days || '') + ' ' + x.start + ' - ' + x.end + (x.mode && x.mode !== 'Occupied' ? ' (' + x.mode + ')' : '');
+      })
+      .join('; ');
+  }
+  // 'Middle School / Area C / Gym East AHU-4 RF-14': where in WebCTRL a program lives.
+  function whereText(key) {
+    var p = BD.splitKey(key);
+    var parts = p.location.split('/').map(function (x) { return x.trim(); }).filter(Boolean).slice(1);
+    return parts.concat([programName(key)]).join(' / ');
   }
 
   // --- the action list ------------------------------------------------------------------------
@@ -158,6 +181,7 @@
           title: titlesText(events.map(function (e) { return e.title; })),
           space: uniq(events.map(function (e) { return e.space; })).join(', '),
           program: programs[0],
+          programs: programs,
           short: ds.reduce(function (n, d) { return n + d.short; }, 0),
           group: u.group,
           unit: u.group || names.join(', '),
@@ -200,7 +224,8 @@
   // The lines of "What needs to change" for the period [o.from, o.to]. An action is listed when at least one of its dates is in
   // the period, so a one-time need in December is not listed in a November week. A weekly pattern is one line (one repeating
   // schedule to add to the scheduling group), whatever part of it falls in the period.
-  // o = computeActions input + { from, to }. -> [{ id, change, dates, forText, unit, inBas, repeats, action }]
+  // o = computeActions input + { from, to }. -> [{ id, change, dates, forText, unit, inBas, where, groupNow, repeats, action }]
+  //   where = the place of every BAS program the line's events use (building / area / program; '; ' between them); groupNow = the schedules saved for its scheduling group.
   function periodNeeds(o) {
     var out = [];
     computeActions(o).forEach(function (a) {
@@ -227,6 +252,8 @@
         forText: a.titleText,
         unit: a.unit,
         inBas: inBas,
+        where: uniq(a.programs.map(whereText)).join('; '),
+        groupNow: groupScheduleText(o.groups, a.program),
         action: a,
       });
     });
@@ -249,6 +276,22 @@
       if (at && at > t) t = at;
     });
     return t;
+  }
+
+  // Which saved copies the list is built from, in plain words, so the reader knows how old the data is.
+  // o = { snapFetchedAt (ISO or ''), snaps, tz, today }. 'Calendar copy: Nov 3, 2026 (7 days old). BAS copies: Oct 29, 2026, Oct 30, 2026.'
+  function copyNote(o) {
+    var out = [];
+    if (o.snapFetchedAt) {
+      var d = CD.calendarDay(o.snapFetchedAt, o.tz);
+      // Whole calendar days from the copy day to today, counted with CD.addDays (no millisecond math; the day-count gate allows only calcDays).
+      var age = 0;
+      for (var c = d; c < o.today && age < 3660; age++) c = CD.addDays(c, 1);
+      out.push('Calendar copy: ' + BD.dateText(d) + ' (' + (age <= 0 ? 'today' : age + (age === 1 ? ' day' : ' days') + ' old') + ').');
+    } else out.push('No calendar copy saved.');
+    var days = Object.keys(o.snaps || {}).filter(function (x) { return BD.isDate(x) && o.snaps[x] && o.snaps[x].rows; }).sort();
+    out.push(days.length ? 'BAS copies: ' + days.map(BD.dateText).join(', ') + '.' : 'No BAS copy saved.');
+    return out.join(' ');
   }
 
   // --- status over time -----------------------------------------------------------------------
@@ -415,6 +458,7 @@
     computeActions: computeActions,
     periodNeeds: periodNeeds,
     periodView: periodView,
+    copyNote: copyNote,
     repeatOf: repeatOf,
     reconcile: reconcile,
     setStatus: setStatus,
