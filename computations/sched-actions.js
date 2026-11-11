@@ -9,7 +9,7 @@
 //   { actions:{ "<event id>": { id, date, text, program, status:'open'|'done'|'closed', openedAt, doneBy, doneAt, closedAt, note } } }
 // An action exists only for a Not covered event (status "short"). Serving units are never checked, so they never make one.
 //
-//   computeActions(o)  o = { events, map, snaps, groups, tz, today }          -> [action] newest event first
+//   computeActions(o)  o = { events, map, snaps, groups, tz, today, scheduleEdits }          -> [action] newest event first
 //   reconcile(o)       o = computeActions input + { stored, now, latestImport } -> { stored, changes:[{id,text,what}] }
 //   latestImport(snaps, calFetchedAt) -> newest BAS import or calendar sync time
 //   setStatus(stored, id, status, who, now) -> { stored, changes }
@@ -34,26 +34,9 @@
   }
 
   // --- scheduling group of a program ----------------------------------------------------------
-  // en_bas_groups_<pid> { "building|group": { building, group, schedules, members:["Roof / RTU-8 Gym", ...] } }.
-  // A member names the program as its last part, after the area. Returns the group name or ''.
-  function groupEntryFor(groups, key) {
-    var p = BD.splitKey(key);
-    var prog = norm(programName(key));
-    var parts = p.location.split('/').map(norm).filter(Boolean);
-    var area = parts[parts.length - 1] || '';
-    var found = null;
-    Object.keys(groups || {}).some(function (gk) {
-      var g = groups[gk];
-      var hit = (g.members || []).some(function (m) {
-        var mp = String(m).split(' / ').map(norm);
-        if (mp.pop() !== prog) return false;
-        return !mp.length || mp[mp.length - 1] === area;
-      });
-      if (hit) found = g;
-      return hit;
-    });
-    return found;
-  }
+  // en_bas_groups_<pid>. The entry of a program is found by BasCoverage.groupEntryFor (the one reader; coverage uses it too).
+  // Returns the group name or ''.
+  var groupEntryFor = BC.groupEntryFor;
   function groupFor(groups, key) {
     var g = groupEntryFor(groups, key);
     return g ? g.group : '';
@@ -133,11 +116,35 @@
     var t = uniq(titles);
     return t.length > 3 ? t.slice(0, 3).join(', ') + ' and ' + (t.length - 3) + ' more' : and(t);
   }
+  // A schedule edit in the imported WebCTRL audit log (BasAuditLog.changeList rows with a block, o.scheduleEdits) made AFTER the BAS copy
+  // the check used (c.from) that spans every uncovered stretch of the event on its weekday, in the same building. The log names the
+  // building, not the group, so this says "added in WebCTRL", not "covered". Set point rows have no block and never count.
+  // Returns the newest such edit { ymd, operator } or null.
+  function webctrlEditFor(edits, c, date) {
+    var weekday = dayText(date).split(' ')[0];
+    var building = norm(BD.keyBuilding(c.program));
+    var hits = (edits || []).filter(function (e) {
+      return e.block && e.ymd > c.from && norm(e.building) === building && e.block.days.indexOf(weekday) !== -1;
+    });
+    if (!hits.length || !c.gaps.length) return null;
+    var occupied = [];
+    hits.forEach(function (e) {
+      e.block.iv.forEach(function (x) { occupied.push([x[0], x[1], 'occ']); });
+    });
+    var spanned = c.gaps.every(function (g) { return BC.minutesShort(occupied, g[0], g[1]) === 0; });
+    if (!spanned) return null;
+    var newest = hits.slice().sort(function (a, b) { return a.iso < b.iso ? 1 : a.iso > b.iso ? -1 : 0; })[0];
+    return { ymd: newest.ymd, operator: newest.operator || '' };
+  }
+  // The status words of a line the audit log shows as added: 'Added in WebCTRL on Fri Nov 13, 2026 by Test Operator - BAS copy not yet re-imported'.
+  function webctrlText(w) {
+    return 'Added in WebCTRL on ' + BD.dateText(w.ymd) + (w.operator ? ' by ' + w.operator : '') + ' - BAS copy not yet re-imported';
+  }
   // One line = one BAS unit (its scheduling group, else its program) x one set of uncovered spans, over every date and event
   // that needs it. Events in one unit on one day merge: overlapping or touching uncovered spans become one span. Days with the
   // same merged spans join into one line.
   function computeActions(o) {
-    var ctx = { tz: o.tz, map: o.map, snaps: o.snaps };
+    var ctx = { tz: o.tz, map: o.map, snaps: o.snaps, groups: o.groups };
     var units = {};
     Object.keys(o.events || {}).forEach(function (id) {
       var row = o.events[id];
@@ -147,13 +154,15 @@
       var c = BC.eventCoverage(row, ctx);
       if (c.status !== 'short') return;
       var group = groupFor(o.groups, c.program);
-      var uk = group ? BD.keyBuilding(c.program) + '|' + group : c.program;
+      var webctrl = webctrlEditFor(o.scheduleEdits, c, date);
+      var uk = (group ? BD.keyBuilding(c.program) + '|' + group : c.program) + (webctrl ? '|webctrl' : '');
       var u = (units[uk] = units[uk] || { key: uk, group: group, days: {} });
       var d = (u.days[date] = u.days[date] || { spans: [], events: [], programs: [], short: 0 });
       d.spans = d.spans.concat(c.gaps);
       d.events.push({ id: id, title: row[0], space: c.space });
       d.programs.push(c.program);
       d.short += c.short;
+      if (webctrl && (!d.webctrl || webctrl.ymd > d.webctrl.ymd)) d.webctrl = webctrl;
     });
     var out = [];
     Object.keys(units).forEach(function (uk) {
@@ -172,7 +181,9 @@
         var programs = uniq([].concat.apply([], ds.map(function (d) { return d.programs; })));
         var names = uniq(programs.map(programName));
         var spans = ds[0].spans;
+        var webctrl = ds.reduce(function (best, d) { return d.webctrl && (!best || d.webctrl.ymd > best.ymd) ? d.webctrl : best; }, null);
         out.push({
+          webctrl: webctrl ? Object.assign({ text: webctrlText(webctrl) }, webctrl) : null,
           id: uk + '|' + sig,
           date: dates[dates.length - 1],
           dates: dates,
@@ -249,6 +260,7 @@
         change: 'Add ' + a.spanText + (a.group ? ' to group ' + a.group : ' to ' + a.unit),
         dates: parts.join('. '),
         repeats: repIn,
+        webctrl: a.webctrl,
         forText: a.titleText,
         unit: a.unit,
         inBas: inBas,
@@ -264,7 +276,7 @@
   function periodView(o) {
     return {
       needs: periodNeeds(o),
-      status: BC.checkStatus(o.rows, { tz: o.tz, map: o.map, snaps: o.snaps }),
+      status: BC.checkStatus(o.rows, { tz: o.tz, map: o.map, snaps: o.snaps, groups: o.groups }),
     };
   }
 
@@ -279,7 +291,7 @@
   }
 
   // Which saved copies the list is built from, in plain words, so the reader knows how old the data is.
-  // o = { snapFetchedAt (ISO or ''), snaps, tz, today }. 'Calendar copy: Nov 3, 2026 (7 days old). BAS copies: Oct 29, 2026, Oct 30, 2026.'
+  // o = { snapFetchedAt (ISO or ''), snaps, tz, today, auditLastDay, scheduleEdits }. 'Calendar copy: Nov 3, 2026 (7 days old). BAS copies: Oct 29, 2026, Oct 30, 2026.'
   function copyNote(o) {
     var out = [];
     if (o.snapFetchedAt) {
@@ -291,6 +303,13 @@
     } else out.push('No calendar copy saved.');
     var days = Object.keys(o.snaps || {}).filter(function (x) { return BD.isDate(x) && o.snaps[x] && o.snaps[x].rows; }).sort();
     out.push(days.length ? 'BAS copies: ' + days.map(BD.dateText).join(', ') + '.' : 'No BAS copy saved.');
+    // The audit log is the only record of edits made in WebCTRL after the newest BAS copy.
+    // o.auditLastDay = the newest day of the imported audit log ('' when none); o.scheduleEdits = its schedule rows (changeList rows with a type of Schedule added, changed or deleted).
+    var newest = days.length ? days[days.length - 1] : '';
+    if (o.auditLastDay) {
+      var since = (o.scheduleEdits || []).filter(function (e) { return !newest || e.ymd > newest; }).length;
+      out.push('Newest BAS copy: ' + (newest ? BD.dateText(newest) : 'none') + '. Newest audit log day: ' + BD.dateText(o.auditLastDay) + '. Schedule edits in the audit log since the BAS copy: ' + since + '.');
+    }
     return out.join(' ');
   }
 
@@ -319,7 +338,7 @@
     computeActions(o).forEach(function (a) {
       cur[a.id] = a;
     });
-    var ctx = { tz: o.tz, map: o.map, snaps: o.snaps };
+    var ctx = { tz: o.tz, map: o.map, snaps: o.snaps, groups: o.groups };
     var latest = o.latestImport || '';
     Object.keys(cur).forEach(function (id) {
       var a = cur[id];

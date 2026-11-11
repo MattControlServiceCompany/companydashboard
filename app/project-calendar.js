@@ -348,7 +348,7 @@
       (lc ? ': ' + num(lc.added) + ' new, ' + num(lc.changed) + ' changed, ' + num(lc.removed) + ' canceled' : '');
     var controls =
       '<div class="pcal-nav">' + (v.compared ? btn('Changes only', s.changesOnly, 'pcalChangesOnly(' + pid + ')', 'Show only new, moved and canceled events') : '') + '</div>';
-    var basCtx = { tz: tz, map: DB.get('en_space_map_' + pid, null), snaps: DB.get('en_bas_snap_' + pid, {}) };
+    var basCtx = { tz: tz, map: DB.get('en_space_map_' + pid, null), snaps: DB.get('en_bas_snap_' + pid, {}), groups: (DB.get('en_bas_groups_' + pid, null) || {}).groups || {} };
     var heading;
     var tbl;
     var more = '';
