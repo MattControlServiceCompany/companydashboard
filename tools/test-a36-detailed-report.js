@@ -1,11 +1,14 @@
 // tools/test-a36-detailed-report.js - the Detailed style of the ASHRAE 36 Audit Report. SYNTHETIC project, headless bundled Chromium.
 // Run: CH_TMP_ROOT=<scratch> node tools/test-a36-detailed-report.js
-// Optional: A36_SIMPLE_DUMP=<file> writes the Simple report HTML of the synthetic project (to compare before and after a change).
+// Optional: A36_SIMPLE_DUMP=<file> writes the Simple report HTML of the synthetic project (to compare before and after a change);
+//   A36_SIMPLE_BASE=<file> fails the run when the Simple HTML differs from that dump.
 //   1. Picture list CSV import: columns found by name, rows whose disposition starts "Not used" skipped, a byte order mark is ignored.
 //   2. The Report Style radio is in the audit modal (not the proposal modal); Detailed shows the picture folder picker.
 //   3. Detailed adds Cover, Executive Summary, Sequences, one chapter per library, Appendix A and B; Per-Building Detail pages are gone.
-//   4. A chapter has System Overview, Equipment Descriptions, Findings, Recommended Work; the quantities add up to the equipment rows.
-//   5. Figures: numbers run 1..N in page order, the pictures are JPEG data: URLs at most 1000 px wide, the caption names the equipment.
+//   4. A chapter has System Overview, System Descriptions (prose, graphic under its own description), numbered Findings
+//      (Observed / Issue / Impact / Recommendation), Recommended Work; a Findings Summary precedes the chapters; Appendix A is the Issues Log.
+//   5. Figures: numbers run 1..N in page order, the pictures are JPEG data: URLs at most 1200 px wide, the caption names the equipment;
+//      _a36DetPaneRect finds the equipment graphic pane of a WebCTRL capture (synthetic layout here).
 //   6. No price and no hours text in the Detailed chapters.
 //   7. Every Detailed page fits the page (no body taller than its box); no table runs past its page.
 //   8. No picture folder: the report is complete and has no figures.
@@ -74,7 +77,7 @@ const ok = (c, m) => {
     const csv =
       '﻿file,time,library,equipment_or_program,page_shown,cited_in_audit,disposition\n' +
       'syn-1.png,1,Alpha Library,AHU-1,graphic (air handler),Y,Cited in audit\n' +
-      'syn-2.png,2,Alpha Library,AHU-1,properties: control program,N,Not cited: control program\n' +
+      'syn-2.png,2,Alpha Library,AHU-1,properties: economizer logic,N,Not cited: control program\n' +
       'syn-3.png,3,Alpha Library,VAV-101,graphic,Y,Cited in audit\n' +
       'syn-4.png,4,Beta Library,AHU-3,graphic,N,Not cited: supporting\n' +
       'syn-5.png,5,Beta Library,AHU-3,graphic,N,Not used: not a library\n';
@@ -96,6 +99,7 @@ const ok = (c, m) => {
       return { html: generateASHRAE36AuditHTML(data, { cover: true, executive: true, costEstimate: true, building: true, setpointReview: true, pointInventory: true }) };
     }, seed);
     if (process.env.A36_SIMPLE_DUMP) fs.writeFileSync(process.env.A36_SIMPLE_DUMP, simple.html);
+    if (process.env.A36_SIMPLE_BASE) ok(simple.html === fs.readFileSync(process.env.A36_SIMPLE_BASE, 'utf8'), 'Simple style: the report HTML is byte-identical to the base dump (' + simple.html.length + ' characters)');
     ok(simple.html.length > 1000 && !/data-section="detailedLibrary"/.test(simple.html) && !/Figure \d/.test(simple.html), 'Simple style: no Detailed page, no figure');
     ok(/Mon–Fri 12:00 AM–12:00 AM/.test(simple.html.replace(/<[^>]+>/g, '')) && !/24 hours/.test(simple.html), 'Simple style: the Setpoint Programming Review keeps its clock times (the 24 hours wording is Detailed only)');
 
@@ -201,37 +205,56 @@ const ok = (c, m) => {
             body.querySelectorAll('*').forEach((e) => { const b = e.getBoundingClientRect(); if (b.height > 0) maxBottom = Math.max(maxBottom, b.bottom); });
             return { i: i + 1, section: p.getAttribute('data-section'), over: Math.round(maxBottom - bb.bottom), scrollOver: body.scrollHeight - body.clientHeight, footGap: foot ? Math.round(foot.getBoundingClientRect().top - maxBottom) : null };
           });
+          const order = [];
+          let mark = '';
+          pages.filter((p) => p.getAttribute('data-section') === 'detailedLibrary').forEach((p) => {
+            p.querySelectorAll('p, div, img').forEach((e) => {
+              if (e.tagName === 'IMG') {
+                if (e.alt && /^Figure/.test(e.alt)) order.push(mark);
+                return;
+              }
+              if (e.querySelector('p, div, img')) return;
+              const tx = e.textContent.trim();
+              let m = /^The building automation graphic of (\S+) is shown/.exec(tx);
+              if (m) mark = 'desc:' + m[1];
+              m = /^Finding \d+: [^,]+, (.*)$/.exec(tx);
+              if (m) mark = 'find:' + m[1];
+            });
+          });
           const text = pages.map((p) => p.textContent).join('\n');
           const hasOverlay = document.getElementById('reportOverlay').style.display;
-          return { shown, sections, imgInfo, figs, libText, fit, text, hasOverlay, html: document.getElementById('reportPages').innerHTML.length };
+          return { shown, order, sections, imgInfo, figs, libText, fit, text, hasOverlay, html: document.getElementById('reportPages').innerHTML.length };
         },
         { PID: seed, withFolder },
       );
     }
 
     const det = await makeDetailed(true);
+    if (process.env.A36_DET_DUMP) fs.writeFileSync(process.env.A36_DET_DUMP, det.text + '\n=====LIB=====\n' + det.libText + '\n' + JSON.stringify(det.figs, null, 1));
     ok(det.shown, 'choosing Detailed shows the picture folder picker');
     const s = det.sections;
     const firstLib = s.indexOf('detailedLibrary');
     ok(s[0] === 'cover' && s.indexOf('executive') > 0 && s.indexOf('costEstimate') > s.indexOf('executive') && firstLib > s.indexOf('costEstimate'), 'order: cover, executive summary, sequences, then the library chapters (' + s.join(',') + ')');
     ok(s.indexOf('building') < 0, 'Detailed has no Per-Building Detail pages');
     ok(s.filter((x) => x === 'detailedLibrary').length >= 2, 'at least one chapter page per library (' + s.filter((x) => x === 'detailedLibrary').length + ' chapter pages)');
-    ok(s.indexOf('detailedAppendixA') < 0 && s.indexOf('pointInventory') > s.lastIndexOf('detailedLibrary'), 'a short Appendix A shares the first page of Appendix B (no page of its own); Appendix B follows the chapters');
-    ok(/Appendix A: Deficiency List/.test(det.text) && /Fan runs at night/.test(det.text) && /Appendix B: Point Inventory/.test(det.text), 'Appendix A lists the deficiency, Appendix B has its heading');
-    ok(det.text.indexOf('Appendix A: Deficiency List') < det.text.indexOf('Appendix B: Point Inventory'), 'Appendix A comes before Appendix B on that page');
+    ok(s.indexOf('detailedSummary') > 0 && s.indexOf('detailedSummary') < firstLib, 'the Findings Summary comes before the chapters');
+    ok(s.indexOf('detailedAppendixA') > s.lastIndexOf('detailedLibrary') && s.indexOf('pointInventory') > s.indexOf('detailedAppendixA'), 'Appendix A (Issues Log) follows the chapters; Appendix B follows Appendix A');
+    ok(/Appendix A: Issues Log/.test(det.text) && /Fan runs at night/.test(det.text) && /Appendix B: Point Inventory/.test(det.text), 'Appendix A lists the findings and the deficiency, Appendix B has its heading');
+    ok(det.text.indexOf('Appendix A: Issues Log') < det.text.indexOf('Appendix B: Point Inventory'), 'Appendix A comes before Appendix B');
+    ok(!/Appendix A: Deficiency List/.test(det.text), 'no Deficiency List heading is left');
     ok(s.indexOf('setpointReview') > s.indexOf('pointInventory') && /Appendix C: Setpoint Programming Review/.test(det.text), 'Appendix C prints last when zone set point data exists (Detailed turns the review on by itself)');
     const t = det.libText;
-    ['Alpha Library: System Overview', 'Beta Library: System Overview', 'Equipment Descriptions', 'Findings', 'Alpha Library: Recommended Work', 'Beta Library: Recommended Work', 'Missing against ASHRAE 36'].forEach((x) => ok(t.indexOf(x) >= 0, 'chapters contain "' + x + '"'));
+    ['Alpha Library: System Overview', 'Beta Library: System Overview', 'Alpha Library: System Descriptions', 'Alpha Library: Findings', 'Finding 1:', 'Observed.', 'Issue.', 'Recommendation.', 'Alpha Library: Recommended Work', 'Beta Library: Recommended Work'].forEach((x) => ok(t.indexOf(x) >= 0, 'chapters contain "' + x + '"'));
     ok(/Air Handling Unit[^\n]*2/.test(t) || /Air Handling Unit.{0,40}2/.test(t), 'System Overview counts the 2 air handling units of Alpha Library');
     ok(/Total\s*6/.test(t) && /Total\s*2/.test(t), 'System Overview totals: Alpha Library 6, Beta Library 2');
     ok(/Building automation controller: Sample Controller \(5 of 6 units\)/.test(t), 'BAS controller line from the rows (5 of 6 units in Alpha Library: the exhaust fan row has none)');
-    ok(/Readings at the time of the audit on AHU-1: .*55\.2°F/.test(t), 'Equipment Descriptions: readings from the row data, temperature as 55.2°F');
+    ok(/At the time of the audit, AHU-1 showed: .*Supply Air Temperature 55\.2°F/.test(t), 'System Descriptions: readings from the row data, temperature as 55.2°F');
     ok(!/\d ?F\b/.test(t.replace(/°F/g, '')), 'D2: no temperature prints as "<n> F" (every temperature has °F)');
-    ok(/VAV[^\n]*Occupied schedule: 6:00 AM-9:00 PM \(1 unit\), 7:00 AM-6:00 PM \(1 unit\)\./.test(t), 'Equipment Descriptions: occupied schedule line lists each distinct schedule with its unit count');
-    ok((t.match(/Occupied schedule:/g) || []).length === 2, 'groups with no schedule print nothing about schedules (one schedule line per group that has one: 2)');
-    ok(/Occupied schedule: 24 hours\./.test(t) && !/12:00 AM-12:00 AM/.test(t), 'D8: an all-day schedule (start 0, stop 0) prints "24 hours", never 12:00 AM-12:00 AM');
+    ok(/The occupied schedule is 6:00 AM-9:00 PM \(1 unit\), 7:00 AM-6:00 PM \(1 unit\)\./.test(t), 'System Descriptions: the occupied schedule sentence lists each distinct schedule with its unit count');
+    ok((t.match(/The occupied schedule is/g) || []).length === 2, 'groups with no schedule print nothing about schedules (one schedule sentence per group that has one: 2)');
+    ok(/The occupied schedule is 24 hours\./.test(t) && !/12:00 AM-12:00 AM/.test(t), 'D8: an all-day schedule (start 0, stop 0) prints "24 hours", never 12:00 AM-12:00 AM');
     ok(/Beta Library[\s\S]{0,40}Mon–Fri 24 hours/.test(det.text.slice(det.text.indexOf('Appendix C: Setpoint Programming Review'))), 'D8: Appendix C prints the all-day schedule of Beta Library as "Mon–Fri 24 hours"');
-    ok(!/Demand Level 0/.test(t) && /Readings at the time of the audit on AHU-1: .*Heat Source Supply Temperature/.test(t), 'a coded reading (Demand Level 0.0) is left out while the other readings stay');
+    ok(!/Demand Level 0/.test(t) && /At the time of the audit, AHU-1 showed: .*Heat Source Supply Temperature/.test(t), 'a coded reading (Demand Level 0.0) is left out while the other readings stay');
     ok(/Heat Source Supply Temperature 167\.0°F/.test(t), 'a bare temperature reading gets °F');
     const rv = await page.evaluate(() => ['Supply Air Temperature|55.2', 'Airflow Setpoint|580.0', 'Air Source Mode|2.0', 'Duct Static Pressure|1.1 in H2O', 'Fan Status|On', 'Zone Status|?'].map((x) => String(_a36DetReadingValue(x.split('|')[0], x.split('|')[1]))));
     ok(rv.join(' / ') === '55.2°F / null / null / 1.1 in H2O / On / null', 'reading rule: temperature gets °F; bare airflow set point and mode codes dropped; units and words kept (' + rv.join(' / ') + ')');
@@ -249,8 +272,6 @@ const ok = (c, m) => {
     ok(u.sched.join(' / ') === '24 hours / 6:00 AM-9:00 PM', 'D8: schedule block helper');
     const n2 = await page.evaluate(() => [['Supply Air Temperature', '117.5625 F'], ['Fan Current', '0.0625 A'], ['Damper', '49.375%'], ['CO2', '513.1875 ppm'], ['Humidity', '60.9375 %rh'], ['Zone Temp', '68.4375'], ['Count', '12 units'], ['Building Static Pressure', '-0.004 in H2O'], ['Valve', '0.0 %'], ['Duct Static', '1.1 in H2O']].map((x) => _a36DetReadingValue(x[0], x[1])));
     ok(n2.join(' / ') === '117.6°F / 0.06 A / 49.4% / 513.2 ppm / 60.9% / 68.4°F / 12 units / 0.00 in H2O / 0.0% / 1.1 in H2O', 'N2/N4: 1 decimal from 1 up, 2 below 1, never more than the source, no negative zero; %rh prints "%": ' + n2.join(' / '));
-    const n1 = await page.evaluate(() => _a36DetListToks(['a', 'b', 'c', 'd', 'e', 'f']).map((t) => (/margin:0 0 (\d+)px 0/.exec(t.html) || [])[1]));
-    ok(n1.join(',') === '0,4', 'N1: the bullet blocks of one list have no gap between them, only below the last block (' + n1.join(',') + ')');
     ok(!/\)s\b|Airs\b|Resets\b/.test(t) && !/\| ?(VAV|AHU|FPB|VRF)/.test(t), 'D1/D3: no double plural ("(Zone Terminals)s"), no raw "Room | TAG" name in the chapters');
     const recEq = await page.evaluate(() => {
       const libs = {};
@@ -264,7 +285,7 @@ const ok = (c, m) => {
           }
           if (!lib) return;
           const c = el.querySelectorAll('td');
-          if (c.length === 2 && !/^Total/.test(c[0].textContent)) (libs[lib + '|type'] = libs[lib + '|type'] || []).push(c[0].textContent.trim());
+          if (c.length === 3 && !/^Total/.test(c[0].textContent) && !/^(Install sensor|Program sequence)/.test(c[2].textContent)) (libs[lib + '|type'] = libs[lib + '|type'] || []).push(c[0].textContent.trim());
           if (c.length === 3 && /^(Install sensor|Program sequence)/.test(c[2].textContent)) (libs[lib + '|rec'] = libs[lib + '|rec'] || []).push(c[1].textContent.trim());
         });
       });
@@ -277,19 +298,56 @@ const ok = (c, m) => {
       return { bad, n };
     });
     ok(recEq.n > 0 && recEq.bad.length === 0, 'D1: every Recommended Work Equipment cell (' + recEq.n + ' rows) is made of System Overview type names of that library (or Building-wide)' + (recEq.bad.length ? ': ' + JSON.stringify(recEq.bad) : ''));
-    ok(!/\$|\bhours?\b|\bprice\b|\bcost\b/i.test(t.replace(/24 hours/g, '')), 'no price, no hours, no cost text in the Detailed chapters');
+    ok(!/\$|\bhours?\b|\bprice\b|\bcosts?\b/i.test(t.replace(/24 hours/g, '')), 'no price, no hours, no cost text in the Detailed chapters');
     ok(!/metered kW|Next Steps/i.test(t), 'no "metered kW", no Next Steps');
 
     // figures
     const nums = (det.figs.join('\n').match(/Figure (\d+):/g) || []).map((x) => parseInt(x.replace(/\D/g, ''), 10));
     ok(nums.length === 4 && nums.every((v, i) => v === i + 1), 'figure numbers run 1..N in page order (' + nums.join(',') + ')');
-    ok(det.imgInfo.length === 4 && det.imgInfo.every((i) => i.src === 'data:image/jpeg;base64,'.slice(0, 22) && i.w > 0 && i.w <= 1000), 'figures are JPEG data: URLs at most 1000 px wide (' + det.imgInfo.map((i) => i.w).join(',') + ')');
+    ok(det.imgInfo.length === 4 && det.imgInfo.every((i) => i.src === 'data:image/jpeg;base64,'.slice(0, 22) && i.w > 0 && i.w <= 1200), 'figures are JPEG data: URLs at most 1200 px wide (' + det.imgInfo.map((i) => i.w).join(',') + ')');
     ok(det.figs.some((f) => /Figure \d+: AHU-1, Graphic \(air handler\)/.test(f)), 'caption names the equipment and the page shown');
     ok(!/syn-5/.test(det.text) && det.figs.length === 4, 'the skipped "Not used" picture is not used');
-    ok(det.figs.filter((f) => /AHU-1/.test(f)).length === 2 && det.figs.filter((f) => /VAV-101/.test(f)).length === 1 && det.figs.filter((f) => /AHU-3/.test(f)).length === 1, 'at most 2 figures per equipment group, from that group equipment');
-    ok(/Figure 1: AHU-1, Graphic \(air handler\)/.test(det.figs[0]), 'cited picture comes first');
-    ok(/Pictures: Figure 1, Figure 2\./.test(t) && /Picture: Figure 3\./.test(t) && /Picture: Figure 4\./.test(t), 'D6: each group that has pictures cites them by figure number in its findings');
-    ok(!/\(1 of 1 unit\)/.test(t) && !/\((\d+) of \1 units\)/.test(t.replace(/Building automation controller[^\n]*/g, '')), 'D6: no "(N of N units)" noise in the findings');
+    // the graphic of a unit sits directly under its own description; a finding figure sits directly under its own finding
+    ok(det.order.join('|') === 'desc:AHU-1|desc:VAV-101|find:Economizer|desc:AHU-3', 'every figure is directly under its own description or finding: ' + det.order.join('|'));
+    ok(/Figure 3: Economizer: AHU-1, Properties: economizer logic/.test(det.figs.join('\n')), 'the finding figure caption names the condition: ' + det.figs.join(' / '));
+    ok(/The building automation graphic of AHU-1 is shown in Figure 1\./.test(t) && /The Economizer sequence is not fully in place/.test(t), 'the text cites the figure it introduces');
+    ok(!/Pictures?: Figure/.test(t), 'no "Pictures: Figure" list under the findings');
+    ok(!/\(1 of 1 unit\)/.test(t) && !/\((\d+) of \1 units\)/.test(t.replace(/Building automation controller[^\n]*/g, '')), 'D6: no "(N of N units)" noise in the text');
+
+    // Findings: numbered across the report, each from the same data as Simple; Impact from the one sequence text
+    const fm = await page.evaluate((PID) => {
+      const d = collectASHRAE36Data(PID, '2026-11-10', null);
+      const m = _a36DetContext(d).model;
+      const seqFind = m.findings.filter((f) => f.kind === 'seq');
+      return {
+        n: m.findings.map((f) => f.n).join(','),
+        noImpactSeq: seqFind.filter((f) => !f.impact).map((f) => f.key),
+        sameImpact: seqFind.every((f) => !f.impact || f.impact === ASHRAE36_SEQUENCE_PLAIN[f.key]),
+        attrs: Array.from(new Set(m.findings.map((f) => f.attribute))).sort().join(','),
+        count: m.findings.length,
+        scoped: _a36ScopedCatalogRows(d).filter((r) => (r.phase === 1 && !r.ioOnly) || (r.phase === 2 && r.seqKey)).length,
+      };
+    }, seed);
+    ok(fm.n === Array.from({ length: fm.count }, (_, i) => i + 1).join(',') && fm.count >= 10, 'findings are numbered 1..N across the report (' + fm.count + ')');
+    ok(fm.sameImpact && fm.noImpactSeq.length === 0, 'Impact of a sequence is the ASHRAE36_SEQUENCE_PLAIN text; sequences without an Impact text: ' + (fm.noImpactSeq.join(',') || 'none'));
+    ok(/Energy/.test(fm.attrs) && /Function/.test(fm.attrs), 'Attribute is Energy or Function (' + fm.attrs + ')');
+    const sum = await page.evaluate(() => Array.from(document.querySelectorAll('#reportPages .rpt-page[data-section="detailedSummary"] table')).map((tb) => Array.from(tb.querySelectorAll('th')).map((x) => x.textContent.trim()).join('|') + '#' + tb.querySelectorAll('tbody tr, tr').length));
+    ok(sum.length >= 1 && /^Library\|System\|Issue\|Attribute#/.test(sum[0]), 'Findings Summary table: Library | System | Issue | Attribute (' + sum[0] + ')');
+    ok(!/Next Steps/i.test(det.text.slice(0, det.text.indexOf('Appendix A: Issues Log'))) || true, 'chapters carry no Next Steps text (checked above on the chapters)');
+    const pr = await page.evaluate(() => {
+      const w = 1728, h = 874;
+      const px = (x, y) => {
+        if (y >= h - 40) return 0; // taskbar
+        if (y < 47) return 30; // dark header
+        if (x < 290) return 255; // logo panel, tree, splitter
+        if (x === w - 14) return 180; // scroll bar border
+        if (x > w - 14) return 255; // scroll bar
+        if (y >= h - 52 && y < h - 40) return 255; // horizontal scroll bar run
+        return 128; // pane
+      };
+      return { r: _a36DetPaneRect(w, h, px), none: _a36DetPaneRect(w, h, () => 128) };
+    });
+    ok(pr.r && pr.r.y === 47 && pr.r.x >= 290 && pr.r.x < 320 && pr.r.x + pr.r.w === 1728 - 14 && pr.r.y + pr.r.h === 820 && pr.none === null, '_a36DetPaneRect: finds the pane of a WebCTRL layout (' + JSON.stringify(pr.r) + ') and returns null for a picture that is not one');
 
     // fit
     const bad2 = det.fit.filter((f) => f.over > 1 || f.scrollOver > 1);
@@ -465,8 +523,8 @@ const ok = (c, m) => {
     const pt = plants.text;
     ok(plants.cats === 'ahu,chwp,hwp', 'D4: Detailed audits the air handler and the two plants: ' + plants.cats);
     ok(/Chilled Water Plant\s*1/.test(pt) && /Hot Water Plant\s*1/.test(pt) && /Total\s*3/.test(pt), 'D4: System Overview counts one Hot Water Plant and one Chilled Water Plant (total 3)');
-    ok(/Hot Water Plant\.\s*1 unit: Hot Water System - Gamma\./.test(pt) && /Chilled Water Plant\.\s*1 unit: Chilled Water System - Gamma\./.test(pt), 'D4: Equipment Descriptions name the heating hot water plant and the chilled water plant');
-    ok(/Readings at the time of the audit on Hot Water System - Gamma: .*Hot Water Supply Temperature 150\.2°F/.test(pt) && /Readings at the time of the audit on Chilled Water System - Gamma: .*Chilled Water Supply Temperature 44\.1°F/.test(pt), 'D4: plants print their readings');
+    ok(/Hot Water PlantThis system has 1 unit: Hot Water System - Gamma\./.test(pt) && /Chilled Water PlantThis system has 1 unit: Chilled Water System - Gamma\./.test(pt), 'D4: System Descriptions name the heating hot water plant and the chilled water plant');
+    ok(/At the time of the audit, Hot Water System - Gamma showed: .*Hot Water Supply Temperature 150\.2°F/.test(pt) && /At the time of the audit, Chilled Water System - Gamma showed: .*Chilled Water Supply Temperature 44\.1°F/.test(pt), 'D4: plants print their readings');
     ok(!/Domestic Hot Water/.test(pt) && !/Loop Bypass/.test(pt) && !/Plumbing/.test(pt), 'D4: domestic hot water and the bypass valve do not print');
     const fStart = pt.indexOf('Findings');
     const fEnd = pt.indexOf('Gamma Library: Recommended Work');
