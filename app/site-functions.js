@@ -2507,6 +2507,11 @@ async function siteResetAllMeterTableSettings() {
    site-ui.js delegates to this array and should NOT maintain its own copy.
 */
 var RELEASE_NOTES = [
+  { v: 'v2026.11.11.268', date: '2026-11-11', title: 'Where is it? shows the air source of each unit',
+    items: [
+      { type: 'new', text: 'Equipment Matrix: the Where is it? list has a new Air source column. A terminal unit shows the air handler that feeds it. An air handler shows how many terminal units it feeds, or that it serves its space directly.' },
+      { type: 'new', text: 'The link comes from the unit number in the program name, the Area or space in the air handler name, or the same room number. Hover a link to see which. When two air handler names list the same Area, both show.' }
+    ] },
   { v: 'v2026.11.11.267', date: '2026-11-11', title: 'Where is it? finds media centers as libraries',
     items: [
       { type: 'fix', text: 'Equipment Matrix: in the Where is it? search, library also finds Media Center and Media. Media also finds Library.' }

@@ -11,7 +11,9 @@
 (function (root) {
   'use strict';
 
-  var BasDiff = typeof require === 'function' && typeof module !== 'undefined' && module.exports ? require('./bas-diff.js') : root.BasDiff;
+  var isNode = typeof require === 'function' && typeof module !== 'undefined' && module.exports;
+  var BasDiff = isNode ? require('./bas-diff.js') : root.BasDiff;
+  var AirSource = isNode ? require('./air-source.js') : root.AirSource;
   var RESULT_MAX = 100;
   var NO_AREA = 'Building level';
 
@@ -36,24 +38,26 @@
       return alternatives(w).some(function (a) { return t.indexOf(a) !== -1; });
     });
   }
-  function isAirHandler(category, name) {
-    return category === 'ahu' || category === 'rtu' || /\b(ahu|rtu)\b/i.test(String(name || ''));
-  }
-  function item(building, path, name, category, space) {
+  function item(building, path, name, category, space, air) {
+    var a = AirSource.text(air);
     return {
       building: building,
       area: path ? BasDiff.areaOf(path) || NO_AREA : 'Not in the Building Automation System tree',
       path: path ? String(path).split('/').map(function (x) { return x.trim(); }).filter(Boolean).join(' / ') : '',
       name: name,
       space: space || '',
-      airHandler: isAirHandler(category, name),
+      airHandler: AirSource.isAirHandler(category, name),
+      airText: a.text,
+      airHint: a.hint,
     };
   }
 
   // rows: Equipment Matrix rows. spaceMap: the en_space_map value or null. query: the typed text.
+  // airCtx: { snaps, audit, links } for AirSource.analyze (optional; without it the "Air source" column stays empty).
   // -> { groups:[{ building, items:[...] }], total, shown, hasAirHandler }
-  function search(rows, spaceMap, query) {
+  function search(rows, spaceMap, query, airCtx) {
     var ws = words(query);
+    var air = airCtx ? AirSource.analyze(rows, airCtx).byKey : {};
     var out = [];
     var seen = {};
     function add(it) {
@@ -66,7 +70,7 @@
       (rows || []).forEach(function (r) {
         var path = r.bacnetLocation || '';
         var building = path ? BasDiff.buildingOf(path) : r.building || 'Unknown building';
-        var it = item(building, path, r.equipName || '', r.category);
+        var it = item(building, path, r.equipName || '', r.category, '', air[AirSource.snapKey(r)]);
         if (matches(it.name + ' ' + it.building + ' ' + (path ? it.area : ''), ws)) add(it);
       });
       var spaces = (spaceMap && spaceMap.spaces) || {};
@@ -75,7 +79,7 @@
         if (!sp || !matches(sp.space || k, ws)) return;
         (sp.programs || []).forEach(function (key) {
           var p = BasDiff.splitKey(key);
-          add(item(BasDiff.buildingOf(p.location), p.location, p.program, '', sp.space || k));
+          add(item(BasDiff.buildingOf(p.location), p.location, p.program, '', sp.space || k, air[key]));
         });
       });
     }
@@ -117,14 +121,14 @@
       html +=
         '<div style="margin-top:10px;font-size:12px;font-weight:700;color:var(--text)">' + esc(g.building) + ' (' + g.items.length + ')</div>' +
         T.table(
-          [['Building', '18%'], ['Area', '20%'], ['WebCTRL tree path', '34%'], ['Equipment or program', '28%']],
+          [['Building', '14%'], ['Area', '15%'], ['WebCTRL tree path', '27%'], ['Equipment or program', '22%'], ['Air source', '22%']],
           g.items.map(function (it) {
-            return [esc(it.building), esc(it.area), esc(it.path), esc(it.name) + (it.space ? ' (calendar space: ' + esc(it.space) + ')' : '')];
+            return [esc(it.building), esc(it.area), esc(it.path), esc(it.name) + (it.space ? ' (calendar space: ' + esc(it.space) + ')' : ''), it.airText ? '<span title="' + esc(it.airHint) + '">' + esc(it.airText) + '</span>' : ''];
           }),
         );
     });
     if (res.total > res.shown) html += '<div style="margin-top:8px;font-size:12px;color:var(--text)">Showing the first ' + res.shown + ' of ' + res.total + ' matches. Type more of the name to narrow the list.</div>';
-    if (res.hasAirHandler) html += '<div style="margin-top:8px;font-size:12px;color:var(--text)">Rooms served by each air handler are not in the BAS data.</div>';
+    if (res.hasAirHandler) html += '<div style="margin-top:8px;font-size:12px;color:var(--text)">Air source links come from the unit number in the program name or the Area in the air handler name. Hover a link to see which.</div>';
     return html + '</div>';
   }
   // Called by the search box (oninput). Shows the results in place of the equipment table while there is text.
@@ -140,7 +144,11 @@
       return;
     }
     var m = root.DB.get('en_eqmatrix_' + pid, { rows: [] });
-    var res = search((m && m.rows) || [], root.DB.get('en_space_map_' + pid, null), value);
+    var res = search((m && m.rows) || [], root.DB.get('en_space_map_' + pid, null), value, {
+      snaps: root.DB.get('en_bas_snap_' + pid, {}),
+      audit: root.DB.get('en_bas_auditevents_' + pid, null),
+      links: root.DB.get('en_bas_airsource_' + pid, null),
+    });
     root.pcalUi.ensureStyle();
     box.innerHTML = resultsHtml(res, String(value));
     box.style.display = '';
