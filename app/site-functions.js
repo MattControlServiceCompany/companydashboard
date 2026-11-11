@@ -2507,6 +2507,12 @@ async function siteResetAllMeterTableSettings() {
    site-ui.js delegates to this array and should NOT maintain its own copy.
 */
 var RELEASE_NOTES = [
+  { v: 'v2026.11.11.272', date: '2026-11-11', title: 'New ASHRAE 36 Detailed Audit Report layout',
+    items: [
+      { type: 'change', text: 'ASHRAE 36 Audit Report, Detailed style: a Findings Summary table is now before the library chapters. Each library chapter has System Overview, System Descriptions and Findings. Each finding has Observed (with the Guideline 36 section), Recommendation and, where approved text exists, Impact. A picture is shown only under the finding or description it belongs to. Appendix A is the Point Inventory; Appendix B is the Setpoint Programming Review. Per-Building Detail can now be ticked in Detailed (off by default).' },
+      { type: 'fix', text: 'Equipment Matrix: a fault, alarm, status, amps, voltage or bypass point is no longer read as a command point. A VFD speed point with no feedback word is the speed command. A system hot water supply point is used before a boiler outlet. ASHRAE 36 readiness scores and the Cost Estimate can change on projects that had these points.' },
+      { type: 'fix', text: 'Equipment Matrix: the VAV point rule no longer marks a unit that has a supply fan or VFD as a VAV terminal.' }
+    ] },
   { v: 'v2026.11.11.271', date: '2026-11-11', title: 'BAS changes on the Calendar tab',
     items: [
       { type: 'feature', text: 'The Calendar tab now has a "BAS changes" list. It shows the schedule and set point changes from the WebCTRL audit log you imported. Each line has the date and time, the building, the room or unit, what changed, and who did it. The newest changes are first. It shows the last 30 days; you can choose a longer range.' }
