@@ -22308,7 +22308,7 @@ async function _saveSinglePDFBill(extracted, projId) {
   // totalCostRaw feeds billRow.totalCost (string, matches PDF); totalCost below
   // stays numeric — the rest of this function (componentSum/diff validation,
   // .toFixed further down) expects a number, same as before this fix.
-  const { kwh: usageQty, totalCost: totalCostRaw } = _extractedToBillRowCosts(extracted);
+  const { kwh: usageQty, kwCost, kwhCost, otherCost, taxCost, totalCost: totalCostRaw } = _extractedToBillRowCosts(extracted);
   const totalCost = parseBillNumber(totalCostRaw);
   const componentSum =
     parseBillNumber(extracted.FacilitiesCharge) +
