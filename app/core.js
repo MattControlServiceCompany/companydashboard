@@ -1514,7 +1514,7 @@ function renderDetail(p) {
               <div class="pd-cell"><div class="pd-cell-lbl">Square Feet</div><div class="pd-cell-val" id="pd-sqft-cell-${p.id}">${p.sqft ? Number(p.sqft).toLocaleString() + ' sf' : '—'}</div></div>
               ${String(p.sa == null ? '' : p.sa).trim() ? `<div class="pd-cell"><div class="pd-cell-lbl">Service Agreement #</div><div class="pd-cell-val mono">${_escHtml(p.sa)}</div></div>` : ''}
               <div class="pd-cell"><div class="pd-cell-lbl">Contract Value</div><div class="pd-cell-val mono">${p.contract ? '$' + Number(p.contract).toLocaleString() : '—'}</div></div>
-              <div class="pd-cell"><div class="pd-cell-lbl">Est. Savings/yr</div><div class="pd-cell-val mono">${p.savings && projHasContract(p.id) ? '$' + Number(p.savings).toLocaleString() : '—'}</div></div>
+              <div class="pd-cell"><div class="pd-cell-lbl">Est. Savings/yr</div><div class="pd-cell-val mono">${p.savings ? '$' + Number(p.savings).toLocaleString() : '—'}</div></div>
               <div class="pd-cell"><div class="pd-cell-lbl">Start Date</div><div class="pd-cell-val">${p.start ? _parseISO(p.start).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) : '—'}</div></div>
               <div class="pd-cell"><div class="pd-cell-lbl">Target End</div><div class="pd-cell-val">${p.end ? _parseISO(p.end).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) : '—'}</div></div>
               <div class="pd-cell"><div class="pd-cell-lbl">Contacts</div><div class="pd-cell-val">${p.contacts && p.contacts.length ? p.contacts.length + ' contact' + (p.contacts.length !== 1 ? 's' : '') : '—'}</div></div>
@@ -1932,7 +1932,7 @@ function renderDetail(p) {
             <span class="phc-info" id="phc-info-${p.id}">
             <span class="phc-name phc-first">${_escHtml(p.name)}</span>
             ${_saLabel(p.sa) ? `<span class="phc-item" title="Service Agreement Number"><span class="phc-val">${_saLabel(p.sa)}</span></span>` : ''}
-            ${p.savings && projHasContract(p.id) ? `<span class="phc-item">Savings <span class="phc-val">$${Number(p.savings).toLocaleString()}/yr</span></span>` : ''}
+            ${p.savings ? `<span class="phc-item">Savings <span class="phc-val">$${Number(p.savings).toLocaleString()}/yr</span></span>` : ''}
             <span class="phc-item"><span class="phc-val">${p.start ? _parseISO(p.start).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) : '—'}</span> → <span class="phc-val">${p.end ? _parseISO(p.end).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) : '—'}</span></span>
             <span class="phc-item" id="phc-baseline-${p.id}">Baseline <span class="phc-val">—</span></span>
             <span class="phc-item" id="phc-eui-${p.id}" title="Site Energy Use Intensity: yearly energy use per square foot, in kBtu">Site EUI <span class="phc-val">—</span></span>
@@ -2042,10 +2042,10 @@ function initDashboardTab(projId) {
   if (!perfWrap) return;
   const bldgs = getUDBldgs(projId);
   const _eligBldgs = getIncludedBldgs(projId); // the one building list the Dashboard counts and sizes (no sqft test)
-    // 2026-09-15 (SA-gate fix): the project-form "Est. Savings $/yr" target and the ECM
-  // projected $ are savings dollars — hidden for a project with no Service Agreement.
-  const _hasContract = projHasContract(projId);
-  const estSavings = _hasContract ? parseFloat(p.savings) || 0 : 0;
+    // SHW-3 (Matt 2026-09-21): ESTIMATED savings (the project-form "Est. Savings $/yr" target and the ECM
+  // projected $) always show, with or without a contract. The contract check (projHasContract) gates ONLY actual
+  // (bill-based) savings, in computations/savings.js.
+  const estSavings = parseFloat(p.savings) || 0;
   const useNormalized = p.baselineComparison === 'normalized';
 
   // Render header bar (like HVAC Load Est)
@@ -2471,7 +2471,7 @@ function initDashboardTab(projId) {
   // ECM projected savings
   const _ecmResult =
     typeof getProjectEcmTotal === 'function' ? getProjectEcmTotal(projId) : { total: 0, count: 0, ecms: [] };
-  const ecmTotal = _hasContract ? _ecmResult.total || 0 : 0;
+  const ecmTotal = _ecmResult.total || 0; // SHW-3: estimated, shown without a contract
   const ecmCount = _ecmResult.count || 0;
 
   perfWrap.innerHTML = `
