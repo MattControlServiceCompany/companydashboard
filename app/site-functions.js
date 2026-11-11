@@ -2507,6 +2507,16 @@ async function siteResetAllMeterTableSettings() {
    site-ui.js delegates to this array and should NOT maintain its own copy.
 */
 var RELEASE_NOTES = [
+  { v: 'v2026.11.11.273', date: '2026-11-11', title: 'Detailed Audit Report: numbered sections, clearer tables, library photos',
+    items: [
+      { type: 'change', text: 'ASHRAE 36 Audit Report, Detailed style: each section starts on a new page with a large numbered title. Order: Executive Summary, Building Readiness, Findings Summary, one section per library, Control Sequences, Appendix A, Appendix B.' },
+      { type: 'change', text: 'Detailed report: each library section starts with a front photo of the building when the pictures folder has a file named "<Library name> - Front". The System Overview is one paragraph and the System Descriptions read like an engineer wrote them.' },
+      { type: 'change', text: 'Detailed report: the Findings Summary has the columns No., Library, System, Issue and Effect. The issue names the missing points, the units it affects, what it prevents and the Guideline 36 section. Tables on more than one page show "(N of M)" in the title.' },
+      { type: 'change', text: 'Detailed report: figures are cropped to the drawing and printed full width. Screenshots too small to read are left out. Points by Equipment Type is a short table per unit type. Appendix B labels each temperature, for example "70°F heating / 75°F cooling".' },
+      { type: 'fix', text: 'Audit report: the carbon dioxide sentence counts rooftop units as air handlers and leaves out monitoring-only zone units (now 7 of 23 air handlers, 225 of 255 zones for the library project).' },
+      { type: 'fix', text: 'Audit report: you pick the pictures folder once; the site remembers it. Download PDF now shows its message over the report and the buttons show that the PDF is being built.' },
+      { type: 'fix', text: 'Calendar: work done in a weekly group schedule now counts as done, and a WebCTRL schedule edit made after the BAS copy is shown on the card.' }
+    ] },
   { v: 'v2026.11.11.272', date: '2026-11-11', title: 'New ASHRAE 36 Detailed Audit Report layout',
     items: [
       { type: 'change', text: 'ASHRAE 36 Audit Report, Detailed style: a Findings Summary table is now before the library chapters. Each library chapter has System Overview, System Descriptions and Findings. Each finding has Observed (with the Guideline 36 section), Recommendation and, where approved text exists, Impact. A picture is shown only under the finding or description it belongs to. Appendix A is the Point Inventory; Appendix B is the Setpoint Programming Review. Per-Building Detail can now be ticked in Detailed (off by default).' },
