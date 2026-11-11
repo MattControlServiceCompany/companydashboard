@@ -204,7 +204,7 @@
       return [
         '<label style="display:flex;gap:6px;align-items:center"><input type="checkbox"' + (s.sel[k] ? ' checked' : '') + ' onchange="spmToggle(' + pid + ',' + i + ')">' + esc(BasDiff.splitKey(k).program) + '</label>',
         esc(BasDiff.buildingOf(BasDiff.splitKey(k).location)),
-        esc(BasDiff.splitKey(k).location.split('/').slice(2).join(' / ')),
+        esc(BasDiff.areaOf(BasDiff.splitKey(k).location)),
       ];
     });
     el.innerHTML =

@@ -51,6 +51,17 @@
     if (parts.length >= 2) return parts[1];
     return parts[0] || 'Unknown building';
   }
+  // The area of a WebCTRL location "/District/Building/Floor/Area": every node after the building, joined with " / ".
+  // "" when the path ends at the building (the program sits at building level). The ONE place that cuts the area from a path.
+  function areaOf(location) {
+    var parts = String(location || '')
+      .split('/')
+      .map(function (x) {
+        return x.trim();
+      })
+      .filter(Boolean);
+    return parts.slice(2).join(' / ');
+  }
   // "<location>|<program>" -> parts. A program name may hold '|'; a location does not.
   function splitKey(key) {
     var j = key.indexOf('|');
@@ -465,6 +476,7 @@
     dayType: dayType,
     dateText: dateText,
     buildingOf: buildingOf,
+    areaOf: areaOf,
     splitKey: splitKey,
     keyBuilding: keyBuilding,
     clock: clock,

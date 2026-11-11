@@ -4588,6 +4588,7 @@ function emRenderMatrix(container, data, pid) {
   // table keeps usable height.
   container.innerHTML =
     '<div style="display:flex;flex-direction:column;flex:1;min-height:0">' +
+    (window.RoomLocator ? window.RoomLocator.boxHtml() : '') +
     statsHtml +
     scopeNoteHtml +
     '<div style="flex-shrink:0;border-bottom:1px solid var(--border)">' +
@@ -4595,6 +4596,7 @@ function emRenderMatrix(container, data, pid) {
     '</div>' +
     '<div id="em-upload-inline" style="display:none;flex-shrink:0;border-bottom:1px solid var(--border);padding:16px 20px"></div>' +
     '<div id="em-table-wrap" class="em-table-wrap" style="flex:1;min-height:0"></div>' +
+    (window.RoomLocator ? window.RoomLocator.areaHtml() : '') +
     '</div>';
 
   // 2026-09-23: wire the 3 toolbar buttons that need pid (Clear All Data, Export
