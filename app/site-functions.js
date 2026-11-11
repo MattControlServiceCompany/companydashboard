@@ -2507,6 +2507,11 @@ async function siteResetAllMeterTableSettings() {
    site-ui.js delegates to this array and should NOT maintain its own copy.
 */
 var RELEASE_NOTES = [
+  { v: 'v2026.11.11.266', date: '2026-11-11', title: 'Find a room or unit in the BAS tree',
+    items: [
+      { type: 'new', text: 'Equipment Matrix: a new Where is it? search box is at the top of the tab. Type a room or equipment name (for example gym, library or 114). The list shows the building, the Area in the WebCTRL tree and the full tree path.' },
+      { type: 'fix', text: 'Space Map: the Area column now shows only the Area. Before, it also showed the building name.' }
+    ] },
   { v: 'v2026.11.11.265', date: '2026-11-11', title: 'Building Performance table: correct percent and period',
     items: [
       { type: 'fix', text: 'Dashboard: the % column now shows savings as a percent of the baseline cost for the same months. Baseline $ and Current $ now cover the savings months (see the Period column).' },
