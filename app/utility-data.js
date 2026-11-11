@@ -6682,13 +6682,15 @@ function wddSaveCache(zip, rows) {
     DB.set(wddCacheKey(zip), rows);
   } catch (e) {}
 }
-// Automatic weather refresh (Matt, 2026-10-27). Called from ONE place: udSelectBldg (a building opens).
+// Automatic weather refresh (Matt, 2026-10-27). Called on page load (loadUtilityData), when a building opens
+// (udSelectBldg), and when a building ZIP is saved or imported (app/csv-import.js).
 // For each distinct ZIP of the project's buildings (and the project's own ZIP) whose newest stored month is
 // older than last calendar month, computations/weather-refresh.js fetches the missing months straight from
 // the weather source (browser, CORS open: no Netlify function) and they are appended to en_wdd_<zip>.
 // Stored months are never changed; a month the source has not published stays absent.
-// Throttle: each ZIP is tried at most once per calendar day (stamp ch_wdd_try_<zip>, a local-only key), so a month
-// the source has not published yet is asked for again the next day.
+// Throttle: each ZIP is asked at most once per calendar day when the source answers (stamp ch_wdd_try_<zip>, a
+// local-only key), so a month the source has not published yet is asked for again the next day. A failed request
+// clears the stamp (wddRefreshZips), so it does not block the rest of the day.
 function _wddTriedToday(zip, now) {
   const day = now.getFullYear() + '-' + String(now.getMonth() + 1).padStart(2, '0') + '-' + String(now.getDate()).padStart(2, '0');
   const key = 'ch_wdd_try_' + zip;
@@ -6726,7 +6728,13 @@ async function wddRefreshZips(allZips) {
       });
       if (res && res.added.length) changed = true;
     } catch (e) {
-      // Source down or ZIP unknown: leave the stored months as they are. CSV upload still works.
+      // Stored months stay as they are. A ZIP the source has no station for is an answer: keep today's stamp.
+      // A failed request (network or HTTP error) is not: clear the stamp so the next page load tries again.
+      if (!/^no station for ZIP/.test(String((e && e.message) || ''))) {
+        try {
+          localStorage.removeItem('ch_wdd_try_' + zip);
+        } catch (e2) {}
+      }
     }
   }
   if (changed && typeof renderMeterWorkspace === 'function') renderMeterWorkspace();
