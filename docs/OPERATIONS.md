@@ -561,6 +561,13 @@ The app Restore path (6c) is on main only, not in stable (v87), until the Nov 2 
 - What the tab shows (2026-10-29): `CalendarDiff.listView` (app/calendar-diff.js) is the one function that picks the events of a view (next 14 days from today in the calendar time zone, a month, or before today) and gives each its mark from the newest history record: New, Changed (with old and new time, place or title) or Canceled (removed events are kept in the record with their full row so they show struck through). It makes no call and runs only on tab render. Check: `node tools/test-calendar-upcoming.js`.
 - Check it works: `node tools/test-calendar-feed.js` (all must pass). In the browser, sync twice with no feed edit: the second sync must show 0 added, 0 removed, 0 changed. On localhost:8888 the Network list must show one calendar-fetch call per click, one on tab open when the copy is older than 1 hour, and none on page open.
 
+## BAS changes on the Calendar tab (2026-11-11)
+
+- What: the "BAS changes" card (app/project-calendar.js `renderBas`, container `pcal-bas-<pid>`, drawn at the end of `render`) lists the schedule add, update, delete events and the set point edits of the imported WebCTRL audit log: date and time, type, building, location, what changed, operator. Newest first. Default range last 30 days; the range select has 90 days, last year and all.
+- Data: read only from `en_bas_auditevents_<pid>`, through `BasAuditLog.changeList` (app/bas-audit-log.js, the one reader; building and area from `BasDiff.buildingOf` and `areaOf`). Operator names come from the small table `ops` that `BasAuditLog.mergeStore` now adds to the stored events (hash to name). A store made before 2026-11-11 has no `ops`; the card shows "Not saved" until the audit log file is imported again (same events, no duplicates).
+- When it runs: no network, no timer. It draws when the Calendar tab draws, on `dataUpdated` for an `en_bas_auditevents_` key (a new import) and on `dbFullPull`. Times are the building local times in the file; no zone shift.
+- Check it works: `node tools/test-calendar-bas-changes.js`. In the browser open the project, Calendar tab: the card lists the newest edits; import the audit log again and the card updates with no reload.
+
 ## BAS schedules on the Calendar tab (2026-10-29, branch feat/2026-10-29-bas-schedule-import)
 
 - What: the BAS schedules card (app/bas-schedules.js, container `bas-panel-<pid>`, drawn by `basRender` from the Calendar tab in app/core.js) keeps a dated copy of the WebCTRL Effective Schedules and the scheduling groups, and lists what changed and who imported.

@@ -7,6 +7,7 @@
 //   en_cal_cfg_<pid>   { icsUrl, timezone }          the feed address for this project
 //   en_cal_snap_<pid>  { fetchedAt, count, window, events:{key:[title,start,end,allDay,location]} }
 //   en_cal_hist_<pid>  [ { id, at, counts, added, removed, changed } ]   newest first
+//   en_bas_auditevents_<pid>  the BAS changes of the imported audit logs. Read only, through BasAuditLog.changeList (app/bas-audit-log.js).
 //
 // Network: ONE call to /.netlify/functions/calendar-fetch, when the user clicks Sync now, or once when the tab opens
 // and the saved copy is older than 1 hour (pcalAutoSync). There are no timers.
@@ -38,6 +39,8 @@
       q: '',
       changesOnly: false,
       limit: PAGE_ROWS,
+      basDays: 30,
+      basLimit: PAGE_ROWS,
       busy: false,
       msg: '',
     });
@@ -418,6 +421,62 @@
     host.innerHTML =
       '<div class="pcal-feed">' + _escHtml(feedLine) + '</div>' + controls + '<h4>' + _escHtml(heading) + '</h4>' + tbl + more;
   }
+
+  // --- BAS changes (from the imported WebCTRL audit log) ---------------------------------------------------------
+  var BAS_RANGES = [[30, 'Last 30 days'], [90, 'Last 90 days'], [365, 'Last year'], [0, 'All stored changes']];
+  // 'Nov 10, 2026 5:35 PM' from a stored time 'YYYY-MM-DDTHH:MM:SS' (local time of the building; no zone shift).
+  function basStamp(iso) {
+    var h = +iso.slice(11, 13);
+    var m = iso.slice(14, 16);
+    return dayText(iso.slice(0, 10)) + ' ' + (h % 12 === 0 ? 12 : h % 12) + ':' + m + ' ' + (h >= 12 ? 'PM' : 'AM');
+  }
+  function renderBas(pid) {
+    var host = document.getElementById('pcal-bas-' + pid);
+    if (!host || !window.BasAuditLog) return; // the audit log reader loads after this file
+    ensureStyle();
+    var s = state(pid);
+    var days = s.basDays;
+    var res = window.BasAuditLog.changeList(DB.get('en_bas_auditevents_' + pid, null), { today: todayOf(tzOf(pid)), days: days });
+    var body;
+    var ctl = '';
+    if (!res.has) {
+      body = '<div class="pcal-msg">No WebCTRL audit log is imported for this project. Open the BAS schedules section on this tab and choose Import audit log.</div>';
+    } else {
+      var opts = BAS_RANGES.map(function (r) {
+        return '<option value="' + r[0] + '"' + (r[0] === days ? ' selected' : '') + '>' + _escHtml(r[1]) + '</option>';
+      }).join('');
+      ctl = '<select class="fi" aria-label="Range of BAS changes" style="flex:0 0 auto;width:auto" onchange="pcalBasRange(' + pid + ',this.value)">' + opts + '</select>';
+      var shown = res.rows.slice(0, s.basLimit);
+      var line = res.rows.length
+        ? num(res.rows.length) + (res.rows.length === 1 ? ' change' : ' changes') + (days ? ' in the last ' + num(days) + ' days' : ' stored') + '. The newest day in the imported log is ' + dayText(res.lastDay) + '.'
+        : 'No BAS changes in the last ' + num(days) + ' days. The newest day in the imported log is ' + dayText(res.lastDay) + '.';
+      var tbl = res.rows.length
+        ? table(
+            [['Date and time', '15%'], ['Type', '12%'], ['Building', '13%'], ['Location', '20%'], ['What changed', '27%'], ['Operator', '13%']],
+            shown.map(function (r) {
+              return [
+                _escHtml(basStamp(r.iso)),
+                _escHtml(r.type),
+                _escHtml(r.building),
+                _escHtml(r.area || 'Whole building'),
+                _escHtml(r.what),
+                r.operator ? _escHtml(r.operator) : '<span title="The audit log was imported before operator names were kept. Import the audit log file again to add them.">Not saved</span>',
+              ];
+            }),
+          )
+        : '';
+      var more = res.rows.length > shown.length
+        ? '<div class="pcal-nav"><span class="pcal-msg">Showing ' + num(shown.length) + ' of ' + num(res.rows.length) + '.</span><button class="btn btn-ghost btn-sm" onclick="pcalBasMore(' + pid + ')">Show more</button></div>'
+        : '';
+      body = '<div class="pcal-feed">' + _escHtml(line) + '</div>' + tbl + more;
+    }
+    host.innerHTML =
+      '<div class="card pcal" style="margin-bottom:16px"><div class="card-hdr" style="justify-content:space-between"><span class="card-title">BAS changes</span>' +
+      ctl +
+      '</div><div style="padding:16px">' +
+      body +
+      '</div></div>';
+  }
   // Redraw everything that follows the shown period.
   function refresh(pid) {
     renderTop(pid);
@@ -550,9 +609,12 @@
       nav +
       '<div id="pcal-list-' +
       pid +
-      '"></div></div></div>';
+      '"></div></div></div><div id="pcal-bas-' +
+      pid +
+      '"></div>';
     renderTop(pid);
     renderList(pid);
+    renderBas(pid);
     if (typeof window.spaceMapRender === 'function') window.spaceMapRender(pid);
     if (typeof window.sactRender === 'function') window.sactRender(pid);
   }
@@ -690,9 +752,38 @@
   };
   if (typeof window.addEventListener === 'function') {
     window.addEventListener('dbFullPull', function () {
+      redrawBas('');
       window.pcalAutoSyncAll();
     });
   }
+  // A new audit log import (DB.set fires dataUpdated for en_bas_auditevents_<pid>) or a data pull redraws the section.
+  function redrawBas(key) {
+    var m = key ? String(key).match(/en_bas_auditevents_(.+)$/) : null;
+    if (m) return renderBas(m[1]);
+    if (typeof document.querySelectorAll !== 'function') return;
+    Array.prototype.forEach.call(document.querySelectorAll('[id^="pcal-bas-"]'), function (el) {
+      renderBas(el.id.slice('pcal-bas-'.length));
+    });
+  }
+  if (typeof window.addEventListener === 'function') {
+    window.addEventListener('dataUpdated', function (e) {
+      var key = e && e.detail && e.detail.key;
+      if (key && !/en_bas_auditevents_/.test(String(key))) return;
+      redrawBas(key);
+    });
+  }
+  window.pcalBasRender = renderBas;
+  window.pcalBasRange = function (pid, v) {
+    var s = state(pid);
+    s.basDays = +v || 0;
+    s.basLimit = PAGE_ROWS;
+    renderBas(pid);
+  };
+  window.pcalBasMore = function (pid) {
+    var s = state(pid);
+    s.basLimit += PAGE_ROWS;
+    renderBas(pid);
+  };
   window.pcalSave = save;
   window.pcalPeriod = periodOf;
   window.pcalView = function (pid, view) {

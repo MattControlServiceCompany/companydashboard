@@ -20,6 +20,9 @@
 //     for a building with no set point change in the log, the stored points list value). It replaces only entries that
 //     carry one of its own marks; the sheet import replaces them too. A value with no source is left out; the report
 //     prints a plain dash for an empty cell. Nothing is invented.
+// Stored events (en_bas_auditevents_<pid>): { version:2, lastDay, locs, events:[[iso,kind,locIndex,text,operatorHash]], ops:{ operatorHash: name } }.
+//   ops is written by mergeStore from the imported rows (a store made before names were kept has none; importing the file again adds them).
+//   changeList(store, { today, days }) is the one reader for the Calendar tab (BAS changes, app/project-calendar.js): newest first, in words.
 // Output record: { version:1, buildings:[{ building, baselineWeekday:[{text}], weekday:[{text,from,to}],
 //   weekend:[{kind,text,from,to}], setPoints:[{kind,text,from,to}] }] }  (from, to are YYYY-MM-DD).
 (function (root) {
@@ -312,7 +315,18 @@
     });
     var seen = {};
     var all = [];
-    old.concat(events.map(compact).filter(Boolean)).forEach(function (e) {
+    // Operator names by hash. A stored event keeps only the hash; this small table (one entry for each person) turns it back into the name.
+    var ops = {};
+    Object.keys((store && store.ops) || {}).forEach(function (h) { ops[h] = store.ops[h]; });
+    var fresh = [];
+    events.forEach(function (e) {
+      var c = compact(e);
+      if (!c) return;
+      fresh.push(c);
+      var nm = String(e.op || '').trim();
+      if (nm) ops[c.oh] = nm;
+    });
+    old.concat(fresh).forEach(function (e) {
       var k = [e.iso, e.loc, e.text, e.oh].join('|');
       if (seen[k]) return;
       seen[k] = true;
@@ -330,7 +344,9 @@
     });
     var ld = (store && store.lastDay) || '';
     if ((lastDay || '') > ld) ld = lastDay;
-    return { version: 2, lastDay: ld, locs: outLocs, events: rows };
+    var out = { version: 2, lastDay: ld, locs: outLocs, events: rows };
+    if (Object.keys(ops).length) out.ops = ops;
+    return out;
   }
   // The stored events as the reader wants them (same shape parseRows gives).
   function storeEvents(store) {
@@ -346,6 +362,61 @@
       }
       return { iso: t[0], ymd: t[0].slice(0, 10), desc: KIND_DESC[t[1]] || 'Set point change', details: details, loc: loc, building: BD.buildingOf(loc) };
     });
+  }
+
+  // --- the change list the Calendar tab shows (BAS changes) --------------------------------------------------
+  // One stored schedule block as words: 'Gym: Mon Tue Wed, occupied 6:00 AM to 4:00 PM'.
+  function blockText(b) {
+    var hrs = b.iv.length ? 'occupied ' + b.iv.map(function (x) { return BD.clock(x[0]) + ' to ' + BD.clock(x[1]); }).join(' and ') : 'no occupied hours';
+    return b.name + ': ' + (b.days.length ? b.days.join(' ') : 'no days') + ', ' + hrs;
+  }
+  // The words for one stored schedule event (kind A, U or D) from its kept text.
+  function scheduleText(kind, text) {
+    var nm = String(text).match(/schedule "([^"]*)"/);
+    var fallback = nm ? 'Schedule ' + nm[1] : 'Schedule';
+    if (kind === 'U') {
+      var j = text.indexOf('New values:');
+      var o = j < 0 ? null : parseBlock(text.slice(0, j));
+      var n = j < 0 ? null : parseBlock(text.slice(j));
+      return o && n ? blockText(o) + ' \u2192 ' + blockText(n) : fallback;
+    }
+    var b = parseBlock(text);
+    return b ? blockText(b) : fallback;
+  }
+  var KIND_TYPE = { A: 'Schedule added', U: 'Schedule changed', D: 'Schedule deleted', S: 'Set point' };
+  // 'Occupied heating 63\u00B0F \u2192 66\u00B0F; Occupied cooling 68\u00B0F \u2192 73\u00B0F' from the stored lines 'H 63 66' and 'C 68 73'.
+  function setPointWords(text) {
+    return String(text).split('\n').map(function (ln) {
+      var p = ln.split(' ');
+      return (p[0] === 'H' ? 'Occupied heating ' : 'Occupied cooling ') + p[1] + '\u00B0F \u2192 ' + p[2] + '\u00B0F';
+    }).join('; ');
+  }
+  // The schedule and set point events of a stored audit log, newest first, for the Calendar tab.
+  // opts.today (YYYY-MM-DD) with opts.days gives the range: events on or after today minus days. No days = every stored event.
+  // Returns { has, lastDay, total, rows:[{ iso, ymd, type, building, area, what, operator }] }. has is false when nothing was imported.
+  // operator is '' when the stored log came from an import made before names were kept (import the file again).
+  function changeList(store, opts) {
+    var o = opts || {};
+    if (!store || !store.events || !store.events.length) return { has: false, lastDay: '', total: 0, rows: [] };
+    var locs = store.locs || [];
+    var ops = store.ops || {};
+    var from = o.days && o.today ? addDays(o.today, -o.days) : '';
+    var rows = [];
+    store.events.forEach(function (t) {
+      if (from && t[0].slice(0, 10) < from) return;
+      var loc = locs[t[2]];
+      rows.push({
+        iso: t[0],
+        ymd: t[0].slice(0, 10),
+        type: KIND_TYPE[t[1]] || 'Set point',
+        building: BD.buildingOf(loc),
+        area: BD.areaOf(loc),
+        what: t[1] === 'S' ? setPointWords(t[3]) : scheduleText(t[1], t[3]),
+        operator: ops[t[4]] || '',
+      });
+    });
+    rows.reverse(); // the store is oldest first
+    return { has: true, lastDay: store.lastDay || '', total: store.events.length, rows: rows };
   }
   // Size of the stored blob in bytes, and the card warning text when it passes STORE_WARN_BYTES ('' otherwise).
   function storeSize(store) {
@@ -532,6 +603,7 @@
     storeSize: storeSize,
     storeWarning: storeWarning,
     storeEvents: storeEvents,
+    changeList: changeList,
     AUDIT_SRC: AUDIT_SRC,
     POINTS_SRC: POINTS_SRC,
   };

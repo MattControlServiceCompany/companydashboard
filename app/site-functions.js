@@ -2507,6 +2507,10 @@ async function siteResetAllMeterTableSettings() {
    site-ui.js delegates to this array and should NOT maintain its own copy.
 */
 var RELEASE_NOTES = [
+  { v: 'v2026.11.11.271', date: '2026-11-11', title: 'BAS changes on the Calendar tab',
+    items: [
+      { type: 'feature', text: 'The Calendar tab now has a "BAS changes" list. It shows the schedule and set point changes from the WebCTRL audit log you imported. Each line has the date and time, the building, the room or unit, what changed, and who did it. The newest changes are first. It shows the last 30 days; you can choose a longer range.' }
+    ] },
   { v: 'v2026.11.11.270', date: '2026-11-11', title: 'Updates load while you are away',
     items: [
       { type: 'change', text: 'A new site version now loads only while you are away from the tab: another tab or another program is in front. When you come back, the new version is there on the same page. You do not see the reload.' }
