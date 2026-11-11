@@ -89,5 +89,13 @@ t('a row with no path says it is not in the tree', () => {
   assert.strictEqual(flat(r)[0].building, 'Alpha High');
   assert(/Not in/.test(flat(r)[0].area));
 });
+t('library, media and media center name the same space', () => {
+  const rs = rows.concat([row('Alpha High', 'AHU-8 Media Center', D + '/Alpha High', 'ahu'), row('Alpha High', 'Medical Office', D + '/Alpha High')]);
+  const names = (q) => flat(RL.search(rs, null, q)).map((i) => i.name).sort();
+  assert.deepStrictEqual(names('library'), ['AHU-8 Media Center', 'Library AHU-6 RF-3', 'Library Office']);
+  assert.deepStrictEqual(names('media'), names('library'));
+  assert.deepStrictEqual(names('media center'), ['AHU-8 Media Center']);
+  assert(!names('library').includes('Medical Office'));
+});
 console.log(pass + ' passed, ' + fail + ' failed');
 process.exit(fail ? 1 : 0);
