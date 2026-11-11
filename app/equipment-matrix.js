@@ -6562,8 +6562,11 @@ function emGetNormalizedPoints(row) {
   // so a real/physical point can overwrite them. Virtual points are a fallback only.
   var _virtualFilledCols = {};
   // Returns true if the raw point name starts with "Virtual " (case-insensitive).
-  function _isVirtual(name) {
-    return /^\s*virtual\s+/i.test(name);
+  // Item 45832938: a numbered-boiler point (for example "Boiler 1 Outlet Temperature") is also a fallback for
+  // hwSupplyTemp: one boiler outlet is not the system hot water supply. A system supply point displaces it.
+  function _isVirtual(name, col) {
+    if (/^\s*virtual\s+/i.test(name)) return true;
+    return col === 'hwSupplyTemp' && /\bboiler\b/i.test(name);
   }
 
   if (row.pointsRaw) {
@@ -6582,7 +6585,7 @@ function emGetNormalizedPoints(row) {
           if (!_emIsExcluded(rawName)) rColKey = emAutoColKey(rawName);
           if (!rColKey) continue;
         }
-        var rIsVirtual = _isVirtual(rawName);
+        var rIsVirtual = _isVirtual(rawName, rColKey);
         if (result[rColKey] == null) {
           // Column is empty — fill it regardless of virtual/real.
           result[rColKey] = rawVal;
@@ -6608,7 +6611,7 @@ function emGetNormalizedPoints(row) {
           if (!_emIsExcluded(rawName2)) rColKey2 = emAutoColKey(rawName2);
           if (!rColKey2) continue;
         }
-        var rIsVirtual2 = _isVirtual(rawName2);
+        var rIsVirtual2 = _isVirtual(rawName2, rColKey2);
         if (result[rColKey2] == null) {
           result[rColKey2] = rawVal2;
           _virtualFilledCols[rColKey2] = rIsVirtual2;
@@ -6666,7 +6669,7 @@ function emGetNormalizedPoints(row) {
         if (!_emIsExcluded(rawKey)) colKey = emAutoColKey(rawKey);
         if (!colKey) continue;
       }
-      var isVirt = _isVirtual(rawKey);
+      var isVirt = _isVirtual(rawKey, colKey);
       if (result[colKey] == null) {
         // Column is empty — fill it (real or virtual).
         result[colKey] = rawV;
@@ -14956,6 +14959,7 @@ var EM_POINT_CATEGORIES = {
         /fan speed feedback/i,
         /vfd speed feedback/i,
         /supply vfd feedback/i,
+        /fan.?vfd.?speed.*(feedback|fdbk|actual)/i,
       ],
       aliases: [
         'sf speed',
@@ -14964,14 +14968,14 @@ var EM_POINT_CATEGORIES = {
         'vfd speed feedback',
         'sf hz',
         'supply fan hz',
-        'supply fan vfd speed',
-        'sf vfd speed',
         'supply vfd feedback',
         'supply fan speed feedback',
       ],
       // M6 6B: block boiler fans, CT fans, stair fans, diagnostic and command objects
+      // Item 45832938: a "VFD Speed" point with no feedback word is the speed COMMAND (sfSpeedCmd), not feedback.
       negativeGuards: [
         /\b(boiler|ct-?\d+|tower\s*\d+|stair|pressuri[sz]ation|diagnostic|running|enable|command|msv|select)\b/i,
+        /^(?!.*\b(feedback|fdbk|fb|hz|actual|status)\b).*\bvfd\b.*\bspeed\b/i,
       ],
     },
     {
@@ -15021,7 +15025,6 @@ var EM_POINT_CATEGORIES = {
         'supply fan vfd speed',
         'sf vfd speed',
         'supply vfd speed',
-        'supply fan speed',
       ],
     },
     {
@@ -15509,7 +15512,7 @@ var EM_POINT_CATEGORIES = {
       ashrae36Section: '5.16',
       configFlag: 'hasEconomizer',
       patterns: [/return\s+air\s+damper/i, /\bra\s+damper\b/i],
-      aliases: ['return air damper', 'ra damper', 'return damper'],
+      aliases: [],
     },
     // I7: Relief Damper
     {
@@ -15535,7 +15538,6 @@ var EM_POINT_CATEGORIES = {
         'return fan vfd speed',
         'return fan drive output speed',
         'return fan speed',
-        'rf vfd speed',
         'rf speed',
       ],
     },
@@ -18257,12 +18259,9 @@ var EM_POINT_CATEGORIES = {
         'chw isolation valve open/close',
         'chiller shutoff valve command',
         'evaporator valve command',
-        'chiller 1 isolation valve',
-        'chiller 2 isolation valve',
         'chiller 1 evaporator valve signal',
         'chiller 2 evaporator valve signal',
         'ch condenser valve signal',
-        'chw isolation valve',
       ],
     },
     // M7: broadcast categories — present on all equipment types
@@ -21359,6 +21358,14 @@ var _EM_CONTRADICTING_PAIRS = [
   { aliasWord: 'cooling', nameVeto: ['heating'] },
 ];
 
+// Item 45832938: a fault, alarm, failure, status or diagnostic point is feedback, never a command.
+// emNormalizePointInner skips every command category (key ends in Cmd or Command) for such a name,
+// so "Supply Fan VFD Faulted" cannot cover sfSpeedCmd through the alias "supply fan vfd".
+var _EM_COMMAND_CAT_KEY = /(Cmd|Command)$/;
+// Round 3: a drive measurement (amps, voltage, current) or a bypass state is also feedback ("Supply Fan VFD Amps"
+// covered sfSpeedCmd through the alias "supply fan vfd").
+var _EM_FEEDBACK_NAME = /\b(fault(ed|s)?|alarm(s|ed)?|fail(ed|ure|ures|s)?|status|diagnostics?|trip(ped)?|amps?|amperage|volts?|voltage|current|bypass\s+(initiated|active|mode))\b/i;
+
 function emNormalizePointInner(rawName, equipCategory) {
   // ── Phase D compliance firewall ───────────────────────────────────────
   // auto_-prefixed keys are generated by emAutoColKey for unmatched BAS points.
@@ -21434,6 +21441,8 @@ function emNormalizePointInner(rawName, equipCategory) {
       }
     }
     if (_negGuarded) continue;
+    // Item 45832938: feedback names (fault, alarm, failure, status, diagnostic) never map to a command category.
+    if (_EM_COMMAND_CAT_KEY.test(cat.key) && _EM_FEEDBACK_NAME.test(rawName)) continue;
 
     // ── Tier 1: Exact canonical name match (case-insensitive) ────────
     var canonNorm = emNormalizePointName(cat.ashrae36Name || cat.label);
