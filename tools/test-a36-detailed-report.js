@@ -413,6 +413,39 @@ const ok = (c, m) => {
     ok(sameList(mdl.sum, seqNums) && sameList(mdl.body, seqNums), 'l: Findings Summary and body list the same finding numbers 1..' + mdl.total + ' (summary ' + mdl.sum.length + ', body ' + mdl.body.length + ')');
     ok(mdl.pointSeqOverlap.length === 0, 'N1: no stand-alone point finding repeats a point that a sequence finding of the same group already lists (' + mdl.pointSeqOverlap.join(',') + ')');
     ok(mdl.mbad.length === 0, 'm: a recommendation says "sensor" only for a sensor, "point" for a valve or actuator' + (mdl.mbad.length ? ': ' + mdl.mbad.join(',') : ''));
+    // n: a sequence finding counts the same units as the priced quantity (monitoring-only zone units are left out), and a point
+    // that only some affected units miss carries its own count. Synthetic: the first sequence finding's group gets one
+    // monitoring-only unit that misses an extra point, and one priced unit that misses a point the others have.
+    const uneven = await page.evaluate((PID) => {
+      const d = collectASHRAE36Data(PID, '2026-11-10', null);
+      const ctx = _a36DetContext(d);
+      const target = ctx.model.findings.find((f) => f.kind === 'seq' && f.affected.length >= 2);
+      if (!target) return null;
+      const building = d.buildings.find((b) => _a36DisplayName(b) === target.lib);
+      const group = ctx.model.libs.find((m) => m.b === building).groups.find((g) => g.label === target.groupLabel);
+      const failing = group.units.filter((eq) => { const sr = (eq.seqReadiness || {})[target.key]; return sr && (sr.status === 'blocked' || sr.status === 'partial') && !_pricingIsMonitoringOnlyZoneUnit(eq); });
+      const monitoringUnit = failing[0];
+      const unevenUnit = failing[1];
+      const saved = [monitoringUnit.compliance, monitoringUnit.seqReadiness[target.key], unevenUnit.seqReadiness[target.key]];
+      try {
+        const findTarget = () => _a36DetModel(d, ctx.rowsById, [], null).findings.find((f) => f.lib === target.lib && f.groupLabel === target.groupLabel && f.key === target.key);
+        // case 1: one priced unit misses an extra point
+        unevenUnit.seqReadiness[target.key] = Object.assign({}, saved[2], { missingCats: (saved[2].missingCats || []).concat(['zzUnevenPoint']) });
+        const unevenFinding = findTarget();
+        unevenUnit.seqReadiness[target.key] = saved[2];
+        // case 2: one unit becomes monitoring-only and misses an extra point
+        monitoringUnit.compliance = Object.assign({}, monitoringUnit.compliance, { missingPoints: [{ categoryKey: 'coolSP' }, { categoryKey: 'htgSP' }] });
+        monitoringUnit.seqReadiness[target.key] = Object.assign({}, saved[1], { missingCats: (saved[1].missingCats || []).concat(['zzMonitorOnlyPoint']) });
+        const monitorFinding = findTarget();
+        return { before: target.affected.length, after: monitorFinding.affected.length, observed: monitorFinding.observed, unevenObserved: unevenFinding.observed, missing: unevenFinding.missing };
+      } finally {
+        monitoringUnit.compliance = saved[0];
+        monitoringUnit.seqReadiness[target.key] = saved[1];
+        unevenUnit.seqReadiness[target.key] = saved[2];
+      }
+    }, seed);
+    ok(uneven && uneven.after === uneven.before - 1 && !/zzMonitorOnlyPoint/.test(uneven.observed), 'n: a monitoring-only zone unit is not counted or named in a sequence finding (' + JSON.stringify(uneven && { before: uneven.before, after: uneven.after }) + ')');
+    ok(uneven && /zzUnevenPoint \(on 1 unit\)/.test(uneven.unevenObserved) && uneven.missing.indexOf('zzUnevenPoint') >= 0, 'n: a point only some affected units miss reads "(on 1 unit)"; the plain label stays in missing (' + (uneven && uneven.unevenObserved) + ')');
     const names = await page.evaluate(() => ({
       dash: ['Adult 04 - DDZD-10', 'Admin 128 - VBR-128*', 'Vestibule 1Q02 - CUH-2', 'AHU-1 - EAST', 'Hot Water System - Central', 'Meeting Room | VAV-1-1'].map(_a36DetEquipName),
       sensor: ['Cooling Coil Valve', 'Supply Air Temperature', 'Damper Position Control (Outdoor Air Actuator)'].map((x) => x + '=' + _a36DetIsSensorLabel(x)),

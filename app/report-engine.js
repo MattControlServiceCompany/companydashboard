@@ -26222,7 +26222,7 @@ function _a36DetJoin(list) {
 // Returns { libs: [{ b, groups, work, descPics: [[picture entry (at most 1)] per group], rep: [index of the unit shown in the
 // figure of each group, -1 when none], findings: [finding] }], findings: [finding] }.
 // finding = { n, lib, groupLabel, kind: 'sensor'|'seq'|'deficiency', key, label, units, total, affected: [unit name], missing: [point
-//   label], section, impact, attribute, observed, issueShort, recommendation, pic, picCands }.
+//   label], missingText: [the same labels, with "(on N units)" when only some affected units miss it], section, impact, attribute, observed, issueShort, recommendation, pic, picCands }.
 function _a36DetModel(d, rowsById, picMap, loaded) {
   var used = {};
   var libs = [];
@@ -26260,6 +26260,7 @@ function _a36DetModel(d, rowsById, picMap, loaded) {
         total: g ? g.units.length : 0,
         affected: extra.affected || [],
         missing: extra.missing || [],
+        missingText: extra.missingText || extra.missing || [],
         pic: null,
         picCands: [],
       };
@@ -26273,10 +26274,10 @@ function _a36DetModel(d, rowsById, picMap, loaded) {
         var secPart = f.section ? ' (ASHRAE Guideline 36, Section ' + f.section + ')' : '';
         f.observed =
           (g ? 'The ' + label + ' sequence' + secPart + ' is not fully in place on ' + frac + '.' : 'The ' + label + ' sequence' + secPart + ' is not fully in place at building level (' + units + ' needed).') +
-          (f.missing.length ? ' The building automation system shows no ' + _a36DetJoin(f.missing) + ' point' + plural + ' that the sequence needs.' : '');
+          (f.missing.length ? ' The building automation system shows no ' + _a36DetJoin(f.missingText) + ' point' + plural + ' that the sequence needs.' : '');
         f.issueShort = label + ' sequence not fully in place';
         f.recommendation =
-          (f.missing.length ? 'Add the ' + _a36DetJoin(f.missing) + ' point' + plural + ', then program' : 'Program') +
+          (f.missing.length ? 'Add the ' + _a36DetJoin(f.missingText) + ' point' + plural + ', then program' : 'Program') +
           ' the ' + label + ' sequence' + (g ? ' on ' + frac : ' (quantity ' + units + ')') + '.';
       } else {
         var sensor = _a36DetIsSensorLabel(label);
@@ -26373,20 +26374,26 @@ function _a36DetModel(d, rowsById, picMap, loaded) {
       seqList.forEach(function (s) {
         var affected = [];
         var missing = [];
-        var seen = {};
+        var unitsMissing = {};
         g.units.forEach(function (eq) {
           var sr = sequenceOf(eq, s.key);
           if (!sr) return;
+          // The priced scope leaves out a monitoring-only zone unit (no heating and no cooling set point); the finding counts
+          // and names the same units as the priced quantity (one rule: _pricingIsMonitoringOnlyZoneUnit).
+          if (typeof _pricingIsMonitoringOnlyZoneUnit === 'function' && _pricingIsMonitoringOnlyZoneUnit(eq)) return;
           affected.push(eq.name || 'Unknown');
           (sr.missingCats || []).forEach(function (c) {
-            var l = _a36DetCatLabel(c);
-            if (!seen[l]) {
-              seen[l] = true;
-              missing.push(l);
-            }
+            var pointLabel = _a36DetCatLabel(c);
+            if (!unitsMissing[pointLabel]) missing.push(pointLabel);
+            unitsMissing[pointLabel] = (unitsMissing[pointLabel] || 0) + 1;
           });
         });
-        add(g, 'seq', s.key, s.label, Math.min(s.qty, g.units.length), s.row, { affected: affected, missing: missing });
+        // A point that only some of the affected units miss carries its own unit count ("Damper Actuator (on 20 units)").
+        var missingText = missing.map(function (pointLabel) {
+          var count = unitsMissing[pointLabel];
+          return count < affected.length ? pointLabel + ' (on ' + count + ' ' + (count === 1 ? 'unit' : 'units') + ')' : pointLabel;
+        });
+        add(g, 'seq', s.key, s.label, Math.min(s.qty, g.units.length), s.row, { affected: affected, missing: missing, missingText: missingText });
       });
     });
     work.building.sensors.forEach(function (w) {
