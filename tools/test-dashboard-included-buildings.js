@@ -1,4 +1,4 @@
-// test-dashboard-included-buildings.js -- backlog 1acc4f2d. Louisburg Dashboard showed 7 buildings and 8 rows: the
+// test-dashboard-included-buildings.js -- backlog 1acc4f2d. A client Dashboard showed 7 buildings and 8 rows: the
 // Maintenance Building (excluded) and the "Unmatched Bills" sentinel. Rules:
 // (1) getIncludedBldgs drops a building flagged _unmatchedSentinel and a building whose calc meters are all excluded;
 //     a real building with no meters or no sqft stays.
