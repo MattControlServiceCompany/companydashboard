@@ -367,6 +367,10 @@
       [data-popup-mode] #loginScreen {
         display: none !important;
       }
+      /* Load after an automatic update with a saved session: no login screen while the page starts (core.js shows it again if the session is gone). */
+      [data-resuming] #loginScreen {
+        display: none;
+      }
       [data-popup-mode] #app {
         display: flex !important;
         opacity: 0;
@@ -9505,6 +9509,10 @@
         if (new URLSearchParams(window.location.search).get('openProject')) {
           document.documentElement.setAttribute('data-popup-mode', 'true');
         }
+        try {
+          if (sessionStorage.getItem('ch_update_reload') && sessionStorage.getItem('ch_sb_session'))
+            document.documentElement.setAttribute('data-resuming', 'true');
+        } catch (e) {}
       })();
     </script>
     <div id="loginScreen">
@@ -16749,7 +16757,7 @@
     <script src="app/db.js?v=545dac8d"></script>
     <script src="app/sync-ui.js?v=5be33306"></script>
     <script src="app/ems-leads-store.js?v=4c52e6d5"></script>
-    <script src="app/core.js?v=608dc9c2"></script>
+    <script src="app/core.js?v=81b74ffd"></script>
     <script src="app/energy-savings.js?v=856d7622"></script>
     <script src="app/bill-analysis.js?v=df96e63c"></script>
     <script src="extraction/bill-validation.js?v=ce36eb70"></script>
@@ -16787,7 +16795,7 @@
     <script src="app/docx-skeleton.js?v=939b4e69"></script>
     <script src="app/docx-writer.js?v=9edf3193"></script>
     <script src="app/meeting-export.js?v=3a99c987"></script>
-    <script src="app/report-engine.js?v=ccbea80e"></script>
+    <script src="app/report-engine.js?v=5be11bf4"></script>
     <script src="app/report-printed.js?v=9212dd7b"></script>
     <script src="app/report-engine-woodland.js?v=ff6ebd7c"></script>
     <script src="app/report-preview.js?v=fc2af226"></script>
@@ -16820,7 +16828,7 @@
     <script src="app/agreement-engine.js?v=5589d907"></script>
 
     <script src="app/restore-merge.js?v=6166147f"></script>
-    <script src="app/site-functions.js?v=070a7a1b"></script>
+    <script src="app/site-functions.js?v=24d645af"></script>
     <script>
       /* -- DRAG-TO-RESIZE PANELS -- */
       (function () {

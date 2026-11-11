@@ -13506,6 +13506,20 @@ function closeReleaseNotes(markSeen) {
 /* openReleaseNotesIfNeeded: respects rnShowMode preference.
    Called on DOMContentLoaded (and delegated from site-ui.js initSiteUI). */
 function openReleaseNotesIfNeeded() {
+  // This load follows an automatic update (app/report-engine.js sets ch_update_reload): announce the new version
+  // with a toast, never with the blocking dialog. The sidebar What's New button still opens the notes.
+  var afterUpdate = null;
+  try {
+    afterUpdate = sessionStorage.getItem('ch_update_reload');
+    if (afterUpdate) sessionStorage.removeItem('ch_update_reload');
+  } catch (e) {}
+  if (afterUpdate) {
+    var newest = RELEASE_NOTES[0] && (RELEASE_NOTES[0].v || RELEASE_NOTES[0].version);
+    if (newest) localStorage.setItem('ch_seen_version', newest);
+    if (typeof showToast === 'function')
+      showToast('Updated to ' + (newest || 'the new version') + ". Select What's New in the sidebar to see the changes.", null, 8000);
+    return;
+  }
   var settings = {};
   try {
     settings = JSON.parse(localStorage.getItem('ch_settings') || '{}');

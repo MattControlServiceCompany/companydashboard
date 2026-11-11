@@ -15181,8 +15181,10 @@ function _showVersionUpdateBanner(fetchedVer) {
 function _savePageStateForVersionUpdate() {
   try {
     const state = {};
-    const activeView = document.querySelector('.view.active');
-    if (activeView) state.activeViewId = activeView.id;
+    // Page, project, main tab, sub-tab and scroll are NOT saved here: sv(), saveProjSession() and the per-project
+    // tab keys already keep them in browser storage and init() (app/core.js) restores them. One mechanism (bd22df0d).
+    // Marker: this load follows an update reload (no login flash, no What's New dialog: energy-department.html, site-functions.js).
+    sessionStorage.setItem('ch_update_reload', _chPendingVer || '1');
     const billModal = document.getElementById('billModal');
     if (billModal && billModal.classList.contains('open')) {
       state.billModalOpen = true;
@@ -15209,10 +15211,8 @@ function _restorePageStateAfterVersionUpdate() {
     const state = JSON.parse(raw);
     if (state.udSelProjId) udSelProjId = state.udSelProjId;
     if (state.udSelBldgId) udSelBldgId = state.udSelBldgId;
-    if (state.activeViewId) {
-      const viewName = state.activeViewId.replace(/^view-/, '');
-      if (typeof sv === 'function') sv(viewName);
-    }
+    // No sv() here (bd22df0d): this runs inside init() BEFORE init() reads the saved project session. sv('projects')
+    // calls showList(), which overwrote ch_proj with the list view, so every update reload landed on the Projects list.
     if (state.billModalOpen && state.billModalValues && state.savedMeterId) {
       showToast('Your in-progress form has been restored after the site update');
       setTimeout(function () {
