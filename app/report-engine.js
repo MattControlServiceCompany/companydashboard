@@ -20769,7 +20769,7 @@ function rptPageASHRAE36SetpointReview(n, d, extraTopH) {
     if (row.eschHasTimes)
       return (
         'Mon–Fri ' +
-        (_detailedReview && Math.round(row.avgEschStart) === Math.round(row.avgEschStop)
+        (_detailedReview && Math.round(row.avgEschStart) === 0 && Math.round(row.avgEschStop) === 0
           ? '24 hours'
           : _fmtClockMins(row.avgEschStart) + '–' + _fmtClockMins(row.avgEschStop)) +
         '<br>Sat &amp; Sun: Unoccupied'
@@ -25424,15 +25424,17 @@ function _a36DetReadingValue(label, raw) {
   var m = /^(-?\d+(?:\.\d+)?)\s*(\S.*)?$/.exec(v);
   if (!m) return v;
   var unit = (m[2] || '').trim();
+  var num = m[1].indexOf('.') === -1 ? m[1] : parseFloat(m[1]).toFixed(1); // one decimal: "117.5625" prints "117.6", "0.0" stays "0.0"
   if (unit === '') {
     var isTemp = /temperature|temp|setpoint|set point/i.test(label) && !/flow|pressure|humidity|position|speed|co2|damper|valve|request|mode|status/i.test(label);
-    return isTemp ? m[1] + '°F' : null;
+    return isTemp ? num + '°F' : null;
   }
   // The one unit formatter of a reading: degrees and percent follow the number with no space ("72.3°F", "55.6%"); other units after one space.
-  if (/^°?\s*F$/i.test(unit)) return m[1] + '°F';
-  if (/^°\s*C$/i.test(unit)) return m[1] + '°C';
-  if (unit === '%') return m[1] + '%';
-  return m[1] + ' ' + unit;
+  if (/^°?\s*F$/i.test(unit)) return num + '°F';
+  if (/^°\s*C$/i.test(unit)) return num + '°C';
+  if (unit === '%') return num + '%';
+  if (/^%\s*rh$/i.test(unit)) return num + '% RH';
+  return num + ' ' + unit;
 }
 
 // One occupied block as printed. A block that starts and stops at 12:00 AM (the BAS stores start 0 and stop 0) is the whole
@@ -25759,7 +25761,8 @@ function _a36DetListToks(items) {
   for (var i = 0; i < items.length; i += 4) {
     toks.push(
       _a36DetTok(
-        '<ul style="margin:0 0 4px 0;padding-left:22px;font-size:14px;line-height:1.5;color:var(--rpt-page-text)">' +
+        // The gap only below the last block, so the blocks read as one list.
+        '<ul style="margin:0 0 ' + (i + 4 >= items.length ? 4 : 0) + 'px 0;padding-left:22px;font-size:14px;line-height:1.5;color:var(--rpt-page-text)">' +
           items
             .slice(i, i + 4)
             .map(function (it) {
