@@ -188,10 +188,21 @@ const ok = (c, m) => {
               return new Promise((res) => cv.toBlob((b) => res(new File([b], name, { type: 'image/png' })), 'image/png'));
             };
             dt.items.add(await mk('syn-1.png', 1000, 560, '#123'));
-            dt.items.add(await mk('syn-2.png', 900, 520, '#231'));
+            dt.items.add(await mk('syn-2.png', 700, 480, '#231'));
             dt.items.add(await mk('syn-3.png', 800, 600, '#312'));
             dt.items.add(await mk('syn-4.png', 800, 600, '#222'));
             dt.items.add(await mk('syn-5.png', 800, 600, '#888'));
+            // item 7: a synthetic front photo of Alpha Library (wider than the slot, so it is cropped from the centre)
+            const photoCanvas = document.createElement('canvas');
+            photoCanvas.width = 1600;
+            photoCanvas.height = 900;
+            const photoCx = photoCanvas.getContext('2d');
+            photoCx.fillStyle = '#4a7';
+            photoCx.fillRect(0, 0, 1600, 900);
+            photoCx.fillStyle = '#c33';
+            photoCx.fillRect(700, 300, 200, 300);
+            const photoBlob = await new Promise((res) => photoCanvas.toBlob(res, 'image/jpeg', 0.9));
+            dt.items.add(new File([photoBlob], 'alpha library - FRONT.JPG', { type: 'image/jpeg' }));
             document.getElementById('a36PictureDir').files = dt.files;
           }
           generateASHRAE36Preview();
@@ -202,6 +213,13 @@ const ok = (c, m) => {
           const imgs = Array.from(document.querySelectorAll('#reportPages .rpt-page[data-section="detailedLibrary"] img[alt^="Figure"]'));
           const figs = imgs.map((im) => im.parentElement.textContent.trim());
           const imgInfo = await Promise.all(imgs.map((im) => new Promise((res) => { const t = new Image(); t.onload = () => res({ src: im.src.slice(0, 22), w: t.naturalWidth }); t.onerror = () => res({ src: 'err', w: 0 }); t.src = im.src; })));
+          const photos = Array.from(document.querySelectorAll('#reportPages img[alt^="Photo of"]')).map((im) => {
+            const r = im.getBoundingClientRect();
+            const body = im.closest('.rpt-body');
+            const firstEl = body && body.children[0];
+            const next = im.parentElement && im.parentElement.previousElementSibling;
+            return { alt: im.alt, w: Math.round(r.width), h: Math.round(r.height), afterTitle: !!next && next.tagName === 'H1', firstIsTitle: !!firstEl && firstEl.tagName === 'H1' };
+          });
           const libText = pages.filter((p) => p.getAttribute('data-section') === 'detailedLibrary').map((p) => p.textContent).join('\n');
           const fit = pages.filter((p) => p.querySelector('.rpt-body')).map((p, i) => {
             const body = p.querySelector('.rpt-body');
@@ -221,7 +239,7 @@ const ok = (c, m) => {
               }
               if (e.querySelector('p, div, img')) return;
               const tx = e.textContent.trim();
-              let m = /\(Figure (\d+)\)/.exec(tx);
+              let m = /(?:\(|; )Figure (\d+)\)/.exec(tx);
               if (m) mark = 'desc:' + m[1];
               m = /^Finding \d+: [^,]+, (.*)$/.exec(tx);
               if (m) mark = 'find:' + m[1];
@@ -244,7 +262,7 @@ const ok = (c, m) => {
           const overviewNoTable = !tableInOverview && /System Overview/.test(pages.map((p) => p.textContent).join('\n'));
           const text = pages.map((p) => p.textContent).join('\n');
           const hasOverlay = document.getElementById('reportOverlay').style.display;
-          return { shown, order, joins, overviewNoTable, sections, imgInfo, figs, libText, fit, text, hasOverlay, html: document.getElementById('reportPages').innerHTML.length };
+          return { shown, photos, order, joins, overviewNoTable, sections, imgInfo, figs, libText, fit, text, hasOverlay, html: document.getElementById('reportPages').innerHTML.length };
         },
         { PID: seed, withFolder },
       );
@@ -255,7 +273,7 @@ const ok = (c, m) => {
     ok(det.shown, 'choosing Detailed shows the picture folder picker');
     const s = det.sections;
     const firstLib = s.indexOf('detailedLibrary');
-    ok(s[0] === 'cover' && s.indexOf('executive') > 0 && s.indexOf('costEstimate') > s.indexOf('executive') && firstLib > s.indexOf('costEstimate'), 'order: cover, executive summary, sequences, then the library chapters (' + s.join(',') + ')');
+    ok(s[0] === 'cover' && s.indexOf('executive') === 1 && s.indexOf('detailedSummary') > s.lastIndexOf('executive') && firstLib > s.indexOf('detailedSummary') && s.indexOf('costEstimate') > s.lastIndexOf('detailedLibrary'), 'item 1 order: cover, executive summary, readiness, findings summary, library chapters, then the control sequences (' + s.join(',') + ')');
     ok(s.indexOf('building') < 0, 'Detailed has no Per-Building Detail pages');
     ok(s.filter((x) => x === 'detailedLibrary').length >= 2, 'at least one chapter page per library (' + s.filter((x) => x === 'detailedLibrary').length + ' chapter pages)');
     ok(s.indexOf('detailedSummary') > 0 && s.indexOf('detailedSummary') < firstLib, 'the Findings Summary comes before the chapters');
@@ -264,7 +282,7 @@ const ok = (c, m) => {
     ok(!/Issues Log|Appendix A: Deficiency List|Appendix B: Point Inventory|Appendix C/.test(det.text), 'N2: no Issues Log, no Appendix C, Point Inventory is Appendix A');
     ok(s.indexOf('setpointReview') > s.indexOf('detailedAppendixA') && /Appendix B: Setpoint Programming Review/.test(det.text), 'Appendix B prints last when zone set point data exists (Detailed turns the review on by itself)');
     const t = det.libText;
-    ['Alpha Library: System Overview', 'Beta Library: System Overview', 'Alpha Library: System Descriptions', 'Alpha Library: Findings', 'Finding 1:', 'Observed.', 'Recommendation.'].forEach((x) => ok(t.indexOf(x) >= 0, 'chapters contain "' + x + '"'));
+    [/\d+ Alpha Library/.exec(t) && /\d+ Alpha Library/.exec(t)[0], /\d+\.1 System Overview/.exec(t) && /\d+\.1 System Overview/.exec(t)[0], /\d+\.2 System Descriptions/.exec(t) && /\d+\.2 System Descriptions/.exec(t)[0], /\d+\.3 Findings/.exec(t) && /\d+\.3 Findings/.exec(t)[0], 'Finding 1:', 'Observed.', 'Recommendation.'].forEach((x) => ok(t.indexOf(x) >= 0, 'chapters contain "' + x + '"'));
     ok(!/Recommended Work/.test(t), 'cut 1: no per-chapter Recommended Work table (each finding has its own Recommendation line)');
     ok(!/\bIssue\./.test(t) && /sequence \(ASHRAE Guideline 36, Section [\d.]+\) is not fully in place/.test(t), 'cut 2: no Issue line; the Guideline 36 section number is in the Observed line');
     ok(!/This system has/.test(t), 'cut 3: no "This system has N units" sentence (the System Overview table lists the units)');
@@ -277,7 +295,7 @@ const ok = (c, m) => {
     ok(!/Every point of this equipment/.test(t) && (t.match(/Appendix A lists every building automation point reviewed for each system\./g) || []).length === 2, 'item 3: no "Every point of this equipment" sentence; the Appendix A sentence is once per chapter (2 chapters)');
     ok(det.joins.length === 0, 'item 2: no missing space after a full stop inside a paragraph of the chapters: ' + det.joins.join(' | '));
     ok(!/\d ?F\b/.test(t.replace(/°F/g, '')), 'D2: no temperature prints as "<n> F" (every temperature has °F)');
-    ok(/The occupied schedule is 6:00 AM-9:00 PM \(1 unit\), 7:00 AM-6:00 PM \(1 unit\)( \(Figure \d+\))?\./.test(t), 'System Descriptions: the occupied schedule sentence lists each distinct schedule with its unit count');
+    ok(/The occupied schedule is 6:00 AM-9:00 PM \(1 unit\), 7:00 AM-6:00 PM \(1 unit\)( \(Figure \d+\))?\./.test(t.replace(/; Figure \d+\)/g, ')')), 'System Descriptions: the occupied schedule sentence lists each distinct schedule with its unit count');
     ok((t.match(/The occupied schedule is/g) || []).length === 2, 'groups with no schedule print nothing about schedules (one schedule sentence per group that has one: 2)');
     ok(/The occupied schedule is 24 hours\./.test(t) && !/12:00 AM-12:00 AM/.test(t), 'D8: an all-day schedule (start 0, stop 0) prints "24 hours", never 12:00 AM-12:00 AM');
     ok(/Beta Library[\s\S]{0,40}Mon–Fri 24 hours/.test(det.text.slice(det.text.indexOf('Appendix B: Setpoint Programming Review'))), 'D8: Appendix B prints the all-day schedule of Beta Library as "Mon–Fri 24 hours"');
@@ -311,7 +329,7 @@ const ok = (c, m) => {
     // the graphic of a unit sits directly under its own description; a finding figure sits directly under its own finding
     ok(det.order.join('|') === 'desc:1|desc:2|find:Economizer|desc:4', 'every figure is directly under its own description or finding: ' + det.order.join('|'));
     ok(/Figure 3: Economizer: AHU-1, Properties: economizer logic/.test(det.figs.join('\n')), 'the finding figure caption names the condition: ' + det.figs.join(' / '));
-    ok(/\(Figure 1\)\./.test(t) && !/graphic of [^.]* is shown in Figure/.test(t) && /The Economizer sequence( \(ASHRAE Guideline 36, Section [\d.]+\))? is not fully in place/.test(t), 'the text cites the figure it introduces, in the sentence: "(Figure N)." (item 4)');
+    ok(/(\(|; )Figure 1\)\./.test(t) && !/graphic of [^.]* is shown in Figure/.test(t) && /The Economizer sequence( \(ASHRAE Guideline 36, Section [\d.]+\))? is not fully in place/.test(t), 'the text cites the figure it introduces, in the sentence: "(Figure N)." (item 4)');
     ok(!/Pictures?: Figure/.test(t), 'no "Pictures: Figure" list under the findings');
     ok(!/\(1 of 1 unit\)/.test(t) && !/\((\d+) of \1 units\)/.test(t.replace(/Building automation controller[^\n]*/g, '')), 'D6: no "(N of N units)" noise in the text');
 
@@ -324,16 +342,16 @@ const ok = (c, m) => {
         n: m.findings.map((f) => f.n).join(','),
         noImpactSeq: seqFind.filter((f) => !f.impact).map((f) => f.key),
         sameImpact: seqFind.every((f) => !f.impact || f.impact === ASHRAE36_SEQUENCE_PLAIN[f.key]),
-        attrs: Array.from(new Set(m.findings.map((f) => f.attribute))).sort().join(','),
+        attrs: Array.from(new Set(m.findings.map((f) => f.effect))).sort().join(','),
         count: m.findings.length,
         scoped: _a36ScopedCatalogRows(d).filter((r) => (r.phase === 1 && !r.ioOnly) || (r.phase === 2 && r.seqKey)).length,
       };
     }, seed);
     ok(fm.n === Array.from({ length: fm.count }, (_, i) => i + 1).join(',') && fm.count >= 10, 'findings are numbered 1..N across the report (' + fm.count + ')');
     ok(fm.sameImpact && fm.noImpactSeq.length === 0, 'Impact of a sequence is the ASHRAE36_SEQUENCE_PLAIN text; sequences without an Impact text: ' + (fm.noImpactSeq.join(',') || 'none'));
-    ok(/Energy/.test(fm.attrs) && /Function/.test(fm.attrs), 'Attribute is Energy or Function (' + fm.attrs + ')');
+    ok(fm.attrs === 'Energy use,Equipment control', 'item 2: Effect is "Energy use" or "Equipment control" (' + fm.attrs + ')');
     const sum = await page.evaluate(() => Array.from(document.querySelectorAll('#reportPages .rpt-page[data-section="detailedSummary"] table')).map((tb) => Array.from(tb.querySelectorAll('th')).map((x) => x.textContent.trim()).join('|') + '#' + tb.querySelectorAll('tbody tr, tr').length));
-    ok(sum.length >= 1 && /^Library\|System\|Issue\|Attribute#/.test(sum[0]), 'Findings Summary table: Library | System | Issue | Attribute (' + sum[0] + ')');
+    ok(sum.length >= 1 && /^No\.\|Library\|System\|Issue\|Effect#/.test(sum[0]), 'item 2: Findings Summary table: No. | Library | System | Issue | Effect (' + sum[0] + ')');
     ok(!/Next Steps/i.test(det.text.slice(0, det.text.indexOf('Appendix A: Point Inventory'))) || true, 'chapters carry no Next Steps text (checked above on the chapters)');
     const pr = await page.evaluate(() => {
       const w = 1728, h = 874;
@@ -358,6 +376,71 @@ const ok = (c, m) => {
     const appB = det.fit.filter((f) => f.section === 'pointInventory');
     ok(appB.every((f) => f.over <= 1 && f.scrollOver <= 1), 'Appendix B pages fit with the added heading' + JSON.stringify(appB));
 
+    // ---- 8b. Layout round (2026-11-11): items 1 to 8 ----
+    const lay = await page.evaluate(() => {
+      const pages = Array.from(document.querySelectorAll('#reportPages .rpt-page'));
+      const h1s = [];
+      pages.forEach((p, pi) => {
+        const body = p.querySelector('.rpt-body');
+        if (!body) return;
+        body.querySelectorAll('h1').forEach((h) => h1s.push({ page: pi, text: h.textContent.trim(), first: body.children[0] === h || (!!body.children[0] && body.children[0].firstElementChild === h), size: parseFloat(getComputedStyle(h).fontSize) }));
+      });
+      const sumRows = Array.from(document.querySelectorAll('#reportPages .rpt-page[data-section="detailedSummary"] tbody tr')).map((tr) => Array.from(tr.children).map((c) => c.textContent.trim()));
+      const execBold = Array.from(document.querySelectorAll('#reportPages .rpt-page[data-section="executive"] div, #reportPages .rpt-page[data-section="executive"] p')).filter((e) => !e.querySelector('div, p') && /^(600|700)$/.test(getComputedStyle(e).fontWeight)).map((e) => e.textContent.trim());
+      const execPage = pages.find((p) => p.getAttribute('data-section') === 'executive' && /Executive Summary/.test(p.textContent));
+      const appA = pages.filter((p) => p.getAttribute('data-section') === 'detailedAppendixA');
+      const pointHeads = appA.flatMap((p) => Array.from(p.querySelectorAll('table')).map((tb) => Array.from(tb.querySelectorAll('th')).map((x) => x.textContent.trim()).join('|')));
+      const spText = pages.filter((p) => p.getAttribute('data-section') === 'setpointReview').map((p) => p.textContent).join('\n');
+      const fill = execPage ? (() => { const b = execPage.querySelector('.rpt-body'); let mb = 0; b.querySelectorAll('*').forEach((e) => { const r = e.getBoundingClientRect(); if (r.height > 0) mb = Math.max(mb, r.bottom); }); return (mb - b.getBoundingClientRect().top) / b.getBoundingClientRect().height; })() : null;
+      const fl = (names) => names.map((n) => ({ name: n }));
+      const pick = (names, lib, all) => { const r = _a36DetLibraryPhotoFile(fl(names), lib, all || [lib]); return r ? r.name : null; };
+      return {
+        h1s, sumRows, execBold, execPageFill: fill, pointHeads, spText,
+        cite: { off: _a36DetCiteFigure('The unit is run by a mode point (Off).', 2), plain: _a36DetCiteFigure('The unit runs.', 3), noMark: _a36DetCiteFigure('The unit runs', 4) },
+        photoNames: [
+          pick(['Alpha Library - Front.jpg'], 'Alpha Library'),
+          pick(['alpha library - front.JPEG'], 'Alpha Library'),
+          pick(['Alpha Library - front view.png'], 'Alpha Library'),
+          pick(['Alpha Library Frontier.jpg'], 'Alpha Library'),
+          pick(['Alpha Library - Back.jpg'], 'Alpha Library'),
+          pick(['Alpha Library - Front.gif'], 'Alpha Library'),
+          pick(['Alpha Libraryx - Front.jpg'], 'Alpha Library'),
+          pick(['Alpha Library 2 - Front.jpg', 'Alpha Library - Front.jpg'], 'Alpha Library'),
+          pick(['Alpha Library East - Front.jpg'], 'Alpha Library', ['Alpha Library', 'Alpha Library East']),
+          pick(['Alpha Library East - Front.jpg'], 'Alpha Library East', ['Alpha Library', 'Alpha Library East']),
+        ],
+      };
+    });
+    const titles = lay.h1s.map((x) => x.text);
+    const numbered = lay.h1s.filter((x) => /^\d+ /.test(x.text));
+    const numbers = numbered.map((x) => parseInt(x.text, 10));
+    ok(numbers[0] === 1 && numbers.every((v, i) => i === 0 || v >= numbers[i - 1]), 'item 1: top-level sections are numbered 1.. in order (' + titles.join(' / ') + ')');
+    ok(/^1 Executive Summary/.test(titles[0]) && /^2 Building Readiness/.test(titles[1]) && /^3 Findings Summary/.test(titles[2]), 'item 1: 1 Executive Summary, 2 Building Readiness, 3 Findings Summary come first (' + titles.slice(0, 3).join(' / ') + ')');
+    const libTitles = titles.filter((x) => /^\d+ (Alpha|Beta) Library$/.test(x));
+    ok(libTitles.length === 2 && parseInt(libTitles[0], 10) === 4 && parseInt(libTitles[1], 10) === 5, 'item 1: each library is one numbered section starting at 4 (' + libTitles.join(' / ') + ')');
+    const seqIdx = titles.findIndex((x) => /Control Sequences/.test(x));
+    ok(seqIdx > titles.indexOf(libTitles[1]) && /^6 Control Sequences/.test(titles[seqIdx]), 'item 1: Control Sequences follows the library sections as section 6 (' + titles[seqIdx] + ')');
+    ok(titles.some((x) => /^Appendix A: Point Inventory/.test(x)) && titles.some((x) => /^Appendix B: Setpoint Programming Review/.test(x)) && titles.some((x) => /^Appendix A: Points by Equipment Type/.test(x)), 'item 1: Appendix A (Point Inventory and Points by Equipment Type) and Appendix B have large titles (' + titles.filter((x) => /^Appendix/.test(x)).join(' / ') + ')');
+    ok(lay.h1s.every((x) => x.first && x.size >= 28), 'item 1: every section title is the first element of its page and 28 px or larger (' + lay.h1s.filter((x) => !x.first || x.size < 28).map((x) => x.text + ' ' + x.size).join(', ') + ')');
+    ok((t.match(/\d+\.1 System Overview/g) || []).length === 2 && (t.match(/\d+\.2 System Descriptions/g) || []).length === 2 && (t.match(/\d+\.3 Findings/g) || []).length === 2, 'item 1: every library has the same three sub-headings N.1 System Overview, N.2 System Descriptions, N.3 Findings');
+    ok(lay.sumRows.length > 0 && lay.sumRows.every((r) => r.length === 5 && /^\d+$/.test(r[0]) && /^(Energy use|Equipment control)$/.test(r[4])), 'item 2: every Findings Summary row has No., Library, System, Issue, Effect; Effect is Energy use or Equipment control');
+    ok(lay.sumRows.length > 0 && lay.sumRows.every((r) => !/Affects (the unit|both units)/.test(r[3])), 'item 2: affected units are named (never "Affects the unit" or "both units" when 4 or fewer)');
+    ok(lay.sumRows.filter((r) => /Missing point/.test(r[3])).length > 0 && lay.sumRows.filter((r) => /Affects (\d+ of \d+|both|all|the building)/.test(r[3]) && /ASHRAE Guideline 36, Section [\d.]+\)/.test(r[3])).length >= 5, 'item 2: the Issue cell says what is missing, which units it affects, what it prevents and the Guideline 36 section: ' + (lay.sumRows[0] || [])[3]);
+    ok(lay.pointHeads.length >= 4 && lay.pointHeads.filter((x) => x === 'Group|Points').length >= 4, 'item 4: Points by Equipment Type is a set of short Group | Points tables (' + lay.pointHeads.length + ' tables)');
+    const ptText = det.text.slice(det.text.indexOf('Appendix A: Points by Equipment Type'));
+    ok(/Sensors[^]*Setpoints/.test(ptText) && /\(\d+ of \d+ units\)/.test(ptText) && /Alpha Library: Air Handling Unit \(2 units\)/.test(ptText), 'item 4: tables per library and equipment type, groups Sensors then Setpoints, "N of M units" wording');
+    ok(/\d+\.\d°F heating \/ \d+\.\d°F cooling/.test(lay.spText) && !/°F \/ \d/.test(lay.spText), 'item 5: every temperature pair of Appendix B reads "70.0°F heating / 74.0°F cooling"');
+    ok(/ASHRAE 36 default: occupied 70°F heating \/ 75°F cooling/.test(lay.spText), 'item 5: Appendix B has the ASHRAE default reference line');
+    ok(/Occupied setpoints are the temperatures held while the building is in use\./.test(lay.spText) && /Unoccupied setpoints are the temperatures held while it is empty\./.test(lay.spText) && /The deadband is the gap between the heating and cooling setpoints\./.test(lay.spText), 'item 5: one intro sentence each for occupied, unoccupied and deadband');
+    ok(/Recommended by Control Service Company: occupied 70°F heating \/ 74°F cooling; unoccupied 55°F heating \/ 85°F cooling; Mon–Fri 6:00 AM–5:00 PM/.test(lay.spText), 'item 5: the recommended setpoints and schedule are printed once in a box');
+    ok(/All 2 zones match ASHRAE 36 defaults/.test(lay.spText), 'item 5: one-line status per building');
+    ok(!/no zone-level set ?points/i.test(lay.spText), 'item 5: the wrong "no zone-level setpoints" reason is not printed');
+    ok(lay.execBold.length >= 4 && lay.execPageFill > 0.6, 'item 6: Executive Summary sequence items have a bold heading line (' + lay.execBold.length + ' bold lines) and the page is filled (' + Math.round(lay.execPageFill * 100) + '%)');
+    ok(lay.cite.off === 'The unit is run by a mode point (Off; Figure 2).' && lay.cite.plain === 'The unit runs (Figure 3).' && lay.cite.noMark === 'The unit runs (Figure 4)', 'item 8a: "(Off)" takes the figure inside the bracket, other sentences keep "(Figure N)": ' + JSON.stringify(lay.cite));
+    ok(!/\) \(Figure \d+\)/.test(t), 'item 8a: no "(...) (Figure N)" in the chapters');
+    ok(lay.photoNames.map((x) => x || 'none').join('|') === 'Alpha Library - Front.jpg|alpha library - front.JPEG|Alpha Library - front view.png|none|none|none|none|Alpha Library - Front.jpg|none|Alpha Library East - Front.jpg', 'item 7: the photo file name match (' + lay.photoNames.join(' | ') + ')');
+    ok(det.photos.length === 1 && /Alpha Library/.test(det.photos[0].alt) && det.photos[0].w === 624 && det.photos[0].h === 336 && det.photos[0].afterTitle, 'item 7: Alpha Library has one photo, 624 x 336 px (6.5 x 3.5 in) directly under its title: ' + JSON.stringify(det.photos));
+
     // ---- 9. Word ----
     const word = await page.evaluate(() => {
       const pages = Array.from(document.querySelectorAll('#reportPages .rpt-page[data-section="detailedLibrary"]'));
@@ -370,12 +453,13 @@ const ok = (c, m) => {
       const r = _docxTranslatePages(clones);
       return { images: r.images.length, figs: (r.xml.match(/Figure \d+:/g) || []).length, drawings: (r.xml.match(/<w:drawing>/g) || []).length };
     });
-    ok(word.images === 4 && word.drawings === 4 && word.figs === 4, 'Word translation carries the 4 pictures and 4 captions (images ' + word.images + ', drawings ' + word.drawings + ', captions ' + word.figs + ')');
+    ok(word.images === 5 && word.drawings === 5 && word.figs === 4, 'Word translation carries the 4 figures with captions and the library photo (images ' + word.images + ', drawings ' + word.drawings + ', captions ' + word.figs + ')');
 
     // ---- 8. no folder ----
     await page.evaluate(() => { document.getElementById('reportOverlay').style.display = 'none'; document.getElementById('reportPages').innerHTML = ''; });
     const none = await makeDetailed(false);
     ok(none.sections.indexOf('detailedLibrary') > 0 && none.figs.length === 0 && none.imgInfo.length === 0, 'no picture folder: chapters complete, no figures');
+    ok(none.photos.length === 0, 'item 7: no picture folder: no photo box');
     ok(none.fit.every((f) => f.over <= 1 && f.scrollOver <= 1), 'no picture folder: every page fits');
 
     // ---- 4b. Findings model: one finding per sequence per group (e), counts are units (f), summary = body = Recommended Work (l) ----
@@ -411,13 +495,13 @@ const ok = (c, m) => {
       const sum = [];
       document.querySelectorAll('#reportPages .rpt-page[data-section="detailedSummary"] table tr').forEach((tr) => {
         const c = tr.querySelectorAll('td');
-        const m = c.length === 4 && /^(\d+)\./.exec(c[2].textContent.trim());
+        const m = c.length === 5 && /^(\d+)$/.exec(c[0].textContent.trim());
         if (m) sum.push(+m[1]);
       });
       const body = [];
       let sec = '';
       document.querySelectorAll('#reportPages .rpt-page[data-section="detailedLibrary"] div, #reportPages .rpt-page[data-section="detailedLibrary"] h2, #reportPages .rpt-page[data-section="detailedLibrary"] tr').forEach((el) => {
-        if (el.tagName === 'H2') { sec = /: (.*)$/.exec(el.textContent.trim())[1]; return; }
+        if (el.tagName === 'H2') { sec = /^\d+\.\d+ (.*)$/.exec(el.textContent.trim())[1]; return; }
         if (el.tagName === 'DIV' && sec === 'Findings') {
           const m = /^Finding (\d+):/.exec(el.textContent.trim());
           if (m && el.children.length === 0) body.push(+m[1]);
@@ -591,7 +675,7 @@ const ok = (c, m) => {
     ok(/varies its speed by a speed command \(60\.0%\)/.test(allText(r3.fanCmd.map((s) => s.text))) && /varies the supply fan speed to hold the duct static pressure \(1\.1 in H2O\)/.test(allText(r3.fanCmd.map((s) => s.text))), 'A: with a speed command point the fan is run at variable speed and the speed holds the duct static pressure');
     const fns = r3.fanReading.map((s) => s.fn);
     ok(fns.join(',') === fns.slice().sort((a, b) => ['temp', 'air', 'oa', 'other'].indexOf(a) - ['temp', 'air', 'oa', 'other'].indexOf(b)).join(',') && new Set(fns).size === 4, '6: air handler sentences are grouped by function (temperature, airflow and static, outside air, other): ' + fns.join(','));
-    ok(r3.th.length >= 4 && r3.th.length % 4 === 0 && r3.th.every((x) => x.over <= 1 && x.inside), '3: every Findings Summary header cell holds its text (ATTRIBUTE inside the table): ' + JSON.stringify(r3.th));
+    ok(r3.th.length >= 5 && r3.th.length % 5 === 0 && r3.th.every((x) => x.over <= 1 && x.inside), '3: every Findings Summary header cell holds its text (ATTRIBUTE inside the table): ' + JSON.stringify(r3.th));
     ok(r3.heater === 'sparse' && r3.light === 'light page' && r3.busy === '', '4: figure rule: a sparse graphic (a heater tile) and a light property page are not printed, a graphic with many readouts is: ' + [r3.heater, r3.light, r3.busy].join(' / '));
     ok(r3.trimHalf.w < 700 && r3.trimHalf.w > 500 && r3.trimHalf.h === 660 && r3.trimFull.w === 1200 && r3.trimFull.h === 660 && r3.trimLight.w === 300 && r3.trimLight.h === 200, '4: a dark crop with a wide empty black margin is cut to its content; others are not: ' + JSON.stringify([r3.trimHalf, r3.trimFull, r3.trimLight]));
     ok(r3.keep.join('|') === '900|30+120', '5: a heading goes to the next page together with its first paragraph: ' + r3.keep.join('|'));
@@ -627,18 +711,29 @@ const ok = (c, m) => {
         // last block of the page: a heading is an h2, or a bold line (group heading, In place, Missing against ASHRAE 36)
         const last = Array.from(body.children).filter((e) => e.getBoundingClientRect().height > 0).pop();
         const lastHead = !!last && (last.tagName === 'H2' || (last.tagName === 'DIV' && !last.querySelector('img') && /^(600|700)$/.test(getComputedStyle(last).fontWeight)));
-        return { section: p.getAttribute('data-section'), gap: Math.round(foot.getBoundingClientRect().top - maxBottom), scrollOver: body.scrollHeight - body.clientHeight, lastHead: lastHead, fill: (maxBottom - body.getBoundingClientRect().top) / body.getBoundingClientRect().height };
+        return { section: p.getAttribute('data-section'), libStart: !!body.querySelector('h1'), head: body.textContent.slice(0, 70), tail: body.textContent.slice(-70), gap: Math.round(foot.getBoundingClientRect().top - maxBottom), scrollOver: body.scrollHeight - body.clientHeight, lastHead: lastHead, fill: (maxBottom - body.getBoundingClientRect().top) / body.getBoundingClientRect().height };
       });
       const sp = pages.filter((p) => p.getAttribute('data-section') === 'setpointReview');
-      return { fit: fit, count: pages.length, sections: pages.map((p) => p.getAttribute('data-section')), spPages: sp.length, spHead: sp.length ? sp[0].textContent.indexOf('Appendix B: Setpoint Programming Review') >= 0 : null };
+      const multi = {};
+      ['detailedSummary', 'costEstimate', 'setpointReview', 'pointInventory'].forEach((sec) => {
+        multi[sec] = pages.filter((p) => p.getAttribute('data-section') === sec).map((p) => {
+          const h = p.querySelector('.rpt-body h1');
+          return { title: h ? h.textContent.trim().replace(/\u00a0/g, ' ') : '', th: p.querySelectorAll('.rpt-body table th').length };
+        });
+      });
+      return { multi: multi, fit: fit, count: pages.length, sections: pages.map((p) => p.getAttribute('data-section')), spPages: sp.length, spHead: sp.length ? sp[0].textContent.indexOf('Appendix B: Setpoint Programming Review') >= 0 : null };
     });
     const bigBad = big.fit.filter((f) => f.gap < 0 || f.scrollOver > 1);
     ok(big.count > 40 && bigBad.length === 0, 'large project (' + big.count + ' pages): every page fits above the footer' + (bigBad.length ? ': ' + JSON.stringify(bigBad) : ''));
     console.log('INFO Appendix B pages in the large project: ' + big.spPages);
+    ['detailedSummary', 'costEstimate', 'setpointReview'].forEach((sec) => {
+      const list = big.multi[sec];
+      ok(list.length >= 1 && list.every((x, i) => (list.length === 1 || x.title.indexOf('(' + (i + 1) + ' of ' + list.length + ')') > 0) && x.title.length > 5 && x.th >= 3), 'item 3: the table of ' + sec + ' repeats its title with "(N of M)" and its column headers on every one of its ' + list.length + ' pages (one page: no suffix) (' + list.map((x) => x.title + ' th=' + x.th).join(' / ') + ')');
+    });
     const bigLib = big.fit.filter((f) => f.section === 'detailedLibrary');
     ok(bigLib.length > 10 && bigLib.every((f) => !f.lastHead), 'D7: no chapter page ends with a heading (' + bigLib.length + ' chapter pages)' + JSON.stringify(bigLib.filter((f) => f.lastHead)));
-    const sparse = bigLib.slice(0, -1).filter((f) => f.fill < 0.35);
-    ok(sparse.length === 0, 'D7: no chapter page except the last is less than 35 percent full: ' + bigLib.map((f) => Math.round(f.fill * 100)).join(','));
+    const sparse = bigLib.filter((f, i) => i < bigLib.length - 1 && !bigLib[i + 1].libStart && f.fill < 0.35);
+    ok(sparse.length === 0, 'D7: no chapter page except the last of each library is less than 35 percent full: ' + bigLib.map((f) => Math.round(f.fill * 100)).join(','));
     ok(big.spPages === 0 || big.spHead === true, 'Appendix B, when printed, starts with its heading');
     ok(big.sections.filter((x) => x === 'detailedSummary').length >= 2, 'a long Findings Summary runs over more than one page');
 
@@ -765,6 +860,15 @@ const ok = (c, m) => {
       const narrow = await _a36DetScalePicture(await file(1000, 600));
       out.wideBad = wide && wide.bad;
       out.narrowBad = narrow && narrow.bad;
+      const narrowPage = await _a36DetScalePicture(await file(1000, 600), A36_DET_FIG_MIN_PRINT_SCALE_PAGE);
+      out.narrowPageBad = narrowPage && narrowPage.bad;
+      const headerGap = mk(1200, 700, (g) => {
+        g.fillStyle = '#ddd';
+        for (let yy = 8; yy < 38; yy++) for (let xx = 60; xx < 1140; xx += 40) g.fillRect(xx, yy, 28, 1);
+        g.fillRect(300, 48, 600, 6);
+        for (let yy = 48; yy < 500; yy += 20) g.fillRect(320, yy, 500, 8);
+      });
+      out.cropHeaderGap = _a36DetCropGraphic(1200, 700, headerGap);
       out.figW = A36_DET_FIG_SHOW_W;
       out.figH = A36_DET_FIG_SHOW_H;
       return out;
@@ -772,6 +876,8 @@ const ok = (c, m) => {
     const cr = round4.crop;
     const dr = round4.drawing;
     ok(cr.x <= dr.x && cr.x >= dr.x - 60 && cr.x + cr.w >= dr.x + dr.w && cr.x + cr.w <= dr.x + dr.w + 60 && cr.y <= dr.y && cr.y >= dr.y - 60 && cr.y + cr.h >= dr.y + dr.h && cr.y + cr.h <= dr.y + dr.h + 60, 'item 5: the crop is the drawing plus a margin on all four sides (header strip and edge line left out): ' + JSON.stringify(cr));
+    ok(round4.cropHeaderGap.y >= 38 && round4.cropHeaderGap.y <= 48, 'item 8b: a header strip that ends only 10 rows above the drawing is cut off: ' + JSON.stringify(round4.cropHeaderGap));
+    ok(round4.narrowBad === '' && round4.narrowPageBad === 'too small to read', 'item 8c: a 1000 px wide page prints at 0.62 of its size: kept for a graphic (0.45 limit), left out for a logic or properties page (0.8 limit): ' + round4.narrowBad + ' / ' + round4.narrowPageBad);
     ok(round4.cropNoHeader.y >= 100 - 25 && round4.cropNoHeader.y <= 100 && round4.cropNoHeader.x >= 300 - 40 && round4.cropNoHeader.x <= 300, 'item 5: a graphic with no header strip is cropped to its drawing on all sides: ' + JSON.stringify(round4.cropNoHeader));
     ok(round4.cropLight.w === 300 && round4.cropLight.h === 200, 'item 5: a light page is not cropped');
     ok(round4.rank.join(',') === 'graphic.png,logic.png,props.png', 'item 5: a graphic page ranks before a cited logic or properties page, cited first inside each kind: ' + round4.rank.join(','));
