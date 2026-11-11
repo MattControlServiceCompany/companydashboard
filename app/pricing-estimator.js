@@ -235,52 +235,9 @@ const SEQUENCE_SAVINGS_IMPACT = {
     sourceType: SAVINGS_SOURCE_ENGINEERING,
   },
   demandCtrl: {
-    // 2026-07-22: promoted from 'med-high' to 'high' — DCV is an easy/low-cost install that
-    // gives high-value information (occupancy-driven ventilation data) and should be the
-    // top-priority Recommended-tier measure. See also the DCV-first tiebreak added to
-    // _pricingSortRecommendedRows (below), which guarantees this regardless of weight/cost
-    // score math so DCV always sorts ahead of every other measure, not just ahead of the
-    // med-high bucket.
-    //
-    // 2026-07-27 (Matt, twice in one message): "DCV should be top priority since its an easy
-    // install and gives us good information" / "DCV should be highest priority." This was NOT yet
-    // true for the ROI ranking that actually decides PHASE membership/order
-    // (_pricingEquipRowScore, read by _pricingBuildRoiUnits/_pricingComputeRecommendedTimeline) —
-    // only the Recommended-tier TABLE DISPLAY sort had a DCV-first override. A real Client D vav_dcv
-    // unit measured as low as score 1.25 (weight 2.5 / effectiveCostTier 2, when its CO2 sensor is
-    // still a hardware gap) against ahu_sat_reset/ahu_dsp_reset's 3 — nowhere close to "highest".
-    //
-    // `priorityBonus` (read only by _pricingEquipRowScore, below) expresses WHY DCV outranks
-    // higher-weight measures: it is a flat premium for install ease + diagnostic value, the two
-    // reasons Matt gave — properties the weight/effectiveCostTier ratio alone cannot capture (that
-    // ratio only prices $ savings against $ cost, not "how easy" or "how useful the data is").
-    //
-    // Sizing, REVISED after real-data verification (2026-07-27, same day/branch): the first attempt
-    // used bonus=2, which made DCV's WORST case (weight 2.5 / costTier 2 = 1.25 + 2 = 3.25) exceed
-    // dsp/sat-reset's max (weight 3 / costTier 1 = 3) outright — not merely tied. On real Client D data
-    // this had a second-order effect nobody asked for: because DCV strictly outranked dsp/sat-reset
-    // (no longer TIED with them), the ~750-unit DCV candidate pool no longer competed in the same
-    // tie group _pricingDiversifyTiedUnits round-robins — it simply out-ranked the ~24-unit
-    // dsp/sat-reset pool everywhere, so the Fit-to-Budget greedy prefix (_pricingGreedyPrefix, used
-    // by buildRecommendedRows for tier MEMBERSHIP, not just phase placement) filled the entire
-    // ~$97k Recommended-tier budget with DCV before ever reaching a single dsp/sat-reset unit —
-    // fan-energy optimization (this task's original Bug 2744e688) disappeared from the Recommended
-    // tier ENTIRELY, not just from one phase. That is a worse outcome than the bug being fixed and
-    // directly contradicts the client's own base document ("remaining ventilation and fan
-    // optimization" in Phase 3).
-    //
-    // Fix: bonus=1.75, sized so DCV's WORST case lands at EXACTLY 3.0 — TYING dsp/sat-reset's max,
-    // never exceeding it in the worst case (DCV instances that are cheaper — CO2 sensor already
-    // covered, effectiveCostTier 1 — still score 4.25, genuinely ahead, which is correct: an easy
-    // win should outrank a harder one). Because DCV now ties into the SAME score group as
-    // dsp/sat-reset instead of a strictly-higher one, _pricingDiversifyTiedUnits' round-robin
-    // (extended to _pricingGreedyPrefix too — see that function) applies to DCV alongside them:
-    // DCV is listed first in the round-robin's family order (see _pricingDiversifyTiedUnits),
-    // so it wins every round's first pick — "highest priority" within the tie — but the round-robin
-    // still guarantees dsp/sat-reset get admitted too as rounds continue, rather than being frozen
-    // out entirely. This is the "compose, don't fight" resolution: DCV is preferred at every
-    // opportunity, but a finite, ROI-scored set of other high-tier measures still gets a seat.
-    priorityBonus: 1.75,
+    // 2026-07-22: promoted from 'med-high' to 'high'. DCV ranks by the same ROI score as every
+    // other measure (impact weight per installed dollar). JOCO-16 (Matt 2026-07-29, confirmed
+    // 2026-11-03): no category bonus. If an order looks wrong, fix the ROI math, not the order.
     tier: 'high',
     type: 'savings',
     weight: 2.5,
@@ -296,11 +253,7 @@ const SEQUENCE_SAVINGS_IMPACT = {
     sourceType: SAVINGS_SOURCE_LITERATURE,
   },
   vav_dcv: {
-    // 2026-07-22: promoted from 'med-high' to 'high' — see demandCtrl comment above.
-    // 2026-07-27: priorityBonus — see the full rationale (and the revised 1.75 sizing after
-    // real-data verification) in demandCtrl's comment block above; same reasoning applies
-    // identically at zone level.
-    priorityBonus: 1.75,
+    // 2026-07-22: promoted from 'med-high' to 'high'. No priority bonus (JOCO-16).
     tier: 'high',
     type: 'savings',
     weight: 2.5,
@@ -542,7 +495,7 @@ const SEQUENCE_BLOCKING_SENSORS = {
    vav_dcv (standalone case) or ahu_min_oa, so a unit needing hardware for either sequence always
    claimed hwRows=[] — silently under-costing the unit AND (pre-this-branch) always landing
    _effectiveCostTier=1 at the old building-level gapPointKeys check, which used the SAME
-   mismatched key. Real-data impact: vav_dcv is a `priorityBonus` sequence at the center of this
+   mismatched key. Real-data impact: vav_dcv is the sequence at the center of this
    task's own worked example, so this was corrected as part of making Change 1/2 correct, not as
    an unrelated fix — flagged explicitly rather than silently folded in. Used only for matching a
    hardware row to the blocking-sensor requirement that generated it; does not change
@@ -1539,7 +1492,7 @@ function _a36ImpactChip(row) {
 }
 
 /* ── Two-key sort for Recommended tier (correction #3)
-   Primary:  impact group order (HIGH > MED-HIGH > MED > LOW-MED > enabler > safety)
+   Primary:  impact group order (HIGH > MED-HIGH > MED > LOW-MED > enabler > safety); no category bonus (JOCO-16)
    Secondary: weight / effectiveCostTier (higher weight, lower cost = sort earlier)
    Tertiary:  # instances (qty, desc)
    ─────────────────────────────────────────────────────────────────────────── */
@@ -1547,28 +1500,8 @@ var _SAVINGS_TIER_ORDER = { high: 0, 'med-high': 1, med: 2, 'low-med': 3, enable
 
 function _pricingSortRecommendedRows(rows) {
   return rows.slice().sort(function (a, b) {
-    // 2026-07-28 (fix/roi-no-hardware-first-per-unit) — PRIMARY key, ahead of the DCV tiebreak
-    // below. Matt: "I know I told you to prioritize DCV but we really should be prioritizing
-    // sequences that don't require installing sensors first." This REVISES the 2026-07-22 DCV
-    // promotion immediately below: DCV still wins every tie it's eligible for, but ONLY within
-    // its own hardware-readiness group now — a DCV row that still needs its CO2 sensor installed
-    // (_hwGroup 'gap') must never display ahead of a no-hardware-required row (_hwGroup 'ready')
-    // of any other measure. Reads the SAME rec._hwGroup buildCatalogRows stamps per unit and
-    // _pricingSortUnitsNoHwFirst already uses for MEMBERSHIP ranking (see that function's header
-    // comment) — this is the DISPLAY-order counterpart; the two must never silently disagree.
-    // Missing _hwGroup (only possible on the defensive "no impactDef" fallback path) is treated
-    // as needing hardware (never silently ranked as if it were the easy case).
-    var aHw = a._hwGroup === 'ready' ? 0 : 1;
-    var bHw = b._hwGroup === 'ready' ? 0 : 1;
-    if (aHw !== bHw) return aHw - bHw;
-    // 2026-07-22: DCV promotion — demandCtrl/vav_dcv must sort to the top of its hardware-
-    // readiness group (see primary key above), ahead of every other measure IN THAT GROUP (not
-    // merely ahead of its own tier bucket). An explicit tiebreak here guarantees that outcome
-    // regardless of how the weight/effectiveCostTier score below happens to rank against other
-    // 'high' tier measures (e.g. ahu_dsp_reset/ahu_sat_reset score higher on that formula alone).
-    var aDcv = a.seqKey === 'demandCtrl' || a.seqKey === 'vav_dcv' ? 1 : 0;
-    var bDcv = b.seqKey === 'demandCtrl' || b.seqKey === 'vav_dcv' ? 1 : 0;
-    if (aDcv !== bDcv) return bDcv - aDcv;
+    // JOCO-16 (Matt 2026-07-29): no hardware-readiness key and no DCV key. Tier group, then ROI
+    // score, are the only criteria.
     // Primary: tier group
     var ao = _SAVINGS_TIER_ORDER[a.savingsImpact] != null ? _SAVINGS_TIER_ORDER[a.savingsImpact] : 99;
     var bo = _SAVINGS_TIER_ORDER[b.savingsImpact] != null ? _SAVINGS_TIER_ORDER[b.savingsImpact] : 99;
@@ -2396,6 +2329,11 @@ function _pricingSetRoiOpen(projId, open) {
    for Matt: if some of the excluded units turn out to be VVT terminals rather than local stats, the
    predicate may need a VVT-aware carve-out — not assumed here since no such signal exists in the
    real data today.
+
+   JOCO-11 (Matt 2026-11-03): Full Scope holds every item. Only work already under contract is
+   excluded. Full Scope therefore does NOT apply this predicate: buildFullScopeRows passes
+   { includeMonitoringOnly: true } to buildCatalogRows, and buildOptionalPointRows (Full Scope
+   only) never filters. Compliance and Recommended still apply it (their scope was not changed).
    ─────────────────────────────────────────────────────────────────────────── */
 function _pricingIsMonitoringOnlyZoneUnit(eq) {
   var missing = {};
@@ -2523,7 +2461,8 @@ function _pricingSelectZoneSensorSku(needCO2, features) {
    building-name list here rather than filtering buildCatalogRows' OUTPUT a second way —
    see _a36ScopedCatalogRows in report-engine.js, the one place that does this.
    ─────────────────────────────────────────────────────────────────────────── */
-function buildCatalogRows(projId, buildingNames) {
+function buildCatalogRows(projId, buildingNames, opts) {
+  var includeMonitoringOnly = !!(opts && opts.includeMonitoringOnly);
   if (typeof collectASHRAE36Data !== 'function') return [];
   var ashData = collectASHRAE36Data(projId, null, buildingNames);
   if (!ashData || !ashData.buildings) return [];
@@ -2562,11 +2501,12 @@ function buildCatalogRows(projId, buildingNames) {
   ashData.buildings.forEach(function (bldgData) {
     var bName = bldgData.name;
     // Monitoring-only zone unit exclusion (2026-07-27) — see _pricingIsMonitoringOnlyZoneUnit's
-    // header comment for the full rationale/citation. Filtered ONCE, before any row generation, so
-    // it applies uniformly to hardware gaps, equipment-count labels, AND sequence-programming rows
-    // below (a monitoring-only unit contributes NOTHING to buildCatalogRows' output at all).
+    // header comment. Filtered ONCE, before any row generation, so it applies uniformly to
+    // hardware gaps, equipment-count labels, AND sequence-programming rows below.
+    // JOCO-11 (Matt 2026-11-03): the Full Scope tier passes opts.includeMonitoringOnly and keeps
+    // every unit. Compliance and Recommended keep the exclusion.
     var equipResults = bldgData.equipResults.filter(function (eq) {
-      return !_pricingIsMonitoringOnlyZoneUnit(eq);
+      return includeMonitoringOnly || !_pricingIsMonitoringOnlyZoneUnit(eq);
     });
     // Map: pointKey → { equipType → { count, catLabel, engIds } }
     var hardwareGaps = {}; // pointKey → { equipType, count, catLabel, equipIds }
@@ -2904,10 +2844,9 @@ function buildCatalogRows(projId, buildingNames) {
     // Count non-'na' blocked/partial sequences per key across all equipment in this building
     // Track blocked vs partial breakdown for Qty clarity (FIX 3)
     //
-    // 2026-07-28 (fix/roi-no-hardware-first-per-unit) — per Matt: "we really should be
-    // prioritizing sequences that don't require installing sensors first" (this REVISES the
-    // earlier DCV priority-bonus direction, not the priorityBonus value itself — see
-    // SEQUENCE_SAVINGS_IMPACT.demandCtrl's comment). Root cause this fixes: cost tier used to be
+    // 2026-07-28 (fix/roi-no-hardware-first-per-unit): per-unit cost classification. The 'ready' /
+    // 'gap' split feeds the COST side of the ROI score only (effective cost tier). It is not an
+    // ordering rule (JOCO-16). Root cause this fixes: cost tier used to be
     // decided per BUILDING (see the old buildRecommendedRows comment this replaced) — a building
     // with 25 AHUs on an `ahu_dsp_reset` opportunity, 18 of which already have the duct static
     // pressure sensor and 7 of which don't, scored the ENTIRE 25-unit row at the expensive tier,
@@ -4418,9 +4357,8 @@ function _pricingFindCheapestSku(pointKey, catalog, cfg) {
       enabler/safety/null-impact sequences never form a unit and can never
       appear in Recommended.
    3. Ceiling = _pricingComputeBudgetTotal(budget) when a recurring budget is
-      set — membership is the ranked (2026-07-28: no-hardware-required units
-      first, _pricingEquipRowScore/best ROI-per-dollar as the tie-break within
-      each group — see _pricingSortUnitsNoHwFirst) greedy prefix that fits
+      set — membership is the ranked (JOCO-16: by _pricingEquipRowScore, best ROI-per-dollar first
+      — see _pricingSortUnitsByRoi) greedy prefix that fits
       (_pricingGreedyPrefix, the shipped v631 Fit-to-Budget engine, reused
       verbatim). No budget (or Mode A financing, or an invalid term) →
       membership = HIGH-impact units only (Matt's specified fallback).
@@ -4693,12 +4631,9 @@ function buildOptionalPointRows(projId) {
 
   ashData.buildings.forEach(function (bldgData) {
     var bName = bldgData.name;
-    // Monitoring-only zone unit exclusion (2026-07-27) — same filter/rationale as buildCatalogRows
-    // (see _pricingIsMonitoringOnlyZoneUnit's header comment). Optional (beyond-compliance) points
-    // are no more sellable for a unit with no zone setpoint write path than required ones are.
-    var equipResults = bldgData.equipResults.filter(function (eq) {
-      return !_pricingIsMonitoringOnlyZoneUnit(eq);
-    });
+    // JOCO-11 (Matt 2026-11-03): this function feeds the Full Scope tier only, and Full Scope
+    // holds every item. No monitoring-only exclusion here. An item is never dropped.
+    var equipResults = bldgData.equipResults;
     var optionalGaps = {}; // gKey -> {pointKey, equipType, catLabel, count, mapEntry}
     var oatDeDupDone = false;
     var oaWetBulbDeDupDone = false;
@@ -4910,8 +4845,18 @@ function buildOptionalPointRows(projId) {
    guarantee); Full Scope ⊇ Compliance and ⊇ Recommended's _baseId sets.
    ─────────────────────────────────────────────────────────────────────────── */
 function buildFullScopeRows(projId) {
-  var catRows = buildCatalogRows(projId);
+  // JOCO-11 (Matt 2026-11-03): Full Scope holds every item, including monitoring-only zone units,
+  // each priced like any other unit. The shared toggle key (_baseId) of a row must stay the id of
+  // the matching Compliance/Recommended catalog row, but row ids carry a running index that shifts
+  // when extra units are included. So each full row is matched to its scoped-catalog row by
+  // id minus the trailing index. A row that exists only because of the extra units gets its own
+  // key (ms_ + its id), which cannot collide with a catalog id.
+  var catRows = buildCatalogRows(projId, null, { includeMonitoringOnly: true });
   if (!catRows.length) return [];
+  var scopedIdByKey = {};
+  buildCatalogRows(projId).forEach(function (r) {
+    scopedIdByKey[r.id.replace(/_\d+$/, '')] = r.id;
+  });
 
   var catalog = sget('en_pricing_catalog', null);
   var cfg = _pricingGetConfig();
@@ -4922,7 +4867,7 @@ function buildFullScopeRows(projId) {
   catRows.forEach(function (row) {
     var fs = Object.assign({}, row);
     // Store catalog row id for shared toggle state
-    fs._baseId = row.id;
+    fs._baseId = scopedIdByKey[row.id.replace(/_\d+$/, '')] || 'ms_' + row.id;
     // Re-key the row ID with full-scope prefix
     fs.id = fs.id.replace(/^hw_/, 'fsc_').replace(/^seq_/, 'fsl_');
     fsRows.push(fs);
@@ -5550,20 +5495,12 @@ function _pricingEquipRowScore(row) {
   // score them below any real sequence (whose minimum possible score is 0) so they sink to
   // the bottom of the 'equipment' ranked list rather than the top.
   if (row.phase !== 2) return -1;
-  // 2026-07-27 (Matt: "DCV should be highest priority", stated twice) — priorityBonus is an
-  // explicit, data-driven premium (defined per-measure in SEQUENCE_SAVINGS_IMPACT, not a
-  // hardcoded seqKey check here) added on top of the raw weight/effectiveCostTier ROI ratio. It
-  // expresses factors that ratio cannot: install ease and diagnostic value, for measures where
-  // that is genuinely true (today: DCV only — see demandCtrl's comment block for the full
-  // rationale and the worst-case-still-wins math). A measure with no priorityBonus field behaves
-  // exactly as before (bonus defaults to 0). This is read by every caller of this function —
-  // Recommended-tier Fit-to-Budget membership (_pricingGreedyPrefix via _pricingBuildRoiUnits) AND
-  // the calendar-phase packer (_pricingComputeRecommendedTimeline) — so DCV ranks first in both
-  // "does it make the tier" and "which phase does it land in", not just in table display order.
-  var _impactDef =
-    row.seqKey && typeof SEQUENCE_SAVINGS_IMPACT !== 'undefined' ? SEQUENCE_SAVINGS_IMPACT[row.seqKey] : null;
-  var _priorityBonus = (_impactDef && _impactDef.priorityBonus) || 0;
-  return _priorityBonus + (row._savingsWeight || 0) / Math.max(row._effectiveCostTier || 1, 1);
+  // JOCO-16 (Matt 2026-07-29, confirmed 2026-11-03): rank by client ROI only. JOCO has no dollar
+  // savings data, so the proxy is impact weight per installed dollar (weight / effective cost
+  // tier). No category bonus of any kind: the score depends only on weight and cost. If an order
+  // looks wrong, fix this ROI math. Read by Recommended membership (_pricingGreedyPrefix) and
+  // by the calendar-phase packer (_pricingComputeRecommendedTimeline).
+  return (row._savingsWeight || 0) / Math.max(row._effectiveCostTier || 1, 1);
 }
 
 /* ── Pair phase-1 hardware rows with the phase-2 sequence row they block, within ONE
@@ -5703,81 +5640,21 @@ function _pricingBuildRoiUnits(rows) {
   return units;
 }
 
-/* ── _pricingUnitNeedsHardware(u) / _pricingSortUnitsNoHwFirst(units) ─────────────────────────
-   Change 2 (2026-07-28, fix/roi-no-hardware-first-per-unit) — Matt: "I know I told you to
-   prioritize DCV but we really should be prioritizing sequences that don't require installing
-   sensors first." This REVISES the earlier DCV priority-bonus direction, not the priorityBonus
-   value itself (left at 1.75 — it still correctly orders DCV WITHIN each hardware-readiness
-   group; see SEQUENCE_SAVINGS_IMPACT.demandCtrl's comment).
-
-   Problem the old single-key sort had: _pricingEquipRowScore is priorityBonus + weight /
-   effectiveCostTier. A DCV unit that STILL needs its CO2 sensor (1.75 + 2.5/2 = 3.0) could tie a
-   programming-only duct-static-reset unit (0 + 3/1 = 3.0) — exactly the ordering Matt is
-   rejecting. Tuning the bonus/divisor further to force a particular ordering was explicitly
-   ruled out (plan: "Do NOT implement this by inflating a bonus or tuning a divisor... Make it an
-   explicit two-key sort"). This is that explicit two-key sort: hardware-need is the PRIMARY key
-   (no-hardware-required units always sort before hardware-required units, as a whole group), ROI
-   score (_pricingEquipRowScore, unchanged) is the SECONDARY key within each group.
-
-   Implementation note: the two groups are sorted+diversified INDEPENDENTLY, then concatenated
-   (no-hardware group first) — never re-merged into one score-sorted array. If they were merged
-   and diversified as one list, a same-score tie that happens to straddle the group boundary
-   (e.g. a hardware-needing DCV unit at 3.0 next to a no-hardware duct-static unit also at 3.0)
-   would look like one contiguous tie group to _pricingDiversifyTiedUnits (which only checks
-   score, not hw-need) and its family round-robin could shuffle a hardware-needing unit ahead of
-   a no-hardware one, silently reintroducing the exact ordering this change removes. Splitting
-   first makes that impossible: no unit in the hardware-required group can ever precede any unit
-   in the no-hardware group, regardless of score.
-
-   `u.hwRows` (the _pricingBuildRoiUnits unit shape) is authoritative for "needs hardware" — a
-   'ready'-group seqRow (buildCatalogRows' per-unit split, Change 1) never claims a hardware row
-   (see _pricingPairHwSeq), so hwRows.length > 0 exactly captures "this unit's atomic bundle
-   includes an unclaimed sensor to install". The remapped unit shape used by
-   _pricingComputeRecommendedTimeline (`{rows: [...], score, ...}`, no `hwRows` field) is handled
-   via its `rows` array instead: `rows.some(r => r.phase === 1)` — true for any unit whose bundle
-   contains a hardware row, including the defensive single-row leftover-fold-in units.
-
-   2026-07-29 (fix/pricing-phases-and-sensor-hours) — Matt wants "the best balance", not an
-   absolute rule: the hard partition above (no-hardware group strictly before hardware group,
-   regardless of score) measured out to Phases 1-3 (~2.5 years) being 100% programming-only and
-   60 of 97 hardware units ($530,776.30) deferred purely by the tier wall rather than by score —
-   worst case Courthouse vav_dcv ($236,251.20) pushed two phases later than its score warrants.
-   Replaced with the SAME additive-bonus mechanism _pricingEquipRowScore already uses for DCV's
-   priorityBonus (a flat premium added to the weight/effectiveCostTier ratio, not a hard
-   re-ordering rule) — see PRICING_NO_HW_SCORE_BONUS below. Simulated against real Client D data
-   (Downloads\CompanyHub-localdatafile-20260729.json) at bonus 0.5/1.0/2.0: 0.5 and 1.0 gave the
-   identical result (headroom exists, not a knife edge) — Phases 1-2 stay 100% programming, Phase
-   3 now carries real hardware (7 hardware installs across phases 1-3, was 0) — while 2.0
-   collapsed back to the old hard-wall behavior. Shipping 1.0.
+/* ── _pricingSortUnitsByRoi(units) ───────────────────────────────────────────────────────────
+   JOCO-16 (Matt 2026-07-29, confirmed 2026-11-03): rank by client ROI only. Units sort by their
+   score (_pricingEquipRowScore: impact weight per installed dollar) and nothing else. There is
+   no hardware-readiness rule, no score bonus for programming-only units and no DCV bonus. This
+   removes the earlier no-hardware-first sort and PRICING_NO_HW_SCORE_BONUS. Early phases carry
+   less physical work because of the setup and Audit Report labor reserved in month 1 (see
+   verifyReserve in _pricingComputeRecommendedTimeline). That is a labor-capacity reservation,
+   not an ordering rule. Equal scores are reordered by measure family (round-robin) so that one
+   large family does not starve an equal-scored sibling.
    ─────────────────────────────────────────────────────────────────────────── */
-function _pricingUnitNeedsHardware(u) {
-  if (u.hwRows) return u.hwRows.length > 0;
-  if (u.rows) {
-    return u.rows.some(function (r) {
-      return r.phase === 1;
-    });
-  }
-  return false;
-}
-
-// Flat premium added to a no-hardware unit's score before ranking (see the 2026-07-29 header
-// comment above _pricingUnitNeedsHardware) — same additive-bonus shape as
-// SEQUENCE_SAVINGS_IMPACT.*.priorityBonus, sized from real-data simulation, not a magic number
-// inline so it can be re-tuned in one place.
-var PRICING_NO_HW_SCORE_BONUS = 1.0;
-
-function _pricingUnitEffScore(u) {
-  return u.score + (_pricingUnitNeedsHardware(u) ? 0 : PRICING_NO_HW_SCORE_BONUS);
-}
-
-function _pricingSortUnitsNoHwFirst(units) {
+function _pricingSortUnitsByRoi(units) {
   var sorted = units.slice().sort(function (a, b) {
-    return _pricingUnitEffScore(b) - _pricingUnitEffScore(a);
+    return b.score - a.score;
   });
-  // _pricingDiversifyTiedUnits ties on the SAME effective score (bonus included) so a no-hardware
-  // and a hardware-needing unit only tie-diversify together when their bonused scores genuinely
-  // match, not their raw ones.
-  return _pricingDiversifyTiedUnits(sorted, _pricingUnitEffScore);
+  return _pricingDiversifyTiedUnits(sorted);
 }
 
 /* ── _pricingGreedyPrefix(units, ceiling) ────────────────────────────────────
@@ -5795,18 +5672,15 @@ function _pricingSortUnitsNoHwFirst(units) {
    2026-07-27 (fix/phase-table-diversity-and-grouping): runs the SAME measure-family diversity
    tie-break the calendar-phase packer uses (_pricingDiversifyTiedUnits) before the greedy walk
    below. Without this, a family that ties on score with a much larger candidate pool (e.g. DCV
-   tied with dsp/sat-reset after the 2026-07-27 priorityBonus fix) could still have the greedy
+   tied with dsp/sat-reset) could still have the greedy
    MEMBERSHIP walk (not just phase placement) fill the whole ceiling with the larger pool before
    ever reaching the smaller one — real-data verification found exactly this on Client D before this
    line was added. See _pricingDiversifyTiedUnits' header comment for the full diagnosis.
 
-   2026-07-28 (fix/roi-no-hardware-first-per-unit): sort/diversify replaced with
-   _pricingSortUnitsNoHwFirst — see its header comment. No-hardware units now fill the ceiling
-   before any hardware-needing unit is offered, at every ceiling size (Recommended-tier
-   membership AND any smaller Fit-to-Budget ceiling a caller passes in).
+   JOCO-16 (Matt 2026-07-29): sort/diversify is _pricingSortUnitsByRoi (score only, no category bonus).
    ─────────────────────────────────────────────────────────────────────────── */
 function _pricingGreedyPrefix(units, ceiling) {
-  var sorted = _pricingSortUnitsNoHwFirst(units);
+  var sorted = _pricingSortUnitsByRoi(units);
 
   var running = 0;
   var keepKeys = [];
@@ -5856,28 +5730,12 @@ function _pricingGreedyPrefix(units, ceiling) {
        fit a phase (even offered first) still does not land there; nothing is force-fit by evicting
        better-scoring work.
 
-   2026-07-27 (same day, DCV-priority composability fix): within a tie group, families carrying a
-   SEQUENCE_SAVINGS_IMPACT.priorityBonus (today: demandCtrl/vav_dcv — see those entries' comments)
-   are moved to the FRONT of the round-robin order, so they win every round's first pick — "highest
-   priority" expressed WITHIN the tie, not by strictly outranking the tie into its own bracket
-   (which was tried first and starved every other tied family out of Fit-to-Budget membership
-   entirely — see the priorityBonus sizing note on demandCtrl). A priority family still only gets
-   ONE extra pick per round, same as everyone else — round 2 still reaches every family that has a
-   second instance — so this composes with (does not replace) the round-robin fairness for the
-   remaining tied families. Generalizes automatically: any future measure flagged with
-   priorityBonus gets the same front-of-round-robin treatment, no seqKey-specific branch here.
-
-   2026-07-29 (fix/pricing-phases-and-sensor-hours): takes an optional `scoreFn` accessor so
-   _pricingSortUnitsNoHwFirst can tie-group on its bonused effective score (raw score +
-   PRICING_NO_HW_SCORE_BONUS) instead of the raw `.score` field — defaults to reading `.score`
-   directly, so every other/pre-existing caller is unaffected.
+   JOCO-16 (Matt 2026-07-29): no family goes first. Families are offered in first-seen order.
    ─────────────────────────────────────────────────────────────────────────── */
-function _pricingDiversifyTiedUnits(sortedUnits, scoreFn) {
-  var getScore =
-    scoreFn ||
-    function (u) {
-      return u.score;
-    };
+function _pricingDiversifyTiedUnits(sortedUnits) {
+  var getScore = function (u) {
+    return u.score;
+  };
   var out = [];
   var i = 0;
   while (i < sortedUnits.length) {
@@ -5889,23 +5747,14 @@ function _pricingDiversifyTiedUnits(sortedUnits, scoreFn) {
     } else {
       var byFamily = {};
       var familyOrder = [];
-      var priorityFamilies = [];
       tieGroup.forEach(function (u) {
         var fam = (u.seqRow && u.seqRow.seqKey) || '__none__';
         if (!byFamily[fam]) {
           byFamily[fam] = [];
-          var impactDef = typeof SEQUENCE_SAVINGS_IMPACT !== 'undefined' ? SEQUENCE_SAVINGS_IMPACT[fam] : null;
-          if (impactDef && impactDef.priorityBonus) {
-            priorityFamilies.push(fam);
-          } else {
-            familyOrder.push(fam);
-          }
+          familyOrder.push(fam);
         }
         byFamily[fam].push(u);
       });
-      // Priority families (DCV today) first, in their own relative order, then everyone else in
-      // first-seen order — see the header comment above for why.
-      familyOrder = priorityFamilies.concat(familyOrder);
       var maxLen = 0;
       familyOrder.forEach(function (fam) {
         if (byFamily[fam].length > maxLen) maxLen = byFamily[fam].length;
@@ -7730,8 +7579,7 @@ function _pricingComputeProgramCostModel(projId, phaseCount) {
    happened to be in the first buildings encountered, not the best-return measures in the
    portfolio, directly contradicting that promise.
 
-   New rule: rank every priced row across the WHOLE portfolio (2026-07-28: no-hardware-required
-   units first, then by ROI within each group — see _pricingSortUnitsNoHwFirst), then fill Phase 1
+   New rule: rank every priced row across the WHOLE portfolio (JOCO-16: by ROI score only — see _pricingSortUnitsByRoi), then fill Phase 1
    with the best-ranked measures regardless of building, Phase 2 the next tier, Phase 3 the rest —
    each phase still bounded by its own measures envelope (allowance − that phase's own recurring EM
    labor). Concretely:
@@ -7896,18 +7744,9 @@ function _pricingComputeRecommendedTimeline(projId) {
       total: _pricingComputeTotals([r], estimate, projId).grand || 0,
     });
   });
-  // 2026-07-28 (fix/roi-no-hardware-first-per-unit): no-hardware-first primary key, ROI score
-  // (stable sort, best first) secondary key within each group — see _pricingSortUnitsNoHwFirst's
-  // header comment for the full rationale (this REVISES the pure ROI-score ordering DCV's
-  // priorityBonus previously relied on, per Matt: "we really should be prioritizing sequences
-  // that don't require installing sensors first").
-  // Bug 2744e688 (2026-07-27): measure-family diversity tie-break — reorders ONLY within
-  // exactly-tied score groups so an already-represented family (e.g. 19 tied ahu_sat_reset units)
-  // never crowds an equally-scored sibling family (e.g. 5 tied ahu_dsp_reset/fan-energy units) out
-  // of the phase it would otherwise fit. See _pricingDiversifyTiedUnits' header comment for the
-  // full diagnosis/design. Never changes cross-score ranking; now run separately within each
-  // hardware-readiness group (see _pricingSortUnitsNoHwFirst) so it can never cross that boundary.
-  units = _pricingSortUnitsNoHwFirst(units);
+  // JOCO-16 (Matt 2026-07-29): ROI score only (stable sort, best first). The measure-family
+  // tie-break (Bug 2744e688) reorders only exactly-tied scores; see _pricingDiversifyTiedUnits.
+  units = _pricingSortUnitsByRoi(units);
 
   // phaseUnits (built by _pricingEnsureTimelinePhase above, one entry per generated phase): the
   // UNIT-granularity working set for the greedy walk + repair pass below (kept separate from the
@@ -8396,8 +8235,7 @@ function _pricingComputeRecommendedTimeline(projId) {
  *
  * THIS DOES NOT RE-PRICE OR RE-RANK ANYTHING. It re-runs the SAME two building blocks
  * _pricingComputeRecommendedTimeline itself uses to decide phase membership — _pricingBuildRoiUnits
- * (hardware+sequence bundling) and _pricingSortUnitsNoHwFirst (the no-hardware-first, ROI-score-
- * secondary ordering, PRICING_NO_HW_SCORE_BONUS included, untouched) — over the term's own rows
+ * (hardware+sequence bundling) and _pricingSortUnitsByRoi (ROI score only, JOCO-16) — over the term's own rows
  * only, then bin-packs the SAME greedy first-fit walk _pricingComputeRecommendedTimeline uses for
  * phases (see that function's "Multi-round greedy first-fit walk" section, ~L7480) at MONTH
  * granularity instead of PHASE granularity.
@@ -8488,7 +8326,7 @@ function _pricingComputeTermMonthlyAllocation(projId, termRows, monthCount, mont
       total: _pricingComputeTotals([r], estimate, projId).grand || 0,
     });
   });
-  units = _pricingSortUnitsNoHwFirst(units);
+  units = _pricingSortUnitsByRoi(units);
 
   // envelopes[monthIdx]: the REAL net-of-labor dollar room for NEW measures in that specific
   // calendar month — 2026-08-02 fix (see this function's header comment for the full diagnosis).
@@ -9981,16 +9819,11 @@ initCostEstimateTab = function initCostEstimateTab(projId) {
         if (pairedSeq) {
           _flatItems.push({
             score: _pricingEquipRowScore(pairedSeq),
-            hwGroup: pairedSeq._hwGroup, // 2026-07-28 (fix/roi-no-hardware-first-per-unit)
             html: renderMergedRow(row, pairedSeq, isBothMode, matchedRec, hidden),
           });
         } else {
-          // A standalone (unpaired) hardware row IS the hardware install — always the 'gap'
-          // side regardless of _hwGroup (which this row type never carries; see the fallback
-          // below), same as the merged/lb cases.
           _flatItems.push({
             score: _pricingEquipRowScore(row),
-            hwGroup: 'gap',
             html: renderRow(row, isBothMode, matchedRec, hidden),
           });
         }
@@ -9999,19 +9832,12 @@ initCostEstimateTab = function initCostEstimateTab(projId) {
         if (claimedSeqIds[row.id]) return; // already rendered combined with its paired hw row
         _flatItems.push({
           score: _pricingEquipRowScore(row),
-          hwGroup: row._hwGroup,
           html: renderRow(row, isBothMode, null, hidden),
         });
       });
     });
-    // 2026-07-28 (fix/roi-no-hardware-first-per-unit) — same primary/secondary discipline as
-    // _pricingSortRecommendedRows/_pricingSortUnitsNoHwFirst: no-hardware-required rows first
-    // (hwGroup 'ready'), ROI score as the secondary/tie-break within each group. Missing hwGroup
-    // (standalone hw rows, defensive fallback) treated as needing hardware, never as the easy case.
+    // JOCO-16 (Matt 2026-07-29): ROI score is the only sort key (no hardware-group key).
     _flatItems.sort(function (a, b) {
-      var aHw = a.hwGroup === 'ready' ? 0 : 1;
-      var bHw = b.hwGroup === 'ready' ? 0 : 1;
-      if (aHw !== bHw) return aHw - bHw;
       return b.score - a.score;
     });
     tableBodyHTML = _flatItems

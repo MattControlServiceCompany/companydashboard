@@ -22314,7 +22314,9 @@ function _rptA36PhaseTableDerive(d, opts) {
   //
   // 2026-07-30 (contradiction fix, copy-only): the "if we have money to spare" framing above was
   // written to match Matt's literal 07-29 request, but it implies Phase 1 hardware is a budget
-  // contingency. It never is: the shipped ranking (PRICING_NO_HW_SCORE_BONUS, pricing-estimator.js)
+  // contingency. 2026-11-10 (JOCO-16): PRICING_NO_HW_SCORE_BONUS was REMOVED (ranking is ROI only), so the
+  // claim below that Phase 1 is 100% programming must be re-checked against real data before release.
+  // Historical note: it never was a contingency: the then-shipped ranking (PRICING_NO_HW_SCORE_BONUS)
   // biases no-hardware units ahead of hardware units in the sort, so Phase 1 (the whole term —
   // PRICING_PROPOSAL_TERM_PHASE_COUNT=1) is 100% programming on equipment that already has the
   // sensors it needs, by construction, regardless of budget headroom. Confirmed against real Client D
