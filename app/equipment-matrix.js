@@ -3015,7 +3015,7 @@ function emVerifyTypeByPoints(group) {
   );
   var hasLightingPanelSignal =
     hasPoint(
-      /lighting\s*(group|zone)|\bload\s*\d*\s*(cmd|command|status)\b|\bocc(?:upancy)?\s*sensor\b.*status|lighting.*(occupied|vacant)/,
+      /lighting\s*(group|zone)|\bload\s*\d*(?:-\d+)?\s*(cmd|command|status)\b|lighting panel alarm|exterior photocell|\bocc(?:upancy)?\s*sensor\b.*status|lighting.*(occupied|vacant)/,
     ) ||
     (hasBareLightingOnOff && !hasDamperOrValveSignal);
   if (!hasZoneTemp && !hasSupplyFan && !hasAirFlow && !hasVfdSignal && hasLightingPanelSignal) {
@@ -3865,8 +3865,10 @@ function emLoadMatrix(projId) {
       // Catches DOAS units mis-stored as 'vav' (Client D DOAS-1 bug) and any other
       // case where the equipment name unambiguously overrides the stored category.
       // In-memory only; no storage mutation.
+      var _p0Agrees = false; // name tag and stored category already agree (848ba9b2)
       if (_bcrow && _bcrow.equipName) {
         var _p0Override = emParseEquipBaseName(_bcrow.equipName);
+        _p0Agrees = !!_p0Override && _p0Override === _bcrow.category;
         if (_p0Override && _p0Override !== _bcrow.category) {
           _bcrow.category = _p0Override;
         }
@@ -3894,7 +3896,10 @@ function emLoadMatrix(projId) {
           _bcrow.category === 'ef' ||
           _bcrow.category === 'ac' ||
           _bcrow.category === 'elevator');
-      if (_needsNameSelfHeal) {
+      // 848ba9b2: when an explicit name tag already agrees with the stored category, Pass A must not
+      // override it: "Family Bathroom EF-3 | VAV 1-10" is an exhaust fan (the VAV part is the zone it
+      // serves), but emClassifyEquipType tests the substring "vav" before the EF-n tag.
+      if (_needsNameSelfHeal && !_p0Agrees) {
         // Pass A: name-based reclassify. Stays scoped to this original 7-category gate — this
         // is the "current name looks wrong, try re-deriving it from the equipType string" pass,
         // which only makes sense for the generic/self-heal-eligible categories above. Widening
