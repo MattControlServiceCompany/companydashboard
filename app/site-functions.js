@@ -2507,6 +2507,12 @@ async function siteResetAllMeterTableSettings() {
    site-ui.js delegates to this array and should NOT maintain its own copy.
 */
 var RELEASE_NOTES = [
+  { v: 'v2026.11.12.277', date: '2026-11-12', title: 'Equipment types: lighting panels and exhaust fans; baseline import skips bad files',
+    items: [
+      { type: 'fix', text: 'Equipment Matrix: a lighting panel with only lighting points (load commands, panel alarm, photocell) is now Lighting, also when its name has "Rooftop" in it. Before, it was counted as a rooftop unit and the audit report asked for air handler sequences and parts for it.' },
+      { type: 'fix', text: 'Equipment Matrix: an exhaust fan named like "EF-3 | VAV 1-10" stays an exhaust fan. Before, the name part "VAV" made it a VAV terminal.' },
+      { type: 'fix', text: 'Import baseline (Set Points sheet): when one picked file is empty or is not the sheet, the site imports the good files and names each skipped file. Before, one bad file stopped the whole import.' }
+    ] },
   { v: 'v2026.11.12.276', date: '2026-11-12', title: 'Audit log import: one bad file no longer stops the import',
     items: [
       { type: 'fix', text: 'Import audit log: when you pick several files and one is empty or is not an audit log, the site imports the good files and names each skipped file with the reason. Before, one bad file stopped the whole import.' },
