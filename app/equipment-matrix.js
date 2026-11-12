@@ -3970,6 +3970,13 @@ function emLoadMatrix(projId) {
           }
         }
       }
+
+      // c8e86985 — Pass D: a VRF outdoor / condenser unit is the 'vrf' category (not scored), never a
+      // fan coil unit. Point evidence (rule 9) can re-type its refrigerant points as fcu, so this
+      // runs last. A VRF indoor unit ("Room 3| VRF-03") has no outdoor/condenser word and stays fcu.
+      if (_bcrow && _bcrow.category === 'fcu' && /\bvrf\b[^|]*\b(outdoor|condenser|condensing)\b/i.test(_bcrow.equipName || _bcrow.equipType || '')) {
+        _bcrow.category = 'vrf';
+      }
     }
     // Step 4B — hwp stale-row shim: reclassify stored 'hwp' rows that are actually
     //   furnaces, unit heaters, or plumbing pumps.  The generic /pump/i keyword in
@@ -21713,6 +21720,89 @@ function emGetColKeyForCategoryKey(categoryKey, equipType) {
      totalMatched:   number
      totalNA:        number
    }                                                                      */
+/* ── Single-zone air unit rules (A36-3, Matt 2026-11-12; item c8e86985) ─────────
+   ONE place for "which sequences and required points apply to a single-zone ahu/rtu".
+   emComputeCompliance (required points), emComputeSequenceReadiness (sequences) and,
+   through them, the priced catalog all read this table. A multi-zone unit (subtype vav,
+   mtz or unset) is never touched.
+     seqParts   sequence key -> point categories that show the unit has the part. The
+                sequence is 'na' unless one is present. An empty list = never applies.
+     partPoints required point category -> point categories that show the part. The point
+                is 'na' unless one is present.
+     naPoints   required point categories that never apply to a single-zone unit.
+     stageValves coil valve category -> which stage points replace it.
+   SAT reset is not listed: it applies to every air-source unit.                      */
+var EM_SZ_AIR_UNIT_RULES = {
+  seqParts: {
+    ahu_dsp_reset: [],
+    ahu_economizer: ['oaDampCmd'],
+    ahu_min_oa: ['oaDampCmd'],
+    ahu_freeze_prot: ['freezeStat', 'mat'],
+    demandCtrl: ['oaDampCmd', 'co2'],
+  },
+  partPoints: {
+    oaDampCmd: ['oaDampCmd'],
+    raDampCmd: ['oaDampCmd'],
+    co2: ['oaDampCmd', 'co2'],
+    mat: ['oaDampCmd', 'freezeStat', 'mat'],
+    freezeStat: ['freezeStat', 'mat'],
+  },
+  naPoints: { dsp: true },
+  stageValves: { clgValve: 'cool', htgValve: 'heat' },
+  stagePatterns: {
+    cool: [/\b(cool(ing)?|clg)\s*stage\s*\d/i, /\bstage\s*\d+\s*(cool(ing)?|clg)\b/i],
+    heat: [/\b(heat(ing)?|htg)\s*stage\s*\d/i, /\bstage\s*\d+\s*(heat(ing)?|htg)\b/i],
+  },
+};
+
+function emIsSingleZoneAirUnit(equipRow) {
+  return !!(equipRow && (equipRow.category === 'ahu' || equipRow.category === 'rtu') && equipRow.subtype === 'sz');
+}
+
+// Why a required point category is not applicable on this single-zone unit, or '' when it applies.
+// coveredKeys: map of point category key -> truthy for the unit's matched points.
+// stages: { cool: bool, heat: bool } from the unit's point names.
+function emSingleZonePointNaReason(catKey, coveredKeys, stages) {
+  var R = EM_SZ_AIR_UNIT_RULES;
+  if (R.naPoints[catKey]) return 'single-zone unit';
+  if (R.stageValves[catKey]) {
+    // A valve point the unit already has stays counted; only a missing one is not required.
+    if (coveredKeys[catKey]) return '';
+    return stages && stages[R.stageValves[catKey]] ? 'single-zone unit with stage points' : '';
+  }
+  var parts = R.partPoints[catKey];
+  if (parts) {
+    for (var i = 0; i < parts.length; i++) if (coveredKeys[parts[i]]) return '';
+    return 'single-zone unit without this part';
+  }
+  return '';
+}
+
+// Is the sequence applicable on this single-zone unit? coveredKeys as above.
+function emSingleZoneSequenceApplies(seqKey, coveredKeys) {
+  var parts = EM_SZ_AIR_UNIT_RULES.seqParts[seqKey];
+  if (!parts) return true;
+  for (var i = 0; i < parts.length; i++) if (coveredKeys[parts[i]]) return true;
+  return false;
+}
+
+function emSingleZoneStagePoints(pointNames) {
+  var out = { cool: false, heat: false };
+  var pats = EM_SZ_AIR_UNIT_RULES.stagePatterns;
+  for (var i = 0; i < pointNames.length; i++) {
+    for (var kind in pats) {
+      if (out[kind]) continue;
+      for (var pi = 0; pi < pats[kind].length; pi++) {
+        if (pats[kind][pi].test(pointNames[i])) {
+          out[kind] = true;
+          break;
+        }
+      }
+    }
+  }
+  return out;
+}
+
 function emComputeCompliance(equipRow, configFlags, customMappings) {
   // ── Module-level cache (keyed by row.id) ──
   // Bypass cache entirely when customMappings is provided: different call sites pass
@@ -21830,6 +21920,8 @@ function emComputeCompliance(equipRow, configFlags, customMappings) {
   var totalNA = 0;
   var totalMatched = 0;
 
+  var _szUnit = emIsSingleZoneAirUnit(equipRow);
+  var _szStages = _szUnit ? emSingleZoneStagePoints(rawNames) : null;
   for (var di = 0; di < catDefs.length; di++) {
     var def = catDefs[di];
     if (!def.required) continue; // Only count required points toward coverage
@@ -21842,6 +21934,17 @@ function emComputeCompliance(equipRow, configFlags, customMappings) {
       naPoints.push({ categoryKey: def.key, categoryLabel: def.label, reason: 'single combined setpoint' });
       totalNA++;
       continue;
+    }
+
+    // A36-3: single-zone ahu/rtu — points for parts the unit does not show are not applicable.
+    // An explicit per-unit config flag still wins (handled by the configFlag branch below).
+    if (_szUnit && !(def.configFlag && def.configFlag in flags)) {
+      var _szReason = emSingleZonePointNaReason(def.key, coveredKeys, _szStages);
+      if (_szReason) {
+        naPoints.push({ categoryKey: def.key, categoryLabel: def.label, reason: _szReason, source: 'singleZone' });
+        totalNA++;
+        continue;
+      }
     }
 
     // Check if this category is N/A due to a config flag being false
@@ -22967,6 +23070,20 @@ function emComputeSequenceReadiness(equipRow, complianceData) {
         presentCats: [],
         missingCats: seq.requiredCats.slice(),
         keyCatsMissing: false,
+      };
+      continue;
+    }
+
+    // A36-3: single-zone ahu/rtu — a sequence whose parts the unit does not show is N/A.
+    if (emIsSingleZoneAirUnit(equipRow) && !emSingleZoneSequenceApplies(seq.key, coveredSet)) {
+      result[seq.key] = {
+        status: 'na',
+        label: seq.label,
+        ashrae36: seq.ashrae36,
+        presentCats: [],
+        missingCats: seq.requiredCats.slice(),
+        keyCatsMissing: false,
+        singleZoneNA: true,
       };
       continue;
     }
