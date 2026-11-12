@@ -69,13 +69,13 @@ eq(r.changes.map((c) => c.what), ['New action'], 'first look opens the action');
 eq(r.stored.actions[G1].status, 'open', 'status open');
 // the lines of one period say where the change goes and what the group has now; the copy note says how old the data is
 const gs = { 'Test Alpha Hall|Gyms': { building: 'Test Alpha Hall', group: 'Gyms', members: ['Area 1 / AHU-1 - Gym'], schedules: [
-  { description: 'Open Gym', days: 'Mon, Wed', start: '4:00 PM', end: '6:00 PM', mode: 'Occupied' },
-  { description: 'stagger', days: 'No days', start: 'not opened', end: 'not opened', mode: 'not opened' },
+  { name: 'Open Gym', priority: 'Normal', type: 'weekly', days: ['Mon', 'Wed'], dates: [], from: '', to: '', recur: null, periods: [{ mode: 'occ', from: 960, to: 1080 }] },
+  { name: 'stagger', priority: 'Normal', type: 'weekly', days: [], dates: [], from: '', to: '', recur: null, periods: [{ mode: 'occ', from: 360, to: 900 }] },
 ] } };
 const pn = SA.periodNeeds(o(1080, { groups: gs, from: '2026-10-30', to: '2026-10-31' }));
 eq(pn.length, 1, 'period list: one line');
 eq(pn[0].where, 'Test Alpha Hall / Area 1 / AHU-1 - Gym', 'line says building / area / program');
-eq(pn[0].groupNow, 'Open Gym Mon, Wed 4:00 PM - 6:00 PM', 'line shows the group schedules now, unread entries left out');
+eq(pn[0].groupNow, 'Open Gym, Mon,Wed, 4:00 PM-6:00 PM; stagger, No days selected (not active), 6:00 AM-3:00 PM', 'line shows the group schedules now, a schedule with no day as not active');
 // one group, two units (as in the real data: an auditorium unit in the gym group): the line names every unit its events use
 const gs3 = { 'Test Alpha Hall|Gyms': { building: 'Test Alpha Hall', group: 'Gyms', schedules: [], members: ['Area 1 / AHU-1 - Gym', 'Area 1 / AHU-3 Stage'] } };
 const rows3 = Object.assign(mkRows(1080), { [L + '|AHU-3 Stage']: occ(300, 1080) });
@@ -87,7 +87,7 @@ eq(pn3.length, 1, 'two units of one group, same time: one line');
 eq(pn3[0].where, 'Test Alpha Hall / Area 1 / AHU-1 - Gym; Test Alpha Hall / Area 1 / AHU-3 Stage', 'line names both units, not only the first');
 // a group whose saved building name differs from the BAS location name (as in the real data: 'Test Alpha' and 'Test Alpha Hall ') still shows its schedules
 const gs2 = { 'Test Alpha|Gyms': { building: 'Test Alpha', group: 'Gyms', members: ['Area 1 / AHU-1 - Gym'], schedules: gs['Test Alpha Hall|Gyms'].schedules } };
-eq(SA.periodNeeds(o(1080, { groups: gs2, from: '2026-10-30', to: '2026-10-31' }))[0].groupNow, 'Open Gym Mon, Wed 4:00 PM - 6:00 PM', 'group schedules found although the building names differ');
+eq(SA.periodNeeds(o(1080, { groups: gs2, from: '2026-10-30', to: '2026-10-31' }))[0].groupNow, 'Open Gym, Mon,Wed, 4:00 PM-6:00 PM; stagger, No days selected (not active), 6:00 AM-3:00 PM', 'group schedules found although the building names differ');
 eq(SA.periodNeeds(o(1080, { from: '2026-10-30', to: '2026-10-31' }))[0].groupNow, '', 'no group schedules saved: empty text');
 eq(
   SA.copyNote({ snapFetchedAt: '2026-10-23T15:00:00Z', snaps: mkSnaps(1080, ''), tz: TZ, today: '2026-10-30' }),

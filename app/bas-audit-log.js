@@ -325,7 +325,7 @@
   // The part of an event the history uses, or null (alarm acknowledgements and all other rows are not stored).
   function compact(e) {
     var m = e.desc.match(/^(Add|Update|Delete) schedule\b/);
-    if (m && isRoot(e.loc)) {
+    if (m) {
       var keep = e.details.split('\n').filter(function (ln) { return KEEP_LINE.test(ln); });
       return { iso: e.iso, kind: m[1].charAt(0), loc: e.loc, text: keep.join('\n'), oh: opHash(e.op) };
     }

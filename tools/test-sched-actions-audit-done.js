@@ -27,7 +27,9 @@ const occ = (a, b) => [[0, a, 'unocc'], [a, b, 'occ'], [b, 0, 'unocc']];
 const snaps = { '2026-10-29': { importedAt: '2026-11-03T19:00:00Z', rows: { [KEY]: occ(300, 1080) } } }; // Thu 5:00 AM - 6:00 PM
 const at = (ymd, h) => new Date(ymd + 'T' + String(h).padStart(2, '0') + ':00:00-06:00').toISOString();
 const map = { spaces: { 'test gym': { space: 'Test Gym', programs: [KEY], confirmed: true } } };
-const weekly = (days, start, end) => ({ description: 'Test Evening', type: 'Weekly', days, mode: 'Occupied', start, end, dates: '', priority: 'Normal', note: '' });
+const mins = (t) => { const m = t.match(/(\d+):(\d+) (AM|PM)/); return (+m[1] % 12) * 60 + +m[2] + (m[3] === 'PM' ? 720 : 0); };
+const DAYN = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri'];
+const weekly = (days, start, end) => ({ name: 'Test Evening', priority: 'Normal', type: 'weekly', days: days === 'Mon-Fri' ? DAYN.slice() : days.split(/\s*,\s*/), dates: [], from: '', to: '', recur: null, periods: [{ mode: 'occ', from: mins(start), to: mins(end) }] });
 const groupWith = (schedules) => ({ 'Test School|Test Group': { building: 'Test School', group: 'Test Group', schedules, members: ['Gym / ' + PROGRAM] } });
 const wedEvent = { wed: ['Test Game - Test Gym', at('2026-11-11', 18), at('2026-11-11', 20), 0, ''] }; // Wed 6-8 PM
 const thuEvent = { thu: ['Test Game - Test Gym', at('2026-11-12', 18), at('2026-11-12', 20), 0, ''] }; // Thu 6-8 PM
@@ -53,8 +55,17 @@ eq(SA.computeActions(input(wedEvent, groupWith([weekly('Mon, Tue, Wed', '4:00 PM
 eq(SA.computeActions(input(thuEvent, groupWith([weekly('Mon, Tue, Wed', '4:00 PM', '10:00 PM')]))).length, 1, 'B: the same group schedule does not cover Thursday');
 eq(SA.computeActions(input(wedEvent, groupWith([weekly('Mon, Tue, Wed', '4:00 PM', '7:00 PM')]))).map((a) => a.spanText), ['7:00 PM - 8:00 PM'], 'B: a group schedule that ends at 7 PM leaves only 7-8 PM to add');
 eq(SA.computeActions(input(wedEvent, groupWith([weekly('Mon-Fri', '4:00 PM', '10:00 PM')]))), [], 'B: a Mon-Fri group schedule covers Wednesday');
-const notWeekly = Object.assign(weekly('Mon, Tue, Wed', '4:00 PM', '10:00 PM'), { type: 'Dated Weekly' });
-eq(SA.computeActions(input(wedEvent, groupWith([notWeekly]))).length, 1, 'B: only Weekly group schedules count');
+const noDays = Object.assign(weekly('Mon', '4:00 PM', '10:00 PM'), { days: [] });
+eq(SA.computeActions(input(wedEvent, groupWith([noDays]))).length, 1, 'B: a schedule with no day selected is not active and never covers');
+const unocc = Object.assign(weekly('Mon, Tue, Wed', '4:00 PM', '10:00 PM'), { periods: [{ mode: 'unocc', from: 960, to: 1320 }] });
+eq(SA.computeActions(input(wedEvent, groupWith([unocc]))).length, 1, 'B: unoccupied periods never count as coverage');
+const onDate = Object.assign(weekly('Mon', '4:00 PM', '10:00 PM'), { type: 'date', days: [], dates: ['2026-11-11'] });
+eq(SA.computeActions(input(wedEvent, groupWith([onDate]))), [], 'B: a schedule on that date covers the event');
+eq(SA.computeActions(input(thuEvent, groupWith([onDate]))).length, 1, 'B: a schedule on another date does not');
+const inRange = Object.assign(weekly('Wed', '4:00 PM', '10:00 PM'), { type: 'range', from: '2026-11-01', to: '2026-11-30' });
+eq(SA.computeActions(input(wedEvent, groupWith([inRange]))), [], 'B: a date-range schedule with the weekday covers it');
+eq(SA.computeActions(input(wedEvent, groupWith([Object.assign({}, inRange, { to: '2026-11-10' })]))).length, 1, 'B: a date-range schedule that ended does not');
+eq(SA.computeActions(input(wedEvent, groupWith([Object.assign({}, inRange, { days: [] })]))), [], 'B: a date-range schedule with no weekday runs every day of the range, so it covers');
 const eventCover = BC.eventCoverage(wedEvent.wed, { tz: TZ, map, snaps, groups: groupWith([weekly('Mon, Tue, Wed', '4:00 PM', '10:00 PM')]) });
 eq(eventCover.status, 'covered', 'B: eventCoverage itself says covered (the events table uses the same function)');
 

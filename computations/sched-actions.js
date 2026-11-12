@@ -42,17 +42,12 @@
     return g ? g.group : '';
   }
 
-  // The schedules saved for one scheduling group, as plain text ('' when none was read): 'LRC Volleyball Games Mon, Tue, Wed 4:00 PM - 10:00 PM'.
-  // Entries the import could not read ('not opened') are left out.
+  // The schedules saved for one scheduling group, as plain text ('' when none was read): 'LRC Volleyball Games, Mon,Tue,Wed,Thu, 4:00 PM-10:00 PM'.
+  // The text is BasDiff.scheduleText (the one writer); a schedule with no day selected reads 'No days selected (not active)'.
   function groupScheduleText(groups, key) {
     var g = groupEntryFor(groups, key);
     if (!g) return '';
-    return (g.schedules || [])
-      .filter(function (x) { return x.start && x.start !== 'not opened' && x.start !== 'unreadable' && x.end !== 'unreadable'; })
-      .map(function (x) {
-        return (x.description ? x.description + ' ' : '') + (x.days || '') + ' ' + x.start + ' - ' + x.end + (x.mode && x.mode !== 'Occupied' ? ' (' + x.mode + ')' : '');
-      })
-      .join('; ');
+    return (g.schedules || []).map(BD.scheduleText).join('; ');
   }
   // 'Middle School / Area C / Gym East AHU-4 RF-14': where in WebCTRL a program lives.
   function whereText(key) {
@@ -117,14 +112,26 @@
     return t.length > 3 ? t.slice(0, 3).join(', ') + ' and ' + (t.length - 3) + ' more' : and(t);
   }
   // A schedule edit in the imported WebCTRL audit log (BasAuditLog.changeList rows with a block, o.scheduleEdits) made AFTER the BAS copy
-  // the check used (c.from) that spans every uncovered stretch of the event on its weekday, in the same building. The log names the
-  // building, not the group, so this says "added in WebCTRL", not "covered". Set point rows have no block and never count.
+  // the check used (c.from) on the event's weekday, at the event's program location or one of its parent areas (a path prefix; a
+  // building-level edit counts for every program of the building, a room-level edit only for programs in that room), with hours that
+  // overlap an uncovered stretch. The edits together must span every uncovered stretch. The log names the location, not the group,
+  // so this says "added in WebCTRL", not "covered". Set point rows have no block and never count.
   // Returns the newest such edit { ymd, operator } or null.
   function webctrlEditFor(edits, c, date) {
     var weekday = dayText(date).split(' ')[0];
     var building = norm(BD.keyBuilding(c.program));
+    var area = norm(BD.areaOf(BD.splitKey(c.program).location));
+    var atLocation = function (e) {
+      var ea = norm(e.area);
+      return !ea || area === ea || area.indexOf(ea + ' / ') === 0;
+    };
+    var overlaps = function (e) {
+      return e.block.iv.some(function (x) {
+        return c.gaps.some(function (g) { return x[0] < g[1] && x[1] > g[0]; });
+      });
+    };
     var hits = (edits || []).filter(function (e) {
-      return e.block && e.ymd > c.from && norm(e.building) === building && e.block.days.indexOf(weekday) !== -1;
+      return e.block && e.ymd > c.from && norm(e.building) === building && e.block.days.indexOf(weekday) !== -1 && atLocation(e) && overlaps(e);
     });
     if (!hits.length || !c.gaps.length) return null;
     var occupied = [];
@@ -196,6 +203,7 @@
           short: ds.reduce(function (n, d) { return n + d.short; }, 0),
           group: u.group,
           unit: u.group || names.join(', '),
+          spans: spans,
           spanText: spansText(spans),
           titleText: titlesText(events.map(function (e) { return e.title; })),
           text:
@@ -208,6 +216,68 @@
     return out.sort(function (a, b) {
       return a.date < b.date ? 1 : a.date > b.date ? -1 : a.id < b.id ? 1 : -1;
     });
+  }
+
+  // 'WebCTRL ends 7:30 PM, event ends 8:30 PM: 1 hour short'. The stretches of the event [from,to] that the occupied blocks of ONE schedule leave out.
+  function durText(min) {
+    var h = Math.floor(min / 60);
+    var m = min % 60;
+    return [h ? h + (h === 1 ? ' hour' : ' hours') : '', m ? m + (m === 1 ? ' minute' : ' minutes') : ''].filter(Boolean).join(' ');
+  }
+  function shortText(blocks, from, to) {
+    return BC.gapsOf(blocks, from, to)
+      .map(function (g) {
+        var len = durText(g[1] - g[0]) + ' short';
+        var end = BD.clock(g[1] >= 1440 ? 0 : g[1]);
+        if (g[0] <= from && g[1] >= to) return 'WebCTRL has no time during the event: ' + len;
+        if (g[1] >= to) return 'WebCTRL ends ' + BD.clock(g[0]) + ', event ends ' + BD.clock(to >= 1440 ? 0 : to) + ': ' + len;
+        if (g[0] <= from) return 'WebCTRL starts ' + end + ', event starts ' + BD.clock(from) + ': ' + len;
+        return 'WebCTRL has no time ' + BD.clock(g[0]) + '-' + end + ': ' + len;
+      })
+      .join('; ');
+  }
+  // For each event of an action line that is named like a WebCTRL schedule: the words the card shows.
+  // -> [{ title, text }]  text = 'In WebCTRL: <name>, <days>, <hours>' + ' (<difference>)'. A schedule that does not run on the event date says so.
+  function namedMatches(o, a, from, to) {
+    var ctx = { tz: o.tz, map: o.map, snaps: o.snaps, groups: o.groups };
+    var seen = {};
+    var out = [];
+    a.eventIds.forEach(function (id) {
+      var row = (o.events || {})[id];
+      if (!row) return;
+      var date = CD.calendarDay(row[1], o.tz);
+      if (date < from || date > to) return;
+      var c = BC.eventCoverage(row, ctx);
+      var m = BC.webctrlMatch(o.groups, o.locations, row[0], date, c.program ? BD.keyBuilding(c.program) : '');
+      if (!m) return;
+      var text = 'In WebCTRL: ' + m.name + ', ' + m.when + ', ' + m.hours;
+      if (!m.applies) text += ' (not active on ' + BD.dateText(date) + ')';
+      else {
+        var d = shortText(m.blocks, c.fromMin, c.toMin);
+        text += d ? ' (' + d + ')' : ' (covers the event time)';
+      }
+      if (!seen[row[0] + '|' + text]) {
+        seen[row[0] + '|' + text] = 1;
+        out.push({ title: row[0], text: text });
+      }
+    });
+    return out;
+  }
+
+  // A schedule of the event's scheduling group that is saved but has no day selected (not active) and whose occupied periods span every
+  // uncovered stretch: turning it on is easier than a new schedule. Returns { name, days:'Wed,Thu' } or null. dates = the dates of the line.
+  function activateOption(o, a, dates) {
+    var g = BC.groupEntryFor(o.groups, a.program);
+    if (!g) return null;
+    var hit = (g.schedules || []).filter(function (s) {
+      if (BD.scheduleActive(s) || s.type === 'date' || s.type === 'recurring') return false;
+      var occ = (s.periods || []).filter(function (p) { return p.mode === 'occ'; }).map(function (p) { return [p.from, p.to, 'occ']; });
+      return occ.length && a.spans.every(function (sp) { return BC.minutesShort(occ, sp[0], sp[1]) === 0; });
+    })[0];
+    if (!hit) return null;
+    var days = uniq(dates.map(function (d) { return BD.weekdayOf(d); }));
+    days.sort(function (x, y) { return WD_ORDER.indexOf(x) - WD_ORDER.indexOf(y); });
+    return { name: hit.name, group: g.group, days: days.join(',') };
   }
 
   // --- the needs of one shown period ----------------------------------------------------------
@@ -235,7 +305,8 @@
   // The lines of "What needs to change" for the period [o.from, o.to]. An action is listed when at least one of its dates is in
   // the period, so a one-time need in December is not listed in a November week. A weekly pattern is one line (one repeating
   // schedule to add to the scheduling group), whatever part of it falls in the period.
-  // o = computeActions input + { from, to }. -> [{ id, change, dates, forText, unit, inBas, where, groupNow, repeats, action }]
+  // o = computeActions input (+ locations: the location schedules of en_bas_groups) + { from, to }. -> [{ id, change, dates, forText, unit, inBas, where, groupNow, named, repeats, action }]
+  //   named = [{ title, text }]: the events named like a WebCTRL schedule, with 'In WebCTRL: ...' and the time difference.
   //   where = the place of every BAS program the line's events use (building / area / program; '; ' between them); groupNow = the schedules saved for its scheduling group.
   function periodNeeds(o) {
     var out = [];
@@ -255,9 +326,11 @@
       if (snap) {
         inBas = BD.blocksText(snap.rows[a.program]) + '. Source: ' + BC.sourceText(snap);
       }
+      var act = activateOption(o, a, inP);
       out.push({
         id: a.id,
-        change: 'Add ' + a.spanText + (a.group ? ' to group ' + a.group : ' to ' + a.unit),
+        activate: act,
+        change: act ? 'Activate ' + act.name + ' in ' + act.group + ' (select ' + act.days + ')' : 'Add ' + a.spanText + (a.group ? ' to group ' + a.group : ' to ' + a.unit),
         dates: parts.join('. '),
         repeats: repIn,
         webctrl: a.webctrl,
@@ -266,16 +339,123 @@
         inBas: inBas,
         where: uniq(a.programs.map(whereText)).join('; '),
         groupNow: groupScheduleText(o.groups, a.program),
+        named: namedMatches(o, a, o.from, o.to),
         action: a,
       });
     });
     return out.sort(function (a, b) { return a.action.start < b.action.start ? -1 : a.action.start > b.action.start ? 1 : a.id < b.id ? -1 : 1; });
   }
+  // --- opportunities: covered events whose own schedule is longer than the event -------------------
+  // Matt 2026-11-12: tell the user when a new schedule could fit better, but do not force it when the event is already covered.
+  // Only the event's OWN WebCTRL schedule counts (BC.webctrlMatch: equal name, or a 3-word-or-longer schedule name that starts the title).
+  // A schedule of the group made for another event runs anyway, so splitting it would save nothing.
+  // The schedule runs OPP_MIN minutes or more before the event start or after its end on that date. Time that another calendar event in
+  // the same BAS program uses that day does not count. One line per schedule; dates join by weekday. 'a week' is said only when
+  // the event repeats weekly: the same title on the same weekday on 2 or more dates within 5 weeks.
+  var OPP_MIN = 30;
+  var REPEAT_DAYS = 35;
+  function hoursText(min) {
+    return String(Math.round(min / 6) / 10);
+  }
+  // o = computeActions input + { from, to }. -> [{ id, title, schedule, hours, weekly, dates, text }] by title.
+  function periodOpportunities(o) {
+    var ctx = { tz: o.tz, map: o.map, snaps: o.snaps, groups: o.groups, effectCache: {} };
+    // Only events within REPEAT_DAYS of the shown period matter: repeats() and used() never look farther.
+    var lo = CD.addDays(o.from, -REPEAT_DAYS);
+    var hi = CD.addDays(o.to, REPEAT_DAYS);
+    var info = {};
+    Object.keys(o.events || {}).forEach(function (id) {
+      var row = o.events[id];
+      if (!row || !row[1]) return;
+      var date = CD.calendarDay(row[1], o.tz);
+      if (date < lo || date > hi) return;
+      var c = BC.eventCoverage(row, ctx);
+      info[id] = { id: id, row: row, date: date, c: c, name: BC.normName(row[0]) };
+    });
+    var ids = Object.keys(info);
+    var repeats = function (e) {
+      var lo = CD.addDays(e.date, -REPEAT_DAYS);
+      var hi = CD.addDays(e.date, REPEAT_DAYS);
+      return ids.some(function (k) {
+        var x = info[k];
+        return x !== e && x.name === e.name && x.date !== e.date && x.date >= lo && x.date <= hi && BD.weekdayOf(x.date) === BD.weekdayOf(e.date);
+      });
+    };
+    // Does another event of the same date and BAS program overlap [a, b)?
+    var used = function (e, a, b) {
+      return ids.some(function (k) {
+        var x = info[k];
+        if (x === e || x.date !== e.date || !x.c.keys.length) return false;
+        if (!x.c.keys.some(function (key) { return e.c.keys.indexOf(key) !== -1; })) return false;
+        return x.c.fromMin < b && x.c.toMin > a;
+      });
+    };
+    var bySched = {};
+    ids.forEach(function (id) {
+      var e = info[id];
+      var c = e.c;
+      if (e.date < o.today || e.date < o.from || e.date > o.to || c.status !== 'covered') return;
+      var m = BC.webctrlMatch(o.groups, o.locations, e.row[0], e.date, c.keys.length ? BD.keyBuilding(c.keys[0]) : '');
+      if (!m) return;
+      var block = m.blocks.filter(function (b) { return b[0] <= c.fromMin && b[1] >= c.toMin; })[0];
+      if (!block) return;
+      var before = c.fromMin - block[0];
+      var after = block[1] - c.toMin;
+      if (before < OPP_MIN || used(e, block[0], c.fromMin)) before = 0;
+      if (after < OPP_MIN || used(e, c.toMin, block[1])) after = 0;
+      var extra = before + after;
+      if (!extra) return;
+      var k = m.schedule.name + '|' + BD.scheduleText(m.schedule);
+      var u = (bySched[k] = bySched[k] || { schedule: m.schedule, titles: [], days: {} });
+      u.titles.push(e.row[0]);
+      var wd = BD.weekdayOf(e.date);
+      var d = u.days[wd];
+      var weekly = repeats(e);
+      if (!d || extra < d.extra) u.days[wd] = { wd: wd, extra: extra, before: before, after: after, from: c.fromMin, to: c.toMin, bStart: block[0], bEnd: block[1], dates: [e.date], weekly: weekly };
+      else d.dates.push(e.date);
+    });
+    var clk = function (m) { return BD.clock(m >= 1440 ? 0 : m); };
+    var out = [];
+    Object.keys(bySched).forEach(function (k) {
+      var u = bySched[k];
+      var days = Object.keys(u.days).map(function (w) { return u.days[w]; }).sort(function (a, b) { return WD_ORDER.indexOf(a.wd) - WD_ORDER.indexOf(b.wd); });
+      var groups = [];
+      days.forEach(function (d) {
+        var key = [d.extra, d.from, d.to, d.bStart, d.bEnd].join('|');
+        var g = groups.filter(function (x) { return x.key === key; })[0];
+        if (g) g.wds.push(d.wd);
+        else groups.push({ key: key, wds: [d.wd], d: d });
+      });
+      var total = days.reduce(function (n, d) { return n + d.extra; }, 0);
+      var weekly = days.every(function (d) { return d.weekly; });
+      var runs = groups.map(function (g) {
+        var d = g.d;
+        return hoursText(d.extra) + ' h longer than the event on ' + g.wds.join(',') + ' (event ' + clk(d.from) + '-' + clk(d.to) + ', schedule ' + clk(d.bStart) + '-' + clk(d.bEnd) + ')';
+      });
+      var seps = groups.map(function (g) {
+        var d = g.d;
+        return g.wds.join(',') + ' ' + clk(d.from) + '-' + clk(d.to);
+      });
+      var dates = [].concat.apply([], days.map(function (d) { return d.dates; })).sort();
+      out.push({
+        id: 'opp|' + k,
+        title: titlesText(u.titles),
+        schedule: u.schedule.name,
+        hours: Math.round(total / 6) / 10,
+        weekly: weekly,
+        dates: dates,
+        text: 'Opportunity: ' + u.schedule.name + ' runs ' + runs.join('; ') + '. A separate ' + and(seps) + ' schedule would save about ' + hoursText(total) + ' h' + (weekly ? ' a week' : '') + '. Optional: the event is already covered.',
+      });
+    });
+    return out.sort(function (a, b) { return a.title < b.title ? -1 : a.title > b.title ? 1 : 0; });
+  }
+
   // Everything the District Calendar needs for one shown period: the needs lines and the comparison status.
   // o = computeActions input + { from, to, rows (the live events of the period) }.
   function periodView(o) {
     return {
       needs: periodNeeds(o),
+      opportunities: periodOpportunities(o),
       status: BC.checkStatus(o.rows, { tz: o.tz, map: o.map, snaps: o.snaps, groups: o.groups }),
     };
   }
@@ -477,6 +657,7 @@
     computeActions: computeActions,
     periodNeeds: periodNeeds,
     periodView: periodView,
+    periodOpportunities: periodOpportunities,
     copyNote: copyNote,
     repeatOf: repeatOf,
     reconcile: reconcile,

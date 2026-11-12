@@ -40,12 +40,6 @@ t.ok(read('app/facility-audit.js').indexOf('emCurrentSetpointZones') === -1, 'Fa
 
 // ---- #18 readable WebCTRL text ----
 const BasDiff = require(path.join(ROOT, 'app/bas-diff.js'));
-t.eq(BasDiff.readableDates('Year 0000 (any), Month 00 (any), Day of Month 00 (any)'), 'any year, any month, any day of the month', 'zero codes become words');
-t.eq(BasDiff.readableDates('Year 2026, Day of Month 15'), 'Year 2026, Day of Month 15', 'real dates are unchanged');
-const ok = BasDiff.readableHours({ mode: 'Occupied', start: '6:00 AM', end: '5:00 PM' });
-t.eq(ok, { text: 'Occupied 6:00 AM - 5:00 PM', note: '' }, 'readable hours');
-const bad = BasDiff.readableHours({ mode: 'Occupied', start: 'stagger (not opened)', end: '' });
-t.ok(bad.text === 'Occupied, hours not in file' && /stagger/.test(bad.note), 'unreadable hours: plain text, raw text only in the note');
 
 // ---- #16 cost note ----
 const pe = read('app/pricing-estimator.js');
@@ -80,11 +74,5 @@ t.eq(zs[1].schedule, 'M-F 7:00-16:00', 'import fills the schedule of a saved Set
 t.eq(zs[0].schedule, '', 'serving unit with no schedule in the file stays blank (no gap marker)');
 t.eq(zs[2].schedule, 'typed by hand', 'a typed schedule is never replaced');
 t.eq(JSON.parse(sb.__store['en_projects'])[0].setpoints[0].zones[1].schedule, 'M-F 7:00-16:00', 'the filled schedule is saved');
-t.eq(BasDiff.readableDates('Day of Month 28; Month February; Day of Week Any; Week Any; Year 0000 (any)'), 'Feb 28', 'fixed day reads like a date');
-t.eq(BasDiff.readableDates('Day of Month 00 (any); Month Any; Day of Week Monday; Week 2nd; Year 0000 (any)'), '2nd Monday of every month', 'nth weekday of every month');
-t.eq(BasDiff.readableDates('Day of Month 00 (any); Month March; Day of Week Monday; Week 2nd; Year 0000 (any)'), '2nd Monday in March', 'nth weekday in a month');
-t.eq(BasDiff.readableDates('Day of Month 00 (any); Month Any; Day of Week Friday; Week Last; Year 0000 (any)'), 'Last Friday of every month', 'last weekday of every month');
-t.eq(BasDiff.readableDates('Day of Month 00 (any); Month Any; Day of Week Friday; Week Any; Year 0000 (any)'), 'every Friday', 'every weekday');
-t.eq(BasDiff.readableDates('Day of Month 00 (any); Month Any; Day of Week Any; Week Any; Year 0000 (any)'), 'every day', 'every day');
 t.ok(/Create building \+ meter/.test(read('app/bill-analysis.js')), 'no-building button says what it does');
 t.done('test-bas-first-use');

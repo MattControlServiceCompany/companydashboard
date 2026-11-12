@@ -319,29 +319,102 @@
     });
     return found;
   }
-  // The occupied blocks [[from,to,'occ']] that the Weekly schedules of a program's scheduling group add on one weekday.
-  // The BAS copy is the effective schedule as exported on its day; a Weekly group schedule for another weekday (Mon-Thu copies
-  // are borrowed for Mon, Tue, Wed) is invisible in it, so the group schedules are read here as well.
-  var DAY_ABBR = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
-  function groupBlocksOn(groups, key, ymd) {
+  // What the schedules of a program's scheduling group do on one date: { occ:[[from,to,'occ']], forced:[[from,to]] }.
+  // The BAS copy is the effective schedule as exported on its day; a group schedule for another weekday (Mon-Thu copies
+  // are borrowed for Mon, Tue, Wed) or a date, date-range or yearly schedule is invisible in it, so the group schedules are read here as well.
+  // BD.effectiveBlocksOn is the one reader (priority Override > Holiday > Normal; schedules with no day selected, and unoccupied
+  // periods, give no occupied time). forced = minutes a Holiday or Override period makes unoccupied.
+  // cache (optional, a plain object that the caller makes for ONE call and drops after) keeps the result for each group and date.
+  function groupEffectOn(groups, key, ymd, cache) {
     var g = groupEntryFor(groups, key);
+    var ck = g ? g.building + '|' + g.group + '|' + ymd : '';
+    if (ck && cache && cache[ck]) return cache[ck];
+    var e = BD.effectiveBlocksOn((g && g.schedules) || [], ymd);
+    var out = {
+      occ: e.occ.map(function (r) { return [r[0], r[1], 'occ']; }),
+      forced: e.forcedUnocc,
+    };
+    if (ck && cache) cache[ck] = out;
+    return out;
+  }
+  // The occupied blocks of blocks that are not inside the forced ranges.
+  function withoutRanges(blocks, ranges) {
     var out = [];
-    ((g && g.schedules) || []).forEach(function (s) {
-      var b = BD.groupScheduleBlock(s);
-      if (b && b.days.indexOf(DAY_ABBR[dow(ymd)]) !== -1) out.push([b.from, b.to, 'occ']);
+    (blocks || []).forEach(function (b) {
+      if (b[2] !== 'occ') return;
+      var cur = [[b[0], b[1] <= b[0] ? 1440 : b[1]]];
+      ranges.forEach(function (r) {
+        var next = [];
+        cur.forEach(function (x) {
+          if (r[1] <= x[0] || r[0] >= x[1]) next.push(x);
+          else {
+            if (r[0] > x[0]) next.push([x[0], r[0]]);
+            if (r[1] < x[1]) next.push([r[1], x[1]]);
+          }
+        });
+        cur = next;
+      });
+      cur.forEach(function (x) { out.push([x[0], x[1], 'occ']); });
     });
     return out;
+  }
+  function normName(t) {
+    return String(t == null ? '' : t).toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim();
+  }
+  // The WebCTRL schedule an event is named after, or null. The names match when, after normalizing (case, spaces, punctuation), they are
+  // equal, or the schedule name has 3 or more words and the event title starts with it followed by a word break ('LHS Cheer Practice'
+  // for 'LHS Cheer Practice-LHS Cheer Area'). An equal name ranks above a prefix match.
+  // groups = en_bas_groups groups map; locations = its location schedules; building = the building of the event's BAS program (preferred).
+  // Order: equal name, the schedule of that building, the schedule that runs on the date, a group schedule.
+  // Returns { name, where, when, hours, applies, blocks, schedule } ('where' = 'Group <name>' or the location path).
+  function nameRank(schedName, want) {
+    var n = normName(schedName);
+    if (!n) return 0;
+    if (n === want) return 2;
+    return n.split(' ').length >= 3 && want.indexOf(n + ' ') === 0 ? 1 : 0;
+  }
+  function webctrlMatch(groups, locations, title, ymd, building) {
+    var want = normName(title);
+    if (!want) return null;
+    var hits = [];
+    Object.keys(groups || {}).forEach(function (k) {
+      var g = groups[k];
+      (g.schedules || []).forEach(function (s) {
+        var r = nameRank(s.name, want);
+        if (r) hits.push({ s: s, where: 'Group ' + g.group, building: g.building, rank: r });
+      });
+    });
+    (locations || []).forEach(function (l) {
+      var r = nameRank(l.schedule.name, want);
+      if (r) hits.push({ s: l.schedule, where: l.location, building: l.building, rank: r });
+    });
+    if (!hits.length) return null;
+    var nb = normName(building);
+    var score = function (h) {
+      return h.rank * 4 + (nb && normName(h.building) === nb ? 2 : 0) + (BD.scheduleAppliesOn(h.s, ymd) ? 1 : 0);
+    };
+    var best = hits.reduce(function (a, h) { return score(h) > score(a) ? h : a; });
+    return {
+      name: best.s.name,
+      where: best.where,
+      when: BD.whenText(best.s),
+      hours: BD.periodsText(best.s),
+      applies: BD.scheduleAppliesOn(best.s, ymd),
+      blocks: BD.scheduleBlocksOn(best.s, ymd),
+      schedule: best.s,
+    };
   }
 
   // --- the one coverage function --------------------------------------------------------------
   // eventCoverage(row, ctx) -> { status, label, space, short, program, from, exact }
   //   row = [title, start, end, allDay, location]; ctx = { tz, map, snaps, groups }
-  //   groups (en_bas_groups) is optional: the Weekly schedules of a program's scheduling group that list the event weekday count as occupied.
+  //   ctx.effectCache is optional: a plain object the caller makes for one call; it keeps the group schedule effect for each group and date.
+//   groups (en_bas_groups) is optional: the occupied periods of the schedules of a program's scheduling group that run on the event date (weekdays, a date, a date range, a yearly date) count as occupied.
   //   short = minutes the worst mapped program is unoccupied during the event; program = its row key; gaps = those stretches.
 //   fromMin/toMin = the event as minutes of that day.
   function eventCoverage(row, ctx) {
     var place = CD.eventPlace({ title: row[0], location: row[4] }).text;
-    var res = { status: '', label: '', space: place, short: 0, program: '', from: '', exact: true, source: '', fromMin: 0, toMin: 0, gaps: [] };
+    var res = { status: '', label: '', space: place, short: 0, program: '', from: '', exact: true, source: '', fromMin: 0, toMin: 0, gaps: [], keys: [] };
     var done = function (status, label) {
       res.status = status;
       res.label = label;
@@ -362,6 +435,7 @@
     res.source = sourceText(snap);
     var keys = resolveKeys(snap.rows, entry.programs);
     if (!keys.length) return done('nobas', 'No BAS schedule for this space');
+    res.keys = keys; // every BAS program of the space (program is only the worst one, and only when short)
     var from = minuteOfDay(row[1], ctx.tz);
     var to;
     if (!row[2]) to = from + NO_END_MIN;
@@ -370,7 +444,8 @@
     res.fromMin = from;
     res.toMin = to;
     keys.forEach(function (k) {
-      var blocks = (snap.rows[k] || []).concat(groupBlocksOn(ctx.groups, k, date));
+      var eff = groupEffectOn(ctx.groups, k, date, ctx.effectCache);
+      var blocks = withoutRanges(snap.rows[k] || [], eff.forced).concat(eff.occ); // a Holiday or Override unoccupied period removes what the BAS copy shows
       var m = minutesShort(blocks, from, to);
       if (m > res.short) {
         res.short = m;
@@ -457,6 +532,8 @@
     gapsOf: gapsOf,
     eventCoverage: eventCoverage,
     groupEntryFor: groupEntryFor,
+    webctrlMatch: webctrlMatch,
+    normName: normName,
   };
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
   else root.BasCoverage = api;

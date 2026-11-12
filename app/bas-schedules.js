@@ -270,8 +270,12 @@
       '</div></details>'
     );
   }
+  function schedCells(s) {
+    return '<td>' + esc(s.name || 'No name') + (s.priority && s.priority !== 'Normal' ? ' (' + esc(s.priority) + ')' : '') + '</td><td>' +
+      esc(BasDiff.whenText(s)) + '</td><td>' + esc(BasDiff.periodsText(s)) + '</td>';
+  }
   function groupsSection(g) {
-    if (!g) return '<h4>Scheduling groups</h4><div style="font-size:13px;margin-top:8px">No scheduling groups are saved yet. Choose Import scheduling groups and pick the groups file and the group members file.</div>';
+    if (!g) return '<h4>WebCTRL schedules and scheduling groups</h4><div style="font-size:13px;margin-top:8px">No WebCTRL schedules are saved yet. Choose Import scheduling groups and pick the WebCTRL Schedules report (CSV).</div>';
     var keys = Object.keys(g.groups).sort(function (a, b) {
       var x = g.groups[a];
       var y = g.groups[b];
@@ -285,29 +289,30 @@
       var x = g.groups[k];
       if (x.building !== last) {
         last = x.building;
-        body += '<tr class="pcal-day"><th colspan="5" scope="colgroup">' + esc(x.building) + '</th></tr>';
+        body += '<tr class="pcal-day"><th colspan="4" scope="colgroup">' + esc(x.building) + '</th></tr>';
       }
       var mem = x.members.length
         ? '<details><summary>' + esc(plural(x.members.length, 'member', 'members')) + '</summary>' + x.members.map(function (m) { return '<div>' + esc(m) + '</div>'; }).join('') + '</details>'
-        : '<div>No members in file</div>';
+        : '<div>No members saved</div>';
       var cell = '<b>' + esc(x.group) + '</b>' + mem;
       var sch = x.schedules.length ? x.schedules : [null];
       sch.forEach(function (s, i) {
-        body +=
-          '<tr><td>' + (i === 0 ? cell : '') + '</td>' +
-          (s
-            ? '<td>' + esc(s.description + (s.type ? ' (' + s.type + ')' : '')) + '</td><td>' + esc(s.days) + '</td><td' +
-              (BasDiff.readableHours(s).note ? ' title="' + esc(BasDiff.readableHours(s).note) + '"' : '') + '>' +
-              esc(BasDiff.readableHours(s).text) + '</td><td>' + esc(BasDiff.readableDates(s.dates)) + '</td>'
-            : '<td colspan="4">No schedule in file</td>') +
-          '</tr>';
+        body += '<tr><td>' + (i === 0 ? cell : '') + '</td>' + (s ? schedCells(s) : '<td colspan="3">No schedule in file</td>') + '</tr>';
       });
     });
+    var locs = g.locations || [];
+    var locBody = locs.map(function (l) {
+      return '<tr><td>' + esc(l.building + (l.area ? ' / ' + l.area : '')) + '</td>' + schedCells(l.schedule) + '</tr>';
+    }).join('');
     return (
-      '<h4>Scheduling groups (' + num(keys.length) + ' in ' + Object.keys(bset).length + ' buildings)</h4>' +
+      '<h4>WebCTRL schedules: scheduling groups (' + num(keys.length) + ' in ' + Object.keys(bset).length + ' buildings)</h4>' +
       '<div class="pcal-feed">Saved ' + esc(shortStamp(g.importedAt) + (g.importedBy ? ' by ' + g.importedBy : '')) + '</div>' +
-      '<div class="pcal-outer"><table class="pcal-tbl pcal-ev-tbl"><colgroup><col style="width:28%"><col style="width:30%"><col style="width:12%"><col style="width:20%"><col style="width:10%"></colgroup>' +
-      '<thead><tr><th>Group</th><th>Schedule</th><th>Days</th><th>Hours</th><th>Dates</th></tr></thead><tbody>' + body + '</tbody></table></div>'
+      '<div class="pcal-outer"><table class="pcal-tbl pcal-ev-tbl"><colgroup><col style="width:28%"><col style="width:30%"><col style="width:22%"><col style="width:20%"></colgroup>' +
+      '<thead><tr><th>Group</th><th>Schedule</th><th>Days or dates</th><th>Hours</th></tr></thead><tbody>' + body + '</tbody></table></div>' +
+      (locs.length
+        ? '<details><summary>Schedules on locations (' + num(locs.length) + ')</summary><div class="pcal-outer"><table class="pcal-tbl pcal-ev-tbl"><colgroup><col style="width:28%"><col style="width:30%"><col style="width:22%"><col style="width:20%"></colgroup>' +
+          '<thead><tr><th>Location</th><th>Schedule</th><th>Days or dates</th><th>Hours</th></tr></thead><tbody>' + locBody + '</tbody></table></div></details>'
+        : '')
     );
   }
   function pendingBox(pid) {
@@ -316,12 +321,12 @@
     var g = s.gpending;
     if (g) {
       var rows = g.files.map(function (f) {
-        return [esc(f.name), esc(f.kind === 'schedules' ? 'Group schedules' : f.kind === 'members' ? 'Group members' : 'Not a scheduling groups file'), esc(f.kind ? num(f.items) : '')];
+        return [esc(f.name), esc(f.kind ? 'WebCTRL Schedules report: ' + plural(f.locations, 'location schedule', 'location schedules') : 'Not a WebCTRL Schedules report'), esc(f.kind ? num(f.items) + ' group schedules' : '')];
       });
       var ok = g.files.some(function (f) { return f.kind; });
       return (
         '<div class="bas-box"><b>Import scheduling groups</b>' +
-        ui().table([['File', '46%'], ['What it holds', '34%'], ['Rows', '20%']], rows) +
+        ui().table([['File', '40%'], ['What it holds', '36%'], ['Group schedules', '24%']], rows) +
         '<div class="pcal-row">' +
         (ok ? '<button class="btn btn-em btn-sm" onclick="basSaveGroups(' + pid + ')">Save groups</button>' : '') +
         '<button class="btn btn-ghost btn-sm" onclick="basCancel(' + pid + ')">Cancel</button></div></div>'
@@ -365,7 +370,7 @@
       '<button class="btn btn-ghost btn-sm" onclick="document.getElementById(\'bas-bfile-' + pid + '\').click()">Import baseline (Set Points sheet)</button></span></div>' +
       '<div style="padding:16px">' +
       '<input class="bas-file" type="file" id="bas-file-' + pid + '" accept=".csv,text/csv" multiple onchange="basPick(' + pid + ',this)">' +
-      '<input class="bas-file" type="file" id="bas-gfile-' + pid + '" accept=".csv,text/csv" multiple onchange="basPickGroups(' + pid + ',this)">' +
+      '<input class="bas-file" type="file" id="bas-gfile-' + pid + '" accept=".csv,text/csv" onchange="basPickGroups(' + pid + ',this)">' +
       '<input class="bas-file" type="file" id="bas-afile-' + pid + '" accept=".csv,text/csv" multiple onchange="basPickAudit(' + pid + ',this)">' +
       '<input class="bas-file" type="file" id="bas-bfile-' + pid + '" accept=".csv,text/csv" multiple onchange="basPickBaseline(' + pid + ',this)">' +
       '<div class="pcal-msg" id="bas-msg-' + pid + '" role="status">' + esc(s.msg) + '</div>' +
@@ -547,7 +552,7 @@
       if (!files.length) return;
       var infos = files.map(function (f) {
         var r = BasDiff.readGroupRows(emParseCSVText(f.text));
-        return { name: f.name, kind: r.kind, items: r.items.length, list: r.items };
+        return { name: f.name, kind: r.kind, items: r.items.length, locations: r.locations.length, list: r.items, locList: r.locations };
       });
       var s = state(pid);
       s.pending = null;
@@ -559,18 +564,18 @@
   window.basSaveGroups = async function (pid) {
     var s = state(pid);
     if (!s.gpending) return;
-    var pick = function (kind) {
+    var pick = function (field) {
       var out = [];
       s.gpending.files.forEach(function (f) {
-        if (f.kind === kind) out = out.concat(f.list);
+        if (f.kind) out = out.concat(f[field]);
       });
-      return out.length ? out : null;
+      return out;
     };
     var res = BasDiff.applyGroupsImport({
       hist: histOf(pid),
       groups: groupsOf(pid),
-      scheduleItems: pick('schedules'),
-      memberItems: pick('members'),
+      scheduleItems: pick('list'),
+      locationItems: pick('locList'),
       now: new Date().toISOString(),
       by: whoName(),
       id: newId(),
@@ -579,7 +584,7 @@
     await DB.set('en_bas_hist_' + pid, res.hist);
     await DB.set('en_bas_groups_' + pid, res.groups);
     s.gpending = null;
-    s.msg = 'Saved ' + plural(res.rec.counts.total, 'scheduling group', 'scheduling groups') + '.';
+    s.msg = 'Saved ' + plural(res.rec.counts.total, 'scheduling group', 'scheduling groups') + ' and ' + plural(res.rec.locations, 'location schedule', 'location schedules') + '.';
     render(pid);
   };
   window.basView = function (pid, d) {

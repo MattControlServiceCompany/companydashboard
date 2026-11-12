@@ -10,7 +10,8 @@
 //   start and end are minutes since midnight. mode is 'occ' or 'unocc'. Buildings imported for the same
 //   date merge into the same snapshot; importing a building again replaces that building's rows.
 // Groups (key en_bas_groups_<pid>):
-//   { importedAt, importedBy, groups:{ "<building>|<group>": { building, group, schedules:[...], members:[...] } } }
+//   { importedAt, importedBy, groups:{ "<building>|<group>": { building, group, schedules:[...], members:[...] } },
+//     locations:[{ location, building, area, schedule }] }   (read from the WebCTRL Schedules report; see readGroupRows)
 // History (key en_bas_hist_<pid>): newest first, at most 50 records, one per import (kind 'schedules' or 'groups').
 // A schedule change is a difference in the start, end or mode of a program's blocks. Nothing else counts.
 (function (root) {
@@ -19,7 +20,6 @@
   var DETAIL_CAP = 500;
   var HIST_MAX = 50;
   var SNAP_MAX = 60;
-  var DAY_KEYS = ['mon', 'tue', 'wed', 'thu', 'fri', 'sat', 'sun'];
   var DAY_NAMES = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
 
   // --- dates -----------------------------------------------------------------------------------
@@ -261,169 +261,266 @@
     return { snaps: snaps, hist: [rec].concat(inp.hist || []).slice(0, HIST_MAX), rec: rec };
   }
 
-  // --- scheduling groups -----------------------------------------------------------------------
+  // --- scheduling groups and location schedules (the WebCTRL "Schedules" report) --------------
+  // The ONE reader of the native WebCTRL Schedules report (CSV "Location","Priority","Description"). Part 1 lists schedules on
+  // locations; after the row "Schedule Groups:" come the groups ("Building / Group"), the 2nd and later schedules of a group on
+  // continuation rows whose first cells are empty. Description = name line, optional days or dates line, then period lines.
+  // Stored schedule: { name, priority, type:'weekly'|'date'|'range'|'recurring', days:['Mon',..], dates:['YYYY-MM-DD',..] (date),
+  //   from, to ('YYYY-MM-DD', range), recur:{month,day,nth,dow} (recurring; 0 / '' = any, nth -1 = last),
+  //   periods:[{mode:'occ'|'unocc', from, to}] (minutes of a day; an end at or before the start is stored as 1440), raw:'days or dates line' }.
+  var CLOCK_RE = '(\\d{1,2}):(\\d{2})\\s*(AM|PM)';
+  var PERIOD_RE = new RegExp('^(Occupied|Unoccupied)\\s+from\\s+' + CLOCK_RE + '\\s+to\\s+' + CLOCK_RE + '$', 'i');
+  var DAY_LIST_RE = /^((?:Mon|Tue|Wed|Thu|Fri|Sat|Sun)(?:\s*,\s*(?:Mon|Tue|Wed|Thu|Fri|Sat|Sun))*)?\s*(.*)$/;
+  var DATE_RE = '(\\d{1,2})/(\\d{1,2})/(\\d{4})';
   function norm(v) {
     return String(v == null ? '' : v).trim();
   }
-  // "Mon-Fri", "Sat, Sun", "Every day", "None" from seven Y/N values in Mon..Sun order.
-  function daysText(flags) {
-    var on = flags.map(function (f) {
-      return /^y/i.test(norm(f));
+  function pad2(n) {
+    return (n < 10 ? '0' : '') + n;
+  }
+  function isoOf(m, d, y) {
+    return y + '-' + pad2(+m) + '-' + pad2(+d);
+  }
+  function minuteOf(h, m, ap) {
+    return (+h % 12) * 60 + +m + (ap.toUpperCase() === 'PM' ? 720 : 0);
+  }
+  // The weekday name ('Mon'..'Sun') of YYYY-MM-DD.
+  function weekdayOf(ymd) {
+    var wd = new Date(Date.UTC(+ymd.slice(0, 4), +ymd.slice(5, 7) - 1, +ymd.slice(8, 10))).getUTCDay();
+    return DAY_NAMES[(wd + 6) % 7];
+  }
+  // "Mon,Wed" / "2/16/2026 - 12/31/2026" / "Wed,Thu  9/24/2026 - 2/26/2027" / "Every 2/28/* *" / "Every 2nd */*/* Mon" -> the when-part of a schedule.
+  function parseWhen(line) {
+    var out = { type: 'weekly', days: [], dates: [], from: '', to: '', recur: null, raw: norm(line) };
+    var m = DAY_LIST_RE.exec(norm(line));
+    if (m[1]) out.days = m[1].split(/\s*,\s*/);
+    var rest = norm(m[2]);
+    var r;
+    if (!rest) return out;
+    if ((r = new RegExp('^' + DATE_RE + '\\s*-\\s*' + DATE_RE + '$').exec(rest))) {
+      out.type = 'range';
+      out.from = isoOf(r[1], r[2], r[3]);
+      out.to = isoOf(r[4], r[5], r[6]);
+    } else if (new RegExp('^' + DATE_RE + '(\\s*,\\s*' + DATE_RE + ')*$').test(rest)) {
+      out.type = 'date';
+      var re = new RegExp(DATE_RE, 'g');
+      var x;
+      while ((x = re.exec(rest))) out.dates.push(isoOf(x[1], x[2], x[3]));
+    } else if ((r = /^Every\s+(?:(\d+)(?:st|nd|rd|th)\s+|(Last)\s+)?(\d+|\*)\/(\d+|\*)\/(\d+|\*)\s*(\*|Mon|Tue|Wed|Thu|Fri|Sat|Sun)?$/i.exec(rest))) {
+      out.type = 'recurring';
+      out.recur = {
+        month: r[3] === '*' ? 0 : +r[3],
+        day: r[4] === '*' ? 0 : +r[4],
+        nth: r[2] ? -1 : r[1] ? +r[1] : 0,
+        dow: !r[6] || r[6] === '*' ? '' : r[6].charAt(0).toUpperCase() + r[6].slice(1).toLowerCase(),
+      };
+    }
+    return out;
+  }
+  // One Description cell -> a stored schedule, or null when it has no name, no days and no period.
+  function parseDescription(desc, priority) {
+    var lines = String(desc == null ? '' : desc).split(/\r?\n/).map(norm).filter(Boolean);
+    var periods = [];
+    var pre = [];
+    lines.forEach(function (ln) {
+      var m = PERIOD_RE.exec(ln);
+      if (m) {
+        var from = minuteOf(m[2], m[3], m[4]);
+        var to = minuteOf(m[5], m[6], m[7]);
+        periods.push({ mode: /^occ/i.test(m[1]) ? 'occ' : 'unocc', from: from, to: to <= from ? 1440 : to });
+      } else if (!periods.length) pre.push(ln);
     });
-    var n = on.filter(Boolean).length;
-    if (n === 7) return 'Every day';
-    if (n === 0) return 'No days';
-    if (n === 5 && !on[5] && !on[6]) return 'Mon-Fri';
-    if (n === 2 && on[5] && on[6]) return 'Sat, Sun';
-    return DAY_NAMES.filter(function (_d, i) {
-      return on[i];
-    }).join(', ');
+    var name = '';
+    var whenLine = '';
+    if (pre.length >= 2) {
+      name = pre[0];
+      whenLine = pre[1];
+    } else if (pre.length === 1) {
+      var w = parseWhen(pre[0]);
+      if (w.days.length || w.type !== 'weekly' || /^Every\b/i.test(pre[0])) whenLine = pre[0];
+      else name = pre[0];
+    }
+    if (!name && !whenLine && !periods.length) return null;
+    return Object.assign({ name: name, priority: norm(priority) || 'Normal' }, parseWhen(whenLine), { periods: periods });
   }
-  // The inverse of daysText and clock for one stored group schedule { type, mode, days, start, end }: the Weekly Occupied ones
-  // become { days:['Mon','Wed'], from, to } (minutes of a day; an end at or before the start runs to midnight). null for any other
-  // type or mode (Dated Weekly, Wildcard, not opened, unreadable). The ONE reader of the stored group schedule text.
-  function groupScheduleBlock(s) {
-    if (!s || norm(s.type) !== 'Weekly' || norm(s.mode) !== 'Occupied') return null;
-    var at = function (t) {
-      var m = norm(t).match(/^(\d{1,2}):(\d{2})\s*(AM|PM)$/i);
-      return m ? (+m[1] % 12) * 60 + +m[2] + (m[3].toUpperCase() === 'PM' ? 720 : 0) : null;
-    };
-    var from = at(s.start);
-    var to = at(s.end);
-    if (from === null || to === null) return null;
-    var text = norm(s.days);
-    var days = [];
-    if (/^every day$/i.test(text)) days = DAY_NAMES.slice();
-    else if (/^mon-fri$/i.test(text)) days = DAY_NAMES.slice(0, 5);
-    else days = text.split(/\s*,\s*/).filter(function (d) { return DAY_NAMES.indexOf(d) !== -1; });
-    if (!days.length) return null;
-    return { days: days, from: from, to: to <= from ? 1440 : to };
-  }
-  // rows2d = a parsed CSV (arrays). Returns { kind:'schedules'|'members'|'', items:[] }. Columns are found by header name.
+  // rows2d = the parsed CSV. Returns { kind:'schedules'|'', locations:[{ location, building, area, schedule }], items:[{ building, group, schedule }] }.
   function readGroupRows(rows2d) {
-    if (!rows2d || !rows2d.length) return { kind: '', items: [] };
+    var none = { kind: '', locations: [], items: [] };
+    if (!rows2d || !rows2d.length) return none;
     var head = rows2d[0].map(function (h) {
       return norm(h).toLowerCase();
     });
-    var col = function (n) {
-      return head.indexOf(n);
-    };
-    if (col('building') < 0 || col('group') < 0) return { kind: '', items: [] };
-    var data = rows2d.slice(1).filter(function (r) {
-      return r && !(r.length === 1 && !r[0]) && norm(r[col('building')]) && norm(r[col('group')]);
+    if (head[0] !== 'location' || head[1] !== 'priority' || head[2] !== 'description') return none;
+    var out = { kind: 'schedules', locations: [], items: [] };
+    var inGroups = false;
+    var cur = null; // the group of the last group row (continuation rows belong to it)
+    rows2d.slice(1).forEach(function (r) {
+      if (!r || !r.length || (r.length === 1 && !norm(r[0]))) return;
+      var first = norm(r[0]);
+      if (/^schedule groups:?$/i.test(first)) {
+        inGroups = true;
+        return;
+      }
+      if (!inGroups) {
+        var s = parseDescription(r[2], r[1]);
+        if (first && s) out.locations.push({ location: first, building: buildingOf(first), area: areaOf(first), schedule: s });
+        return;
+      }
+      var cont = !first; // continuation row: the first cells are empty; priority and description are the last two cells
+      var sc = parseDescription(r[r.length - 1], cont ? r[r.length - 2] : r[1]);
+      if (!cont) {
+        var at = first.indexOf(' / ');
+        cur = at < 0 ? { building: '', group: first } : { building: norm(first.slice(0, at)), group: norm(first.slice(at + 3)) };
+      }
+      if (cur && sc) out.items.push({ building: cur.building, group: cur.group, schedule: sc });
     });
-    var get = function (r, n) {
-      return col(n) < 0 ? '' : norm(r[col(n)]);
+    // WebCTRL also prints every group schedule in part 1, all under one location (seen 2026-11-12: 61 of 61 under "East Entry Way
+    // Exterior Lights"). A location whose part-1 rows are all exact copies of group schedules is that listing, not real location schedules.
+    var key = function (s) {
+      return JSON.stringify([s.name, s.priority, s.raw, s.periods]);
     };
-    if (col('member') >= 0) {
-      return {
-        kind: 'members',
-        items: data.map(function (r) {
-          return { building: get(r, 'building'), group: get(r, 'group'), member: get(r, 'member') };
-        }),
-      };
-    }
-    if (col('schedule_description') < 0) return { kind: '', items: [] };
-    return {
-      kind: 'schedules',
-      items: data.map(function (r) {
-        return {
-          building: get(r, 'building'),
-          group: get(r, 'group'),
-          schedule: {
-            description: get(r, 'schedule_description'),
-            priority: get(r, 'priority'),
-            type: get(r, 'type'),
-            days: daysText(
-              DAY_KEYS.map(function (d) {
-                return get(r, d);
-              }),
-            ),
-            mode: get(r, 'period_mode'),
-            start: get(r, 'start'),
-            end: get(r, 'end'),
-            dates: get(r, 'dates'),
-            note: get(r, 'note'),
-          },
-        };
-      }),
-    };
+    var inGroup = {};
+    out.items.forEach(function (x) {
+      inGroup[key(x.schedule)] = true;
+    });
+    var copyOnly = {};
+    out.locations.forEach(function (l) {
+      if (copyOnly[l.location] === undefined) copyOnly[l.location] = true;
+      if (!inGroup[key(l.schedule)]) copyOnly[l.location] = false;
+    });
+    out.locations = out.locations.filter(function (l) {
+      return !copyOnly[l.location];
+    });
+    return out;
   }
-  // Builds the groups map from the items of the schedule file(s) and the member file(s). A kind that is not
-  // imported keeps what is already stored (oldGroups).
-  function buildGroups(oldGroups, scheduleItems, memberItems) {
-    var out = {};
-    var gk = function (b, g) {
-      return b + '|' + g;
+
+  // --- reading a stored schedule -------------------------------------------------------------
+  // "12:00 AM-8:00 AM and 4:45 PM-12:00 AM"; unoccupied periods read "Unoccupied 12:00 AM-5:00 AM".
+  function periodsText(s) {
+    return ((s && s.periods) || [])
+      .map(function (p) {
+        return (p.mode === 'occ' ? '' : 'Unoccupied ') + clock(p.from) + '-' + clock(p.to >= 1440 ? 0 : p.to);
+      })
+      .join(' and ');
+  }
+  function mdy(iso) {
+    return +iso.slice(5, 7) + '/' + +iso.slice(8, 10) + '/' + iso.slice(0, 4);
+  }
+  var MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+  var ORD = { 1: '1st', 2: '2nd', 3: '3rd', 4: '4th', 5: '5th', '-1': 'last' };
+  // A WEEKLY schedule with no day of the week selected is NOT active: it never runs (Matt 2026-11-12). The ONE rule of "active".
+  // Active: a weekly schedule with weekdays, a schedule on specific dates, a recurring one with a date or a weekday, and a date range
+  // (a range with no weekday runs on EVERY day of the range, a range with weekdays only on those days: WebCTRL 2026-11-12).
+  function scheduleActive(s) {
+    if (!s || !Array.isArray(s.periods) || !Array.isArray(s.days)) return false; // a schedule saved in an older shape is read as not active until the report is imported again
+    if (s.type === 'date') return !!(s.dates && s.dates.length);
+    if (s.type === 'recurring') return !!(s.recur && (s.recur.day || s.recur.dow));
+    if (s.type === 'range') return !!(s.from && s.to);
+    return !!(s.days && s.days.length);
+  }
+  // The days or dates of a schedule as words: 'Mon,Tue', 'every day', '11/12/2026', '2/16/2026 - 12/31/2026', 'No days selected (not active)'.
+  function whenText(s) {
+    if (!s) return '';
+    if (!scheduleActive(s)) return 'No days selected (not active)';
+    var dayPart = s.days && s.days.length === 7 ? 'every day' : (s.days || []).join(',');
+    if (s.type === 'date') return s.dates.map(mdy).join(', ');
+    if (s.type === 'range') return (dayPart || 'every day') + ' ' + mdy(s.from) + ' - ' + mdy(s.to);
+    if (s.type === 'recurring') {
+      var r = s.recur;
+      if (r.day) return 'every ' + (r.month ? MONTHS[r.month - 1] + ' ' : '') + r.day;
+      return (r.nth ? ORD[r.nth] + ' ' : 'every ') + r.dow + (r.month ? ' in ' + MONTHS[r.month - 1] : r.nth ? ' of every month' : '');
+    }
+    return dayPart;
+  }
+  // Does the schedule run on YYYY-MM-DD (days, dates, date range, recurrence)? An inactive schedule never does.
+  function scheduleAppliesOn(s, ymd) {
+    if (!scheduleActive(s) || !isDate(ymd)) return false;
+    var wd = weekdayOf(ymd);
+    if (s.type === 'date') return s.dates.indexOf(ymd) !== -1;
+    if (s.type === 'range') return ymd >= s.from && ymd <= s.to && (!s.days.length || s.days.indexOf(wd) !== -1);
+    if (s.type === 'recurring') {
+      var r = s.recur;
+      var day = +ymd.slice(8, 10);
+      if (r.month && r.month !== +ymd.slice(5, 7)) return false;
+      if (r.day && r.day !== day) return false;
+      if (r.dow && r.dow !== wd) return false;
+      if (r.nth > 0 && Math.ceil(day / 7) !== r.nth) return false;
+      if (r.nth < 0 && day + 7 <= new Date(Date.UTC(+ymd.slice(0, 4), +ymd.slice(5, 7), 0)).getUTCDate()) return false;
+      return true;
+    }
+    return s.days.indexOf(wd) !== -1;
+  }
+  // The occupied blocks [[from,to,'occ']] a schedule gives on one date. Unoccupied periods give none (they never count as coverage).
+  function scheduleBlocksOn(s, ymd) {
+    if (!scheduleAppliesOn(s, ymd)) return [];
+    return s.periods
+      .filter(function (p) {
+        return p.mode === 'occ';
+      })
+      .map(function (p) {
+        return [p.from, p.to, 'occ'];
+      });
+  }
+  // WebCTRL priority: Override beats Holiday beats Normal.
+  function priorityRank(s) {
+    return /override/i.test(s.priority || '') ? 3 : /holiday/i.test(s.priority || '') ? 2 : 1;
+  }
+  // The ONE reader of what a set of schedules (one scheduling group) does on one date. For each minute of the day, the highest-priority
+  // schedule that runs on the date and has a period covering that minute decides; a minute that no higher schedule covers falls
+  // through to the lower ones. At equal priority an occupied period wins over an unoccupied one.
+  // Returns { occ:[[from,to]], forcedUnocc:[[from,to]] } (minutes of the day). forcedUnocc = minutes that a Holiday or Override period
+  // decides unoccupied: the BAS copy of another date must not count them as occupied.
+  function effectiveBlocksOn(schedules, ymd) {
+    var live = (schedules || []).filter(function (s) {
+      return scheduleAppliesOn(s, ymd);
+    });
+    var occ = [];
+    var forced = [];
+    var push = function (list, m) {
+      var last = list[list.length - 1];
+      if (last && last[1] === m) last[1] = m + 1;
+      else list.push([m, m + 1]);
     };
+    for (var m = 0; m < 1440; m++) {
+      var best = 0;
+      var occHere = false;
+      live.forEach(function (s) {
+        var r = priorityRank(s);
+        s.periods.forEach(function (p) {
+          if (m < p.from || m >= p.to) return;
+          if (r > best) {
+            best = r;
+            occHere = p.mode === 'occ';
+          } else if (r === best && p.mode === 'occ') occHere = true;
+        });
+      });
+      if (!best) continue;
+      if (occHere) push(occ, m);
+      else if (best > 1) push(forced, m);
+    }
+    return { occ: occ, forcedUnocc: forced };
+  }
+  // 'LRC BBall Practice- BES Gym, Tue,Wed, 5:00 PM-8:30 PM'
+  function scheduleText(s) {
+    return [s.name, whenText(s), periodsText(s), s.priority !== 'Normal' ? s.priority : ''].filter(Boolean).join(', ');
+  }
+  // Builds the groups map from the schedule items of the report. Members are not in the report: the stored members of a group stay.
+  function buildGroups(oldGroups, scheduleItems) {
+    var out = {};
     Object.keys(oldGroups || {}).forEach(function (k) {
       var g = oldGroups[k];
-      out[k] = {
-        building: g.building,
-        group: g.group,
-        schedules: scheduleItems ? [] : g.schedules.slice(),
-        members: memberItems ? [] : g.members.slice(),
-      };
+      out[k] = { building: g.building, group: g.group, schedules: [], members: (g.members || []).slice() };
     });
-    function slot(b, g) {
-      var k = gk(b, g);
-      if (!out[k]) out[k] = { building: b, group: g, schedules: [], members: [] };
-      return out[k];
-    }
-    (scheduleItems || []).forEach(function (x) {
-      slot(x.building, x.group).schedules.push(x.schedule);
-    });
-    (memberItems || []).forEach(function (x) {
-      slot(x.building, x.group).members.push(x.member);
+    scheduleItems.forEach(function (x) {
+      var k = x.building + '|' + x.group;
+      if (!out[k]) out[k] = { building: x.building, group: x.group, schedules: [], members: [] };
+      out[k].schedules.push(x.schedule);
     });
     // A group that lost every schedule and member is gone.
     Object.keys(out).forEach(function (k) {
       if (!out[k].schedules.length && !out[k].members.length) delete out[k];
     });
     return out;
-  }
-  // Display text for the WebCTRL "dates" cell: the zero codes become words. Display only; stored text is unchanged.
-  function readableDates(raw) {
-    return String(raw == null ? '' : raw)
-      // A fixed day of one month (e.g. "Day of Month 28; Month February; Day of Week Any; Week Any; Year 0000 (any)") reads "Feb 28".
-      .replace(/Day of Month\s+(\d{1,2});\s*Month\s+([A-Za-z]{3})[A-Za-z]*((?:;\s*(?:Day of Week|Week)\s+Any)*)(;\s*Year\s+0+\s*\(any\))?/gi, function (m, d, mon) {
-        return mon.charAt(0).toUpperCase() + mon.slice(1).toLowerCase() + ' ' + parseInt(d, 10);
-      })
-      // Any day of the month, a day of week, and a week: "2nd Monday of every month", "Last Friday in March".
-      .replace(/Day of Month\s+0+\s*\(any\);\s*Month\s+(Any|0+\s*\(any\)|[A-Za-z]{3,9});\s*Day of Week\s+([A-Za-z]+);\s*Week\s+([A-Za-z0-9]+)(;\s*Year\s+0+\s*\(any\))?/gi, function (m, mon, dow, wk, yr) {
-        var cap = function (t) {
-          return t.charAt(0).toUpperCase() + t.slice(1).toLowerCase();
-        };
-        var anyMon = /^(any|0)/i.test(mon);
-        var anyDow = /^any$/i.test(dow);
-        var anyWk = /^any$/i.test(wk);
-        if (anyDow && anyWk) return anyMon ? 'every day' : 'every day in ' + cap(mon);
-        var where = anyMon ? 'of every month' : 'in ' + cap(mon);
-        if (anyWk) return 'every ' + cap(dow) + (anyMon ? '' : ' in ' + cap(mon));
-        if (anyDow) return wk.toLowerCase() + ' week ' + where;
-        return cap(wk) + ' ' + cap(dow) + ' ' + where;
-      })
-      .replace(/Year\s+0+\s*\(any\)/gi, 'any year')
-      .replace(/Day of Month\s+0+\s*\(any\)/gi, 'any day of the month')
-      .replace(/(^|[^f] )Month\s+0+\s*\(any\)/gi, '$1any month');
-  }
-  // Display text for the hours of one group schedule: { text, note }. note is set when the file has no readable
-  // clock time; it holds the raw text so the screen can show it on hover only.
-  function readableHours(s) {
-    var start = norm(s.start);
-    var end = norm(s.end);
-    if (/\d/.test(start + end)) return { text: s.mode + ' ' + start + ' - ' + end, note: '' };
-    var raw = [start, end].filter(Boolean).join(' - ');
-    return {
-      text: s.mode + ', hours not in file',
-      note: 'The export has no clock time for this row' + (raw ? ' (it says: ' + raw + ')' : '') + '.',
-    };
-  }
-  function scheduleText(s) {
-    var hours = s.start || s.end ? s.start + ' - ' + s.end : '';
-    return [s.description, s.type, s.days, s.mode, hours, s.dates, s.priority !== 'Normal' ? s.priority : '']
-      .filter(Boolean)
-      .join(', ');
   }
   // One text per group, the thing that is compared and shown in a change line.
   function groupText(g) {
@@ -438,13 +535,14 @@
   function sameGroup(a, b) {
     return groupText(a) === groupText(b);
   }
-  // The groups import in one call. in: { groups (stored object or null), scheduleItems, memberItems, now, by, id }
+  // The import in one call. in: { groups (stored object or null), scheduleItems, locationItems, now, by, id }
   function applyGroupsImport(inp) {
-    if (!(inp.scheduleItems && inp.scheduleItems.length) && !(inp.memberItems && inp.memberItems.length)) {
-      return { error: 'No scheduling groups found in the file.' };
+    var locs = inp.locationItems || [];
+    if (!(inp.scheduleItems && inp.scheduleItems.length) && !locs.length) {
+      return { error: 'No schedules found in the file.' };
     }
     var oldGroups = inp.groups ? inp.groups.groups : {};
-    var next = buildGroups(oldGroups, inp.scheduleItems, inp.memberItems);
+    var next = buildGroups(oldGroups, inp.scheduleItems || []);
     var d = diffMaps(oldGroups, next, sameGroup);
     var had = Object.keys(oldGroups).length > 0;
     var buildings = {};
@@ -457,6 +555,7 @@
       at: inp.now,
       by: inp.by || '',
       first: !had,
+      locations: locs.length,
       buildings: Object.keys(buildings)
         .sort()
         .map(function (b) {
@@ -482,7 +581,7 @@
       });
     }
     return {
-      groups: { importedAt: inp.now, importedBy: inp.by || '', groups: next },
+      groups: { importedAt: inp.now, importedBy: inp.by || '', groups: next, locations: locs },
       hist: [rec].concat(inp.hist || []).slice(0, HIST_MAX),
       rec: rec,
     };
@@ -507,11 +606,16 @@
     diffBasSnapshots: diffBasSnapshots,
     pickBaseline: pickBaseline,
     applyScheduleImport: applyScheduleImport,
-    daysText: daysText,
-    groupScheduleBlock: groupScheduleBlock,
-    readableDates: readableDates,
-    readableHours: readableHours,
+    weekdayOf: weekdayOf,
+    parseWhen: parseWhen,
+    parseDescription: parseDescription,
     readGroupRows: readGroupRows,
+    scheduleActive: scheduleActive,
+    scheduleAppliesOn: scheduleAppliesOn,
+    scheduleBlocksOn: scheduleBlocksOn,
+    effectiveBlocksOn: effectiveBlocksOn,
+    periodsText: periodsText,
+    whenText: whenText,
     scheduleText: scheduleText,
     groupText: groupText,
     applyGroupsImport: applyGroupsImport,

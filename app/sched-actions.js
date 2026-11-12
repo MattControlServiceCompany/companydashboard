@@ -45,6 +45,7 @@
       map: DB.get('en_space_map_' + pid, null),
       snaps: snaps,
       groups: (g && g.groups) || {},
+      locations: (g && g.locations) || [],
       tz: tz,
       today: CalendarDiff.calendarDay(new Date().toISOString(), tz),
       stored: DB.get('en_sched_actions_' + pid, null),
@@ -85,12 +86,14 @@
       return x.row;
     });
     var pv = SchedActions.periodView(Object.assign({}, inp, { from: per.from, to: per.to, rows: rows }));
+    // Order: real uncovered events first (no WebCTRL schedule of that name), then events that are in WebCTRL but short or on other days,
+    // then lines added in WebCTRL after the BAS copy, then Done lines.
+    var rank = function (n) {
+      var sa = v.stored.actions[n.id];
+      return sa && sa.status === 'done' ? 3 : n.webctrl ? 2 : n.named.length ? 1 : 0;
+    };
     var needs = pv.needs.sort(function (a, b) {
-      var sa = v.stored.actions[a.id];
-      var sb = v.stored.actions[b.id];
-      var da = sa && sa.status === 'done' ? 1 : 0;
-      var db = sb && sb.status === 'done' ? 1 : 0;
-      return da - db;
+      return rank(a) - rank(b);
     });
     var closed = Object.keys(v.stored.actions)
       .map(function (k) {
@@ -139,15 +142,29 @@
         : '<button class="btn btn-em btn-sm" onclick="sactSet(' + pid + ',' + i + ",'done')\">Done</button>";
       var note = s && s.note ? '<div class="pcal-chg">' + esc(s.note) + '</div>' : '';
       var rep = n.repeats ? ' <span class="pcal-badge" title="The same change repeats every week. Add one repeating schedule to the scheduling group instead of one line for each date.">Repeats weekly</span>' : '';
+      var named = n.named
+        .map(function (m) {
+          return '<div class="pcal-chg">' + esc(m.text) + '</div>';
+        })
+        .join('');
       return [
-        '<b>' + esc(n.change) + '</b>' + rep + '<div class="pcal-chg">Where: ' + esc(n.where) + '</div><div class="pcal-chg">For: ' + esc(n.forText) + '</div>' + note,
+        '<b>' + esc(n.forText) + '</b>' + rep + named + '<div class="pcal-chg">' + esc(n.change) + '</div><div class="pcal-chg">Where: ' + esc(n.where) + '</div>' + note,
         esc(n.dates),
         esc(n.inBas || 'No BAS copy for this day') + (n.groupNow ? '<div class="pcal-chg">Group schedules now: ' + esc(n.groupNow) + '</div>' : ''),
         esc(who) + '<div style="margin-top:4px">' + b + '</div>',
       ];
     });
+    // Covered events whose schedule is longer than the event: optional, after every real line, no Done button.
+    pv.opportunities.forEach(function (op) {
+      trows.push([
+        '<b>' + esc(op.title) + '</b>',
+        esc(op.dates.map(function (d) { return CalendarDiff.dayLabel(d).replace(',', ''); }).join(', ')),
+        esc(op.text),
+        'Covered<div class="pcal-chg">Optional, no change needed</div>',
+      ]);
+    });
     var tbl = trows.length
-      ? T([['Change needed', '32%'], ['Dates', '26%'], ['In the BAS now', '24%'], ['Status', '18%']], trows)
+      ? T([['Event and change needed', '32%'], ['Dates', '26%'], ['In the BAS now', '24%'], ['Status', '18%']], trows)
       : '';
     var closedHtml = closed.length
       ? '<details><summary>Closed (' + closed.length + ')</summary>' +

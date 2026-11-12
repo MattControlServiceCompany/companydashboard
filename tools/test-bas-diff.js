@@ -196,66 +196,122 @@ t('history keeps 50 records', () => {
 });
 
 // --- scheduling groups ---------------------------------------------------------------------------------
-const GHEAD = 'screenshot,building,group,schedule_description,priority,type,source,mon,tue,wed,thu,fri,sat,sun,period_mode,start,end,dates,note\n';
-const GROUPS =
-  GHEAD +
-  '1,Alpha School,Gyms,Practice,Normal,Weekly,src,Y,Y,Y,Y,Y,N,N,Occupied,3:20 PM,5:00 PM,,\n' +
-  '1,Alpha School,Gyms,Camp,Normal,Exception,src,N,N,N,N,N,N,N,Occupied,8:00 AM,12:00 PM,"Jun 1, 2027",\n' +
-  '2,Beta School,Lights,Lights,Normal,Weekly,src,Y,Y,Y,Y,Y,Y,Y,Occupied,4:00 AM,8:00 AM,,"a note, with comma"\n';
-const MEMBERS = 'screenshot,building,group,member\n1,Alpha School,Gyms,Roof / RTU-1\n1,Alpha School,Gyms,First Floor / Room 1\n2,Beta School,Lights,Pole 1\n\n';
+// Synthetic WebCTRL Schedules report: made-up names only. Continuation rows keep the odd '"" ,' spacing of the real export.
+const REPORT =
+  '"Location","Priority","Description"\n' +
+  '"/Test District/Alpha School/Gym Wing","Normal","Open Gym\nMon,Wed\nOccupied from 4:00 PM to 6:00 PM"\n' +
+  '"/Test District/Alpha School","Normal","Pole Lights\nMon,Tue,Wed,Thu,Fri,Sat,Sun\nOccupied from 4:00 AM to 7:00 AM\nOccupied from 4:45 PM to 12:00 AM"\n' +
+  '"Schedule Groups:"\n' +
+  '"Alpha School / Gyms","Normal","Practice A\nMon,Tue\nOccupied from 3:20 PM to 5:00 PM"\n' +
+  '"" ,"" ,"" ,"" ,"" ,"Normal","Practice B\nTue,Wed\nOccupied from 5:00 PM to 8:30 PM"\n' +
+  '"" ,"" ,"" ,"" ,"" ,"Normal","Awards Night\n11/12/2026\nOccupied from 3:00 PM to 9:00 PM"\n' +
+  '"Alpha School / Lights","Normal","Lights\nMon,Tue,Wed,Thu,Fri,Sat,Sun\nOccupied from 12:00 AM to 8:00 AM\nOccupied from 4:45 PM to 12:00 AM"\n' +
+  '"Beta School / Games","Override","Game Day\nEvery 2/28/* *\nOccupied from 8:00 AM to 8:00 PM"\n' +
+  '"" ,"" ,"" ,"" ,"" ,"Normal","Board Meeting\nEvery 2nd */*/* Mon\nOccupied from 4:00 PM to 9:00 PM"\n' +
+  '"" ,"" ,"" ,"" ,"" ,"Normal","Cheer\nWed,Thu  9/24/2026 - 2/26/2027\nOccupied from 5:00 AM to 10:00 AM"\n' +
+  '"" ,"" ,"" ,"" ,"" ,"Normal","Church\n11/15/2026, 11/22/2026, 11/29/2026\nOccupied from 6:00 AM to 12:30 PM"\n' +
+  '"Beta School / Energy","Holiday","Temp Unoccupied\n2/16/2026 - 12/31/2026\nUnoccupied from 12:00 AM to 5:00 AM\nUnoccupied from 3:00 PM to 12:00 AM"\n' +
+  '"Beta School / Fans","Normal","Reg\nOccupied from 8:00 AM to 3:30 PM"\n';
+const MEMBERS_OLD = { 'Alpha School|Gyms': { building: 'Alpha School', group: 'Gyms', schedules: [], members: ['Roof / RTU-1', 'First Floor / Room 1'] } };
 function readG(txt) {
   return BasDiff.readGroupRows(sandbox.emParseCSVText(txt));
 }
-function gImport(stored, sched, mem, n, hist) {
-  return BasDiff.applyGroupsImport({ hist: hist, groups: stored, scheduleItems: sched, memberItems: mem, now: '2026-10-29T16:00:00.000Z', by: 'Test User', id: 'bash_g' + n });
+function gImport(stored, rep, n, hist) {
+  return BasDiff.applyGroupsImport({ hist: hist, groups: stored, scheduleItems: rep.items, locationItems: rep.locations, now: '2026-10-29T16:00:00.000Z', by: 'Test User', id: 'bash_g' + n });
 }
+const sch = (rep, name) => rep.items.filter((x) => x.schedule.name === name)[0].schedule;
 
-t('groups: both files read, days shown as text, quoted commas kept', () => {
-  const s = readG(GROUPS);
-  const m = readG(MEMBERS);
-  assert.strictEqual(s.kind, 'schedules');
-  assert.strictEqual(m.kind, 'members');
-  assert.strictEqual(s.items.length, 3);
-  assert.strictEqual(m.items.length, 3);
-  assert.strictEqual(s.items[0].schedule.days, 'Mon-Fri');
-  assert.strictEqual(s.items[1].schedule.days, 'No days');
-  assert.strictEqual(s.items[1].schedule.dates, 'Jun 1, 2027');
-  assert.strictEqual(s.items[2].schedule.days, 'Every day');
-  assert.strictEqual(s.items[2].schedule.note, 'a note, with comma');
+t('groups: the WebCTRL Schedules report is read: location part, group part, continuation rows', () => {
+  const r = readG(REPORT);
+  assert.strictEqual(r.kind, 'schedules');
+  assert.strictEqual(r.locations.length, 2);
+  assert.strictEqual(r.locations[0].building, 'Alpha School');
+  assert.strictEqual(r.locations[0].area, 'Gym Wing');
+  assert.strictEqual(r.items.length, 10);
+  assert.deepStrictEqual(r.items.filter((x) => x.group === 'Gyms').map((x) => x.schedule.name), ['Practice A', 'Practice B', 'Awards Night']);
+  assert.strictEqual(r.items[1].building, 'Alpha School');
   assert.strictEqual(readG(csv(alphaRows)).kind, '');
+  assert.strictEqual(readG('building,group,schedule_description\nA,B,C\n').kind, '', 'the old custom columns are not read');
 });
 
-t('groups: first import stores groups with schedules and members; same files again = 0 changes', () => {
-  const s = readG(GROUPS).items;
-  const m = readG(MEMBERS).items;
-  const r1 = gImport(null, s, m, 1);
+t('groups: weekly, date, range, recurring and multi-period schedules are read in full', () => {
+  const r = readG(REPORT);
+  const w = sch(r, 'Practice B');
+  assert.deepStrictEqual([w.type, w.days, w.priority], ['weekly', ['Tue', 'Wed'], 'Normal']);
+  assert.deepStrictEqual(w.periods, [{ mode: 'occ', from: 1020, to: 1230 }]);
+  assert.deepStrictEqual([sch(r, 'Awards Night').type, sch(r, 'Awards Night').dates], ['date', ['2026-11-12']]);
+  assert.deepStrictEqual(sch(r, 'Church').dates, ['2026-11-15', '2026-11-22', '2026-11-29']);
+  const rg = sch(r, 'Cheer');
+  assert.deepStrictEqual([rg.type, rg.days, rg.from, rg.to], ['range', ['Wed', 'Thu'], '2026-09-24', '2027-02-26']);
+  assert.deepStrictEqual(sch(r, 'Game Day').recur, { month: 2, day: 28, nth: 0, dow: '' });
+  assert.strictEqual(sch(r, 'Game Day').priority, 'Override');
+  assert.deepStrictEqual(sch(r, 'Board Meeting').recur, { month: 0, day: 0, nth: 2, dow: 'Mon' });
+  const lights = sch(r, 'Lights');
+  assert.strictEqual(lights.periods.length, 2, 'both periods of a day are kept');
+  assert.strictEqual(BasDiff.periodsText(lights), '12:00 AM-8:00 AM and 4:45 PM-12:00 AM');
+  assert.strictEqual(BasDiff.whenText(lights), 'every day');
+  assert.strictEqual(BasDiff.whenText(sch(r, 'Awards Night')), '11/12/2026');
+  assert.strictEqual(BasDiff.whenText(rg), 'Wed,Thu 9/24/2026 - 2/26/2027');
+  assert.strictEqual(BasDiff.whenText(sch(r, 'Game Day')), 'every Feb 28');
+  assert.strictEqual(BasDiff.whenText(sch(r, 'Board Meeting')), '2nd Mon of every month');
+});
+
+t('groups: a weekly schedule with no day selected is not active; a date range with no weekday runs every day of the range', () => {
+  const r = readG(REPORT);
+  const energy = sch(r, 'Temp Unoccupied');
+  assert.strictEqual(energy.type, 'range');
+  assert.strictEqual(BasDiff.scheduleActive(energy), true, 'range with no weekday is active');
+  assert.strictEqual(BasDiff.whenText(energy), 'every day 2/16/2026 - 12/31/2026');
+  assert.strictEqual(BasDiff.scheduleAppliesOn(energy, '2026-11-12'), true);
+  assert.strictEqual(BasDiff.scheduleAppliesOn(energy, '2027-01-05'), false);
+  assert.strictEqual(BasDiff.scheduleActive(sch(r, 'Reg')), false, 'weekly with no days line');
+  assert.strictEqual(BasDiff.whenText(sch(r, 'Reg')), 'No days selected (not active)');
+  assert.deepStrictEqual(BasDiff.scheduleBlocksOn(sch(r, 'Reg'), '2026-11-12'), []);
+  assert.deepStrictEqual(BasDiff.scheduleBlocksOn(energy, '2026-11-12'), [], 'unoccupied periods give no occupied block');
+  ['Practice A', 'Awards Night', 'Game Day', 'Board Meeting', 'Cheer', 'Church', 'Lights'].forEach((n) => assert.strictEqual(BasDiff.scheduleActive(sch(r, n)), true, n));
+  assert.strictEqual(r.items.filter((x) => BasDiff.scheduleActive(x.schedule)).length, 9, 'active group schedules in the synthetic report');
+});
+
+t('groups: a schedule applies on the right dates', () => {
+  const r = readG(REPORT);
+  const on = (n, d) => BasDiff.scheduleAppliesOn(sch(r, n), d);
+  assert.strictEqual(on('Awards Night', '2026-11-12'), true);
+  assert.strictEqual(on('Awards Night', '2026-11-13'), false);
+  assert.strictEqual(on('Cheer', '2026-11-12'), true); // Thu in range
+  assert.strictEqual(on('Cheer', '2026-11-11'), true); // Wed
+  assert.strictEqual(on('Cheer', '2026-11-13'), false); // Fri
+  assert.strictEqual(on('Cheer', '2027-03-04'), false); // Thu after the range
+  assert.strictEqual(on('Game Day', '2027-02-28'), true);
+  assert.strictEqual(on('Game Day', '2027-03-01'), false);
+  assert.strictEqual(on('Board Meeting', '2026-11-09'), true); // 2nd Monday
+  assert.strictEqual(on('Board Meeting', '2026-11-02'), false);
+  assert.strictEqual(on('Practice A', '2026-11-10'), true); // Tue
+  assert.strictEqual(on('Practice A', '2026-11-12'), false); // Thu
+});
+
+t('groups: first import stores groups and location schedules, keeps stored members; same report again = 0 changes', () => {
+  const rep = readG(REPORT);
+  const r1 = gImport({ importedAt: 'x', importedBy: '', groups: MEMBERS_OLD }, rep, 1);
   assert(!r1.error);
-  assert.strictEqual(Object.keys(r1.groups.groups).length, 2);
-  assert.strictEqual(r1.groups.groups['Alpha School|Gyms'].schedules.length, 2);
-  assert.strictEqual(r1.groups.groups['Alpha School|Gyms'].members.length, 2);
-  assert.strictEqual(r1.rec.first, true);
-  const r2 = gImport(r1.groups, s, m, 2, r1.hist);
+  assert.strictEqual(Object.keys(r1.groups.groups).length, 5);
+  assert.strictEqual(r1.groups.groups['Alpha School|Gyms'].schedules.length, 3);
+  assert.strictEqual(r1.groups.groups['Alpha School|Gyms'].members.length, 2, 'members stay as they were');
+  assert.strictEqual(r1.groups.locations.length, 2);
+  assert.strictEqual(r1.rec.locations, 2);
+  const r2 = gImport(r1.groups, rep, 2, r1.hist);
   assert.deepStrictEqual([r2.rec.counts.added, r2.rec.counts.removed, r2.rec.counts.changed], [0, 0, 0]);
   assert.strictEqual(r2.hist.length, 2);
 });
 
-t('groups: one edited schedule = 1 changed; importing only the members file keeps the schedules', () => {
-  const s = readG(GROUPS).items;
-  const m = readG(MEMBERS).items;
-  const r1 = gImport(null, s, m, 1);
-  const s2 = readG(GROUPS.replace('3:20 PM,5:00 PM', '3:20 PM,6:00 PM')).items;
-  const r2 = gImport(r1.groups, s2, m, 2);
+t('groups: one edited schedule = 1 changed', () => {
+  const r1 = gImport(null, readG(REPORT), 1);
+  const r2 = gImport(r1.groups, readG(REPORT.replace('3:20 PM to 5:00 PM', '3:20 PM to 6:00 PM')), 2);
   assert.strictEqual(r2.rec.counts.changed, 1);
   assert(/5:00 PM/.test(r2.rec.changed[0].before) && /6:00 PM/.test(r2.rec.changed[0].after));
-  const m3 = readG(MEMBERS + '2,Beta School,Lights,Pole 2\n').items;
-  const r3 = gImport(r2.groups, null, m3, 3);
-  assert.strictEqual(r3.rec.counts.changed, 1);
-  assert.strictEqual(r3.groups.groups['Alpha School|Gyms'].schedules.length, 2);
-  assert.strictEqual(r3.groups.groups['Beta School|Lights'].members.length, 2);
 });
 
 t('groups: empty import is refused', () => {
-  assert(gImport(null, [], [], 1).error);
+  assert(gImport(null, { items: [], locations: [] }, 1).error);
 });
 
 // --- the card page text: untrusted names and keys never reach HTML or inline script ---------------------
@@ -287,7 +343,7 @@ t('card: quotes and <script> in keys, programs, dates and groups are escaped; a 
   store['en_bas_hist_7'] = [
     { id: 'h1', kind: 'schedules', at: '2026-10-29T15:00:00Z', by: '<b>x</b>', forDate: '2026-10-29', comparedTo: '2026-10-28', first: false, buildings: [], counts: { added: 0, removed: 0, changed: 1, unchanged: 0, total: 1 }, byBuilding: { '<i>b</i>': { added: 0, removed: 0, changed: 1 } }, added: [], removed: [], changed: [{ key: evil + '|P<script>alert(6)</script>', before: blk, after: [[300, 960, 'occ']] }] },
   ];
-  store['en_bas_groups_7'] = { importedAt: '2026-10-29T15:00:00Z', importedBy: '<u>u</u>', groups: { 'b|g': { building: 'B<script>alert(7)</script>', group: 'G"\'', schedules: [{ description: '<script>alert(8)</script>', type: 'Weekly', days: 'Mon-Fri', mode: 'Occupied', start: '1:00 AM', end: '2:00 AM', dates: '', priority: 'Normal', note: '' }], members: ['<script>alert(9)</script>'] } } };
+  store['en_bas_groups_7'] = { importedAt: '2026-10-29T15:00:00Z', importedBy: '<u>u</u>', groups: { 'b|g': { building: 'B<script>alert(7)</script>', group: 'G"\'', schedules: [{ name: '<script>alert(8)</script>', type: 'weekly', days: ['Mon', 'Tue'], dates: [], from: '', to: '', recur: null, priority: 'Normal', periods: [{ mode: 'occ', from: 60, to: 120 }] }], members: ['<script>alert(9)</script>'] } }, locations: [{ location: '/D/L', building: '<b>L</b>', area: 'A', schedule: { name: '<img src=x onerror=alert(10)>', type: 'weekly', days: ['Mon'], dates: [], from: '', to: '', recur: null, priority: 'Normal', periods: [] } }] };
   sb.basRender(7);
   const html = host.innerHTML;
   assert(html.length > 500, 'card did not render');
