@@ -12,7 +12,8 @@
 //                              confirmed, by, at } } }
 //   event  en_cal_snap_<pid> row [title, start, end, allDay, location]; the space is CalendarDiff.eventPlace
 // Statuses (eventCoverage): covered, short (not covered, with minutes short), nobas (no BAS schedule for this space),
-//   offsite, notmapped, nocopy (no BAS copy for that kind of day), allday (no times to check).
+//   offsite, notmapped, nocopy (no BAS copy for that kind of day), allday (no times to check),
+//   unknown (not covered by the saved schedules, but a scheduling group with no saved members has a schedule that spans the event).
 // Serving units (AHU/RTU/ERV/DOAS that serve boxes, HW/CHW plants) run on requests and have no schedule to check:
 //   isServingProgram. They are never suggested and never checked. Domestic hot water (DHW) is NOT serving: it is out of
 //   scope (isOutOfScopeProgram). isUnchecked is the one test for both.
@@ -299,43 +300,155 @@
   }
 
   // --- scheduling groups ----------------------------------------------------------------------
-  // en_bas_groups_<pid> { "building|group": { building, group, schedules, members:["Roof / RTU-8 Gym", ...] } }.
-  // A member names the program as its last part, after the area. Returns the group entry of a program row key, or null.
-  function groupEntryFor(groups, key) {
-    var p = BD.splitKey(key);
-    var prog = norm(programOfKey(key));
-    var parts = p.location.split('/').map(norm).filter(Boolean);
-    var area = parts[parts.length - 1] || '';
-    var found = null;
-    Object.keys(groups || {}).some(function (gk) {
-      var g = groups[gk];
-      var hit = (g.members || []).some(function (m) {
-        var mp = String(m).split(' / ').map(norm);
-        if (mp.pop() !== prog) return false;
-        return !mp.length || mp[mp.length - 1] === area;
-      });
-      if (hit) found = g;
-      return hit;
-    });
-    return found;
+  // en_bas_groups_<pid> { "building|group": { building, group, schedules, members:["High School / AREA 'F' SUMMARY / Room F114", ...],
+  // groupMembers:["HS NewArea F", ...] } } and its locations [{ location, building, area, schedule }].
+  // WebCTRL model: a group's members are equipment paths, area paths (every program below the path) or other groups. A program is in
+  // every group that lists it, directly or through nesting. Its schedules are those of all these groups plus the schedules on its own
+  // location and on every parent location. groupsFor and locationsFor are the ONE membership rule.
+  var MAX_NEST = 20; // longest chain of groups inside groups that is followed
+  var _gidx = typeof WeakMap === 'function' ? new WeakMap() : null;
+  function memberParts(m) {
+    return String(m == null ? '' : m).split(/\s+\/\s+/).map(norm).filter(Boolean);
   }
-  // What the schedules of a program's scheduling group do on one date: { occ:[[from,to,'occ']], forced:[[from,to]] }.
+  // The groups map -> { list:[{ gk, g, parts:[[...]] }], parents:{ gk:[gk] }, memo:{} }. Rebuilt when the map changed size.
+  function groupIndex(groups) {
+    var keys = Object.keys(groups || {});
+    var sig = keys.length;
+    keys.forEach(function (k) {
+      sig += ':' + ((groups[k].members || []).length + '.' + (groups[k].groupMembers || []).length);
+    });
+    var hit = _gidx && _gidx.get(groups);
+    if (hit && hit.sig === sig) return hit;
+    var byName = {};
+    keys.forEach(function (gk) {
+      byName[BD.nameKey(groups[gk].building, groups[gk].group)] = gk;
+    });
+    var idx = { sig: sig, list: [], parents: {}, memo: {} };
+    keys.forEach(function (gk) {
+      var g = groups[gk];
+      var nested = (g.groupMembers || []).map(norm);
+      idx.list.push({
+        gk: gk,
+        g: g,
+        parts: (g.members || [])
+          .filter(function (m) {
+            return nested.indexOf(norm(m)) === -1;
+          })
+          .map(memberParts)
+          .filter(function (x) {
+            return x.length;
+          }),
+      });
+      nested.forEach(function (n) {
+        var child = byName[BD.nameKey(g.building, n)];
+        if (child) (idx.parents[child] = idx.parents[child] || []).push(gk);
+      });
+    });
+    if (_gidx && groups && typeof groups === 'object') _gidx.set(groups, idx);
+    return idx;
+  }
+  // The location path of a row key as normalized parts (the district first), and the program name.
+  function pathOfKey(key) {
+    return {
+      loc: keyParts(key).location.split('/').map(norm).filter(Boolean),
+      prog: norm(programOfKey(key)),
+    };
+  }
+  function startsWith(parts, prefix) {
+    return prefix.length <= parts.length && prefix.every(function (x, i) { return x === parts[i]; });
+  }
+  // Does a member path cover the program? The member is the program path or a parent area path (written from the building down, the
+  // district root is left out), or the short form "<area> / <program>" or "<program>".
+  function memberCovers(mp, loc, prog) {
+    var below = loc.length > 1 ? loc.slice(1) : loc;
+    if (loc.length > 1 && mp.length > 1 && mp[0] === loc[0]) mp = mp.slice(1);
+    if (startsWith(below.concat([prog]), mp)) return true;
+    return mp[mp.length - 1] === prog && (mp.length === 1 || mp[mp.length - 2] === below[below.length - 1]);
+  }
+  // Every group that contains the program of a row key: groups that list it (equipment path or area path) and, through nested groups, the
+  // groups that list those groups. A cycle is followed once. -> [group entry] (listing groups first), [] when none.
+  function groupsFor(groups, key) {
+    var idx = groupIndex(groups);
+    if (idx.memo[key]) return idx.memo[key];
+    var p = pathOfKey(key);
+    var seen = {};
+    var order = [];
+    idx.list.forEach(function (e) {
+      if (e.parts.some(function (mp) { return memberCovers(mp, p.loc, p.prog); })) {
+        seen[e.gk] = true;
+        order.push(e.gk);
+      }
+    });
+    var frontier = order.slice();
+    for (var depth = 0; depth < MAX_NEST && frontier.length; depth++) {
+      var next = [];
+      frontier.forEach(function (gk) {
+        (idx.parents[gk] || []).forEach(function (pk) {
+          if (seen[pk]) return;
+          seen[pk] = true;
+          order.push(pk);
+          next.push(pk);
+        });
+      });
+      frontier = next;
+    }
+    return (idx.memo[key] = order.map(function (gk) { return groups[gk]; }));
+  }
+  // The positions in locations (en_bas_groups.locations) of the schedules on the program's own location or on a parent location
+  // (a location schedule is inherited by everything below its path; paths are compared with the district root).
+  function locationsFor(locations, key) {
+    var p = pathOfKey(key);
+    var full = p.loc.concat([p.prog]);
+    var out = [];
+    (locations || []).forEach(function (l, i) {
+      var lp = String(l.location || '').split('/').map(norm).filter(Boolean);
+      if (lp.length && startsWith(full, lp)) out.push(i);
+    });
+    return out;
+  }
+  // What the schedules of a program's scheduling groups and locations do on one date: { occ:[[from,to,'occ']], forced:[[from,to]] }.
   // The BAS copy is the effective schedule as exported on its day; a group schedule for another weekday (Mon-Thu copies
   // are borrowed for Mon, Tue, Wed) or a date, date-range or yearly schedule is invisible in it, so the group schedules are read here as well.
-  // BD.effectiveBlocksOn is the one reader (priority Override > Holiday > Normal; schedules with no day selected, and unoccupied
-  // periods, give no occupied time). forced = minutes a Holiday or Override period makes unoccupied.
-  // cache (optional, a plain object that the caller makes for ONE call and drops after) keeps the result for each group and date.
-  function groupEffectOn(groups, key, ymd, cache) {
-    var g = groupEntryFor(groups, key);
-    var ck = g ? g.building + '|' + g.group + '|' + ymd : '';
+  // BD.effectiveBlocksOn is the one reader, called ONCE over the schedules of all the groups and locations together (priority Override >
+  // Holiday > Normal; schedules with no day selected, and unoccupied periods, give no occupied time). forced = minutes a Holiday or
+  // Override period makes unoccupied.
+  // cache (optional, a plain object that the caller makes for ONE call and drops after) keeps the result for each set of groups and date.
+  function groupEffectOn(groups, locations, key, ymd, cache) {
+    var gs = groupsFor(groups, key);
+    var li = locationsFor(locations, key);
+    var ck = gs.length || li.length ? gs.map(function (g) { return g.building + '|' + g.group; }).concat(li.map(function (i) { return '#' + i; })).join(',') + '|' + ymd : '';
     if (ck && cache && cache[ck]) return cache[ck];
-    var e = BD.effectiveBlocksOn((g && g.schedules) || [], ymd);
+    var schedules = [];
+    gs.forEach(function (g) { schedules = schedules.concat(g.schedules || []); });
+    li.forEach(function (i) { schedules.push(locations[i].schedule); });
+    var e = BD.effectiveBlocksOn(schedules, ymd);
     var out = {
       occ: e.occ.map(function (r) { return [r[0], r[1], 'occ']; }),
       forced: e.forcedUnocc,
     };
     if (ck && cache) cache[ck] = out;
     return out;
+  }
+  // A group whose members are not saved (an empty members list) in the event's building with schedules that together span [from,to] on
+  // the date: the event is probably covered by it, but the program may not be in the group. -> { group, text } or null. Group name order.
+  function probableGroup(groups, building, ymd, from, to) {
+    var nb = norm(building);
+    var list = Object.keys(groups || {})
+      .map(function (k) { return groups[k]; })
+      .filter(function (g) { return !(g.members || []).length && norm(g.building) === nb; })
+      .sort(function (a, b) { return a.group < b.group ? -1 : a.group > b.group ? 1 : 0; });
+    for (var i = 0; i < list.length; i++) {
+      var g = list[i];
+      var eff = BD.effectiveBlocksOn(g.schedules || [], ymd);
+      if (!eff.occ.length || minutesShort(eff.occ.map(function (r) { return [r[0], r[1], 'occ']; }), from, to)) continue;
+      var texts = (g.schedules || [])
+        .filter(function (sc) {
+          return BD.scheduleBlocksOn(sc, ymd).some(function (b) { return b[0] < to && b[1] > from; });
+        })
+        .map(BD.scheduleText);
+      return { group: g.group, text: texts.join('; ') };
+    }
+    return null;
   }
   // The occupied blocks of blocks that are not inside the forced ranges.
   function withoutRanges(blocks, ranges) {
@@ -407,8 +520,9 @@
 
   // --- the one coverage function --------------------------------------------------------------
   // eventCoverage(row, ctx) -> { status, label, space, short, program, from, exact }
-  //   row = [title, start, end, allDay, location]; ctx = { tz, map, snaps, groups }
+  //   row = [title, start, end, allDay, location]; ctx = { tz, map, snaps, groups, locations }
   //   ctx.effectCache is optional: a plain object the caller makes for one call; it keeps the group schedule effect for each group and date.
+  //   locations (en_bas_groups.locations) is optional: schedules on the program's location or a parent location count like group schedules.
 //   groups (en_bas_groups) is optional: the occupied periods of the schedules of a program's scheduling group that run on the event date (weekdays, a date, a date range, a yearly date) count as occupied.
   //   short = minutes the worst mapped program is unoccupied during the event; program = its row key; gaps = those stretches.
 //   fromMin/toMin = the event as minutes of that day.
@@ -444,7 +558,7 @@
     res.fromMin = from;
     res.toMin = to;
     keys.forEach(function (k) {
-      var eff = groupEffectOn(ctx.groups, k, date, ctx.effectCache);
+      var eff = groupEffectOn(ctx.groups, ctx.locations, k, date, ctx.effectCache);
       var blocks = withoutRanges(snap.rows[k] || [], eff.forced).concat(eff.occ); // a Holiday or Override unoccupied period removes what the BAS copy shows
       var m = minutesShort(blocks, from, to);
       if (m > res.short) {
@@ -454,6 +568,13 @@
       }
     });
     if (!res.short) return done('covered', 'Covered');
+    // No saved member list to say which group holds the program: a group with no saved members whose schedule spans the event is named
+    // as the probable cover. It is not a to-do (no change is known to be needed) until the members are imported.
+    var maybe = probableGroup(ctx.groups, BD.keyBuilding(res.program), date, from, to);
+    if (maybe) {
+      res.probable = maybe;
+      return done('unknown', 'Probably covered by ' + maybe.group + ': ' + maybe.text + '. Group members are not saved; import them to confirm.');
+    }
     return done('short', 'Not covered, ' + res.short + ' min short');
   }
 
@@ -467,7 +588,7 @@
     var copyDates = Object.keys(ctx.snaps || {}).filter(function (d) {
       return BD.isDate(d) && ctx.snaps[d] && ctx.snaps[d].rows;
     });
-    var out = { total: 0, covered: 0, short: 0, notmapped: 0, offsite: 0, nocopy: 0, nobas: 0, allday: 0, checked: 0, skipped: 0, uncheckable: 0, noCopyDay: 0, noCopyDays: [], noPlace: 0, unmappedPlaces: [], copies: copyDates.length, copyWeekdays: [], reasons: [] };
+    var out = { total: 0, covered: 0, short: 0, unknown: 0, notmapped: 0, offsite: 0, nocopy: 0, nobas: 0, allday: 0, checked: 0, skipped: 0, uncheckable: 0, noCopyDay: 0, noCopyDays: [], noPlace: 0, unmappedPlaces: [], copies: copyDates.length, copyWeekdays: [], reasons: [] };
     var seen = {};
     copyDates.forEach(function (d) {
       var w = WD[dow(d)];
@@ -509,6 +630,7 @@
       if (out.copies && out.noCopyDay) {
         out.reasons.push('Days with no BAS copy (' + out.noCopyDays.join(', ') + '): ' + out.noCopyDay + (out.noCopyDay === 1 ? ' event cannot' : ' events cannot') + ' be checked. BAS copies exist for ' + out.copyWeekdays.join(', ') + (out.copyWeekdays.some(function (w) { return ['Mon', 'Tue', 'Wed', 'Thu'].indexOf(w) !== -1; }) ? ' (one copy covers Mon-Thu)' : '') + '.');
       }
+      if (out.unknown) out.reasons.push(out.unknown + (out.unknown === 1 ? ' event is' : ' events are') + ' probably covered by a scheduling group whose members are not saved. Import the group members to confirm.');
       if (out.nobas) out.reasons.push(out.nobas + (out.nobas === 1 ? ' event is' : ' events are') + ' in a space with no BAS schedule.');
     }
     return out;
@@ -531,7 +653,10 @@
     minutesShort: minutesShort,
     gapsOf: gapsOf,
     eventCoverage: eventCoverage,
-    groupEntryFor: groupEntryFor,
+    groupsFor: groupsFor,
+    locationsFor: locationsFor,
+    groupEffectOn: groupEffectOn,
+    probableGroup: probableGroup,
     webctrlMatch: webctrlMatch,
     normName: normName,
   };

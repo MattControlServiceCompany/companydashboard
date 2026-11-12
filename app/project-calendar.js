@@ -265,6 +265,11 @@
     return status ? '<span class="pcal-badge pcal-' + status + '">' + CalendarDiff.markLabel(status, lines) + '</span>' : '';
   }
   // The BAS column: one cell per event from BasCoverage.eventCoverage (computations/bas-coverage.js, the only copy).
+  // The ONE BAS context for a project's event rows (space map, BAS copies, scheduling groups with members, location schedules).
+  function basCtxFor(pid, tz) {
+    var bg = DB.get('en_bas_groups_' + pid, null) || {};
+    return { tz: tz, map: DB.get('en_space_map_' + pid, null), snaps: DB.get('en_bas_snap_' + pid, {}), groups: bg.groups || {}, locations: bg.locations || [] };
+  }
   function basCell(row, status, ctx) {
     if (status === 'canceled' || !window.BasCoverage) return '';
     var c = BasCoverage.eventCoverage(row, ctx);
@@ -348,7 +353,7 @@
       (lc ? ': ' + num(lc.added) + ' new, ' + num(lc.changed) + ' changed, ' + num(lc.removed) + ' canceled' : '');
     var controls =
       '<div class="pcal-nav">' + (v.compared ? btn('Changes only', s.changesOnly, 'pcalChangesOnly(' + pid + ')', 'Show only new, moved and canceled events') : '') + '</div>';
-    var basCtx = { tz: tz, map: DB.get('en_space_map_' + pid, null), snaps: DB.get('en_bas_snap_' + pid, {}), groups: (DB.get('en_bas_groups_' + pid, null) || {}).groups || {} };
+    var basCtx = basCtxFor(pid, tz);
     var heading;
     var tbl;
     var more = '';
@@ -711,6 +716,7 @@
   }
 
   // The calendar's own table and text helpers, shared with the BAS schedules card (app/bas-schedules.js).
+  window.pcalBasCtx = basCtxFor; // the one BAS context, also used by district-calendar.js
   window.pcalBasCell = basCell; // the one BAS badge, also used by the manual events table (district-calendar.js)
   window.pcalUi = { table: table, num: num, stamp: stamp, ensureStyle: ensureStyle };
   window.pcalRender = render;

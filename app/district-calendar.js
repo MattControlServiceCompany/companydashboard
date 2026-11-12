@@ -730,11 +730,7 @@ function renderDistCalTable(projId) {
   const rows = p.districtCalendar.sort((a, b) => new Date(a.date) - new Date(b.date));
   const cfg = DB.get('en_cal_cfg_' + projId, null);
   const manual = distCalManualRows(projId);
-  const basCtx = {
-    tz: (cfg && cfg.timezone) || 'America/Chicago',
-    map: DB.get('en_space_map_' + projId, null),
-    snaps: DB.get('en_bas_snap_' + projId, {}),
-  };
+  const basCtx = typeof pcalBasCtx === 'function' ? pcalBasCtx(projId, (cfg && cfg.timezone) || 'America/Chicago') : null;
   const viewMode = window._distCalView[projId] || 'list';
   const toggleBtn = `<div style="display:flex;justify-content:flex-end;margin-bottom:8px">
           <button class="btn btn-ghost btn-sm" onclick="distCalToggleView(${projId})" style="font-size:11px">
@@ -849,7 +845,7 @@ function distCalRefreshBas(projId) {
   const p = projects.find((x) => x.id === projId);
   if (!p || typeof pcalBasCell !== 'function') return;
   const cfg = DB.get('en_cal_cfg_' + projId, null);
-  const ctx = { tz: (cfg && cfg.timezone) || 'America/Chicago', map: DB.get('en_space_map_' + projId, null), snaps: DB.get('en_bas_snap_' + projId, {}) };
+  const ctx = pcalBasCtx(projId, (cfg && cfg.timezone) || 'America/Chicago');
   const manual = distCalManualRows(projId);
   (p.districtCalendar || []).forEach((ev) => {
     const td = document.getElementById('distcal-bas-' + projId + '-' + ev.id);

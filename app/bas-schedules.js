@@ -6,7 +6,7 @@
 // Data (shared keys, read and written only through DB.get / DB.set; class SYNCED, prefix en_bas_):
 //   en_bas_snap_<pid>    { "YYYY-MM-DD": { forDate, importedAt, importedBy, rows:{ "location|program": [[start,end,mode]] } } }
 //   en_bas_hist_<pid>    [ { id, kind, at, by, forDate, comparedTo, buildings, counts, byBuilding, added, removed, changed } ]  newest first, 50 (imports only; actions are in en_bas_acthist_<pid>, 50)
-//   en_bas_groups_<pid>  { importedAt, importedBy, groups:{ "building|group": { building, group, schedules, members } } }
+//   en_bas_groups_<pid>  { importedAt, importedBy, groups:{ "building|group": { building, group, schedules, members, groupMembers } }, locations }
 //   en_bas_schedhistory_<pid>  { version, buildings:[ { building, baselineWeekday, weekday, weekend, setPoints } ] }  written by "Import audit log" (BasAuditLog, app/bas-audit-log.js), read by the quarterly report
 //
 // Network: none. Opening the page or the tab reads saved data only. Files are read in the browser.
@@ -321,12 +321,15 @@
     var g = s.gpending;
     if (g) {
       var rows = g.files.map(function (f) {
-        return [esc(f.name), esc(f.kind ? 'WebCTRL Schedules report: ' + plural(f.locations, 'location schedule', 'location schedules') : 'Not a WebCTRL Schedules report'), esc(f.kind ? num(f.items) + ' group schedules' : '')];
+        if (f.kind === 'members') {
+          return [esc(f.name), esc('Group members: ' + plural(f.counts.groups, 'group', 'groups') + ', ' + plural(f.counts.equipment, 'equipment or area member', 'equipment or area members') + ', ' + plural(f.counts.nested, 'group member', 'group members')), esc(num(f.items) + ' member rows')];
+        }
+        return [esc(f.name), esc(f.kind ? 'WebCTRL Schedule Instances report: ' + plural(f.locations, 'location schedule', 'location schedules') : 'Not a WebCTRL Schedule Instances report or a group members file'), esc(f.kind ? num(f.items) + ' group schedules' : '')];
       });
       var ok = g.files.some(function (f) { return f.kind; });
       return (
         '<div class="bas-box"><b>Import scheduling groups</b>' +
-        ui().table([['File', '40%'], ['What it holds', '36%'], ['Group schedules', '24%']], rows) +
+        ui().table([['File', '36%'], ['What it holds', '40%'], ['Rows', '24%']], rows) +
         '<div class="pcal-row">' +
         (ok ? '<button class="btn btn-em btn-sm" onclick="basSaveGroups(' + pid + ')">Save groups</button>' : '') +
         '<button class="btn btn-ghost btn-sm" onclick="basCancel(' + pid + ')">Cancel</button></div></div>'
@@ -370,7 +373,7 @@
       '<button class="btn btn-ghost btn-sm" onclick="document.getElementById(\'bas-bfile-' + pid + '\').click()">Import baseline (Set Points sheet)</button></span></div>' +
       '<div style="padding:16px">' +
       '<input class="bas-file" type="file" id="bas-file-' + pid + '" accept=".csv,text/csv" multiple onchange="basPick(' + pid + ',this)">' +
-      '<input class="bas-file" type="file" id="bas-gfile-' + pid + '" accept=".csv,text/csv" onchange="basPickGroups(' + pid + ',this)">' +
+      '<input class="bas-file" type="file" id="bas-gfile-' + pid + '" accept=".csv,text/csv" multiple onchange="basPickGroups(' + pid + ',this)">' +
       '<input class="bas-file" type="file" id="bas-afile-' + pid + '" accept=".csv,text/csv" multiple onchange="basPickAudit(' + pid + ',this)">' +
       '<input class="bas-file" type="file" id="bas-bfile-' + pid + '" accept=".csv,text/csv" multiple onchange="basPickBaseline(' + pid + ',this)">' +
       '<div class="pcal-msg" id="bas-msg-' + pid + '" role="status">' + esc(s.msg) + '</div>' +
@@ -552,7 +555,7 @@
       if (!files.length) return;
       var infos = files.map(function (f) {
         var r = BasDiff.readGroupRows(emParseCSVText(f.text));
-        return { name: f.name, kind: r.kind, items: r.items.length, locations: r.locations.length, list: r.items, locList: r.locations };
+        return { name: f.name, kind: r.kind, items: r.items.length, locations: r.locations.length, list: r.items, locList: r.locations, counts: BasDiff.memberCounts(r.kind === 'members' ? r.items : []) };
       });
       var s = state(pid);
       s.pending = null;
@@ -564,18 +567,19 @@
   window.basSaveGroups = async function (pid) {
     var s = state(pid);
     if (!s.gpending) return;
-    var pick = function (field) {
+    var pick = function (field, kind) {
       var out = [];
       s.gpending.files.forEach(function (f) {
-        if (f.kind) out = out.concat(f[field]);
+        if (f.kind === kind) out = out.concat(f[field]);
       });
       return out;
     };
     var res = BasDiff.applyGroupsImport({
       hist: histOf(pid),
       groups: groupsOf(pid),
-      scheduleItems: pick('list'),
-      locationItems: pick('locList'),
+      scheduleItems: pick('list', 'schedules'),
+      locationItems: pick('locList', 'schedules'),
+      memberItems: pick('list', 'members'),
       now: new Date().toISOString(),
       by: whoName(),
       id: newId(),
@@ -584,7 +588,10 @@
     await DB.set('en_bas_hist_' + pid, res.hist);
     await DB.set('en_bas_groups_' + pid, res.groups);
     s.gpending = null;
-    s.msg = 'Saved ' + plural(res.rec.counts.total, 'scheduling group', 'scheduling groups') + ' and ' + plural(res.rec.locations, 'location schedule', 'location schedules') + '.';
+    var mc = res.rec.members;
+    s.msg =
+      'Saved ' + plural(res.rec.counts.total, 'scheduling group', 'scheduling groups') + ' and ' + plural(res.rec.locations, 'location schedule', 'location schedules') + '.' +
+      (mc.groups ? ' Members of ' + plural(mc.groups, 'group', 'groups') + ' replaced: ' + plural(mc.equipment, 'equipment or area member', 'equipment or area members') + ' and ' + plural(mc.nested, 'group member', 'group members') + '.' : '');
     render(pid);
   };
   window.basView = function (pid, d) {

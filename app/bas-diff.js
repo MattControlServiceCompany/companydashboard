@@ -10,8 +10,10 @@
 //   start and end are minutes since midnight. mode is 'occ' or 'unocc'. Buildings imported for the same
 //   date merge into the same snapshot; importing a building again replaces that building's rows.
 // Groups (key en_bas_groups_<pid>):
-//   { importedAt, importedBy, groups:{ "<building>|<group>": { building, group, schedules:[...], members:[...] } },
-//     locations:[{ location, building, area, schedule }] }   (read from the WebCTRL Schedules report; see readGroupRows)
+//   { importedAt, importedBy, groups:{ "<building>|<group>": { building, group, schedules:[...], members:[...], groupMembers:[...] } },
+//     locations:[{ location, building, area, schedule }] }   (schedules and locations: the WebCTRL Schedule Instances report;
+//     members: a members CSV; see readGroupRows. members = equipment paths, area paths and group names as written;
+//     groupMembers = the members that are other scheduling groups (nested groups).)
 // History (key en_bas_hist_<pid>): newest first, at most 50 records, one per import (kind 'schedules' or 'groups').
 // A schedule change is a difference in the start, end or mode of a program's blocks. Nothing else counts.
 (function (root) {
@@ -275,6 +277,10 @@
   function norm(v) {
     return String(v == null ? '' : v).trim();
   }
+  // "<building>|<group>" in lower case with single spaces: the key that finds a group by the name written in a member row.
+  function nameKey(building, group) {
+    return (norm(building) + '|' + norm(group)).toLowerCase().replace(/\s+/g, ' ');
+  }
   function pad2(n) {
     return (n < 10 ? '0' : '') + n;
   }
@@ -343,13 +349,40 @@
     if (!name && !whenLine && !periods.length) return null;
     return Object.assign({ name: name, priority: norm(priority) || 'Normal' }, parseWhen(whenLine), { periods: periods });
   }
-  // rows2d = the parsed CSV. Returns { kind:'schedules'|'', locations:[{ location, building, area, schedule }], items:[{ building, group, schedule }] }.
+  // The members CSV: columns building, group, member and (optional) kind. kind is 'group' (a member that is another scheduling group) or
+  // 'equipment' (an equipment path or an area path). An empty member row says the group exists and has no members.
+  // Without a kind column, a member that equals the name of another group in the file (same building) is a group, else equipment.
+  function readMemberRows(rows2d, head) {
+    var out = { kind: 'members', locations: [], items: [] };
+    var ib = head.indexOf('building');
+    var ig = head.indexOf('group');
+    var im = head.indexOf('member');
+    var ik = head.indexOf('kind');
+    var names = {};
+    var raw = [];
+    rows2d.slice(1).forEach(function (r) {
+      if (!r || !r.length) return;
+      var group = norm(r[ig]);
+      if (!group) return;
+      var building = ib >= 0 ? norm(r[ib]) : '';
+      names[nameKey(building, group)] = true;
+      raw.push({ building: building, group: group, member: norm(r[im]), kind: ik >= 0 ? norm(r[ik]).toLowerCase() : '' });
+    });
+    raw.forEach(function (x) {
+      if (x.kind !== 'group' && x.kind !== 'equipment') x.kind = names[nameKey(x.building, x.member)] ? 'group' : 'equipment';
+      out.items.push(x);
+    });
+    return out;
+  }
+  // rows2d = the parsed CSV. Returns { kind:'schedules'|'members'|'', locations:[{ location, building, area, schedule }],
+  //   items:[{ building, group, schedule }] (schedules) or [{ building, group, member, kind }] (members) }.
   function readGroupRows(rows2d) {
     var none = { kind: '', locations: [], items: [] };
     if (!rows2d || !rows2d.length) return none;
     var head = rows2d[0].map(function (h) {
       return norm(h).toLowerCase();
     });
+    if (head.indexOf('group') >= 0 && head.indexOf('member') >= 0) return readMemberRows(rows2d, head);
     if (head[0] !== 'location' || head[1] !== 'priority' || head[2] !== 'description') return none;
     var out = { kind: 'schedules', locations: [], items: [] };
     var inGroups = false;
@@ -504,21 +537,59 @@
   function scheduleText(s) {
     return [s.name, whenText(s), periodsText(s), s.priority !== 'Normal' ? s.priority : ''].filter(Boolean).join(', ');
   }
-  // Builds the groups map from the schedule items of the report. Members are not in the report: the stored members of a group stay.
-  function buildGroups(oldGroups, scheduleItems) {
+  // Builds the groups map. oldGroups = the stored groups. scheduleItems = the schedule rows of a Schedule Instances report;
+  // keepSchedules = true when no report is imported (members only): the stored schedules stay, else they are replaced.
+  // memberItems = the rows of a members CSV: the members of a group named in them REPLACE its stored members; the members of every
+  // other group stay.
+  function buildGroups(oldGroups, scheduleItems, memberItems, keepSchedules) {
     var out = {};
     Object.keys(oldGroups || {}).forEach(function (k) {
       var g = oldGroups[k];
-      out[k] = { building: g.building, group: g.group, schedules: [], members: (g.members || []).slice() };
+      out[k] = {
+        building: g.building,
+        group: g.group,
+        schedules: keepSchedules ? (g.schedules || []).slice() : [],
+        members: (g.members || []).slice(),
+        groupMembers: (g.groupMembers || []).slice(),
+      };
     });
     scheduleItems.forEach(function (x) {
       var k = x.building + '|' + x.group;
-      if (!out[k]) out[k] = { building: x.building, group: x.group, schedules: [], members: [] };
+      if (!out[k]) out[k] = { building: x.building, group: x.group, schedules: [], members: [], groupMembers: [] };
       out[k].schedules.push(x.schedule);
+    });
+    var replaced = {};
+    (memberItems || []).forEach(function (x) {
+      var k = x.building + '|' + x.group;
+      if (!out[k]) out[k] = { building: x.building, group: x.group, schedules: [], members: [], groupMembers: [] };
+      if (!replaced[k]) {
+        replaced[k] = true;
+        out[k].members = [];
+        out[k].groupMembers = [];
+      }
+      if (x.member && out[k].members.indexOf(x.member) < 0) {
+        out[k].members.push(x.member);
+        if (x.kind === 'group') out[k].groupMembers.push(x.member);
+      }
     });
     // A group that lost every schedule and member is gone.
     Object.keys(out).forEach(function (k) {
       if (!out[k].schedules.length && !out[k].members.length) delete out[k];
+    });
+    return out;
+  }
+  // { groups, equipment, nested } of members rows: groups named, equipment/area members, members that are other groups.
+  function memberCounts(items) {
+    var seen = {};
+    var out = { groups: 0, equipment: 0, nested: 0 };
+    (items || []).forEach(function (x) {
+      if (!seen[x.building + '|' + x.group]) {
+        seen[x.building + '|' + x.group] = true;
+        out.groups++;
+      }
+      if (!x.member) return;
+      if (x.kind === 'group') out.nested++;
+      else out.equipment++;
     });
     return out;
   }
@@ -535,14 +606,19 @@
   function sameGroup(a, b) {
     return groupText(a) === groupText(b);
   }
-  // The import in one call. in: { groups (stored object or null), scheduleItems, locationItems, now, by, id }
+  // The import in one call. in: { groups (stored object or null), scheduleItems, locationItems (from a Schedule Instances report),
+  // memberItems (from a members CSV), now, by, id }. A report replaces the stored schedules and location schedules; a members file
+  // replaces the members of the groups it names. A members-only import keeps the stored schedules and locations.
   function applyGroupsImport(inp) {
     var locs = inp.locationItems || [];
-    if (!(inp.scheduleItems && inp.scheduleItems.length) && !locs.length) {
-      return { error: 'No schedules found in the file.' };
+    var mem = inp.memberItems || [];
+    var hasReport = !!((inp.scheduleItems && inp.scheduleItems.length) || locs.length);
+    if (!hasReport && !mem.length) {
+      return { error: 'No schedules or group members found in the file.' };
     }
     var oldGroups = inp.groups ? inp.groups.groups : {};
-    var next = buildGroups(oldGroups, inp.scheduleItems || []);
+    if (!hasReport) locs = (inp.groups && inp.groups.locations) || [];
+    var next = buildGroups(oldGroups, inp.scheduleItems || [], mem, !hasReport);
     var d = diffMaps(oldGroups, next, sameGroup);
     var had = Object.keys(oldGroups).length > 0;
     var buildings = {};
@@ -556,6 +632,7 @@
       by: inp.by || '',
       first: !had,
       locations: locs.length,
+      members: memberCounts(mem),
       buildings: Object.keys(buildings)
         .sort()
         .map(function (b) {
@@ -610,6 +687,8 @@
     parseWhen: parseWhen,
     parseDescription: parseDescription,
     readGroupRows: readGroupRows,
+    memberCounts: memberCounts,
+    nameKey: nameKey,
     scheduleActive: scheduleActive,
     scheduleAppliesOn: scheduleAppliesOn,
     scheduleBlocksOn: scheduleBlocksOn,

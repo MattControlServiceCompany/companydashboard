@@ -13,6 +13,7 @@
 //   reconcile(o)       o = computeActions input + { stored, now, latestImport } -> { stored, changes:[{id,text,what}] }
 //   latestImport(snaps, calFetchedAt) -> newest BAS import or calendar sync time
 //   setStatus(stored, id, status, who, now) -> { stored, changes }
+//   periodUnknown(o) -> events probably covered by a group whose members are not saved (not a to-do)
 //   wasteFindings(o)   o = { events, map, snaps, groups, tz, today }          -> [finding]
 //   historyRecord(changes, at, by, id)  -> one en_bas_hist record (kind 'action')
 (function (root) {
@@ -34,26 +35,90 @@
   }
 
   // --- scheduling group of a program ----------------------------------------------------------
-  // en_bas_groups_<pid>. The entry of a program is found by BasCoverage.groupEntryFor (the one reader; coverage uses it too).
-  // Returns the group name or ''.
-  var groupEntryFor = BC.groupEntryFor;
+  // en_bas_groups_<pid>. The groups of a program are found by BasCoverage.groupsFor (the one membership rule; coverage uses it too).
+  // A program can be in several groups. groupFor returns the name of the first one (a group that lists the program) or ''.
   function groupFor(groups, key) {
-    var g = groupEntryFor(groups, key);
+    var g = BC.groupsFor(groups, key)[0];
     return g ? g.group : '';
   }
 
-  // The schedules saved for one scheduling group, as plain text ('' when none was read): 'LRC Volleyball Games, Mon,Tue,Wed,Thu, 4:00 PM-10:00 PM'.
+  // The schedules saved for the scheduling groups of a program, as plain text ('' when none was read): 'LRC Volleyball Games, Mon,Tue,Wed,Thu, 4:00 PM-10:00 PM'.
   // The text is BasDiff.scheduleText (the one writer); a schedule with no day selected reads 'No days selected (not active)'.
+  // With several groups, each group's schedules start with the group name.
   function groupScheduleText(groups, key) {
-    var g = groupEntryFor(groups, key);
-    if (!g) return '';
-    return (g.schedules || []).map(BD.scheduleText).join('; ');
+    var gs = BC.groupsFor(groups, key);
+    return gs
+      .map(function (g) {
+        var t = (g.schedules || []).map(BD.scheduleText).join('; ');
+        return gs.length > 1 ? g.group + ': ' + t : t;
+      })
+      .join(' | ');
   }
-  // 'Middle School / Area C / Gym East AHU-4 RF-14': where in WebCTRL a program lives.
+  // 'AREA 'F' SUMMARY' -> 'Area F'. Any other area text stays as it is.
+  function areaName(area) {
+    return String(area || '')
+      .split(' / ')
+      .map(function (a) {
+        var m = /^area\s+'?([^']+?)'?\s+summary$/i.exec(a.trim());
+        return m ? 'Area ' + m[1] : a;
+      })
+      .join(' / ');
+  }
+  // 'Middle School / Area C / Gym East AHU-4 RF-14': where in WebCTRL a program lives (building / area / program, from BasDiff.buildingOf and areaOf).
   function whereText(key) {
     var p = BD.splitKey(key);
-    var parts = p.location.split('/').map(function (x) { return x.trim(); }).filter(Boolean).slice(1);
-    return parts.concat([programName(key)]).join(' / ');
+    return [BD.buildingOf(p.location), areaName(BD.areaOf(p.location)), programName(key)].filter(Boolean).join(' / ');
+  }
+
+  // --- room number -> Area --------------------------------------------------------------------
+  // A calendar event that names "Room 114" or "Rm 107" in its title or location: the programs of its building named "Room <letter><number>"
+  // with that number say which Area the room is in. -> ['Room 114 = Area F (Room F114)'], several matches listed with ' or '.
+  // Programs come from the BAS copy for the event date and (optional o.matrixRooms [{ location, name }], the Equipment Matrix rows).
+  var ROOM_NO = /\b(?:class)?(?:room|rm)\.?\s*#?\s*(\d{1,4})\b/gi;
+  var ROOM_NAME = /^room\s+[a-z]0*(\d+)(?:\s|$)/i;
+  function roomLines(o, rows) {
+    var out = [];
+    var ctx = { tz: o.tz, map: o.map, snaps: o.snaps, groups: o.groups, locations: o.locations };
+    (rows || []).forEach(function (row) {
+      if (!row) return;
+      var nums = [];
+      var m;
+      ROOM_NO.lastIndex = 0;
+      while ((m = ROOM_NO.exec(String(row[0] || '') + ' ' + String(row[4] || '')))) {
+        var n = String(+m[1]);
+        if (nums.indexOf(n) === -1) nums.push(n);
+      }
+      if (!nums.length) return;
+      var c = BC.eventCoverage(row, ctx);
+      var snap = row[1] ? BC.snapshotForDate(o.snaps, CD.calendarDay(row[1], o.tz)) : null;
+      var progs = [];
+      Object.keys((snap && snap.rows) || {}).forEach(function (k) {
+        var p = BD.splitKey(k);
+        progs.push({ location: p.location, name: programName(k) });
+      });
+      (o.matrixRooms || []).forEach(function (r) {
+        progs.push({ location: r.location, name: r.name });
+      });
+      var building = c.keys && c.keys.length ? BD.keyBuilding(c.keys[0]) : BC.buildingOfPlace(c.space, Object.keys((snap && snap.rows) || {}));
+      if (!building) return;
+      nums.forEach(function (num) {
+        var seen = {};
+        var hits = [];
+        progs.forEach(function (p) {
+          var r = ROOM_NAME.exec(String(p.name || '').trim());
+          if (!r || String(+r[1]) !== num || norm(BD.buildingOf(p.location)) !== norm(building)) return;
+          var k = norm(BD.areaOf(p.location)) + '|' + norm(p.name);
+          if (seen[k]) return;
+          seen[k] = 1;
+          hits.push((areaName(BD.areaOf(p.location)) ? areaName(BD.areaOf(p.location)) + ' ' : '') + '(' + p.name + ')');
+        });
+        if (hits.length) {
+          var text = 'Room ' + num + ' = ' + hits.join(' or ');
+          if (out.indexOf(text) === -1) out.push(text);
+        }
+      });
+    });
+    return out;
   }
 
   // --- the action list ------------------------------------------------------------------------
@@ -151,7 +216,7 @@
   // that needs it. Events in one unit on one day merge: overlapping or touching uncovered spans become one span. Days with the
   // same merged spans join into one line.
   function computeActions(o) {
-    var ctx = { tz: o.tz, map: o.map, snaps: o.snaps, groups: o.groups };
+    var ctx = { tz: o.tz, map: o.map, snaps: o.snaps, groups: o.groups, locations: o.locations };
     var units = {};
     Object.keys(o.events || {}).forEach(function (id) {
       var row = o.events[id];
@@ -239,7 +304,7 @@
   // For each event of an action line that is named like a WebCTRL schedule: the words the card shows.
   // -> [{ title, text }]  text = 'In WebCTRL: <name>, <days>, <hours>' + ' (<difference>)'. A schedule that does not run on the event date says so.
   function namedMatches(o, a, from, to) {
-    var ctx = { tz: o.tz, map: o.map, snaps: o.snaps, groups: o.groups };
+    var ctx = { tz: o.tz, map: o.map, snaps: o.snaps, groups: o.groups, locations: o.locations };
     var seen = {};
     var out = [];
     a.eventIds.forEach(function (id) {
@@ -267,13 +332,17 @@
   // A schedule of the event's scheduling group that is saved but has no day selected (not active) and whose occupied periods span every
   // uncovered stretch: turning it on is easier than a new schedule. Returns { name, days:'Wed,Thu' } or null. dates = the dates of the line.
   function activateOption(o, a, dates) {
-    var g = BC.groupEntryFor(o.groups, a.program);
-    if (!g) return null;
-    var hit = (g.schedules || []).filter(function (s) {
-      if (BD.scheduleActive(s) || s.type === 'date' || s.type === 'recurring') return false;
-      var occ = (s.periods || []).filter(function (p) { return p.mode === 'occ'; }).map(function (p) { return [p.from, p.to, 'occ']; });
-      return occ.length && a.spans.every(function (sp) { return BC.minutesShort(occ, sp[0], sp[1]) === 0; });
-    })[0];
+    var g = null;
+    var hit = null;
+    BC.groupsFor(o.groups, a.program).some(function (grp) {
+      hit = (grp.schedules || []).filter(function (s) {
+        if (BD.scheduleActive(s) || s.type === 'date' || s.type === 'recurring') return false;
+        var occ = (s.periods || []).filter(function (p) { return p.mode === 'occ'; }).map(function (p) { return [p.from, p.to, 'occ']; });
+        return occ.length && a.spans.every(function (sp) { return BC.minutesShort(occ, sp[0], sp[1]) === 0; });
+      })[0];
+      if (hit) g = grp;
+      return !!hit;
+    });
     if (!hit) return null;
     var days = uniq(dates.map(function (d) { return BD.weekdayOf(d); }));
     days.sort(function (x, y) { return WD_ORDER.indexOf(x) - WD_ORDER.indexOf(y); });
@@ -307,7 +376,18 @@
   // schedule to add to the scheduling group), whatever part of it falls in the period.
   // o = computeActions input (+ locations: the location schedules of en_bas_groups) + { from, to }. -> [{ id, change, dates, forText, unit, inBas, where, groupNow, named, repeats, action }]
   //   named = [{ title, text }]: the events named like a WebCTRL schedule, with 'In WebCTRL: ...' and the time difference.
-  //   where = the place of every BAS program the line's events use (building / area / program; '; ' between them); groupNow = the schedules saved for its scheduling group.
+  //   where = the place of every BAS program the line's events use (building / area / program; '; ' between them); groupNow = the schedules saved for its scheduling groups.
+  //   rooms = ['Room 114 = Area F (Room F114)']: the Area of a room number named in an event title or location.
+  // The calendar rows of these event ids whose date is in [o.from, o.to].
+  function rowsInPeriod(o, ids) {
+    return ids
+      .map(function (id) { return (o.events || {})[id]; })
+      .filter(function (row) {
+        if (!row || !row[1]) return false;
+        var d = CD.calendarDay(row[1], o.tz);
+        return d >= o.from && d <= o.to;
+      });
+  }
   function periodNeeds(o) {
     var out = [];
     computeActions(o).forEach(function (a) {
@@ -340,6 +420,7 @@
         where: uniq(a.programs.map(whereText)).join('; '),
         groupNow: groupScheduleText(o.groups, a.program),
         named: namedMatches(o, a, o.from, o.to),
+        rooms: roomLines(o, rowsInPeriod(o, a.eventIds)),
         action: a,
       });
     });
@@ -359,7 +440,7 @@
   }
   // o = computeActions input + { from, to }. -> [{ id, title, schedule, hours, weekly, dates, text }] by title.
   function periodOpportunities(o) {
-    var ctx = { tz: o.tz, map: o.map, snaps: o.snaps, groups: o.groups, effectCache: {} };
+    var ctx = { tz: o.tz, map: o.map, snaps: o.snaps, groups: o.groups, locations: o.locations, effectCache: {} };
     // Only events within REPEAT_DAYS of the shown period matter: repeats() and used() never look farther.
     var lo = CD.addDays(o.from, -REPEAT_DAYS);
     var hi = CD.addDays(o.to, REPEAT_DAYS);
@@ -450,13 +531,43 @@
     return out.sort(function (a, b) { return a.title < b.title ? -1 : a.title > b.title ? 1 : 0; });
   }
 
+  // --- probably covered: the scheduling group has no saved members --------------------------------
+  // Events of the period that no saved schedule covers, while a scheduling group with no saved members has a schedule that spans them
+  // (BC.eventCoverage status 'unknown'). Not a to-do, no Done button. Upcoming events only. One line per title and text; dates joined.
+  // o = computeActions input + { from, to }. -> [{ id, title, group, dates, rooms, text }] by title.
+  function periodUnknown(o) {
+    var ctx = { tz: o.tz, map: o.map, snaps: o.snaps, groups: o.groups, locations: o.locations, effectCache: {} };
+    var by = {};
+    Object.keys(o.events || {}).forEach(function (id) {
+      var row = o.events[id];
+      if (!row || !row[1]) return;
+      var date = CD.calendarDay(row[1], o.tz);
+      if (date < o.today || date < o.from || date > o.to) return;
+      var c = BC.eventCoverage(row, ctx);
+      if (c.status !== 'unknown') return;
+      var k = row[0] + '|' + c.label;
+      var u = (by[k] = by[k] || { id: 'unk|' + k, title: row[0], group: c.probable.group, dates: [], rooms: [], text: c.label });
+      u.dates.push(date);
+      roomLines(o, [row]).forEach(function (r) {
+        if (u.rooms.indexOf(r) === -1) u.rooms.push(r);
+      });
+    });
+    return Object.keys(by)
+      .map(function (k) {
+        by[k].dates = uniq(by[k].dates.sort());
+        return by[k];
+      })
+      .sort(function (a, b) { return a.title < b.title ? -1 : a.title > b.title ? 1 : a.text < b.text ? -1 : 1; });
+  }
+
   // Everything the District Calendar needs for one shown period: the needs lines and the comparison status.
   // o = computeActions input + { from, to, rows (the live events of the period) }.
   function periodView(o) {
     return {
       needs: periodNeeds(o),
       opportunities: periodOpportunities(o),
-      status: BC.checkStatus(o.rows, { tz: o.tz, map: o.map, snaps: o.snaps, groups: o.groups }),
+      unknown: periodUnknown(o),
+      status: BC.checkStatus(o.rows, { tz: o.tz, map: o.map, snaps: o.snaps, groups: o.groups, locations: o.locations }),
     };
   }
 
@@ -518,7 +629,7 @@
     computeActions(o).forEach(function (a) {
       cur[a.id] = a;
     });
-    var ctx = { tz: o.tz, map: o.map, snaps: o.snaps, groups: o.groups };
+    var ctx = { tz: o.tz, map: o.map, snaps: o.snaps, groups: o.groups, locations: o.locations };
     var latest = o.latestImport || '';
     Object.keys(cur).forEach(function (id) {
       var a = cur[id];
@@ -658,6 +769,8 @@
     periodNeeds: periodNeeds,
     periodView: periodView,
     periodOpportunities: periodOpportunities,
+    periodUnknown: periodUnknown,
+    roomLines: roomLines,
     copyNote: copyNote,
     repeatOf: repeatOf,
     reconcile: reconcile,

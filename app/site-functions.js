@@ -2507,6 +2507,14 @@ async function siteResetAllMeterTableSettings() {
    site-ui.js delegates to this array and should NOT maintain its own copy.
 */
 var RELEASE_NOTES = [
+  { v: 'v2026.11.12.279', date: '2026-11-12', title: 'District Calendar: scheduling group members, groups inside groups, and the Area of each room',
+    items: [
+      { type: 'feature', text: 'Import scheduling groups also reads the group members file (building, group, member). Pick it together with the Schedule Instances report. The members of each group in the file replace the saved members of that group.' },
+      { type: 'feature', text: 'Coverage follows WebCTRL membership: a group can hold other groups (HS Debate holds HS NewArea A, B, C and F), a member can be a whole Area, and a unit can be in several groups. Schedules on a location also count for everything below it.' },
+      { type: 'change', text: 'When a group with no saved members has a schedule for the event time, the event shows "Probably covered by <group>" and asks to import the members. It is not a to-do.' },
+      { type: 'feature', text: 'What needs to change: each line shows the Area from the WebCTRL path, and a room number in the event names its Area (for example "Room 114 = Area F (Room F114)").' },
+      { type: 'fix', text: 'The manual events table now uses the same BAS check as the calendar feed table, with groups and location schedules.' }
+    ] },
   { v: 'v2026.11.12.278', date: '2026-11-12', title: 'District Calendar: reads the WebCTRL Schedule Instances report; shows each event\'s WebCTRL schedule',
     items: [
       { type: 'feature', text: 'Import scheduling groups now reads the WebCTRL Schedule Instances report (Reports > Schedule Instances, CSV). One file gives every group schedule and every schedule on a location. Import it again after each schedule change in WebCTRL.' },

@@ -37,6 +37,8 @@
     var tz = (cfg && cfg.timezone) || 'America/Chicago';
     var g = DB.get('en_bas_groups_' + pid, null);
     // The imported WebCTRL audit log, read only through BasAuditLog.changeList: its schedule rows and its newest day.
+    // The Equipment Matrix rows give the WebCTRL path of each program: the room number -> Area line reads them.
+    var mx = typeof emLoadMatrix === 'function' ? emLoadMatrix(pid) : null;
     var log = window.BasAuditLog ? window.BasAuditLog.changeList(DB.get('en_bas_auditevents_' + pid, null), {}) : { lastDay: '', rows: [] };
     return {
       scheduleEdits: log.rows.filter(function (r) { return /^Schedule/.test(r.type); }),
@@ -46,6 +48,9 @@
       snaps: snaps,
       groups: (g && g.groups) || {},
       locations: (g && g.locations) || [],
+      matrixRooms: ((mx && mx.rows) || [])
+        .filter(function (r) { return r.bacnetLocation && r.equipName; })
+        .map(function (r) { return { location: r.bacnetLocation, name: r.equipName }; }),
       tz: tz,
       today: CalendarDiff.calendarDay(new Date().toISOString(), tz),
       stored: DB.get('en_sched_actions_' + pid, null),
@@ -148,11 +153,20 @@
         })
         .join('');
       return [
-        '<b>' + esc(n.forText) + '</b>' + rep + named + '<div class="pcal-chg">' + esc(n.change) + '</div><div class="pcal-chg">Where: ' + esc(n.where) + '</div>' + note,
+        '<b>' + esc(n.forText) + '</b>' + rep + named + '<div class="pcal-chg">' + esc(n.change) + '</div><div class="pcal-chg">Where: ' + esc(n.where) + '</div>' + n.rooms.map(function (r) { return '<div class="pcal-chg">' + esc(r) + '</div>'; }).join('') + note,
         esc(n.dates),
         esc(n.inBas || 'No BAS copy for this day') + (n.groupNow ? '<div class="pcal-chg">Group schedules now: ' + esc(n.groupNow) + '</div>' : ''),
         esc(who) + '<div style="margin-top:4px">' + b + '</div>',
       ];
+    });
+    // Events probably covered by a group whose members are not saved: after the real to-dos, before the opportunities, no Done button.
+    pv.unknown.forEach(function (u) {
+      trows.push([
+        '<b>' + esc(u.title) + '</b>' + u.rooms.map(function (r) { return '<div class="pcal-chg">' + esc(r) + '</div>'; }).join(''),
+        esc(u.dates.map(function (d) { return CalendarDiff.dayLabel(d).replace(',', ''); }).join(', ')),
+        esc(u.text),
+        'Probably covered<div class="pcal-chg">Not confirmed, no change listed</div>',
+      ]);
     });
     // Covered events whose schedule is longer than the event: optional, after every real line, no Done button.
     pv.opportunities.forEach(function (op) {
