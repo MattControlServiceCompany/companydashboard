@@ -22005,6 +22005,9 @@ function emInferZoneType(equipRow) {
      overrides   — optional spOverrides object from emLoadSpOverrides(); if
                    omitted AND projId+rowId are derivable the caller should
                    pass it; defaults to {}.
+     opts        — optional { anyCategory: true }: read the zone set points of a row of any
+                   category (a single-zone air handler, rooftop unit, furnace or heater) as a
+                   zone row. Default: only the zone categories below are read.
 
    Checks performed (VAV / FPB / DDVAV / Zone categories):
      occHeat     — zone occupied heating setpoint vs GL36 default (±1°F)
@@ -22022,11 +22025,12 @@ function emInferZoneType(equipRow) {
 
    Returns:
      { results, hasAnyData, hasAnyDeviation, hasAnyNotScheduled }             */
-function emComputeSetpointCompliance(equipRow, configFlags, overrides) {
+function emComputeSetpointCompliance(equipRow, configFlags, overrides, opts) {
   var _empty = { results: [], hasAnyData: false, hasAnyDeviation: false, hasAnyNotScheduled: false };
   if (!equipRow) return _empty;
 
-  // Only applies to zone-type equipment
+  // Only applies to zone-type equipment, unless opts.anyCategory: the row is then read as a zone row (its set points are the zone set points).
+  if (opts && opts.anyCategory) equipRow = Object.assign({}, equipRow, { category: 'zone' });
   var cat = equipRow.category;
   var _zoneCategories = { vav: true, fpb: true, ddvav: true, zone: true, fcu: true };
   if (!cat || !_zoneCategories[cat]) return _empty;

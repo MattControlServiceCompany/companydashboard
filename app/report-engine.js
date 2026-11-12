@@ -20575,7 +20575,7 @@ function rptPageASHRAE36SetpointReview(n, d, detailedTitle) {
   // Their units are single-zone air handling units, rooftop units, furnaces or heaters. ASHRAE 36 has no zone defaults for them, so the
   // review shows their current setpoints only (no default, no recommendation). One row per set of current setpoints in the library; the
   // units are named when a library has more than one row. The values come from emComputeSetpointCompliance, the one reader of the zone
-  // setpoints and of the deadband; it accepts a zone category only, so each unit is passed to it as a zone.
+  // setpoints and of the deadband; each unit is read through its anyCategory option.
   var _spRowsById = typeof _a36DetRowsById === 'function' && d.project ? _a36DetRowsById(d.project.id) : {};
   d.buildings.forEach(function (b) {
     var units = b.equipResults || [];
@@ -20591,7 +20591,7 @@ function rptPageASHRAE36SetpointReview(n, d, detailedTitle) {
     units.forEach(function (eq) {
       var row = _spRowsById[eq.id];
       if (!row) return;
-      var sp = emComputeSetpointCompliance(Object.assign({}, row, { category: 'zone' }), {}, {});
+      var sp = emComputeSetpointCompliance(row, {}, {}, { anyCategory: true });
       if (!sp || !sp.hasAnyData) return;
       function entry(checkKey) {
         return sp.results.find(function (r) {
@@ -20913,6 +20913,9 @@ function rptPageASHRAE36SetpointReview(n, d, detailedTitle) {
   // The Detailed Audit Report (detailedTitle set) prints a schedule that starts and stops at the same time as "24 hours"
   // (the BAS stores start 0 and stop 0 for an all-day schedule); the Simple review prints the clock times as before.
   var _detailedReview = !!detailedTitle;
+  // Saturday and Sunday are unoccupied for every building (the source file has no weekend times), so the Detailed review states it once in
+  // the box above the table and not in every row.
+  var _eschWeekend = _detailedReview ? '' : '<br>Sat &amp; Sun: Unoccupied';
   function _eschCellFor(row) {
     if (!row.eschImported) return 'Not part of this review';
     if (row.eschHasTimes)
@@ -20921,9 +20924,9 @@ function rptPageASHRAE36SetpointReview(n, d, detailedTitle) {
         (_detailedReview && Math.round(row.avgEschStart) === 0 && Math.round(row.avgEschStop) === 0
           ? '24 hours'
           : _fmtClockMins(row.avgEschStart) + '–' + _fmtClockMins(row.avgEschStop)) +
-        '<br>Sat &amp; Sun: Unoccupied'
+        _eschWeekend
       );
-    return 'No occupied period scheduled<br>Sat &amp; Sun: Unoccupied';
+    return 'No occupied period scheduled' + _eschWeekend;
   }
   function _refCellFor(row) {
     return (
@@ -20935,12 +20938,12 @@ function rptPageASHRAE36SetpointReview(n, d, detailedTitle) {
   }
   var _spColDefs = [
     { w: 13, th: 'Building', td: tdBase, cell: function (r) { return '<span style="font-weight:600;color:var(--rpt-page-text)">' + _escHtml(_a36DisplayName(r)) + '</span>' + (r.unitNote ? '<div style="margin-top:3px;color:var(--rpt-page-text)">' + _escHtml(r.unitNote) + '</div>' : ''); } },
-    { w: 17, th: 'Occupied' + thSub + 'Existing average</span>', td: tdCenter, cell: function (r) { return _pairText(r.avgHeat, r.avgCool, _fmtAvg); } },
-    { w: 17, th: 'Unoccupied' + thSub + 'Existing average</span>', td: tdCenter, cell: function (r) { return _pairText(r.avgUnoccHeat, r.avgUnoccCool, _fmtAvg); } },
+    { w: _detailedReview ? 15 : 17, th: 'Occupied' + thSub + 'Existing average</span>', td: tdCenter, cell: function (r) { return _pairText(r.avgHeat, r.avgCool, _fmtAvg); } },
+    { w: _detailedReview ? 15 : 17, th: 'Unoccupied' + thSub + 'Existing average</span>', td: tdCenter, cell: function (r) { return _pairText(r.avgUnoccHeat, r.avgUnoccCool, _fmtAvg); } },
     { w: 17, th: 'ASHRAE 36<br>Default', td: tdCenter, zoneOnly: true, cell: function (r) { return r.singleZone ? '—' : _refCellFor(r); }, uniformNote: function (h) { var p = h.split('<br>'); return '<strong>ASHRAE 36 default:</strong> ' + p[0].replace(/^Occupied/, 'occupied') + '; ' + p[1].replace(/^Unoccupied/, 'unoccupied'); } },
-    { w: _detailedReview ? 12.5 : 10, th: 'Deadband' + thSub + 'Existing average</span>', td: tdCenter, cell: function (r) { return _fmtAvg(r.avgDb); } },
-    { w: 14, th: 'Existing<br>Schedule' + thSub + 'Mon–Fri, Sat &amp; Sun</span>', td: tdCenter, cell: _eschCellFor, uniformNote: function (h) { return h === 'Not part of this review' ? '' : '<strong>Existing schedule for every building:</strong> ' + h.replace(/<br>/g, '; '); }, dropIf: function (h) { return h === 'Not part of this review'; } },
-    { w: 25, th: 'Status', td: tdBase, keep: true, cell: function (r) { return _statusLine(r) + _recDifferenceFor(r); } },
+    { w: _detailedReview ? 12 : 10, th: 'Deadband' + thSub + 'Existing average</span>', td: tdCenter, cell: function (r) { return _fmtAvg(r.avgDb); } },
+    { w: _detailedReview ? 17 : 14, th: 'Existing<br>Schedule' + thSub + (_detailedReview ? 'Mon–Fri' : 'Mon–Fri, Sat &amp; Sun') + '</span>', td: tdCenter, cell: _eschCellFor, uniformNote: function (h) { return h === 'Not part of this review' ? '' : '<strong>Existing schedule for every building:</strong> ' + h.replace(/<br>/g, '; '); }, dropIf: function (h) { return h === 'Not part of this review'; } },
+    { w: _detailedReview ? 26 : 25, th: 'Status', td: tdBase, keep: true, cell: function (r) { return _statusLine(r) + _recDifferenceFor(r); } },
   ];
   // The recommendation shared by most buildings: printed once in the box above the table.
   var _zoneRows = buildingRows.filter(function (r) {
@@ -21122,6 +21125,7 @@ function rptPageASHRAE36SetpointReview(n, d, detailedTitle) {
         '<strong>Recommended by Control Service Company:</strong> occupied ' + _recBox.occupied + '; unoccupied ' + _recBox.unoccupied + '; ' + _recBox.schedule,
       ]
     : []; // only single-zone rows: no recommendation
+  if (_detailedReview && buildingRows.some(function (r) { return r.eschImported; })) _uniformNotes.push('<strong>Existing schedule, Saturday and Sunday:</strong> unoccupied for every building.');
   var _boxLines = _uniformNotes.concat(_recLines);
   var recNote = _boxLines.length
     ? '<div style="font-size:11px;color:var(--rpt-page-text);line-height:1.6;margin-bottom:10px;padding:8px 10px;border:1px solid var(--rpt-border)">' + _boxLines.join('<br>') + '</div>'
@@ -25504,12 +25508,13 @@ function _a36SeqEntryLabel(seqKey, seqEntry) {
 
 var A36_DET_CAT_ORDER = ['chwp', 'hwp', 'ct', 'ahu', 'rtu', 'doas', 'furnace', 'vav', 'fpb', 'ddvav', 'zone', 'fcu', 'heater', 'ef']; // plant, then air systems, then zone terminals (same tiers as Per-Building Detail)
 var A36_DET_PAGE_SAFETY_H = 12; // px kept free at the bottom of every page
-// A top-level section of the Detailed report starts on a new page with a large numbered title (the Web page h2 is 16 px; the title is 30 px).
-var A36_DET_TITLE_H = 56; // px, the title block (one line, 30 px type) with the space under it
-var A36_DET_TITLE_STYLE = 'margin:0 0 14px 0;font-size:30px;line-height:1.2;font-weight:700;color:var(--rpt-blue)';
-// "4 North Library", "Appendix A: Point Inventory", "3 Findings Summary (2 of 7)": sectionNo = the number or the appendix label.
+// A top-level section of the Detailed report starts on a new page with a numbered title: 16 pt (21.34 px), above the 12 pt sub-headings (Matt, 2026-11-11: the titles were too big).
+var A36_DET_TITLE_H = 44; // px, the title block (one line, 21.34 px type) with the space under it
+var A36_DET_TITLE_STYLE = 'margin:0 0 14px 0;font-size:21.34px;line-height:1.2;font-weight:700;color:var(--rpt-blue)';
+// "4. North Library", "Appendix A: Point Inventory", "16. Findings Summary (2 of 7)": sectionNo = the number (printed with a period) or the appendix label.
 function _a36DetSectionTitle(sectionNo, name, suffix) {
-  return '<h1 style="' + A36_DET_TITLE_STYLE + '">' + _escHtml(sectionNo + ' ' + name + (suffix || '')) + '</h1>';
+  var no = typeof sectionNo === 'number' ? sectionNo + '.' : sectionNo;
+  return '<h1 style="' + A36_DET_TITLE_STYLE + '">' + _escHtml(no + ' ' + name + (suffix || '')) + '</h1>';
 }
 // " (2 of 7)" when a section or table runs onto more than one page, else ''.
 function _a36DetPartSuffix(index, count) {
@@ -26408,11 +26413,12 @@ function _a36DetPages(n, d, tokens, label) {
   });
 }
 
-var A36_DET_P = 'margin:0 0 8px 0;font-size:14px;line-height:1.5;color:var(--rpt-page-text)';
+var A36_DET_P = 'margin:0 0 6px 0;font-size:13.34px;line-height:1.4;color:var(--rpt-page-text)'; // 10 pt, the smallest report text (RPT_MIN_TEXT_PX)
 var A36_DET_H3 = 'margin:6px 0 4px 0;font-size:14px;font-weight:700;color:var(--rpt-page-text)';
 var A36_DET_TH =
   'padding:5px 8px;font-size:12px;font-weight:700;text-transform:uppercase;letter-spacing:0.04em;color:var(--rpt-page-text);text-align:center;border:1px solid var(--rpt-border)';
 var A36_DET_TD = 'padding:4px 8px;font-size:13.34px;vertical-align:top;color:var(--rpt-page-text);border:1px solid var(--rpt-border)';
+var A36_DET_TD_DENSE = 'padding:2px 6px;font-size:13.34px;line-height:1.3;vertical-align:top;color:var(--rpt-page-text);border:1px solid var(--rpt-border)'; // the point tables of Appendix A
 
 // <table> opening + colgroup + header row. widths = percents; heads = header words.
 function _a36DetTableOpen(widths, heads) {
@@ -26433,8 +26439,8 @@ function _a36DetTableOpen(widths, heads) {
   );
 }
 
-// One table row. A cell is a string of HTML, or { html, right:true } for a right-aligned number, or { html, center:true } for a centered one.
-function _a36DetRow(cells, bold) {
+// One table row (dense = the tight cell padding of the Appendix A point tables). A cell is a string of HTML, or { html, right:true } for a right-aligned number, or { html, center:true } for a centered one.
+function _a36DetRow(cells, dense) {
   return (
     '<tr>' +
     cells
@@ -26444,8 +26450,7 @@ function _a36DetRow(cells, bold) {
         var txt = typeof c === 'object' ? c.html : c;
         return (
           '<td style="' +
-          A36_DET_TD +
-          (bold ? ';font-weight:700;border-top:2px solid var(--rpt-border)' : '') +
+          (dense ? A36_DET_TD_DENSE : A36_DET_TD) +
           (right ? ';text-align:right' : '') +
           (center ? ';text-align:center' : '') +
           '">' +
@@ -26950,16 +26955,20 @@ function _a36DetContext(d) {
   };
 }
 
-var A36_DET_P_TIGHT = 'margin:0 0 4px 0;font-size:14px;line-height:1.5;color:var(--rpt-page-text)';
+var A36_DET_P_TIGHT = 'margin:0 0 4px 0;font-size:13.34px;line-height:1.4;color:var(--rpt-page-text)';
 
-// One finding: heading, Observed (with the ASHRAE Guideline 36 section number), Impact (only when an approved text exists),
-// Recommendation. A Facility Audit deficiency has Observed and Recommendation only.
-function _a36DetFindingTok(f) {
-  function para(lead, text) {
-    return '<p style="' + A36_DET_P_TIGHT + '"><strong>' + lead + '.</strong> ' + _escHtml(text) + '</p>';
+// One finding: heading, then one paragraph: Observed (with the ASHRAE Guideline 36 section number), Impact (only when an approved text
+// exists and only on the first finding of that point in the chapter: the text says what the point does, not what is wrong with this
+// unit), Recommendation. A Facility Audit deficiency has Observed and Recommendation only. impactSeen = { key: true } of the chapter
+// (updated here).
+function _a36DetFindingTok(f, impactSeen) {
+  var showImpact = f.impact && !(impactSeen && impactSeen[f.key]);
+  if (f.impact && impactSeen) impactSeen[f.key] = true;
+  function part(lead, text) {
+    return '<strong>' + lead + '.</strong> ' + _escHtml(text);
   }
   return _a36DetTok(
-    '<div style="margin:0 0 8px 0"><div style="' +
+    '<div style="margin:0 0 6px 0"><div style="' +
       A36_DET_H3 +
       '">Finding ' +
       f.n +
@@ -26967,11 +26976,11 @@ function _a36DetFindingTok(f) {
       _escHtml(f.groupLabel) +
       ', ' +
       _escHtml(f.label) +
-      '</div>' +
-      para('Observed', f.observed) +
-      (f.impact ? para('Impact', f.impact) : '') +
-      para('Recommendation', f.recommendation) +
-      '</div>',
+      '</div><p style="' +
+      A36_DET_P_TIGHT +
+      '">' +
+      [part('Observed', f.observed), showImpact ? part('Impact', f.impact) : '', part('Recommendation', f.recommendation)].filter(Boolean).join(' ') +
+      '</p></div>',
   );
 }
 
@@ -27413,8 +27422,9 @@ function _a36DetLibraryTokens(d, b, ctx, sectionNo) {
   if (!model.findings.length) {
     tokens.push(_a36DetTok('<p style="' + A36_DET_P + '">No sensors or sequences are missing against ASHRAE Guideline 36 for this library.</p>'));
   }
+  var impactSeen = {};
   model.findings.forEach(function (f) {
-    var ft = _a36DetFindingTok(f);
+    var ft = _a36DetFindingTok(f, impactSeen);
     tokens.push(ft);
     if (f.pic) {
       var num = ++ctx.figure.n;
@@ -27575,7 +27585,7 @@ function _a36DetPointRows(points, total) {
       .map(function (pt) {
         return pt.label + (pt.count === total ? '' : ' (' + _a36DetOf(pt.count, total) + ')');
       });
-    rows.push(_a36DetRow(['<strong>' + group + '</strong>', _escHtml(names.join(', '))]));
+    rows.push(_a36DetRow(['<strong>' + group + '</strong>', _escHtml(names.join(', '))], true));
   });
   return rows;
 }
@@ -27592,19 +27602,46 @@ function _a36DetPointTokens(ctx) {
     _a36DetTok(
       '<p style="' +
         A36_DET_P +
-        '">Each table lists the points the building automation system shows for one equipment type of one library, in the groups Sensors, Commands, Status and Setpoints. A count such as "21 of 23 units" means that only those units have the point. A point with no count is on every unit. A point that every unit of a library has is listed once, in the first table of that library.</p>',
+        '">Each table lists the points the building automation system shows for one equipment type, in the groups Sensors, Commands, Status and Setpoints. A count such as "21 of 23 units" means that only those units have the point. A point with no count is on every unit. A point that every unit of a library has is listed once, in the first table of that library. Libraries whose equipment type has exactly the same points share one table, titled with every library it covers.</p>',
     ),
   );
   var tableHead = _a36DetTableOpen([16, 84], ['Group', 'Points']);
-  function addTable(titleText, rows) {
-    _a36DetTableToks(tableHead, rows, {
-      html: function (pageIndex, pageCount) {
-        return '<div style="' + A36_DET_H3 + '">' + _escHtml(titleText + _a36DetPartSuffix(pageIndex, pageCount)) + '</div>';
-      },
-      h: 28,
-    }).forEach(function (t) {
-      tokens.push(t);
+  // One entry per table: { libs: [{ name, units }], label (the equipment type; '' for the points on every unit), rows: [row html] }, or a note
+  // { libs: [one], label, note } for an equipment type with no points of its own. Entries whose label and rows are the same are one table.
+  var entries = [];
+  var byKey = {};
+  function addEntry(libraryName, label, units, rows) {
+    var key = label + '\u0001' + rows.join('');
+    if (byKey[key]) {
+      byKey[key].libs.push({ name: libraryName, units: units });
+      return;
+    }
+    byKey[key] = { libs: [{ name: libraryName, units: units }], label: label, rows: rows };
+    entries.push(byKey[key]);
+  }
+  // "Blue Valley Library: Hot Water Plant (1 unit)"; for several libraries "Blue Valley Library and Cedar Roe Library: Hot Water Plant (1 unit each)"
+  // (the count of each library is named when the libraries differ).
+  function entryTitle(e) {
+    var names = _a36DetJoin(
+      e.libs.map(function (l) {
+        return l.name;
+      }),
+    );
+    if (!e.label) return names + ': points on every unit';
+    var sameUnits = e.libs.every(function (l) {
+      return l.units === e.libs[0].units;
     });
+    if (e.libs.length === 1) return names + ': ' + e.label + ' (' + _a36DetUnits(e.libs[0].units) + ')';
+    if (sameUnits) return names + ': ' + e.label + ' (' + _a36DetUnits(e.libs[0].units) + ' each)';
+    return (
+      _a36DetJoin(
+        e.libs.map(function (l) {
+          return l.name + ' (' + _a36DetUnits(l.units) + ')';
+        }),
+      ) +
+      ': ' +
+      e.label
+    );
   }
   ctx.model.libs.forEach(function (m) {
     var libraryName = _a36DisplayName(m.b);
@@ -27621,8 +27658,10 @@ function _a36DetPointTokens(ctx) {
       });
     }
     if (sharedKeys.length) {
-      addTable(
-        libraryName + ': points on every unit',
+      addEntry(
+        libraryName,
+        '',
+        1,
         _a36DetPointRows(
           sharedKeys.map(function (k) {
             return { label: found[0].by[k].label, count: 1 };
@@ -27635,18 +27674,18 @@ function _a36DetPointTokens(ctx) {
       var own = found[gi].keys.filter(function (k) {
         return sharedKeys.indexOf(k) === -1;
       });
-      var titleText = libraryName + ': ' + g.label + ' (' + _a36DetUnits(g.units.length) + ')';
       if (!own.length) {
-        tokens.push(_a36DetTok('<div style="' + A36_DET_H3 + '">' + _escHtml(titleText) + '</div>', true));
-        tokens.push(
-          _a36DetTok(
-            '<p style="' + A36_DET_P + '">' + (found[gi].keys.length ? 'These units have no points other than the points on every unit of the library.' : 'No sensors or control points are shown.') + '</p>',
-          ),
-        );
+        entries.push({
+          libs: [{ name: libraryName, units: g.units.length }],
+          label: g.label,
+          note: found[gi].keys.length ? 'These units have no points other than the points on every unit of the library.' : 'No sensors or control points are shown.',
+        });
         return;
       }
-      addTable(
-        titleText,
+      addEntry(
+        libraryName,
+        g.label,
+        g.units.length,
         _a36DetPointRows(
           own.map(function (k) {
             return { label: found[gi].by[k].label, count: found[gi].by[k].names.length };
@@ -27654,6 +27693,22 @@ function _a36DetPointTokens(ctx) {
           g.units.length,
         ),
       );
+    });
+  });
+  entries.forEach(function (e) {
+    var titleText = entryTitle(e);
+    if (e.note) {
+      tokens.push(_a36DetTok('<div style="' + A36_DET_H3 + '">' + _escHtml(titleText) + '</div>', true));
+      tokens.push(_a36DetTok('<p style="' + A36_DET_P + '">' + e.note + '</p>'));
+      return;
+    }
+    _a36DetTableToks(tableHead, e.rows, {
+      html: function (pageIndex, pageCount) {
+        return '<div style="' + A36_DET_H3 + '">' + _escHtml(titleText + _a36DetPartSuffix(pageIndex, pageCount)) + '</div>';
+      },
+      h: 28,
+    }).forEach(function (t) {
+      tokens.push(t);
     });
   });
   tokens.forEach(function (t) {
@@ -27706,8 +27761,8 @@ function generateASHRAE36AuditHTML(data, selectedSections) {
     return html.replace(/<div class="rpt-page([^"]*)"/, '<div class="rpt-page$1" data-section="' + key + '"');
   }
 
-  // Detailed style (selectedSections.detailed): the sections are numbered in print order: Executive Summary, Building Readiness, Findings
-  // Summary, one section per library, Control Sequences; then Appendix A (Point Inventory) and Appendix B (Setpoint Programming Review).
+  // Detailed style (selectedSections.detailed): the sections are numbered in print order: Executive Summary, Building Readiness, one section
+  // per library, Findings Summary, Control Sequences; then Appendix A (Point Inventory) and Appendix B (Setpoint Programming Review).
   var detailed = s.detailed === true;
   var sectionNo = 1;
 
@@ -27739,17 +27794,6 @@ function generateASHRAE36AuditHTML(data, selectedSections) {
   // Detailed style (selectedSections.detailed): one chapter per library. Per-Building Detail (and its infrastructure notes) print
   // in Detailed only when the user ticks them (default unchecked).
   var detCtx = detailed ? _a36DetContext(data) : null;
-  if (detailed) {
-    // Findings Summary: one table of every finding of the report, before the library sections.
-    // Control Sequences is the section after the last library: the Findings Summary points to it (0 when the report has no such section).
-    detCtx.seqSectionNo = s.costEstimate !== false ? sectionNo + 1 + data.buildings.length : 0;
-    var detSum = _a36DetSummaryTokens(detCtx, sectionNo++);
-    _a36DetPages(pageNum, data, detSum, 'Findings Summary').forEach(function (pg) {
-      pages.push(_tagA36Section(pg, 'detailedSummary'));
-      pageNum++;
-    });
-  }
-
   if (s.building !== false && (!detailed || s.building === true)) {
     // a0c2152: buildingInfra is an independent sub-flag (default unchecked) — only pass
     // showBuildingInfra=true when the user explicitly ticks it in the modal.
@@ -27825,8 +27869,8 @@ function generateASHRAE36AuditHTML(data, selectedSections) {
     _flushPendingBuildingBlocks();
   }
 
-  // Detailed style: one chapter per library. The Findings Summary before the chapters is the log of every finding (no issues log
-  // at the back). Appendix A is the Point Inventory, Appendix B the Set Point Review.
+  // Detailed style: one chapter per library, then the Findings Summary (the log of every finding: no issues log at the back) and Control
+  // Sequences. Appendix A is the Point Inventory, Appendix B the Set Point Review. Section numbers are computed in print order.
   if (detailed) {
     var detLibs = rptPageA36DetailedLibraries(pageNum, data, detCtx, sectionNo);
     detLibs.pages.forEach(function (pg) {
@@ -27834,6 +27878,12 @@ function generateASHRAE36AuditHTML(data, selectedSections) {
       pageNum++;
     });
     sectionNo = detLibs.nextSectionNo;
+    // The Findings Summary points to Control Sequences, the section after it (0 when the report has no such section).
+    detCtx.seqSectionNo = s.costEstimate !== false ? sectionNo + 1 : 0;
+    _a36DetPages(pageNum, data, _a36DetSummaryTokens(detCtx, sectionNo++), 'Findings Summary').forEach(function (pg) {
+      pages.push(_tagA36Section(pg, 'detailedSummary'));
+      pageNum++;
+    });
     if (s.costEstimate !== false) {
       rptPageASHRAE36CostEstimate(pageNum, data, sectionNo++).forEach(function (pg) {
         pages.push(_tagA36Section(pg, 'costEstimate'));

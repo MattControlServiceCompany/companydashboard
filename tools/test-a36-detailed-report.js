@@ -273,16 +273,16 @@ const ok = (c, m) => {
     ok(det.shown, 'choosing Detailed shows the picture folder picker');
     const s = det.sections;
     const firstLib = s.indexOf('detailedLibrary');
-    ok(s[0] === 'cover' && s.indexOf('executive') === 1 && s.indexOf('detailedSummary') > s.lastIndexOf('executive') && firstLib > s.indexOf('detailedSummary') && s.indexOf('costEstimate') > s.lastIndexOf('detailedLibrary'), 'item 1 order: cover, executive summary, readiness, findings summary, library chapters, then the control sequences (' + s.join(',') + ')');
+    ok(s[0] === 'cover' && s.indexOf('executive') === 1 && firstLib > s.lastIndexOf('executive') && s.indexOf('detailedSummary') > s.lastIndexOf('detailedLibrary') && s.indexOf('costEstimate') > s.lastIndexOf('detailedSummary'), 'item 1 order: cover, executive summary, readiness, library chapters, then the control sequences (' + s.join(',') + ')');
     ok(s.indexOf('building') < 0, 'Detailed has no Per-Building Detail pages');
     ok(s.filter((x) => x === 'detailedLibrary').length >= 2, 'at least one chapter page per library (' + s.filter((x) => x === 'detailedLibrary').length + ' chapter pages)');
-    ok(s.indexOf('detailedSummary') > 0 && s.indexOf('detailedSummary') < firstLib, 'the Findings Summary comes before the chapters');
+    ok(s.indexOf('detailedSummary') > s.lastIndexOf('detailedLibrary'), 'the Findings Summary comes after the chapters (Matt, 2026-11-11)');
     ok(s.indexOf('pointInventory') > s.lastIndexOf('detailedLibrary') && s.indexOf('detailedAppendixA') > s.indexOf('pointInventory'), 'Appendix A (Point Inventory) follows the chapters');
     ok(/Appendix A: Point Inventory/.test(det.text) && /Fan runs at night/.test(det.text), 'Appendix A has its heading; the deficiency of the Facility Audit tab is a finding');
     ok(!/Issues Log|Appendix A: Deficiency List|Appendix B: Point Inventory|Appendix C/.test(det.text), 'N2: no Issues Log, no Appendix C, Point Inventory is Appendix A');
     ok(s.indexOf('setpointReview') > s.indexOf('detailedAppendixA') && /Appendix B: Setpoint Programming Review/.test(det.text), 'Appendix B prints last when zone set point data exists (Detailed turns the review on by itself)');
     const t = det.libText;
-    [/\d+ Alpha Library/.exec(t) && /\d+ Alpha Library/.exec(t)[0], /\d+\.1 System Overview/.exec(t) && /\d+\.1 System Overview/.exec(t)[0], /\d+\.2 System Descriptions/.exec(t) && /\d+\.2 System Descriptions/.exec(t)[0], /\d+\.3 Findings/.exec(t) && /\d+\.3 Findings/.exec(t)[0], 'Finding 1:', 'Observed.', 'Recommendation.'].forEach((x) => ok(t.indexOf(x) >= 0, 'chapters contain "' + x + '"'));
+    [/\d+\. Alpha Library/.exec(t) && /\d+\. Alpha Library/.exec(t)[0], /\d+\.1 System Overview/.exec(t) && /\d+\.1 System Overview/.exec(t)[0], /\d+\.2 System Descriptions/.exec(t) && /\d+\.2 System Descriptions/.exec(t)[0], /\d+\.3 Findings/.exec(t) && /\d+\.3 Findings/.exec(t)[0], 'Finding 1:', 'Observed.', 'Recommendation.'].forEach((x) => ok(t.indexOf(x) >= 0, 'chapters contain "' + x + '"'));
     ok(!/Recommended Work/.test(t), 'cut 1: no per-chapter Recommended Work table (each finding has its own Recommendation line)');
     ok(!/\bIssue\./.test(t) && /sequence \(ASHRAE Guideline 36, Section [\d.]+\) is not fully in place/.test(t), 'cut 2: no Issue line; the Guideline 36 section number is in the Observed line');
     ok(!/This system has/.test(t), 'cut 3: no "This system has N units" sentence (the System Overview table lists the units)');
@@ -417,16 +417,17 @@ const ok = (c, m) => {
       };
     });
     const titles = lay.h1s.map((x) => x.text);
-    const numbered = lay.h1s.filter((x) => /^\d+ /.test(x.text));
+    const numbered = lay.h1s.filter((x) => /^\d+\. /.test(x.text));
     const numbers = numbered.map((x) => parseInt(x.text, 10));
     ok(numbers[0] === 1 && numbers.every((v, i) => i === 0 || v >= numbers[i - 1]), 'item 1: top-level sections are numbered 1.. in order (' + titles.join(' / ') + ')');
-    ok(/^1 Executive Summary/.test(titles[0]) && /^2 Building Readiness/.test(titles[1]) && /^3 Findings Summary/.test(titles[2]), 'item 1: 1 Executive Summary, 2 Building Readiness, 3 Findings Summary come first (' + titles.slice(0, 3).join(' / ') + ')');
-    const libTitles = titles.filter((x) => /^\d+ (Alpha|Beta) Library$/.test(x));
-    ok(libTitles.length === 2 && parseInt(libTitles[0], 10) === 4 && parseInt(libTitles[1], 10) === 5, 'item 1: each library is one numbered section starting at 4 (' + libTitles.join(' / ') + ')');
+    ok(/^1\. Executive Summary/.test(titles[0]) && /^2\. Building Readiness/.test(titles[1]), 'item 1: "1. Executive Summary", "2. Building Readiness" come first (' + titles.slice(0, 2).join(' / ') + ')');
+    const libTitles = titles.filter((x) => /^\d+\. (Alpha|Beta) Library$/.test(x));
+    ok(libTitles.length === 2 && parseInt(libTitles[0], 10) === 3 && parseInt(libTitles[1], 10) === 4, 'item 1: each library is one numbered section starting at 3 (' + libTitles.join(' / ') + ')');
     const seqIdx = titles.findIndex((x) => /Control Sequences/.test(x));
-    ok(seqIdx > titles.indexOf(libTitles[1]) && /^6 Control Sequences/.test(titles[seqIdx]), 'item 1: Control Sequences follows the library sections as section 6 (' + titles[seqIdx] + ')');
+    const sumIdx = titles.findIndex((x) => /Findings Summary/.test(x));
+    ok(sumIdx > titles.indexOf(libTitles[1]) && /^5\. Findings Summary/.test(titles[sumIdx]) && seqIdx > sumIdx && /^6\. Control Sequences/.test(titles[seqIdx]), 'item 1: the Findings Summary (5) follows the library sections and Control Sequences (6) follows it (' + titles[sumIdx] + ' / ' + titles[seqIdx] + ')');
     ok(titles.some((x) => /^Appendix A: Point Inventory/.test(x)) && titles.some((x) => /^Appendix B: Setpoint Programming Review/.test(x)) && titles.some((x) => /^Appendix A: Points by Equipment Type/.test(x)), 'item 1: Appendix A (Point Inventory and Points by Equipment Type) and Appendix B have large titles (' + titles.filter((x) => /^Appendix/.test(x)).join(' / ') + ')');
-    ok(lay.h1s.every((x) => x.first && x.size >= 28), 'item 1: every section title is the first element of its page and 28 px or larger (' + lay.h1s.filter((x) => !x.first || x.size < 28).map((x) => x.text + ' ' + x.size).join(', ') + ')');
+    ok(lay.h1s.every((x) => x.first && x.size >= 21 && x.size <= 22), 'item 1: every section title is the first element of its page and 16 pt (21.34 px) (' + lay.h1s.filter((x) => !x.first || x.size < 21 || x.size > 22).map((x) => x.text + ' ' + x.size).join(', ') + ')');
     ok((t.match(/\d+\.1 System Overview/g) || []).length === 2 && (t.match(/\d+\.2 System Descriptions/g) || []).length === 2 && (t.match(/\d+\.3 Findings/g) || []).length === 2, 'item 1: every library has the same three sub-headings N.1 System Overview, N.2 System Descriptions, N.3 Findings');
     ok(lay.sumRows.length > 0 && lay.sumRows.every((r) => r.length === 5 && /^\d+$/.test(r[0]) && /^(Energy use|Equipment control)$/.test(r[4])), 'item 2: every Findings Summary row has No., Library, System, Issue, Effect; Effect is Energy use or Equipment control');
     ok(lay.sumRows.length > 0 && lay.sumRows.every((r) => !/Affects (the unit|both units)/.test(r[3])), 'item 2: affected units are named (never "Affects the unit" or "both units" when 4 or fewer)');
@@ -953,7 +954,7 @@ const ok = (c, m) => {
         lib: secText('detailedLibrary'),
         sp: secText('setpointReview'),
         simpleSp,
-        seqNo: (/(\d+) Control Sequences/.exec(secText('costEstimate')) || [])[1],
+        seqNo: (/(\d+)\. Control Sequences/.exec(secText('costEstimate')) || [])[1],
         noteNo: (/described in Section (\d+)/.exec(secText('detailedSummary')) || [])[1],
       };
     }, PID4);
@@ -967,6 +968,29 @@ const ok = (c, m) => {
     ok(epsRows.length > 100 && !/Reprogram|Recommended|undefined|null|NaN/.test(epsRows) && /1 with single-zone units only \(no zone defaults\)/.test(eps.sp) && /All 1 zone match ASHRAE 36 defaults/.test(eps.sp), 'report length: single-zone rows carry no recommendation and no Reprogram status (the zone library keeps its own); the count line names them: ' + JSON.stringify([epsRows.length, /1 with single-zone units only \(no zone defaults\)/.test(eps.sp), /All 1 zone match ASHRAE 36 defaults/.test(eps.sp), eps.sp.slice(eps.sp.indexOf('buildings') - 20, eps.sp.indexOf('buildings') + 160)]));
     ok(/Single-zone unit, no zone defaults/.test(eps.simpleSp), 'report length: the Simple style prints the same rows in its Setpoint Programming Review');
 
+    // emComputeSetpointCompliance: opts.anyCategory reads a single-zone unit as a zone row; the default is unchanged (no result for an air handler)
+    const anyCat = await page.evaluate((pid) => {
+      const rows = (emLoadMatrix(pid) || {}).rows || [];
+      const ahus = rows.filter((r) => r.category === 'ahu');
+      const withOpt = ahus.map((r) => emComputeSetpointCompliance(r, {}, {}, { anyCategory: true })).filter((x) => x.hasAnyData);
+      const without = ahus.map((r) => emComputeSetpointCompliance(r, {}, {})).filter((x) => x.hasAnyData);
+      const zone = rows.filter((r) => r.category === 'vav')[0];
+      const a = zone ? JSON.stringify(emComputeSetpointCompliance(zone, {}, {})) : '';
+      const b = zone ? JSON.stringify(emComputeSetpointCompliance(zone, {}, {}, { anyCategory: true })) : '';
+      return { ahus: ahus.length, withOpt: withOpt.length, without: without.length, zoneSame: a === b };
+    }, PID4);
+    ok(anyCat.ahus > 0 && anyCat.withOpt > 0 && anyCat.without === 0 && anyCat.zoneSame, 'emComputeSetpointCompliance: opts.anyCategory reads an air handler as a zone row, the default does not, a zone row is unchanged: ' + JSON.stringify(anyCat));
+    // Appendix A: equipment types with exactly the same points share one table, named with every library; a different list keeps its own table
+    const share = await page.evaluate(() => {
+      const unit = (n, pts) => ({ name: n, compliance: { coveredPoints: pts.map((k) => ({ categoryKey: k, ashrae36PointName: k + ' point' })) } });
+      const grp = (label, pts) => ({ label: label, category: 'ef', units: [unit('EF-1', pts)] });
+      const lib = (name, groups) => ({ b: { name: name, displayName: name }, groups: groups });
+      const ctx = { model: { libs: [lib('Lib One', [grp('Exhaust Fan', ['schedule', 'fanStatus'])]), lib('Lib Two', [grp('Exhaust Fan', ['schedule', 'fanStatus'])]), lib('Lib Three', [grp('Exhaust Fan', ['schedule'])])] } };
+      const toks = _a36DetPointTokens(ctx);
+      const titles = toks.filter((x) => x.tbl && x.tbl.first === x).map((x) => x.tbl.title.html(0, 1).replace(/<[^>]+>/g, ''));
+      return titles;
+    });
+    ok(share.length === 2 && share[0] === 'Lib One and Lib Two: Exhaust Fan (1 unit each)' && share[1] === 'Lib Three: Exhaust Fan (1 unit)', 'Appendix A: libraries with the same points of an equipment type share one table: ' + JSON.stringify(share));
     ok(errs.length === 0, 'no page errors' + (errs.length ? ': ' + errs[0] : ''));
   } finally {
     await ctx.close();
