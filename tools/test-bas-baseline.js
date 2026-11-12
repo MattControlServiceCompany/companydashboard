@@ -129,6 +129,17 @@ ok(over.baselineWeekday[0].src === BBL.SOURCE && over.setPoints[0].src === BBL.S
     await page.setInputFiles('#bas-bfile-9', [{ name: 'bad.csv', mimeType: 'text/csv', buffer: Buffer.from('"A"\r\n"1"\r\n') }]);
     await page.waitForFunction(() => /not the Set Points sheet/.test(document.getElementById('bas-msg-9').textContent), null, { timeout: 15000 });
     ok(true, 'a wrong file shows a message');
+    const before = await page.evaluate(() => JSON.stringify(DB.get('en_bas_schedhistory_9', null)));
+    await page.setInputFiles('#bas-bfile-9', [{ name: 'zero.csv', mimeType: 'text/csv', buffer: Buffer.from('') }, { name: 'other.csv', mimeType: 'text/csv', buffer: Buffer.from('"A"\r\n"1"\r\n') }]);
+    await page.waitForFunction(() => /Nothing was imported/.test(document.getElementById('bas-msg-9').textContent), null, { timeout: 15000 });
+    const allBad = await page.evaluate(() => ({ s: JSON.stringify(DB.get('en_bas_schedhistory_9', null)), m: document.getElementById('bas-msg-9').textContent }));
+    ok(allBad.s === before && /Skipped 2 files: zero\.csv/.test(allBad.m) && /other\.csv/.test(allBad.m), 'only bad files: nothing saved, both named: ' + allBad.m);
+    await page.evaluate(() => DB.set('en_bas_schedhistory_9', null));
+    await page.setInputFiles('#bas-bfile-9', [{ name: 'zero.csv', mimeType: 'text/csv', buffer: Buffer.from('') }, { name: 'sp.csv', mimeType: 'text/csv', buffer: Buffer.from(text) }]);
+    await page.waitForFunction(() => /Saved the baseline/.test(document.getElementById('bas-msg-9').textContent), null, { timeout: 15000 });
+    const mixed = await page.evaluate(() => ({ rec: DB.get('en_bas_schedhistory_9', null), m: document.getElementById('bas-msg-9').textContent }));
+    ok(/Skipped 1 file: zero\.csv/.test(mixed.m), 'good + 0-byte pick: the good file imports and the bad file is named: ' + mixed.m);
+    eq(mixed.rec, m1.rec, 'the record after a mixed pick equals the record of the good file alone');
     ok(errs.length === 0, 'no page errors' + (errs.length ? ': ' + errs[0] : ''));
   } finally {
     await ctx.close();

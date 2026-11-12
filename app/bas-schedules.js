@@ -521,14 +521,15 @@
   window.basPickBaseline = function (pid, input) {
     guarded(pid, input, async function (files) {
       var parsed = [];
-      var bad = '';
+      var skipped = [];
       files.forEach(function (f) {
-        var r = BasBaseline.parseRows(baSplitCSV(f.text));
-        if (r.error) bad = bad || f.name + ': ' + r.error;
+        var r = BasBaseline.parseRows(baSplitCSV(f.text || ''));
+        if (r.error) skipped.push({ name: f.name, reason: r.error });
         else parsed = parsed.concat(r.buildings);
       });
-      if (bad) return say(pid, bad);
-      if (!parsed.length) return say(pid, 'No building rows were found in these files.');
+      var note = skipped.length ? ' ' + BasAuditLog.skipNote(skipped) : ''; // a bad file is skipped and named; the good ones import
+      if (skipped.length === files.length) return say(pid, 'Nothing was imported.' + note);
+      if (!parsed.length) return say(pid, 'No building rows were found in these files.' + note);
       var names = typeof getUDBldgs === 'function' ? (getUDBldgs(pid) || []).map(function (b) { return b.name; }) : [];
       var res = BasBaseline.apply(DB.get('en_bas_schedhistory_' + pid, null), parsed, names);
       await DB.set('en_bas_schedhistory_' + pid, res.rec);
@@ -537,7 +538,7 @@
       say(
         pid,
         'Saved the baseline hours and set points for ' + plural(saved, 'building', 'buildings') + '.' +
-          (lost.length ? ' Not imported, no single matching building in this project: ' + lost.join(', ') + '.' : ''),
+          (lost.length ? ' Not imported, no single matching building in this project: ' + lost.join(', ') + '.' : '') + note,
       );
     });
   };
