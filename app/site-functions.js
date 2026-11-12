@@ -2507,6 +2507,15 @@ async function siteResetAllMeterTableSettings() {
    site-ui.js delegates to this array and should NOT maintain its own copy.
 */
 var RELEASE_NOTES = [
+  { v: 'v2026.11.12.278', date: '2026-11-12', title: 'District Calendar: reads the WebCTRL Schedule Instances report; shows each event\'s WebCTRL schedule',
+    items: [
+      { type: 'feature', text: 'Import scheduling groups now reads the WebCTRL Schedule Instances report (Reports > Schedule Instances, CSV). One file gives every group schedule and every schedule on a location. Import it again after each schedule change in WebCTRL.' },
+      { type: 'feature', text: 'Coverage reads dates, date ranges, yearly dates and "2nd Monday" schedules, not only weekly ones. Priority counts: Override beats Holiday beats Normal, so a Holiday unoccupied schedule removes coverage.' },
+      { type: 'change', text: 'A weekly schedule with no day selected is not active and never covers an event. It stays saved and shows "No days selected (not active)". When it would cover a gap, the card says "Activate <schedule> in <group>".' },
+      { type: 'feature', text: 'What needs to change: each line leads with the event, then "In WebCTRL: <schedule>, <days>, <hours>" and the time difference (for example "WebCTRL ends 7:30 PM, event ends 8:30 PM: 1 hour short"). Events with no WebCTRL schedule come first.' },
+      { type: 'feature', text: 'Opportunity: when an event\'s own WebCTRL schedule runs 30 minutes or more longer than the event, the line stays Covered and says how many hours a separate schedule would save. It is optional and never a to-do.' },
+      { type: 'fix', text: 'A room-level schedule edit in the audit log no longer marks a building-level gap as "Added in WebCTRL". The edit must be at the program\'s area or above and overlap the missing hours.' }
+    ] },
   { v: 'v2026.11.12.277', date: '2026-11-12', title: 'Equipment types: lighting panels and exhaust fans; baseline import skips bad files',
     items: [
       { type: 'fix', text: 'Equipment Matrix: a lighting panel with only lighting points (load commands, panel alarm, photocell) is now Lighting, also when its name has "Rooftop" in it. Before, it was counted as a rooftop unit and the audit report asked for air handler sequences and parts for it.' },
