@@ -242,6 +242,28 @@ typed.buildings[0].setPoints.unshift({ kind: 'baseline', text: 'typed set points
 const kept = BAL.apply(typed, res, names).rec.buildings[0];
 ok(kept.baselineWeekday[0].text === 'typed hours' && kept.setPoints[0].text === 'typed set points' && kept.setPoints.length === typed.buildings[0].setPoints.length, 'baseline entries already in the record are kept, none added');
 
+// a pick with unreadable files: good files are read, bad files are skipped and named in one message
+{
+  const good = { name: 'good.csv', text };
+  const zero = { name: 'zero.csv', text: '' };
+  const prose = { name: 'notes.csv', text: 'Hello, this is only text.\r\nNo columns here.\r\n' };
+  const headOnly = { name: 'head-only.csv', text: csv6([]) };
+  const mixed = BAL.readFiles([good, zero], split);
+  ok(mixed.good === 1 && mixed.skipped.length === 1 && mixed.events.length === rows_n && /^Skipped 1 file: zero\.csv \(/.test(mixed.note), 'good + 0-byte file: good read, bad named: ' + mixed.note);
+  const one = BAL.parseRows(split(text));
+  eq(mixed.events, one.events, 'events from a pick with a bad file equal the events of the good file alone');
+  eq(mixed.lastDay, one.lastDay, 'lastDay of a pick with a bad file equals that of the good file alone');
+  const mixed2 = BAL.readFiles([prose, good, zero], split);
+  ok(mixed2.good === 1 && mixed2.skipped.length === 2 && /^Skipped 2 files: notes\.csv \(.*\); zero\.csv \(/.test(mixed2.note), 'good + text-only + 0-byte: both bad files named in one message');
+  const onlyBad = BAL.readFiles([zero, prose], split);
+  ok(onlyBad.good === 0 && onlyBad.events.length === 0 && onlyBad.lastDay === '' && /Skipped 2 files/.test(onlyBad.note), 'only bad files: nothing read');
+  const ho = BAL.readFiles([good, headOnly], split);
+  ok(ho.good === 2 && ho.skipped.length === 0 && ho.lastDay === one.lastDay && ho.noDay[0] === 'head-only.csv' && /head-only\.csv/.test(ho.note), 'header-only file is a valid file; its day is unknown so lastDay is unchanged and the file is named');
+  const hoOnly = BAL.readFiles([headOnly], split);
+  ok(hoOnly.good === 1 && hoOnly.lastDay === '' && hoOnly.events.length === 0, 'header-only alone: valid, no events, lastDay stays empty');
+  eq(BAL.readFiles([good], split).note, '', 'all good: no extra message');
+}
+
 (async () => {
   // --- the button, in the browser ------------------------------------------------------------------
   const { launchBrowser } = require(path.join(ROOT, 'tools', 'launch-browser.js'));
@@ -290,6 +312,16 @@ ok(kept.baselineWeekday[0].text === 'typed hours' && kept.setPoints[0].text === 
     await page.setInputFiles('#bas-afile-9', [{ name: 'bad.csv', mimeType: 'text/csv', buffer: Buffer.from('"A","B"\r\n"1","2"\r\n') }]);
     await page.waitForFunction(() => /not a WebCTRL audit log/.test(document.getElementById('bas-msg-9').textContent), null, { timeout: 15000 });
     ok(true, 'a wrong file shows a message and saves nothing new');
+    const before = await page.evaluate(() => JSON.stringify([DB.get('en_bas_schedhistory_9', null), DB.get('en_bas_auditevents_9', null)]));
+    await page.setInputFiles('#bas-afile-9', [{ name: 'zero.csv', mimeType: 'text/csv', buffer: Buffer.from('') }, { name: 'prose.csv', mimeType: 'text/csv', buffer: Buffer.from('just text\r\n') }]);
+    await page.waitForFunction(() => /Nothing was imported/.test(document.getElementById('bas-msg-9').textContent), null, { timeout: 15000 });
+    const afterBad = await page.evaluate(() => ({ s: JSON.stringify([DB.get('en_bas_schedhistory_9', null), DB.get('en_bas_auditevents_9', null)]), m: document.getElementById('bas-msg-9').textContent }));
+    ok(afterBad.s === before && /Skipped 2 files: zero\.csv/.test(afterBad.m) && /prose\.csv/.test(afterBad.m), 'only bad files: nothing saved, both named: ' + afterBad.m);
+    await page.setInputFiles('#bas-afile-9', [{ name: 'zero.csv', mimeType: 'text/csv', buffer: Buffer.from('') }, { name: 'log-a.csv', mimeType: 'text/csv', buffer: Buffer.from(text) }]);
+    await page.waitForFunction(() => /Saved schedule and set point history/.test(document.getElementById('bas-msg-9').textContent), null, { timeout: 15000 });
+    const mixedOut = await page.evaluate(() => ({ rec: DB.get('en_bas_schedhistory_9', null), msg: document.getElementById('bas-msg-9').textContent }));
+    ok(/from 1 file\./.test(mixedOut.msg) && /Skipped 1 file: zero\.csv/.test(mixedOut.msg), 'good + 0-byte pick: good file imported, bad file named: ' + mixedOut.msg);
+    eq(mixedOut.rec, out.rec, 'the record after a mixed pick equals the record of the good file alone');
     if (process.env.SHOT) {
       await page.evaluate(() => window.basRender(9));
       await page.evaluate(() => {

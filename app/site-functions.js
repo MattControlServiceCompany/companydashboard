@@ -2507,6 +2507,11 @@ async function siteResetAllMeterTableSettings() {
    site-ui.js delegates to this array and should NOT maintain its own copy.
 */
 var RELEASE_NOTES = [
+  { v: 'v2026.11.12.276', date: '2026-11-12', title: 'Audit log import: one bad file no longer stops the import',
+    items: [
+      { type: 'fix', text: 'Import audit log: when you pick several files and one is empty or is not an audit log, the site imports the good files and names each skipped file with the reason. Before, one bad file stopped the whole import.' },
+      { type: 'fix', text: 'Import audit log: a file with a header but no dated rows is read, and the message names it. The last imported day does not move, because the file does not show its day.' }
+    ] },
   { v: 'v2026.11.12.275', date: '2026-11-12', title: 'Detailed Audit Report: pick the picture folder once (Firefox too)',
     items: [
       { type: 'fix', text: 'Detailed report in Firefox: after you pick the picture folder once, the site keeps the pictures the report uses (graphics and library front photos) in this browser. Later reports use them with no folder pick. "Change folder" picks again.' },

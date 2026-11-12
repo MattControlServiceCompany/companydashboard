@@ -78,6 +78,31 @@
     events.reverse(); // the export is newest first
     return { events: events, lastDay: lastDay };
   }
+  // Reads a whole pick. files = [{name, text}], split = baSplitCSV. A file that cannot be read is skipped and named;
+  // the others are read as before. noDay = readable files with no dated row (the day cannot be known from the file).
+  // Returns { events, lastDay, good, skipped:[{name, reason}], noDay:[name], note } ; note is one message ('' when nothing to tell).
+  function readFiles(files, split) {
+    var out = { events: [], lastDay: '', good: 0, skipped: [], noDay: [], note: '' };
+    (files || []).forEach(function (f) {
+      var r = parseRows(split(f.text || ''));
+      if (r.error) {
+        out.skipped.push({ name: f.name, reason: r.error });
+        return;
+      }
+      out.good++;
+      out.events = out.events.concat(r.events);
+      if (r.lastDay) {
+        if (r.lastDay > out.lastDay) out.lastDay = r.lastDay;
+      } else out.noDay.push(f.name);
+    });
+    var parts = [];
+    if (out.skipped.length) {
+      parts.push('Skipped ' + out.skipped.length + ' file' + (out.skipped.length === 1 ? '' : 's') + ': ' + out.skipped.map(function (s) { return s.name + ' (' + s.reason + ')'; }).join('; ') + '.');
+    }
+    if (out.noDay.length) parts.push('No dated rows, so the last day was not moved: ' + out.noDay.join(', ') + '.');
+    out.note = parts.join(' ');
+    return out;
+  }
   function sortEvents(events) {
     return events
       .map(function (e, i) { return { e: e, i: i }; })
@@ -605,6 +630,7 @@
 
   var api = {
     parseRows: parseRows,
+    readFiles: readFiles,
     analyze: analyze,
     apply: apply,
     resolveNames: resolveNames,

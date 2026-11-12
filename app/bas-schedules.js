@@ -495,22 +495,13 @@
   }
   window.basPickAudit = function (pid, input) {
     guarded(pid, input, async function (files) {
-      var events = [];
-      var lastDay = '';
-      var bad = '';
-      files.forEach(function (f) {
-        var r = BasAuditLog.parseRows(baSplitCSV(f.text));
-        if (r.error) bad = bad || f.name + ': ' + r.error;
-        else {
-          events = events.concat(r.events);
-          if (r.lastDay > lastDay) lastDay = r.lastDay;
-        }
-      });
-      if (bad) return say(pid, bad);
+      var read = BasAuditLog.readFiles(files, baSplitCSV); // bad files are skipped and named in read.note
+      var note = read.note ? ' ' + read.note : '';
+      if (!read.good) return say(pid, 'Nothing was imported. ' + read.note);
       // The history is rebuilt from every event read so far (en_bas_auditevents_<pid>), not from these files alone.
-      var store = BasAuditLog.mergeStore(DB.get('en_bas_auditevents_' + pid, null), events, lastDay);
+      var store = BasAuditLog.mergeStore(DB.get('en_bas_auditevents_' + pid, null), read.events, read.lastDay);
       var results = BasAuditLog.analyze(BasAuditLog.storeEvents(store), window.basPointSource(((typeof emLoadMatrix === 'function' && emLoadMatrix(pid)) || {}).rows), store.lastDay);
-      if (!results.length) return say(pid, 'No schedule or set point rows were found in these files.');
+      if (!results.length) return say(pid, 'No schedule or set point rows were found in these files.' + note);
       await DB.set('en_bas_auditevents_' + pid, store);
       var sizeWarn = BasAuditLog.storeWarning(store);
       var names = typeof getUDBldgs === 'function' ? (getUDBldgs(pid) || []).map(function (b) { return b.name; }) : [];
@@ -520,8 +511,8 @@
       var saved = res.matched.length - lost.length;
       say(
         pid,
-        'Saved schedule and set point history for ' + plural(saved, 'building', 'buildings') + ' from ' + plural(files.length, 'file', 'files') + '.' +
-          (lost.length ? ' Not imported, no single matching building in this project: ' + lost.join(', ') + '.' : '') + sizeWarn,
+        'Saved schedule and set point history for ' + plural(saved, 'building', 'buildings') + ' from ' + plural(read.good, 'file', 'files') + '.' +
+          (lost.length ? ' Not imported, no single matching building in this project: ' + lost.join(', ') + '.' : '') + sizeWarn + note,
       );
     });
   };
