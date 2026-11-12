@@ -163,6 +163,15 @@ const ok = (c, m) => {
 
     // ---- make Detailed through the modal, with a picture folder ----
     async function makeDetailed(withFolder) {
+      // The saved pictures of an earlier run (app/picture-folder.js, IndexedDB) must not leak into a run with no folder.
+      await page.evaluate(
+        () =>
+          new Promise((res) => {
+            _pictureFolderState = {};
+            const q = indexedDB.deleteDatabase('ch-picture-folder');
+            q.onsuccess = q.onerror = q.onblocked = () => res();
+          }),
+      );
       return page.evaluate(
         async ({ PID, withFolder }) => {
           openASHRAE36ReportModal(PID, 'audit');

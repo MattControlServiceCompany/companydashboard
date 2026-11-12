@@ -2507,6 +2507,11 @@ async function siteResetAllMeterTableSettings() {
    site-ui.js delegates to this array and should NOT maintain its own copy.
 */
 var RELEASE_NOTES = [
+  { v: 'v2026.11.12.275', date: '2026-11-12', title: 'Detailed Audit Report: pick the picture folder once (Firefox too)',
+    items: [
+      { type: 'fix', text: 'Detailed report in Firefox: after you pick the picture folder once, the site keeps the pictures the report uses (graphics and library front photos) in this browser. Later reports use them with no folder pick. "Change folder" picks again.' },
+      { type: 'fix', text: 'Detailed report: when the browser cannot read a library front photo, a message names the photo. Before, the photo was left out with no message.' }
+    ] },
   { v: 'v2026.11.11.274', date: '2026-11-11', title: 'Detailed Audit Report: shorter, smaller titles, Findings Summary after the libraries',
     items: [
       { type: 'change', text: 'Detailed report: 123 pages are now 103. The sequence descriptions print once, in Control Sequences. Each finding is one paragraph. Appendix A shares one table between libraries with the same points.' },

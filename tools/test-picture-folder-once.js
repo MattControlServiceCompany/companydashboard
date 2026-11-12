@@ -7,6 +7,10 @@
 //      then the button says "Change folder". A cancelled picker (AbortError) is silent; another error shows a toast.
 //   5. Without showDirectoryPicker the hidden input #a36PictureDir opens (fallback), and the button text stays "Choose picture folder".
 //   6. The preview reads the pictures from the remembered folder (files of subfolders too); with nothing chosen it builds with no wait.
+//   7. Saved pictures (Firefox has no showDirectoryPicker): pictureFolderSelectToSave keeps only the needed files and the library
+//      front photos; after a folder pick the report saves them; later, with no folder chosen, the report uses the saved set (panel text
+//      "The report uses the N saved pictures", button "Change folder", no prompt); files of a folder chosen again replace saved files of the same name, the others stay; a
+//      folder with none of the needed pictures keeps it.
 'use strict';
 const path = require('path');
 const { pathToFileURL } = require('url');
@@ -54,6 +58,7 @@ const ok = (c, m) => {
       // fake IndexedDB for 'ch-picture-folder' only; every other database goes to the real one
       const realIndexedDB = window.indexedDB;
       window.__fakeStore = {};
+      window.__fakeSaved = {}; // the store "pictures"
       window.__realIndexedDB = realIndexedDB;
       window.__fakeIndexedDB = {
         open: function (name, version) {
@@ -62,18 +67,19 @@ const ok = (c, m) => {
           setTimeout(() => {
             request.result = {
               close() {},
-              transaction() {
+              transaction(storeName) {
                 const tx = {};
+                const bag = () => (storeName === 'pictures' ? window.__fakeSaved : window.__fakeStore);
                 return Object.assign(tx, {
                   objectStore() {
                     return {
                       get(key) {
-                        const req = { result: window.__fakeStore[key] };
+                        const req = { result: bag()[key] };
                         setTimeout(() => tx.oncomplete && tx.oncomplete(), 0);
                         return req;
                       },
                       put(value, key) {
-                        window.__fakeStore[key] = value;
+                        bag()[key] = value;
                         const req = { result: key };
                         setTimeout(() => tx.oncomplete && tx.oncomplete(), 0);
                         return req;
@@ -229,6 +235,7 @@ const ok = (c, m) => {
     await stubPicker('tree-b');
     await page.evaluate(async () => {
       window.__fakeStore = {};
+      window.__fakeSaved = {};
       window.__resetModule();
       await window.__openDetailed();
     });
@@ -269,6 +276,7 @@ const ok = (c, m) => {
     const fallback = await page.evaluate(async () => {
       delete window.showDirectoryPicker;
       window.__fakeStore = {};
+      window.__fakeSaved = {};
       window.__resetModule();
       await window.__openDetailed();
       let inputClicks = 0;
@@ -301,6 +309,7 @@ const ok = (c, m) => {
       // nothing chosen: the preview is built at once (no wait for a folder read)
       document.getElementById('reportOverlay') && document.getElementById('reportOverlay').classList.remove('open');
       window.__fakeStore = {};
+      window.__fakeSaved = {};
       window.__resetModule();
       window.__loadedWith = null;
       await window.__openDetailed();
@@ -311,6 +320,84 @@ const ok = (c, m) => {
     ok(preview.withFolder.names && preview.withFolder.names.join(',') === 'other.png,syn-1.png,syn-2.png', 'preview: pictures are read from the remembered folder, subfolder files included (' + (preview.withFolder.names || []).join(',') + ')');
     ok(preview.withFolder.pages > 0, 'preview: the report has pages (' + preview.withFolder.pages + ')');
     ok(preview.none.builtAtOnce && preview.none.loadedWith === null, 'nothing chosen: the preview is built at once, no picture read');
+
+    // ---- 7. saved pictures (no showDirectoryPicker: the Firefox path) ----
+    const select = await page.evaluate(() => {
+      const f = (n) => ({ name: n });
+      const files = ['syn-1.png', 'syn-2.png', 'Alpha Library - Front.png', 'Beta Library - front.JPG', 'Gamma Library - Front.png', 'other.png'].map(f);
+      const kept = pictureFolderSelectToSave(files, ['syn-1.png', 'missing.png'], ['Alpha Library', 'Beta Library', 'Delta Library'], _a36DetLibraryPhotoFile);
+      const none = pictureFolderSelectToSave(files, [], [], _a36DetLibraryPhotoFile);
+      return { kept: kept.map((x) => x.name), keptDistinct: new Set(kept).size === kept.length, none: none.length };
+    });
+    ok(
+      JSON.stringify(select.kept) === JSON.stringify(['syn-1.png', 'Alpha Library - Front.png', 'Beta Library - front.JPG']) && select.keptDistinct && select.none === 0,
+      'select: needed files + the front photo of each listed library only; not the other files, not a photo of an unlisted library (' + select.kept.join(',') + ')',
+    );
+    const saved = await page.evaluate(async (pid) => {
+      delete window.showDirectoryPicker;
+      window.__fakeStore = {};
+      window.__fakeSaved = {};
+      window.__resetModule();
+      await window.__openDetailed();
+      const mkInput = (names) => {
+        const dt = new DataTransfer();
+        names.forEach((n) => dt.items.add(new File(['x'], n, { type: 'image/png' })));
+        const input = document.getElementById('a36PictureDir');
+        input.files = dt.files;
+        input.dispatchEvent(new Event('change'));
+      };
+      const run = async () => {
+        const original = _a36DetLoadPictures;
+        window.__loadedWith = null;
+        _a36DetLoadPictures = function (files, needed) {
+          window.__loadedWith = Array.prototype.map.call(files, (x) => x.name).sort();
+          return original(files, needed);
+        };
+        generateASHRAE36Preview();
+        for (let i = 0; i < 100 && !document.querySelector('#reportPages .rpt-page'); i++) await new Promise((r) => setTimeout(r, 100));
+        await new Promise((r) => setTimeout(r, 300));
+        _a36DetLoadPictures = original;
+        document.getElementById('reportOverlay') && document.getElementById('reportOverlay').classList.remove('open');
+        document.querySelectorAll('#reportPages .rpt-page').forEach((p) => p.remove());
+        return window.__loadedWith;
+      };
+      const out = {};
+      // pick once: the input holds the folder files; the report saves the needed ones
+      mkInput(['syn-1.png', 'syn-2.png', 'syn-3.png', 'other.png', 'Alpha Library - Front.png', 'junk.png']);
+      out.firstLoaded = await run();
+      out.storedNames = ((window.__fakeSaved[String(pid)] || {}).files || []).map((x) => x.name).sort();
+      // a later export: new modal, no folder chosen, module state gone (a reload)
+      window.__pickerCalls = 0;
+      window.__resetModule();
+      const shown = await window.__openDetailed();
+      out.shown = shown;
+      out.hasChoice = pictureFolderHasChoice(pid, document.getElementById('a36PictureDir'));
+      out.secondLoaded = await run();
+      out.pickerCalls = window.__pickerCalls;
+      // a folder chosen again: its files replace the saved files of the same name; the other saved files stay
+      await window.__openDetailed();
+      mkInput(['syn-2.png', 'syn-3.png']);
+      const newSyn2 = Array.prototype.find.call(document.getElementById('a36PictureDir').files, (x) => x.name === 'syn-2.png');
+      await run();
+      const savedNow = (window.__fakeSaved[String(pid)] || {}).files || [];
+      out.replacedNames = savedNow.map((x) => x.name).sort();
+      out.syn2Replaced = savedNow.find((x) => x.name === 'syn-2.png') === newSyn2;
+      // a folder without any needed picture keeps the saved set
+      await window.__openDetailed();
+      mkInput(['unrelated.png']);
+      await run();
+      out.keptNames = ((window.__fakeSaved[String(pid)] || {}).files || []).map((x) => x.name).sort();
+      return out;
+    }, PID);
+    ok(saved.storedNames.length > 0 && saved.storedNames.every((n) => /^(syn-\d\.png|Alpha Library - Front\.png)$/.test(n)) && saved.storedNames.indexOf('other.png') < 0 && saved.storedNames.indexOf('junk.png') < 0, 'saved: only needed pictures and the front photo are stored, not the whole folder (' + saved.storedNames.join(',') + ')');
+    ok(saved.firstLoaded && saved.firstLoaded.length === 6, 'saved: the first report read the folder files (' + (saved.firstLoaded || []).length + ')');
+    ok(
+      /The report uses the \d+ saved pictures\. "Change folder" picks again\.$/.test(saved.shown.status) && saved.shown.btn === 'Change folder' && saved.hasChoice,
+      'saved: with no folder chosen the panel says "' + saved.shown.status + '", button "' + saved.shown.btn + '"',
+    );
+    ok(saved.secondLoaded && saved.secondLoaded.join(',') === saved.storedNames.join(',') && saved.pickerCalls === 0, 'saved: the next report reads the saved files, no picker (' + (saved.secondLoaded || []).join(',') + ')');
+    ok(saved.replacedNames.join(',') === saved.storedNames.join(',') && saved.syn2Replaced, 'saved: a folder chosen again replaces saved files of the same name and keeps the others (' + saved.replacedNames.join(',') + ')');
+    ok(saved.keptNames.join(',') === saved.storedNames.join(','), 'saved: a folder with none of the needed pictures keeps the saved set (' + saved.keptNames.join(',') + ')');
 
     ok(errs.length === 0, 'no page errors' + (errs.length ? ': ' + errs.join(' | ') : ''));
   } finally {

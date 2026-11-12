@@ -26266,6 +26266,14 @@ function _a36DetCropPhoto(file) {
     var objUrl = URL.createObjectURL(file);
     var img = new Image();
     img.onload = function () {
+      try {
+        resolve(cropLoaded());
+      } catch (err) {
+        resolve(null); // the browser could not draw the photo (counted by _a36DetLoadLibraryPhotos)
+      }
+      URL.revokeObjectURL(objUrl);
+    };
+    function cropLoaded() {
       var outW = A36_DET_PHOTO_W * 2;
       var outH = A36_DET_PHOTO_H * 2;
       var w = img.naturalWidth;
@@ -26280,9 +26288,8 @@ function _a36DetCropPhoto(file) {
       cx.fillStyle = '#fff';
       cx.fillRect(0, 0, outW, outH);
       cx.drawImage(img, (w - cw) / 2, (h - ch) / 2, cw, ch, 0, 0, outW, outH);
-      URL.revokeObjectURL(objUrl);
-      resolve({ url: cv.toDataURL('image/jpeg', A36_DET_PICTURE_QUALITY), w: outW, h: outH });
-    };
+      return { url: cv.toDataURL('image/jpeg', A36_DET_PICTURE_QUALITY), w: outW, h: outH };
+    }
     img.onerror = function () {
       URL.revokeObjectURL(objUrl);
       resolve(null);
@@ -26293,6 +26300,7 @@ function _a36DetCropPhoto(file) {
 // Resolves { libraryDisplayName: {url,w,h} } for each library that has a front photo in the folder.
 function _a36DetLoadLibraryPhotos(files, libraryNames) {
   var out = {};
+  var unreadable = [];
   var chain = Promise.resolve();
   libraryNames.forEach(function (name) {
     var file = _a36DetLibraryPhotoFile(files, name, libraryNames);
@@ -26300,10 +26308,15 @@ function _a36DetLoadLibraryPhotos(files, libraryNames) {
     chain = chain.then(function () {
       return _a36DetCropPhoto(file).then(function (r) {
         if (r) out[name] = r;
+        else unreadable.push(file.name);
       });
     });
   });
   return chain.then(function () {
+    // A photo the browser cannot read is not dropped without a word.
+    if (unreadable.length && typeof showToast === 'function') {
+      showToast('This browser could not read ' + unreadable.length + (unreadable.length === 1 ? ' front photo: ' : ' front photos: ') + unreadable.join(', '), 'error', 10000);
+    }
     return out;
   });
 }
@@ -28280,8 +28293,10 @@ function _a36PictureStatus() {
   var dir = document.getElementById('a36PictureDir');
   var inputFiles = dir && dir.files ? dir.files : [];
   // Files on the input win over the remembered folder (app/picture-folder.js).
-  var remembered = typeof pictureFolderCurrent === 'function' ? pictureFolderCurrent(window._a36PicPid) : { name: '', permission: 'none', files: [] };
+  var remembered = typeof pictureFolderCurrent === 'function' ? pictureFolderCurrent(window._a36PicPid) : { name: '', permission: 'none', files: [], saved: [] };
   var useInput = inputFiles.length > 0;
+  // No folder to read: the saved pictures (this browser's IndexedDB, app/picture-folder.js) are what the report uses.
+  var useSaved = !useInput && remembered.files.length === 0 && remembered.saved.length > 0;
   var files = useInput ? inputFiles : remembered.files;
   var needsAllow = !useInput && remembered.permission === 'prompt';
   var allowBox = document.getElementById('a36PictureAllowBox');
@@ -28289,7 +28304,7 @@ function _a36PictureStatus() {
   if (allowBox) allowBox.style.display = needsAllow ? '' : 'none';
   if (allowBtn) allowBtn.textContent = 'Allow access to ' + remembered.name;
   var chooseBtn = document.getElementById('a36PictureBtn');
-  if (chooseBtn) chooseBtn.textContent = !useInput && remembered.name ? 'Change folder' : 'Choose picture folder';
+  if (chooseBtn) chooseBtn.textContent = !useInput && (remembered.name || useSaved) ? 'Change folder' : 'Choose picture folder';
   var noList = document.getElementById('a36PictureNoList');
   if (noList) noList.style.display = map.length ? 'none' : '';
   if (!map.length) {
@@ -28301,6 +28316,11 @@ function _a36PictureStatus() {
     listed[p.file] = true;
   });
   var total = Object.keys(listed).length;
+  if (useSaved) {
+    st.textContent =
+      total + (total === 1 ? ' picture' : ' pictures') + ' in the picture list. The report uses the ' + remembered.saved.length + ' saved pictures. "Change folder" picks again.';
+    return;
+  }
   if (!files.length) {
     st.textContent =
       total + (total === 1 ? ' picture' : ' pictures') + ' in the picture list' + (needsAllow ? ' (remembered folder: ' + remembered.name + ')' : '');
@@ -28462,14 +28482,25 @@ function generateASHRAE36Preview() {
       pictureFolderFiles(projId, dirEl)
         .then(function (pictureFiles) {
           var libraryNames = (data.buildings || []).map(_a36DisplayName);
-          return _a36DetLoadPictures(
-            pictureFiles,
-            picMap.length ? _a36DetNeededPictureFiles(data, picMap, _a36DetRowsById(projId)) : [],
-            picMap
-          ).then(function (pics) {
-            data._a36Pictures = pics;
-            return _a36DetLoadLibraryPhotos(pictureFiles, libraryNames);
-          });
+          var needed = picMap.length ? _a36DetNeededPictureFiles(data, picMap, _a36DetRowsById(projId)) : [];
+          return _a36DetLoadPictures(pictureFiles, needed, picMap)
+            .then(function (pics) {
+              data._a36Pictures = pics;
+              return _a36DetLoadLibraryPhotos(pictureFiles, libraryNames);
+            })
+            .then(function (photos) {
+              // Keep only the files this report needs for the next export (no folder pick then); files read again replace saved files of the same name.
+              var keep = pictureFolderSelectToSave(pictureFiles, needed, libraryNames, _a36DetLibraryPhotoFile);
+              return pictureFolderRemember(projId, pictureFiles, keep).then(
+                function () {
+                  return photos;
+                },
+                function (err) {
+                  showToast('Could not save the pictures for the next report: ' + (err && err.message ? err.message : err), 'error', 8000);
+                  return photos;
+                }
+              );
+            });
         })
         .then(
           function (photos) {
