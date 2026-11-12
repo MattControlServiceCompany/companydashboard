@@ -2507,6 +2507,12 @@ async function siteResetAllMeterTableSettings() {
    site-ui.js delegates to this array and should NOT maintain its own copy.
 */
 var RELEASE_NOTES = [
+  { v: 'v2026.11.11.274', date: '2026-11-11', title: 'Detailed Audit Report: shorter, smaller titles, Findings Summary after the libraries',
+    items: [
+      { type: 'change', text: 'Detailed report: 123 pages are now 103. The sequence descriptions print once, in Control Sequences. Each finding is one paragraph. Appendix A shares one table between libraries with the same points.' },
+      { type: 'change', text: 'Detailed report: section titles are 16 pt with a period after the number ("1. Executive Summary"). Order: Executive Summary, Building Readiness, one section per library, Findings Summary, Control Sequences, Appendix A, Appendix B.' },
+      { type: 'change', text: 'Detailed report: when the Minimum Outside Air and Occupancy-Based Ventilation sequences are missing on the same units, they are one finding. Appendix B lists libraries with only single-zone units, with their current setpoints.' }
+    ] },
   { v: 'v2026.11.11.273', date: '2026-11-11', title: 'Detailed Audit Report: numbered sections, clearer tables, library photos',
     items: [
       { type: 'change', text: 'ASHRAE 36 Audit Report, Detailed style: each section starts on a new page with a large numbered title. Order: Executive Summary, Building Readiness, Findings Summary, one section per library, Control Sequences, Appendix A, Appendix B.' },
