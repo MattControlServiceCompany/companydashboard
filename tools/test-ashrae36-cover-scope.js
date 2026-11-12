@@ -30,7 +30,7 @@
 // Then it scrapes the ACTUAL rendered cover stat cards out of the real DOM and compares.
 //
 // Checks:
-//   1. Full selection (all 27 buildings) is unchanged: cover shows 1,226 sequences / 1,292
+//   1. Full selection (all 27 buildings) is unchanged: cover shows 1,120 sequences / 1,101
 //      sensors (the known-good Client D figures from the 2026-09-25 bug report / dashboardlogic).
 //   2. One-building selection ("Client D Elections Office", 8 equipment): the cover's two totals
 //      equal the SUM, over just that building's rows in the unscoped catalog, of the same
@@ -68,9 +68,10 @@ const RUN_DIR =
   process.env.ASHRAE36_TEST_RUN_DIR ||
   path.join(CTX_DIR, 'temp', '2026-09-25-ashrae36-cover-scope', 'test-run');
 
-// was 1285/1291 before 99d2c573 point map (2026-11-11)
-const EXPECTED_FULL_SEQUENCES = 1226;
-const EXPECTED_FULL_SENSORS = 1292;
+// was 1285/1291 before 99d2c573 point map (2026-11-11); was 1226/1292 before A36-3 single-zone sequence set
+// (3970ed1a, Matt 2026-11-12: "A36-3 can use that sequence set.")
+const EXPECTED_FULL_SEQUENCES = 1120;
+const EXPECTED_FULL_SENSORS = 1101;
 // The one-building case uses the first building of the restored data (set after the full-selection run); no building name is kept in this file.
 let oneBuildingName = null;
 
