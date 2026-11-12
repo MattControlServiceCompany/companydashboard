@@ -2514,6 +2514,7 @@ var RELEASE_NOTES = [
       { type: 'change', text: 'A weekly schedule with no day selected is not active and never covers an event. It stays saved and shows "No days selected (not active)". When it would cover a gap, the card says "Activate <schedule> in <group>".' },
       { type: 'feature', text: 'What needs to change: each line leads with the event, then "In WebCTRL: <schedule>, <days>, <hours>" and the time difference (for example "WebCTRL ends 7:30 PM, event ends 8:30 PM: 1 hour short"). Events with no WebCTRL schedule come first.' },
       { type: 'feature', text: 'Opportunity: when an event\'s own WebCTRL schedule runs 30 minutes or more longer than the event, the line stays Covered and says how many hours a separate schedule would save. It is optional and never a to-do.' },
+      { type: 'change', text: 'Equipment Matrix and audit report: single-zone air units (rooftop units, single-zone air handlers) are scored with the ASHRAE Guideline 36 single-zone sequence set. A VRF outdoor unit is typed VRF.' },
       { type: 'fix', text: 'A room-level schedule edit in the audit log no longer marks a building-level gap as "Added in WebCTRL". The edit must be at the program\'s area or above and overlap the missing hours.' }
     ] },
   { v: 'v2026.11.12.277', date: '2026-11-12', title: 'Equipment types: lighting panels and exhaust fans; baseline import skips bad files',
