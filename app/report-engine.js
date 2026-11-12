@@ -20571,6 +20571,64 @@ function rptPageASHRAE36SetpointReview(n, d, detailedTitle) {
     });
   });
 
+  // ── Libraries with no zone terminal unit at all ───────────────────────────
+  // Their units are single-zone air handling units, rooftop units, furnaces or heaters. ASHRAE 36 has no zone defaults for them, so the
+  // review shows their current setpoints only (no default, no recommendation). One row per set of current setpoints in the library; the
+  // units are named when a library has more than one row. The values come from emComputeSetpointCompliance, the one reader of the zone
+  // setpoints and of the deadband; it accepts a zone category only, so each unit is passed to it as a zone.
+  var _spRowsById = typeof _a36DetRowsById === 'function' && d.project ? _a36DetRowsById(d.project.id) : {};
+  d.buildings.forEach(function (b) {
+    var units = b.equipResults || [];
+    if (typeof emComputeSetpointCompliance !== 'function' || !units.length) return;
+    if (
+      units.some(function (eq) {
+        return ZONE_CATS[eq.category];
+      })
+    )
+      return;
+    var groups = [];
+    var byTuple = {};
+    units.forEach(function (eq) {
+      var row = _spRowsById[eq.id];
+      if (!row) return;
+      var sp = emComputeSetpointCompliance(Object.assign({}, row, { category: 'zone' }), {}, {});
+      if (!sp || !sp.hasAnyData) return;
+      function entry(checkKey) {
+        return sp.results.find(function (r) {
+          return r.checkKey === checkKey;
+        });
+      }
+      var zone = {
+        displayStatus: 'MATCHES',
+        occHeat: entry('occHeat'),
+        occCool: entry('occCool'),
+        unoccHeat: entry('unoccHeat'),
+        unoccCool: entry('unoccCool'),
+        deadband: entry('deadband'),
+        co2: null,
+        existingSchedule: eq.existingSchedule || null,
+        recommended: null,
+        unitName: eq.name || 'Unknown',
+      };
+      var tuple = [zone.occHeat, zone.occCool, zone.unoccHeat, zone.unoccCool]
+        .map(function (r) {
+          return r && r.actualValue !== null && r.actualValue !== undefined ? r.actualValue : '';
+        })
+        .join('|');
+      if (!byTuple[tuple]) {
+        byTuple[tuple] = { name: b.name, zones: [], singleZone: true };
+        groups.push(byTuple[tuple]);
+      }
+      byTuple[tuple].zones.push(zone);
+    });
+    groups.forEach(function (g, gi) {
+      var key = b.name + '\u0001single' + gi;
+      g.multi = groups.length > 1;
+      bldgOrder.push(key);
+      bldgMap[key] = g;
+    });
+  });
+
   // ── Empty-state guard ─────────────────────────────────────────────────────
   if (bldgOrder.length === 0) {
     var emptyBody =
@@ -20689,10 +20747,30 @@ function rptPageASHRAE36SetpointReview(n, d, detailedTitle) {
     // Building status: NEEDS_REVIEW if any zones deviate; MATCHES otherwise. Every zone here
     // has at least one setpoint value (zones without data are filtered out above).
     var bStatus = deviatorCount > 0 ? 'NEEDS_REVIEW' : 'MATCHES';
+    if (bldg.singleZone) {
+      // single-zone units: no ASHRAE 36 zone default, no zone to reprogram
+      bStatus = 'SINGLE_ZONE';
+      heatDefault = coolDefault = unoccHeatDefault = unoccCoolDefault = null;
+      deviatorCount = 0;
+    }
 
     return {
-      name: bName,
-      displayName: rptBuildingDisplayName(bName),
+      name: bldg.name,
+      singleZone: !!bldg.singleZone,
+      // the unit tags only ("AHU-A and AHU-B"), the room in brackets is left out
+      unitNote:
+        bldg.singleZone && bldg.multi
+          ? _a36DetJoin(
+              bldg.zones
+                .map(function (z) {
+                  return _a36DetEquipName(z.unitName).replace(/\s*\([^)]*\)$/, '');
+                })
+                .sort(function (a, c) {
+                  return a.localeCompare(c, undefined, { numeric: true });
+                }),
+            )
+          : '',
+      displayName: rptBuildingDisplayName(bldg.name),
       avgHeat: avgHeat,
       avgCool: avgCool,
       avgUnoccHeat: avgUnoccHeat,
@@ -20722,7 +20800,7 @@ function rptPageASHRAE36SetpointReview(n, d, detailedTitle) {
   });
 
   // Sort: Needs-Review first, then Not-Scheduled, then Matches; alpha within group.
-  var STATUS_ORDER_B = { NEEDS_REVIEW: 0, MATCHES: 1 };
+  var STATUS_ORDER_B = { NEEDS_REVIEW: 0, MATCHES: 1, SINGLE_ZONE: 2 };
   buildingRows.sort(function (a, b2) {
     var ao = STATUS_ORDER_B[a.bStatus] !== undefined ? STATUS_ORDER_B[a.bStatus] : 99;
     var bo = STATUS_ORDER_B[b2.bStatus] !== undefined ? STATUS_ORDER_B[b2.bStatus] : 99;
@@ -20777,6 +20855,7 @@ function rptPageASHRAE36SetpointReview(n, d, detailedTitle) {
   // tells the reader what to do about it instead of flagging it as a problem.
   // The status of a building in one line: how many zones to reprogram to the recommended setpoints, or that all of them match.
   function _statusLine(row) {
+    if (row.singleZone) return '<span style="font-weight:700;color:var(--rpt-page-text)">Single-zone unit, no zone defaults</span>';
     var zones = row.totalZones + (row.totalZones !== 1 ? ' zones' : ' zone');
     if (row.bStatus === 'NEEDS_REVIEW') {
       return '<span style="font-weight:700;color:var(--rpt-orange)">Reprogram ' + row.deviatorCount + ' of ' + zones + ' to recommended setpoints</span>';
@@ -20811,6 +20890,7 @@ function rptPageASHRAE36SetpointReview(n, d, detailedTitle) {
   }
   var _recBox = null; // set below, once the building rows are known
   function _recDifferenceFor(row) {
+    if (row.singleZone) return '';
     var fields = _recFieldsFor(row);
     var parts = [];
     if (fields.occupied !== _recBox.occupied) parts.push('occupied ' + fields.occupied);
@@ -20854,24 +20934,29 @@ function rptPageASHRAE36SetpointReview(n, d, detailedTitle) {
     );
   }
   var _spColDefs = [
-    { w: 13, th: 'Building', td: tdBase, cell: function (r) { return '<span style="font-weight:600;color:var(--rpt-page-text)">' + _escHtml(_a36DisplayName(r)) + '</span>'; } },
+    { w: 13, th: 'Building', td: tdBase, cell: function (r) { return '<span style="font-weight:600;color:var(--rpt-page-text)">' + _escHtml(_a36DisplayName(r)) + '</span>' + (r.unitNote ? '<div style="margin-top:3px;color:var(--rpt-page-text)">' + _escHtml(r.unitNote) + '</div>' : ''); } },
     { w: 17, th: 'Occupied' + thSub + 'Existing average</span>', td: tdCenter, cell: function (r) { return _pairText(r.avgHeat, r.avgCool, _fmtAvg); } },
     { w: 17, th: 'Unoccupied' + thSub + 'Existing average</span>', td: tdCenter, cell: function (r) { return _pairText(r.avgUnoccHeat, r.avgUnoccCool, _fmtAvg); } },
-    { w: 17, th: 'ASHRAE 36<br>Default', td: tdCenter, cell: _refCellFor, uniformNote: function (h) { var p = h.split('<br>'); return '<strong>ASHRAE 36 default:</strong> ' + p[0].replace(/^Occupied/, 'occupied') + '; ' + p[1].replace(/^Unoccupied/, 'unoccupied'); } },
+    { w: 17, th: 'ASHRAE 36<br>Default', td: tdCenter, zoneOnly: true, cell: function (r) { return r.singleZone ? '—' : _refCellFor(r); }, uniformNote: function (h) { var p = h.split('<br>'); return '<strong>ASHRAE 36 default:</strong> ' + p[0].replace(/^Occupied/, 'occupied') + '; ' + p[1].replace(/^Unoccupied/, 'unoccupied'); } },
     { w: _detailedReview ? 12.5 : 10, th: 'Deadband' + thSub + 'Existing average</span>', td: tdCenter, cell: function (r) { return _fmtAvg(r.avgDb); } },
     { w: 14, th: 'Existing<br>Schedule' + thSub + 'Mon–Fri, Sat &amp; Sun</span>', td: tdCenter, cell: _eschCellFor, uniformNote: function (h) { return h === 'Not part of this review' ? '' : '<strong>Existing schedule for every building:</strong> ' + h.replace(/<br>/g, '; '); }, dropIf: function (h) { return h === 'Not part of this review'; } },
     { w: 25, th: 'Status', td: tdBase, keep: true, cell: function (r) { return _statusLine(r) + _recDifferenceFor(r); } },
   ];
   // The recommendation shared by most buildings: printed once in the box above the table.
+  var _zoneRows = buildingRows.filter(function (r) {
+    return !r.singleZone;
+  });
   _recBox = {
-    occupied: _mostCommon(buildingRows.map(function (r) { return _recFieldsFor(r).occupied; })),
-    unoccupied: _mostCommon(buildingRows.map(function (r) { return _recFieldsFor(r).unoccupied; })),
-    schedule: _mostCommon(buildingRows.map(function (r) { return _recFieldsFor(r).schedule; })),
+    occupied: _mostCommon(_zoneRows.map(function (r) { return _recFieldsFor(r).occupied; })),
+    unoccupied: _mostCommon(_zoneRows.map(function (r) { return _recFieldsFor(r).unoccupied; })),
+    schedule: _mostCommon(_zoneRows.map(function (r) { return _recFieldsFor(r).schedule; })),
   };
   var _uniformNotes = [];
   var _spCols = _spColDefs.filter(function (c, ci) {
     if (ci === 0 || c.keep) return true;
-    var cells = buildingRows.map(c.cell);
+    if (c.zoneOnly && !_zoneRows.length) return false; // only single-zone rows: there is no ASHRAE 36 default to show
+    // the ASHRAE 36 default is the default of the zone rows; a single-zone row has none
+    var cells = (c.zoneOnly ? _zoneRows : buildingRows).map(c.cell);
     var same = cells.length > 0 && cells.every(function (h) { return h === cells[0]; });
     if (c.dropIf && same && c.dropIf(cells[0])) return false;
     if (c.uniformNote && same && cells.length > 1) {
@@ -20905,9 +20990,19 @@ function rptPageASHRAE36SetpointReview(n, d, detailedTitle) {
   var matchesTotal = buildingRows.filter(function (r) {
     return r.bStatus === 'MATCHES';
   }).length;
-  var summaryParts = [buildingRows.length + ' building' + (buildingRows.length !== 1 ? 's' : '')];
+  // a library with single-zone units can have more than one row: count libraries
+  var _shownNames = {};
+  var _singleNames = {};
+  buildingRows.forEach(function (r) {
+    _shownNames[r.name] = true;
+    if (r.singleZone) _singleNames[r.name] = true;
+  });
+  var _shownCount = Object.keys(_shownNames).length;
+  var _singleCount = Object.keys(_singleNames).length;
+  var summaryParts = [_shownCount + ' building' + (_shownCount !== 1 ? 's' : '')];
   if (needsReviewTotal > 0) summaryParts.push(needsReviewTotal + ' to reprogram to recommended setpoints');
   if (matchesTotal > 0) summaryParts.push(matchesTotal + ' match ASHRAE 36 defaults');
+  if (_singleCount > 0) summaryParts.push(_singleCount + ' with single-zone units only (no zone defaults)');
 
   var totalsCallout =
     '<div style="font-size:10px;color:var(--rpt-page-text);margin-bottom:8px">' +
@@ -20934,7 +21029,7 @@ function rptPageASHRAE36SetpointReview(n, d, detailedTitle) {
   // rooftop units, heaters, exhaust fans and the like, which this review does not read), or a building whose zone terminal units have no
   // zone setpoints in the building automation data.
   var _notShown = d.buildings.filter(function (b) {
-    return !bldgMap[b.name];
+    return !_shownNames[b.name];
   });
   var _noZoneUnits = _notShown.filter(function (b) {
     return !(b.equipResults || []).some(function (eq) {
@@ -20951,12 +21046,18 @@ function rptPageASHRAE36SetpointReview(n, d, detailedTitle) {
       }),
     );
   }
+  var _singleBuildings = d.buildings.filter(function (b) {
+    return _singleNames[b.name];
+  });
   var exclusionNote = '';
-  if (_notShown.length > 0) {
+  if (_notShown.length > 0 || _singleBuildings.length > 0) {
     exclusionNote =
       '<div class="rpt-a36-callout" style="margin-top:10px">' +
       '<div style="font-size:10px;color:var(--rpt-page-text);line-height:1.6">' +
       'This review covers the zone terminal equipment of each building: variable air volume boxes, fan-powered boxes, dual-duct boxes, fan coil units and zone controllers. ' +
+      (_singleBuildings.length
+        ? _libraryNames(_singleBuildings) + (_singleBuildings.length === 1 ? ' has' : ' have') + ' no zone terminal equipment. ' + (_singleBuildings.length === 1 ? 'Its single-zone units are' : 'Their single-zone units are') + ' listed with their current setpoints. ASHRAE 36 has no zone defaults for them, so no recommended setpoints are shown. '
+        : '') +
       (_noZoneUnits.length
         ? _libraryNames(_noZoneUnits) + (_noZoneUnits.length === 1 ? ' has' : ' have') + ' no zone terminal equipment (' + (_noZoneUnits.length === 1 ? 'its' : 'their') + ' units are single-zone air handling units, rooftop units, heaters or exhaust fans), so ' + (_noZoneUnits.length === 1 ? 'it is' : 'they are') + ' not included. '
         : '') +
@@ -21016,12 +21117,15 @@ function rptPageASHRAE36SetpointReview(n, d, detailedTitle) {
   // 2026-09-30 (fix/report-table-fit-one-page): a Recommended value shared by every row is stated
   // once, above the table, with the same words the dropped column carried.
   // The box: the ASHRAE 36 default and the existing schedule when they are the same for every building, and the recommended setpoints and schedule.
-  var recNote =
-    '<div style="font-size:11px;color:var(--rpt-page-text);line-height:1.6;margin-bottom:10px;padding:8px 10px;border:1px solid var(--rpt-border)">' +
-    _uniformNotes.concat([
-      '<strong>Recommended by Control Service Company:</strong> occupied ' + _recBox.occupied + '; unoccupied ' + _recBox.unoccupied + '; ' + _recBox.schedule,
-    ]).join('<br>') +
-    '</div>';
+  var _recLines = _zoneRows.length
+    ? [
+        '<strong>Recommended by Control Service Company:</strong> occupied ' + _recBox.occupied + '; unoccupied ' + _recBox.unoccupied + '; ' + _recBox.schedule,
+      ]
+    : []; // only single-zone rows: no recommendation
+  var _boxLines = _uniformNotes.concat(_recLines);
+  var recNote = _boxLines.length
+    ? '<div style="font-size:11px;color:var(--rpt-page-text);line-height:1.6;margin-bottom:10px;padding:8px 10px;border:1px solid var(--rpt-border)">' + _boxLines.join('<br>') + '</div>'
+    : '';
 
   // Measured budgets (same reason as the readiness table): row heights, table head, first-page
   // chrome, continuation heading and the trailing notes are all read back from a hidden render
@@ -26212,13 +26316,15 @@ function _a36DetTok(html, keepNext) {
   };
 }
 
-// title (optional) = { html: function (pageIndex, pageCount) -> html, h: px } is printed above the table on every page the table runs
-// onto (with "(N of M)" when it runs onto more than one page); its height is part of the table head on every page.
+// title (optional) = { html: function (pageIndex, pageCount) -> html, h: px, h0: px (optional) } is printed above the table on every page
+// the table runs onto (with "(N of M)" when it runs onto more than one page); its height is part of the table head on every page
+// (h0 = the height on the first page of the table, when a note under the title is printed there only).
 function _a36DetTableToks(open, rowHtmls, title) {
-  var tbl = { open: open, theadH: 36, title: title || null, pageChunks: [] };
+  var tbl = { open: open, theadH: 36, title: title || null, pageChunks: [], first: null };
   var toks = rowHtmls.map(function (h) {
     return { type: 'row', html: h, estH: 30, tbl: tbl };
   });
+  tbl.first = toks[0] || null;
   var th = _rptMeasureTableTokens(open, toks);
   if (th !== null) tbl.theadH = th;
   return toks;
@@ -26228,7 +26334,8 @@ function _a36DetTableToks(open, rowHtmls, title) {
 // headings (no heading ends a page).
 var A36_DET_TABLE_GAP_H = 10; // px, the bottom margin of every printed table part (set in _a36DetTableOpen)
 function _a36DetCost(t, prev) {
-  return (t.estH || 20) + (t.tbl && !(prev && prev.tbl === t.tbl) ? t.tbl.theadH + A36_DET_TABLE_GAP_H + (t.tbl.title ? t.tbl.title.h : 0) : 0);
+  var titleH = t.tbl && t.tbl.title ? (t.tbl.title.h0 && t.tbl.first === t ? t.tbl.title.h0 : t.tbl.title.h) : 0;
+  return (t.estH || 20) + (t.tbl && !(prev && prev.tbl === t.tbl) ? t.tbl.theadH + A36_DET_TABLE_GAP_H + titleH : 0);
 }
 
 function _a36DetPaginate(tokens, budget) {
@@ -26488,6 +26595,11 @@ function _a36DetImpactText(t) {
   return /\$|\bhours?\b|\bprice|\bcosts?\b/i.test(t) ? '' : t;
 }
 
+// The Guideline 36 reference of a finding: "ASHRAE Guideline 36, Section 5.6", or "ASHRAE Guideline 36, Sections 5.16.6 and 5.16" for a finding of two sequences.
+function _a36DetSectionRef(f) {
+  return 'ASHRAE Guideline 36, Section' + (f.sectionPlural ? 's ' : ' ') + f.section;
+}
+
 // "all 5 units", "3 of 25 units", "the unit".
 function _a36DetFraction(qty, total) {
   if (!total) return qty + (qty === 1 ? ' item' : ' items');
@@ -26588,19 +26700,28 @@ function _a36DetModel(d, rowsById, picMap, loaded) {
       };
       var frac = _a36DetFraction(units, f.total);
       if (kind === 'seq') {
-        f.section = _a36DetSeqSection(key);
-        f.impact = _a36DetImpactText(ASHRAE36_SEQUENCE_PLAIN[key]);
-        f.effect = savings[key] && savings[key].type === 'savings' ? 'Energy use' : 'Equipment control';
+        // extra.keys: one finding that stands for two sequences on the same units (Minimum Outside Air with Occupancy-Based
+        // Ventilation of the air handling units); the finding names both sequences and both Guideline 36 sections.
+        var seqKeys = extra.keys || [key];
+        var many = seqKeys.length > 1;
+        f.keys = seqKeys; // the sequences this finding stands for
+        f.section = seqKeys.map(_a36DetSeqSection).filter(Boolean).join(' and ');
+        f.sectionPlural = many && f.section.indexOf(' and ') > -1;
+        // What a sequence does is printed once, in Control Sequences (the Impact line of a sequence finding is gone).
+        f.impact = '';
+        f.effect = seqKeys.some(function (k) { return savings[k] && savings[k].type === 'savings'; }) ? 'Energy use' : 'Equipment control';
         var plural = f.missing.length > 1 ? 's' : '';
         // The ASHRAE Guideline 36 section number is part of the Observed line (the finding has no separate Issue line).
-        var secPart = f.section ? ' (ASHRAE Guideline 36, Section ' + f.section + ')' : '';
+        var secPart = f.section ? ' (' + _a36DetSectionRef(f) + ')' : '';
+        var seqNoun = label + (many ? ' sequences' : ' sequence');
+        var seqBe = many ? ' are' : ' is';
         f.observed =
-          (g ? 'The ' + label + ' sequence' + secPart + ' is not fully in place on ' + frac + '.' : 'The ' + label + ' sequence' + secPart + ' is not fully in place at building level (' + units + ' needed).') +
-          (f.missing.length ? ' The building automation system shows no ' + _a36DetJoin(f.missingText) + ' point' + plural + ' that the sequence needs.' : '');
-        f.issueShort = label + ' sequence not fully in place';
+          (g ? 'The ' + seqNoun + secPart + seqBe + ' not fully in place on ' + frac + '.' : 'The ' + seqNoun + secPart + seqBe + ' not fully in place at building level (' + units + ' needed).') +
+          (f.missing.length ? ' The building automation system shows no ' + _a36DetJoin(f.missingText) + ' point' + plural + ' that the ' + (many ? 'sequences need' : 'sequence needs') + '.' : '');
+        f.issueShort = seqNoun + ' not fully in place';
         f.recommendation =
           (f.missing.length ? 'Add the ' + _a36DetJoin(f.missingText) + ' point' + plural + ', then program' : 'Program') +
-          ' the ' + label + ' sequence' + (g ? ' on ' + frac : ' (quantity ' + units + ')') + '.';
+          ' the ' + seqNoun + (g ? ' on ' + frac : ' (quantity ' + units + ')') + '.';
       } else {
         var sensor = _a36DetIsSensorLabel(label);
         f.section = String((row && row.g36Section) || '').replace(/^[§\s]*(Section\s*)?/i, '');
@@ -26609,17 +26730,22 @@ function _a36DetModel(d, rowsById, picMap, loaded) {
         var names = '';
         if (g && f.affected.length === units && units > 1 && units < f.total && units <= 6) names = ' (' + f.affected.map(_a36DetEquipName).join(', ') + ')';
         else if (g && f.affected.length === 1 && units === 1 && f.total > 1) names = ' (' + _a36DetEquipName(f.affected[0]) + ')';
-        var pSec = f.section ? ' (ASHRAE Guideline 36, Section ' + f.section + ')' : '';
+        var pSec = f.section ? ' (' + _a36DetSectionRef(f) + ')' : '';
         f.observed = g ? 'The building automation system shows no ' + label + ' point' + pSec + ' on ' + frac + names + '.' : 'The building automation system shows no ' + label + ' point' + pSec + ' at building level (' + units + ' needed).';
         f.issueShort = label + ' point missing';
         f.recommendation = sensor ? 'Install the ' + label + ' sensor' + (g ? ' on ' + frac : ' (quantity ' + units + ')') + '.' : 'Add the ' + label + ' point' + (g ? ' on ' + frac : ' (quantity ' + units + ')') + '.';
       }
       // A picture only when the listed page text names the topic of this finding, on a non-graphic page of an affected unit.
-      var words = A36_DET_FINDING_PAGE_WORDS[key];
-      if (g && words && f.affected.length) {
+      var wordList = (extra.keys || [key]).map(function (k) { return A36_DET_FINDING_PAGE_WORDS[k]; }).filter(Boolean);
+      if (g && wordList.length && f.affected.length) {
         var pk = _a36DetPickPictures(picMap, bn, f.affected, loaded, {
           page: function (t) {
-            return !isGraphic(t) && words.test(t);
+            return (
+              !isGraphic(t) &&
+              wordList.some(function (words) {
+                return words.test(t);
+              })
+            );
           },
           skip: used,
           limit: loaded ? 1 : A36_DET_CANDIDATES,
@@ -26693,18 +26819,28 @@ function _a36DetModel(d, rowsById, picMap, loaded) {
         if (!units) return;
         add(g, 'sensor', p.key, label, units, p.row, { affected: missingUnits > 0 ? remain : [] });
       });
-      seqList.forEach(function (s) {
+      // The units of the group that lack the sequences of seqs (one sequence, or two that make one finding) and the points they lack.
+      function seqDetail(seqs) {
         var affected = [];
         var missing = [];
         var unitsMissing = {};
         g.units.forEach(function (eq) {
-          var sr = sequenceOf(eq, s.key);
-          if (!sr) return;
+          var cats = [];
+          var hit = false;
+          seqs.forEach(function (s) {
+            var sr = sequenceOf(eq, s.key);
+            if (!sr) return;
+            hit = true;
+            (sr.missingCats || []).forEach(function (c) {
+              if (cats.indexOf(c) === -1) cats.push(c);
+            });
+          });
+          if (!hit) return;
           // The priced scope leaves out a monitoring-only zone unit (no heating and no cooling set point); the finding counts
           // and names the same units as the priced quantity (one rule: _pricingIsMonitoringOnlyZoneUnit).
           if (typeof _pricingIsMonitoringOnlyZoneUnit === 'function' && _pricingIsMonitoringOnlyZoneUnit(eq)) return;
           affected.push(eq.name || 'Unknown');
-          (sr.missingCats || []).forEach(function (c) {
+          cats.forEach(function (c) {
             var pointLabel = _a36DetCatLabel(c);
             if (!unitsMissing[pointLabel]) missing.push(pointLabel);
             unitsMissing[pointLabel] = (unitsMissing[pointLabel] || 0) + 1;
@@ -26715,7 +26851,32 @@ function _a36DetModel(d, rowsById, picMap, loaded) {
           var count = unitsMissing[pointLabel];
           return count < affected.length ? pointLabel + ' (on ' + count + ' ' + (count === 1 ? 'unit' : 'units') + ')' : pointLabel;
         });
-        add(g, 'seq', s.key, s.label, Math.min(s.qty, g.units.length), s.row, { affected: affected, missing: missing, missingText: missingText });
+        return { affected: affected, missing: missing, missingText: missingText };
+      }
+      // Minimum Outside Air and Occupancy-Based Ventilation (air handling units) on the very same units is ONE finding that names both
+      // (Matt, 2026-11-11: "Min OA and CO2: merge into one row per unit"). When the two lists of units differ, the two stay separate.
+      var pairKeys = ['ahu_min_oa', 'demandCtrl'];
+      var pair = seqBy[pairKeys[0]] && seqBy[pairKeys[1]] ? [seqBy[pairKeys[0]], seqBy[pairKeys[1]]] : null;
+      var pairDetail = null;
+      if (pair) {
+        var d0 = seqDetail([pair[0]]);
+        var d1 = seqDetail([pair[1]]);
+        var n0 = Math.min(pair[0].qty, g.units.length);
+        if (d0.affected.length && d0.affected.join('|') === d1.affected.join('|') && n0 === Math.min(pair[1].qty, g.units.length)) pairDetail = seqDetail(pair);
+      }
+      seqList.forEach(function (s) {
+        if (pairDetail && s === pair[1]) return; // printed with the first sequence of the pair
+        if (pairDetail && s === pair[0]) {
+          add(g, 'seq', s.key, _a36DetJoin([pair[0].label, pair[1].label]), Math.min(s.qty, g.units.length), s.row, {
+            affected: pairDetail.affected,
+            missing: pairDetail.missing,
+            missingText: pairDetail.missingText,
+            keys: pairKeys,
+          });
+          return;
+        }
+        var one = seqDetail([s]);
+        add(g, 'seq', s.key, s.label, Math.min(s.qty, g.units.length), s.row, { affected: one.affected, missing: one.missing, missingText: one.missingText });
       });
     });
     work.building.sensors.forEach(function (w) {
@@ -27109,9 +27270,6 @@ function _a36DetControlSentences(g, f, rd, proof) {
 }
 
 
-// Said once at the start of the System Descriptions of every chapter (Matt, 2026-11-11: not at the end of every paragraph).
-var A36_DET_APPENDIX_NOTE = 'Appendix A lists every building automation point reviewed for each system.';
-
 // A count as a word for 1 to 9 ("three"), else the number.
 function _a36DetCountWord(n) {
   var words = ['zero', 'one', 'two', 'three', 'four', 'five', 'six', 'seven', 'eight', 'nine'];
@@ -27157,7 +27315,7 @@ function _a36DetOverviewText(libraryName, groups) {
 // (sentences with the readings of the representative unit inside), then the occupied schedule. The units of the group are not listed
 // here (the System Overview paragraph of the chapter names them). repIdx = index of the unit shown in the figure, -1 when no figure.
 // figureNum = the number of the figure under the description (0 when none): "(Figure N)" ends the last control sentence.
-// The statement that Appendix A lists every point is printed once per chapter (A36_DET_APPENDIX_NOTE), not here.
+// The statement that Appendix A lists every point is printed once, in the Appendix A introduction, not in the chapters.
 // "(Figure N)" before the end mark of a sentence. A sentence that ends in a bracket gets the figure inside it: "(Off)." becomes "(Off; Figure 2)."
 function _a36DetCiteFigure(text, figureNum) {
   var withMark = /^([\s\S]*?)([.!?]?)$/.exec(text);
@@ -27233,7 +27391,6 @@ function _a36DetLibraryTokens(d, b, ctx, sectionNo) {
 
   // N.2 System Descriptions: prose per equipment group, its graphic directly under it
   tokens.push(_a36DetTok('<h2 style="margin:10px 0 6px 0">' + sectionNo + '.2 System Descriptions</h2>', true));
-  tokens.push(_a36DetTok('<p style="' + A36_DET_P + '">' + A36_DET_APPENDIX_NOTE + '</p>', true));
   groups.forEach(function (g, gi) {
     tokens.push(_a36DetTok('<div style="' + A36_DET_H3 + '">' + _escHtml(g.label) + '</div>', true));
     var pic = model.descPics[gi][0];
@@ -27317,7 +27474,8 @@ function _a36DetPhotoHtml(photo, libraryName) {
 
 /**
  * _a36DetSummaryIssueHtml - the Issue cell of the Findings Summary: the issue (bold), which units it affects (names when 4 or fewer,
- * else "N of M units") and the points the BAS lacks, then what it means (the same Impact text as the finding) with the Guideline 36 section.
+ * else "N of M units") and the points the BAS lacks, then the Guideline 36 section. What a sequence does is not repeated here: it is
+ * printed once, in Control Sequences (the note above the table says so).
  */
 function _a36DetSummaryIssueHtml(f) {
   var lines = ['<strong>' + _escHtml(f.issueShort) + '</strong>'];
@@ -27336,9 +27494,7 @@ function _a36DetSummaryIssueHtml(f) {
     var secondLine = 'Affects ' + affects + '.';
     if (f.kind === 'seq' && f.missing.length) secondLine += ' Missing point' + (f.missing.length > 1 ? 's' : '') + ': ' + _a36DetJoin(f.missingText) + '.';
     lines.push(_escHtml(secondLine));
-    var thirdLine = f.impact || '';
-    if (f.section) thirdLine += (thirdLine ? ' ' : '') + '(ASHRAE Guideline 36, Section ' + f.section + ')';
-    if (thirdLine) lines.push(_escHtml(thirdLine));
+    if (f.section) lines.push(_escHtml('(' + _a36DetSectionRef(f) + ')'));
   }
   return lines
     .map(function (line) {
@@ -27362,17 +27518,24 @@ function _a36DetSummaryTokens(ctx, sectionNo) {
     tokens.push(_a36DetTok(_a36DetSectionTitle(sectionNo, 'Findings Summary', ''), true));
     tokens.push(_a36DetTok('<p style="' + A36_DET_P + '">No sensors or sequences are missing against ASHRAE Guideline 36.</p>'));
   } else {
+    // The first page of the table has a note under the title: what a sequence does is printed once, in Control Sequences.
+    var seqNote = ctx.seqSectionNo
+      ? '<p style="' + A36_DET_P + '">What each sequence does is described in Section ' + ctx.seqSectionNo + ', Control Sequences.</p>'
+      : '';
+    var summaryTitle = {
+      html: function (pageIndex, pageCount) {
+        return _a36DetSectionTitle(sectionNo, 'Findings Summary', _a36DetPartSuffix(pageIndex, pageCount)) + (pageIndex === 0 ? seqNote : '');
+      },
+      h: A36_DET_TITLE_H,
+    };
+    var noteH = seqNote ? _rptMeasureHtmlH(summaryTitle.html(0, 9)) : null;
+    if (seqNote) summaryTitle.h0 = noteH !== null ? Math.max(A36_DET_TITLE_H, noteH + 6) : A36_DET_TITLE_H + 30;
     _a36DetTableToks(
       _a36DetTableOpen([6, 15, 17, 50, 12], ['No.', 'Library', 'System', 'Issue', 'Effect']),
       list.map(function (f) {
         return _a36DetRow([{ html: String(f.n), center: true }, _escHtml(f.lib), _escHtml(f.groupLabel), _a36DetSummaryIssueHtml(f), _escHtml(f.effect)]);
       }),
-      {
-        html: function (pageIndex, pageCount) {
-          return _a36DetSectionTitle(sectionNo, 'Findings Summary', _a36DetPartSuffix(pageIndex, pageCount));
-        },
-        h: A36_DET_TITLE_H,
-      },
+      summaryTitle,
     ).forEach(function (t) {
       tokens.push(t);
     });
@@ -27578,6 +27741,8 @@ function generateASHRAE36AuditHTML(data, selectedSections) {
   var detCtx = detailed ? _a36DetContext(data) : null;
   if (detailed) {
     // Findings Summary: one table of every finding of the report, before the library sections.
+    // Control Sequences is the section after the last library: the Findings Summary points to it (0 when the report has no such section).
+    detCtx.seqSectionNo = s.costEstimate !== false ? sectionNo + 1 + data.buildings.length : 0;
     var detSum = _a36DetSummaryTokens(detCtx, sectionNo++);
     _a36DetPages(pageNum, data, detSum, 'Findings Summary').forEach(function (pg) {
       pages.push(_tagA36Section(pg, 'detailedSummary'));

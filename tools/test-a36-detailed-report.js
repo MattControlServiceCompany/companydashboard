@@ -292,7 +292,7 @@ const ok = (c, m) => {
     ok(/Building automation controller: Sample Controller \(5 of 6 units\)/.test(t), 'BAS controller line from the rows (5 of 6 units in Alpha Library: the exhaust fan row has none)');
     ok(/The building automation system monitors the supply air temperature \(55\.2°F\)\./.test(t) && !/showed:/.test(t), 'a: System Descriptions: the reading is inside the sentence (55.2°F), no "showed:" list');
     ok(!/provides [^.]*, [^.]*, /.test(t), 'a: no "the building automation system provides A, B, C" inventory sentence');
-    ok(!/Every point of this equipment/.test(t) && (t.match(/Appendix A lists every building automation point reviewed for each system\./g) || []).length === 2, 'item 3: no "Every point of this equipment" sentence; the Appendix A sentence is once per chapter (2 chapters)');
+    ok(!/Every point of this equipment/.test(t) && !/Appendix A lists every building automation point reviewed for each system\./.test(t), 'item 3: no "Every point of this equipment" sentence; the Appendix A sentence is not repeated in the chapters (2026-11-11: report length)');
     ok(det.joins.length === 0, 'item 2: no missing space after a full stop inside a paragraph of the chapters: ' + det.joins.join(' | '));
     ok(!/\d ?F\b/.test(t.replace(/°F/g, '')), 'D2: no temperature prints as "<n> F" (every temperature has °F)');
     ok(/The occupied schedule is 6:00 AM-9:00 PM \(1 unit\), 7:00 AM-6:00 PM \(1 unit\)( \(Figure \d+\))?\./.test(t.replace(/; Figure \d+\)/g, ')')), 'System Descriptions: the occupied schedule sentence lists each distinct schedule with its unit count');
@@ -340,15 +340,20 @@ const ok = (c, m) => {
       const seqFind = m.findings.filter((f) => f.kind === 'seq');
       return {
         n: m.findings.map((f) => f.n).join(','),
-        noImpactSeq: seqFind.filter((f) => !f.impact).map((f) => f.key),
-        sameImpact: seqFind.every((f) => !f.impact || f.impact === ASHRAE36_SEQUENCE_PLAIN[f.key]),
+        noImpactSeq: seqFind.filter((f) => f.impact).map((f) => f.key),
+        sameImpact: seqFind.every((f) => !f.impact),
         attrs: Array.from(new Set(m.findings.map((f) => f.effect))).sort().join(','),
         count: m.findings.length,
         scoped: _a36ScopedCatalogRows(d).filter((r) => (r.phase === 1 && !r.ioOnly) || (r.phase === 2 && r.seqKey)).length,
       };
     }, seed);
     ok(fm.n === Array.from({ length: fm.count }, (_, i) => i + 1).join(',') && fm.count >= 10, 'findings are numbered 1..N across the report (' + fm.count + ')');
-    ok(fm.sameImpact && fm.noImpactSeq.length === 0, 'Impact of a sequence is the ASHRAE36_SEQUENCE_PLAIN text; sequences without an Impact text: ' + (fm.noImpactSeq.join(',') || 'none'));
+    ok(fm.sameImpact && fm.noImpactSeq.length === 0, 'a sequence finding has no Impact line (what a sequence does is printed once, in Control Sequences); sequences that still have one: ' + (fm.noImpactSeq.join(',') || 'none'));
+    const planText = await page.evaluate(() => Object.keys(ASHRAE36_SEQUENCE_PLAIN).map((k) => ASHRAE36_SEQUENCE_PLAIN[k]));
+    const sumText = await page.evaluate(() => Array.from(document.querySelectorAll('#reportPages .rpt-page[data-section="detailedSummary"]')).map((p) => p.textContent).join('\n'));
+    ok(planText.every((x) => sumText.indexOf(x) === -1), 'report length: the Findings Summary holds no sequence description (the text of Control Sequences is not copied into it)');
+    ok(planText.every((x) => det.libText.indexOf(x) === -1), 'report length: no chapter holds a sequence description either (Impact lines of sequence findings are gone)');
+    ok(/What each sequence does is described in Section \d+, Control Sequences\./.test(sumText), 'report length: one note above the Findings Summary says where the sequences are described');
     ok(fm.attrs === 'Energy use,Equipment control', 'item 2: Effect is "Energy use" or "Equipment control" (' + fm.attrs + ')');
     const sum = await page.evaluate(() => Array.from(document.querySelectorAll('#reportPages .rpt-page[data-section="detailedSummary"] table')).map((tb) => Array.from(tb.querySelectorAll('th')).map((x) => x.textContent.trim()).join('|') + '#' + tb.querySelectorAll('tbody tr, tr').length));
     ok(sum.length >= 1 && /^No\.\|Library\|System\|Issue\|Effect#/.test(sum[0]), 'item 2: Findings Summary table: No. | Library | System | Issue | Effect (' + sum[0] + ')');
@@ -913,6 +918,54 @@ const ok = (c, m) => {
     ok(co2.dcv.totalZones === 2 && co2.dcv.zonesMissingCO2 === 1, 'item 7: zones leave out the monitoring-only unit (no cooling and no heating set point): ' + JSON.stringify(co2.dcv));
     ok(/2 of 3 air handlers and 1 of 2 zones have no carbon dioxide sensor/.test(co2.text), 'item 7: the Executive Summary sentence uses those counts');
     ok(/Dedicated building automation system power monitoring meter:\s*Not installed\. Installation recommended\./.test(co2.text) && /Dedicated outdoor air sensors:\s*(Not installed\. Installation recommended\.|Installed)/.test(co2.text) && !/None in the reviewed points/.test(co2.text), 'item 6: infrastructure lines read "Not installed. Installation recommended." (no abbreviations)');
+
+    // ---- report length (2026-11-11): Min OA + CO2 merged into one finding per unit; Appendix B lists the single-zone-only libraries ----
+    const PID4 = await page.evaluate(async () => {
+      const PID = 900004;
+      const sp = (h, c, uh, uc) => ({ 'Setpoint / Heating Occupied Setpoint': String(h), 'Setpoint / Cooling Occupied Setpoint': String(c), 'Setpoint / Heating Unoccupied Setpoint': String(uh), 'Setpoint / Cooling Unoccupied Setpoint': String(uc) });
+      const row = (id, name, cat, p) => ({ id, building: 'Epsilon Library', category: cat, equipName: name, location: '', controllerType: 'Sample Controller', points: p });
+      const rows = [
+        row('e1', 'Room 1 | AHU-B', 'ahu', Object.assign({ 'Supply Air Temp': '55.2 °F' }, sp(66, 71, 60, 79))),
+        row('e2', 'Room 2 | AHU-A', 'ahu', Object.assign({ 'Supply Air Temp': '55.2 °F' }, sp(66, 71, 60, 79))),
+        row('e3', 'Entry | CUH-1', 'heater', sp(60, 78, 60, 84)),
+        row('e4', 'EF-1', 'ef', { 'Fan Status': 'On' }),
+        { id: 'z1', building: 'Zeta Library', category: 'vav', equipName: 'VAV-1', location: '', controllerType: 'Sample Controller', points: { 'Zone Temp': '72.4 °F', 'Zone Cooling Setpoint': '74', 'Zone Heating Setpoint': '70' } },
+      ];
+      projects.push({ id: PID, name: 'Synthetic Epsilon District', client: 'Synthetic Epsilon District', type: 'K-12', start: '2025-01-01' });
+      await sset('en_eqmatrix_' + PID, { rows: rows, importedAt: null, buildings: ['Epsilon Library', 'Zeta Library'] });
+      await sset('en_audit_' + PID, { findings: [], edits: {}, evidence: {} });
+      emSaveEquipConfigFlags(PID, 'e1', { hasCO2: true });
+      emSaveEquipConfigFlags(PID, 'e2', { hasCO2: true });
+      return PID;
+    });
+    const eps = await page.evaluate((PID) => {
+      const d = collectASHRAE36Data(PID, '2026-11-10', null);
+      const m = _a36DetContext(d).model;
+      const html = generateASHRAE36AuditHTML(d, { cover: true, executive: true, costEstimate: true, setpointReview: true, pointInventory: true, detailed: true });
+      const doc = new DOMParser().parseFromString('<div>' + html + '</div>', 'text/html');
+      const secText = (k) => Array.from(doc.querySelectorAll('.rpt-page[data-section="' + k + '"]')).map((p) => p.textContent.replace(/\s+/g, ' ')).join(' ');
+      const simple = generateASHRAE36AuditHTML(d, { cover: true, executive: true, costEstimate: true, building: true, setpointReview: true, pointInventory: true });
+      const simpleSp = Array.from(new DOMParser().parseFromString('<div>' + simple + '</div>', 'text/html').querySelectorAll('.rpt-page[data-section="setpointReview"]')).map((p) => p.textContent.replace(/\s+/g, ' ')).join(' ');
+      return {
+        keys: m.findings.map((f) => f.keys || [f.key]).map((k) => k.join('+')),
+        merged: m.findings.filter((f) => f.keys && f.keys.length === 2).map((f) => ({ label: f.label, affected: f.affected, missing: f.missing, observed: f.observed, rec: f.recommendation, issue: f.issueShort, section: f.section })),
+        summary: secText('detailedSummary'),
+        lib: secText('detailedLibrary'),
+        sp: secText('setpointReview'),
+        simpleSp,
+        seqNo: (/(\d+) Control Sequences/.exec(secText('costEstimate')) || [])[1],
+        noteNo: (/described in Section (\d+)/.exec(secText('detailedSummary')) || [])[1],
+      };
+    }, PID4);
+    ok(eps.merged.length === 1 && !eps.keys.includes('demandCtrl') && !eps.keys.includes('ahu_min_oa') && eps.keys.includes('ahu_min_oa+demandCtrl'), 'report length: Minimum Outside Air and Occupancy-Based Ventilation of the same units are ONE finding (' + eps.keys.join(' / ') + ')');
+    ok(eps.merged[0] && /Minimum Outside Air and Occupancy-Based Ventilation \(Air Handling Units\)/.test(eps.merged[0].label) && /sequences \(ASHRAE Guideline 36, Sections 5\.16\.6 and 5\.16\) are not fully in place on both units/.test(eps.merged[0].observed) && /Carbon Dioxide Sensor/.test(eps.merged[0].observed) && /Outdoor Air Damper Actuator/.test(eps.merged[0].observed) && eps.merged[0].affected.length === 2, 'report length: the merged finding names both sequences, both sections, the points of both and the 2 units: ' + (eps.merged[0] && eps.merged[0].observed));
+    ok((eps.summary.match(/Minimum Outside Air and Occupancy-Based Ventilation \(Air Handling Units\) sequences not fully in place/g) || []).length === 1 && !/Minimum Outside Air sequence not fully in place/.test(eps.summary), 'report length: the Findings Summary has one row for the two sequences');
+    ok(eps.seqNo && eps.seqNo === eps.noteNo, 'report length: the note names the real section number of Control Sequences (' + eps.seqNo + ' / ' + eps.noteNo + ')');
+    ok(/Epsilon Library\s*AHU-A and AHU-B\s*66\.0°F heating \/ 71\.0°F cooling\s*60\.0°F heating \/ 79\.0°F cooling[\s\S]*Single-zone unit, no zone defaults/.test(eps.sp), 'report length: Appendix B lists the single-zone-only library with its current setpoints (AHU-A and AHU-B: 66/71 occupied, 60/79 unoccupied): ' + eps.sp.slice(0, 700));
+    ok(/Epsilon Library\s*CUH-1\s*60\.0°F heating \/ 78\.0°F cooling\s*60\.0°F heating \/ 84\.0°F cooling/.test(eps.sp) && (eps.sp.match(/Single-zone unit, no zone defaults/g) || []).length === 2, 'report length: a second set of setpoints in the same library is a second row (CUH-1 60/78, 60/84)');
+    const epsRows = eps.sp.slice(eps.sp.indexOf('Epsilon Library'), eps.sp.indexOf('Carbon Dioxide Setpoints'));
+    ok(epsRows.length > 100 && !/Reprogram|Recommended|undefined|null|NaN/.test(epsRows) && /1 with single-zone units only \(no zone defaults\)/.test(eps.sp) && /All 1 zone match ASHRAE 36 defaults/.test(eps.sp), 'report length: single-zone rows carry no recommendation and no Reprogram status (the zone library keeps its own); the count line names them: ' + JSON.stringify([epsRows.length, /1 with single-zone units only \(no zone defaults\)/.test(eps.sp), /All 1 zone match ASHRAE 36 defaults/.test(eps.sp), eps.sp.slice(eps.sp.indexOf('buildings') - 20, eps.sp.indexOf('buildings') + 160)]));
+    ok(/Single-zone unit, no zone defaults/.test(eps.simpleSp), 'report length: the Simple style prints the same rows in its Setpoint Programming Review');
 
     ok(errs.length === 0, 'no page errors' + (errs.length ? ': ' + errs[0] : ''));
   } finally {
