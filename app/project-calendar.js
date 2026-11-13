@@ -523,12 +523,13 @@
     } else {
       summary = '';
     }
-    if (cfg && snap && CalendarDiff.isStale({ snap: snap, nowMs: Date.now() })) {
+    var check = DB.get('en_cal_check_' + pid, null);
+    if (cfg && snap && CalendarDiff.isStale({ snap: snap, check: check, nowMs: Date.now() })) {
       summary +=
         '<div class="pcal-msg" id="pcal-stale-' +
         pid +
         '">' +
-        _escHtml('Calendar last updated ' + stamp(snap.fetchedAt) + '. The daily update did not run. Press Sync now.') +
+        _escHtml('Calendar feed last read ' + stamp(new Date(CalendarDiff.lastRead({ snap: snap, check: check })).toISOString()) + '. The daily update did not run. Press Sync now.') +
         '</div>';
     }
     var leftOut = snap && snap.leftOut && snap.leftOut.length ? snap.leftOut : null;

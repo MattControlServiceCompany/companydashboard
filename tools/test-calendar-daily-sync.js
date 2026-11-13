@@ -156,16 +156,18 @@ const CAL_KEYS = ['en_cal_hist_', 'en_cal_snap_', 'en_sched_actions_', 'en_bas_a
     assert.ok(r.logs.join('\n').indexOf('read back OK') >= 0);
   });
 
-  await t('run 2: the same feed again writes nothing', async () => {
+  await t('run 2: the same feed again writes only the last-check time (en_cal_check_1)', async () => {
     const srv = makeServer({ events: FEED_V1 });
     await seed(srv, buildSnapshot);
     await run(srv);
-    const kvAfter1 = JSON.stringify(srv.kv);
+    const kvAfter1 = JSON.parse(JSON.stringify(srv.kv));
     const histAfter1 = srv.hist.length;
     const r2 = await run(srv, { now: new Date('2026-11-14T11:00:00Z') });
     assert.strictEqual(r2.results[0].status, 'no-change');
-    assert.strictEqual(JSON.stringify(srv.kv), kvAfter1, 'no row changed');
-    assert.strictEqual(srv.hist.length, histAfter1, 'no history row added');
+    const changed = Object.keys(srv.kv).filter((k) => JSON.stringify(srv.kv[k]) !== JSON.stringify(kvAfter1[k]));
+    assert.deepStrictEqual(changed, ['en_cal_check_1'], 'only the last-check row changed');
+    assert.strictEqual(srv.kv.en_cal_check_1.value.at, '2026-11-14T11:00:00.000Z', 'last-check time is the new read');
+    assert.ok(srv.hist.slice(histAfter1).every((h) => h.key === 'en_cal_check_1'), 'no history row for a calendar key');
     assert.ok(r2.logs.join('\n').indexOf('no change') >= 0, 'logs "no change"');
   });
 
@@ -276,6 +278,9 @@ const CAL_KEYS = ['en_cal_hist_', 'en_cal_snap_', 'en_sched_actions_', 'en_bas_a
     assert.strictEqual(CD.isStale({ snap: at(25.9), nowMs: now }), false);
     assert.strictEqual(CD.isStale({ snap: at(26.1), nowMs: now }), true);
     assert.strictEqual(CD.isStale({ snap: null, nowMs: now }), false);
+    // An old copy with a recent daily check (a day with no change in the feed) is not stale.
+    assert.strictEqual(CD.isStale({ snap: at(50), check: { at: at(2).fetchedAt }, nowMs: now }), false);
+    assert.strictEqual(CD.isStale({ snap: at(50), check: { at: at(30).fetchedAt }, nowMs: now }), true);
   });
 
   console.log('\n' + pass + ' passed, ' + fail + ' failed');

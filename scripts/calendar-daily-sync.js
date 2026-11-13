@@ -3,7 +3,8 @@
 //
 // The daily calendar update. For every project with a calendar feed, it does what "Sync now" does (District Calendar tab):
 // reads the feed, compares it with the saved copy, and saves the new copy, the history record and the schedule actions.
-// It runs on GitHub Actions (.github/workflows/calendar-daily-sync.yml), with no page open.
+// It runs every day on the office PC (Windows Task Scheduler), with no page open; the runner outside this repo gives the
+// database credentials in the environment. Each run also saves en_cal_check_<pid> (when the feed was last read).
 //
 // One implementation: nothing here decides what to save.
 //   feed read           netlify/functions/lib/calendar/snapshot.mjs  buildSnapshot (the same code as calendar-fetch)
@@ -32,7 +33,7 @@ const { canonicalJSON, sha256Hex } = require('../netlify/lib/kv-hash.js');
 
 const WRITER = 'daily-calendar-sync';
 // Keys read for one project (the feed address, the saved copy, and what the actions check reads).
-const READ_KINDS = ['cfg', 'snap', 'hist'].map((k) => 'en_cal_' + k + '_').concat(
+const READ_KINDS = ['cfg', 'snap', 'hist', 'check'].map((k) => 'en_cal_' + k + '_').concat(
   ['en_sched_actions_', 'en_bas_acthist_', 'en_space_map_', 'en_bas_snap_', 'en_bas_groups_', 'en_bas_auditevents_', 'en_eqmatrix_'],
 );
 
@@ -174,15 +175,17 @@ async function syncProject(store, pid, ctx) {
     const { rows, projects } = attempt === 1 ? first : await loadProject(store, pid);
     const io = makeIo(rows, projects, pid, now.toISOString());
     const old = io.get('en_cal_snap_' + pid, null);
-    if (!CalendarSync.hasChange(old, snap)) {
-      log('project ' + pid + ': no change (' + snap.count + ' events). Nothing was written.');
-      return { pid, status: 'no-change', count: snap.count };
-    }
-    const plan = CalendarSync.plan({ pid, snap, io, ids: { hist: newId('calh_'), act: newId('bash_') } });
+    // en_cal_check_<pid>: when this update last read the feed. Small, written every run, so the page's stale warning
+    // (CalendarDiff.isStale) stays quiet on days with no change in the feed.
+    const checkKey = 'en_cal_check_' + pid;
+    const checkVal = { at: snap.fetchedAt, by: WRITER, count: snap.count };
+    const change = CalendarSync.hasChange(old, snap);
+    const plan = change ? CalendarSync.plan({ pid, snap, io, ids: { hist: newId('calh_'), act: newId('bash_') } }) : { writes: {}, counts: { added: 0, removed: 0, changed: 0 }, first: false };
+    plan.writes = Object.assign({}, plan.writes, { [checkKey]: checkVal });
     const keys = Object.keys(plan.writes);
     const lines = keys.map((k) => '  ' + k + ': v' + (rows[k] ? rows[k].version + ' -> v' + (rows[k].version + 1) : 'none -> v1') + ', ' + Buffer.byteLength(JSON.stringify(plan.writes[k])) + ' bytes');
     const c = plan.counts;
-    const what = plan.first ? 'first copy, ' + snap.count + ' events' : c.added + ' added, ' + c.removed + ' removed, ' + c.changed + ' changed, ' + snap.count + ' events';
+    const what = !change ? 'no change, ' + snap.count + ' events; last-check time only' : plan.first ? 'first copy, ' + snap.count + ' events' : c.added + ' added, ' + c.removed + ' removed, ' + c.changed + ' changed, ' + snap.count + ' events';
     if (dryRun || !store.writable) {
       log('project ' + pid + ': DRY RUN, would write ' + keys.length + ' keys (' + what + ')\n' + lines.join('\n'));
       return { pid, status: 'dry-run', counts: c, keys, count: snap.count, writes: plan.writes };
@@ -199,7 +202,7 @@ async function syncProject(store, pid, ctx) {
         }
       }
       log('project ' + pid + ': wrote ' + keys.length + ' keys (' + what + '), read back OK\n' + lines.join('\n'));
-      return { pid, status: 'written', counts: c, keys, count: snap.count };
+      return { pid, status: change ? 'written' : 'no-change', counts: c, keys, count: snap.count };
     } catch (e) {
       if (!(e instanceof ConflictError)) throw e;
       log('project ' + pid + ': ' + e.message + (attempt === 1 ? '. Read again and try once more.' : '. Stopped. Nothing newer was overwritten.'));

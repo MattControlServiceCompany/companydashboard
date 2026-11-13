@@ -341,9 +341,15 @@
     return isNaN(t) || o.nowMs - t > AUTO_SYNC_MS;
   }
 
-  // True when the saved copy is older than 26 hours: the daily update (scripts/calendar-daily-sync.js, every 24 hours) did not run.
+  // True when the feed was last read more than 26 hours ago: the daily update (scripts/calendar-daily-sync.js, every 24 hours)
+  // did not run. Last read = the newer of the saved copy (o.snap.fetchedAt) and the daily update's check (o.check.at, en_cal_check_<pid>).
+  function lastRead(o) {
+    var a = o.snap && o.snap.fetchedAt ? Date.parse(o.snap.fetchedAt) : NaN;
+    var b = o.check && o.check.at ? Date.parse(o.check.at) : NaN;
+    return isNaN(a) ? b : isNaN(b) ? a : Math.max(a, b);
+  }
   function isStale(o) {
-    var t = o.snap && o.snap.fetchedAt ? Date.parse(o.snap.fetchedAt) : NaN;
+    var t = lastRead(o);
     return !isNaN(t) && o.nowMs - t > STALE_MS;
   }
 
@@ -379,6 +385,7 @@
     MARK_DAYS: MARK_DAYS,
     needsAutoSync: needsAutoSync,
     isStale: isStale,
+    lastRead: lastRead,
     feedUrlProblem: feedUrlProblem,
     carriedMarks: carriedMarks,
     calendarDay: calendarDay,
