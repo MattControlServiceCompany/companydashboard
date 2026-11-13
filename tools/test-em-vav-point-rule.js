@@ -51,6 +51,30 @@ const ahuErv = verify({
 });
 check(ahuErv.category !== 'vav', 'air handler with supply fan, VFD, cfm, damper position and Air Source Mode is not a VAV terminal (got ' + ahuErv.category + ', rule ' + ahuErv.rule + ')');
 
+// Rule 6b (item 56d45c6a): cold deck airflow + hot deck airflow = dual-duct terminal. SYNTHETIC.
+const ddPair = verify({
+  category: 'vav',
+  equipName: 'SYN VAV-2',
+  pointValues: { 'Cold Deck Flow Control / Flow Input': '100', 'Hot Deck Flow Control / Flow Input': '50', 'Zone Temp': '72' },
+});
+check(ddPair.category === 'ddvav' && ddPair.rule === '6b', 'cold + hot deck flow pair is ddvav (got ' + ddPair.category + ', rule ' + ddPair.rule + ')');
+const ddPair2 = verify({ category: 'vav', equipName: 'SYN VAV-3', pointValues: { 'Cold Deck Air Flow': '100', 'Hot Deck Air Flow': '50' } });
+check(ddPair2.category === 'ddvav', 'cold + hot deck "Air Flow" names are ddvav (got ' + ddPair2.category + ')');
+const ddOne = verify({ category: 'vav', equipName: 'SYN VAV-4', pointValues: { 'Cold Deck Air Flow': '100', 'Zone Temp': '72' } });
+check(ddOne.rule !== '6b' && ddOne.category !== 'ddvav', 'one deck flow point alone is not ddvav (got ' + ddOne.category + ', rule ' + ddOne.rule + ')');
+const ddTemps = verify({
+  category: 'vav',
+  equipName: 'SYN VAV-5',
+  pointValues: { 'Cold Deck Supply Temp': '55', 'Hot Deck Supply Temp': '90', 'Cold Deck Duct Static': '1', 'Hot Deck Duct Static': '1' },
+});
+check(ddTemps.rule !== '6b' && ddTemps.category !== 'ddvav', 'deck temps and duct static only is not ddvav (got ' + ddTemps.category + ', rule ' + ddTemps.rule + ')');
+const ddDx = verify({
+  category: 'vav',
+  equipName: 'SYN VAV-6',
+  pointValues: { 'Cold Deck Flow Control / Flow Input': '100', 'Hot Deck Flow Control / Flow Input': '50', 'Compressor Status': 'On' },
+});
+check(ddDx.rule !== '6b' && ddDx.category !== 'ddvav', 'DX signal blocks the deck flow rule (got ' + ddDx.category + ', rule ' + ddDx.rule + ')');
+
 const box = verify({
   category: 'vav',
   equipName: 'SYN VAV-1',

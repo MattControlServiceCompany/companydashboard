@@ -2507,6 +2507,10 @@ async function siteResetAllMeterTableSettings() {
    site-ui.js delegates to this array and should NOT maintain its own copy.
 */
 var RELEASE_NOTES = [
+  { v: 'v2026.11.13.287', date: '2026-11-13', title: 'Equipment Matrix: dual-duct boxes found by their airflow points',
+    items: [
+      { type: 'fix', text: 'A box that has a cold deck airflow point and a hot deck airflow point is now a Dual Duct Variable Air Volume box, also when its name says VAV. In one client building 19 boxes change type. A dual-duct box has no reheat valve, so the estimate no longer prices reheat valve work for these boxes, and their zone CO2 follows the dual-duct rule.' }
+    ] },
   { v: 'v2026.11.13.286', date: '2026-11-13', title: 'Equipment Matrix: named point categories in place of "Other"',
     items: [
       { type: 'change', text: 'Equipment Matrix points panel: a point with no column now shows its category name (for example "Zone Temperature Alarms", "Primary Air Source", "Environmental Index") with a "not scored" mark, in place of "Other". Only points with no known meaning still show "Other". About 9 of 10 "Other" points now have a name.' },

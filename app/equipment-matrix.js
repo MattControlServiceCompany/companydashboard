@@ -3095,6 +3095,17 @@ function emVerifyTypeByPoints(group) {
   )
     return { category: 'ddvav', subtype: '', rule: '6', confidence: 'strong' };
 
+  // 6b. Dual-deck VAV with deck airflow sensors: a cold deck airflow point AND a hot deck airflow
+  // point (e.g. "Cold Deck Flow Control / Flow Input" + "Hot Deck Flow Control / Flow Input").
+  // Rule 6 cannot fire here because hasAirFlow is true. Positive evidence is the airflow PAIR only;
+  // deck supply temp or deck duct static points (AHU copies) are NOT evidence. Item 56d45c6a.
+  if (
+    hasPointNonDiag(/cold deck (air ?)?flow/) &&
+    hasPointNonDiag(/hot deck (air ?)?flow/) &&
+    !hasDxSignal
+  )
+    return { category: 'ddvav', subtype: '', rule: '6b', confidence: 'strong' };
+
   // 7. Fan-powered box (FPB): airflow + terminal fan + heating valve + air source mode
   // fix/point-evidence-all-rows: gated on !hasDxSignal — see hasDxSignal comment above.
   if (
