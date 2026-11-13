@@ -735,7 +735,8 @@
           if (row[3] || /^\d{4}-\d{2}-\d{2}$/.test(row[1])) last = CD.allDayLastDay(row[1], row[2], o.tz);
           if (CD.calendarDay(row[1], o.tz) > d || last < d) return;
           var place = CD.eventPlace({ title: row[0], location: row[4] }).text;
-          var e = place ? spaces[BC.spaceKey(place)] : null;
+          var hit = place ? BC.findSpace(spaces, place) : null;
+          var e = hit && hit.entry;
           if (e && e.confirmed) BC.resolveKeys(rows, e.programs).forEach(function (k) { busy[BD.keyBuilding(k)] = 1; });
           var b = BC.buildingOfPlace(place, keys);
           if (b) busy[b] = 1;
