@@ -593,12 +593,12 @@
     if (_bkeys) _bkeys.set(snaps, { date: newest, rows: snaps[newest].rows, val: val });
     return val;
   }
-  // The parts of a place: [{ orig, text, hit }]. A place that is itself a map key stays whole (keys like "bes gym/commons" exist).
+  // The parts of a place: [{ orig, text, hit }]. A place that is itself a CONFIRMED map key stays whole (keys like "bes gym/commons" exist).
   // Else it is split on commas, "/", "&" and "and". A part with no building word of its own takes the first word of the first
   // part ("LHS Commons, Conf Rm" -> "LHS Commons", "LHS Conf Rm"). hit = findSpace of the part, or null.
   function splitPlace(spaces, place, bkeys) {
     var whole = findSpace(spaces, place);
-    if (whole) return [{ orig: place, text: place, hit: whole }];
+    if (whole && whole.entry.confirmed) return [{ orig: place, text: place, hit: whole }]; // an unconfirmed whole key does not stop the split
     var raw = String(place || '')
       .split(/\s*(?:,|\/|&|\band\b)\s*/i)
       .map(function (x) { return x.trim(); })

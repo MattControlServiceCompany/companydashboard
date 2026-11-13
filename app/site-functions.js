@@ -2507,6 +2507,13 @@ async function siteResetAllMeterTableSettings() {
    site-ui.js delegates to this array and should NOT maintain its own copy.
 */
 var RELEASE_NOTES = [
+  { v: 'v2026.11.13.285', date: '2026-11-13', title: 'Calendar: daily update, Rm = Room, main building schedule',
+    items: [
+      { type: 'new', text: 'The District Calendar now updates by itself every day at 5:00 AM. The office PC reads the calendar feed and saves the changes, as Sync now does. You no longer need to press Sync now. If the daily update does not run for more than 26 hours, the Calendar tab shows a warning.' },
+      { type: 'fix', text: 'Calendar BAS column: "Rm" and "Room" now mean the same room. For example, "LHS Rm 323" matches the saved "LHS Room 323" (Room A323).' },
+      { type: 'change', text: 'An event that is not mapped to a room, but is inside the building\'s main schedule (for example the High School regular school day), now shows "Covered: main building schedule".' },
+      { type: 'change', text: 'A place with several rooms, such as "LHS Commons, Conf Rm, Class Rm", is now split into its rooms. For a room that is not mapped and is outside the main schedule, the site suggests that you schedule the whole building or the areas of the mapped rooms, in place of "Not mapped".' }
+    ] },
   { v: 'v2026.11.13.284', date: '2026-11-13', title: 'Equipment Matrix: clear N/A, blank and -- cells',
     items: [
       { type: 'change', text: 'Equipment Matrix Audit View: the legend now says what each cell means. Red = required and not found. N/A = not needed for this unit. -- = optional and not present. Hover an N/A cell to see why, for example "Not needed: Corridor (space type)".' },

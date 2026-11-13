@@ -115,6 +115,7 @@ eq(C.findSpace(fsMap, 'TAH Gym/Commons').key, 'tah gym/commons', 'a key with a s
 eq(C.findSpace(fsMap, 'TAH Rm 324'), null, 'other room: no match');
 eq(Object.keys(fsMap).join('|'), fsKeys, 'stored keys are not rewritten');
 eq(C.splitPlace(fsMap, 'TAH Gym/Commons', []).length, 1, 'a place that is a map key is not split');
+eq(C.splitPlace(Object.assign({}, fsMap, { 'tah gym/room 323': { space: 'TAH Gym/Room 323', programs: [], confirmed: false } }), 'TAH Gym/Room 323', []).length, 2, 'an unconfirmed whole key is still split');
 
 // compound places, the main building schedule, the "suggest" status
 const schedOf = (name, days, a, b, extra) => Object.assign({ name, priority: 'Normal', type: 'weekly', days, dates: [], from: '', to: '', recur: null, periods: [{ mode: 'occ', from: a, to: b }] }, extra || {});
