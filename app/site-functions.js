@@ -2507,6 +2507,13 @@ async function siteResetAllMeterTableSettings() {
    site-ui.js delegates to this array and should NOT maintain its own copy.
 */
 var RELEASE_NOTES = [
+  { v: 'v2026.11.13.286', date: '2026-11-13', title: 'Equipment Matrix: named point categories in place of "Other"',
+    items: [
+      { type: 'change', text: 'Equipment Matrix points panel: a point with no column now shows its category name (for example "Zone Temperature Alarms", "Primary Air Source", "Environmental Index") with a "not scored" mark, in place of "Other". Only points with no known meaning still show "Other". About 9 of 10 "Other" points now have a name.' },
+      { type: 'fix', text: 'Some points no longer count as a sensor they are not: "Testing Airflow Percentage" and "Minimum CFM" are not the airflow sensor, "Override Time Remaining" is not the zone temperature, and "... BACnet PID / Setpoint" loop setpoints are not the zone cooling or heating setpoint.' },
+      { type: 'fix', text: '"Air Source Duct Static" on a zone box is the air handler duct static copied to the box. It now has its own name and no longer shows as the box\'s duct static or as a weather station point.' },
+      { type: 'change', text: 'More points get their column on fan coils, heaters, rooftop units and air handlers (setpoints, air source mode and status, zone temperature, economizer damper). No price changes.' }
+    ] },
   { v: 'v2026.11.13.285', date: '2026-11-13', title: 'Calendar: daily update, Rm = Room, main building schedule',
     items: [
       { type: 'new', text: 'The District Calendar now updates by itself every day at 5:00 AM. The office PC reads the calendar feed and saves the changes, as Sync now does. You no longer need to press Sync now. If the daily update does not run for more than 26 hours, the Calendar tab shows a warning.' },

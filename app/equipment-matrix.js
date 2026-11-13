@@ -716,15 +716,14 @@ var EM_POINT_MAP = [
       /\b(boiler|ct-?\d+|tower\s*\d+|stair|pressuri[sz]ation|manual|msv|select|command|diagnostic|running|enable|liebert)\b/i,
     ],
     types: ['AI', 'AO'],
-    cats: ['ahu'],
+    cats: ['ahu', 'fcu'], // Phase 2 (2026-11-13): widened to the types where the same point means the same thing.
   },
   {
     col: 'ductStaticPressure',
     label: 'Duct Static Pressure',
-    // 21eb08f8 Wave 6: added /air\s+source\s+duct\s+static\b/i for "Air Source Duct Static"
-    // (VVT air-source duct static pressure point). negativePatterns unchanged — "Air Source Duct Static"
-    // does not trigger any of them. Client D bucket-C matches: 1 name.
-    patterns: [/duct static pressure/i, /\bdsp\b/i, /air\s+source\s+duct\s+static\b/i],
+    // Phase 2 (2026-11-13): "Air Source Duct Static" (and the Cold/Hot Deck copies) is the AHU duct static copied to the zone box.
+    // It no longer maps here. It maps to column airSourceDuctStatic. (21eb08f8 Wave 6 had added it to this column.)
+    patterns: [/duct static pressure/i, /\bdsp\b/i],
     // M1A: added negativePatterns. Blocks alarm objects (High/Low DSP Alarm), exhaust duct static
     // (routes to rdspLive which has /exhaust\s+duct\s+static/i confirmed), and DSP setpoint ANOs
     // (routes to dspSpLive). "exhaust" safe here because rdspLive already has exhaust patterns.
@@ -754,7 +753,8 @@ var EM_POINT_MAP = [
     // M4: added /outside\s+air\s+damper/i — "Outside Air Damper Position" was missing this
     // variant and falling through to damperPosition. "outdoor air damper" existed; "outside air
     // damper" is a common alternative phrasing in Client D data.
-    patterns: [/oa damper/i, /outdoor air damper/i, /outside\s+air\s+damper/i],
+    // Phase 2 (2026-11-13): "Economizer Damper" is the outside air damper of an rtu / ahu economizer.
+    patterns: [/oa damper/i, /outdoor air damper/i, /outside\s+air\s+damper/i, /^economizer\s+damper\s*$/i],
     types: ['AO', 'AI'],
     // b647981f: added 'rtu', 'mau' — RTU-1/RTU-2 have "Outside Air Damper Position" (BAV, 0.0 %);
     // MAU-1 has "Outdoor Air Damper Position" (BBV, "Open"). Diagnostic BMBI fault points for
@@ -790,7 +790,7 @@ var EM_POINT_MAP = [
       /\b(pid|bacnet\s*pid|floating\s*\/\s*(close|open)|enable|adjust)\b/i,
     ],
     types: ['AO', 'AI'],
-    cats: ['ahu', 'vav', 'fpb'],
+    cats: ['ahu', 'vav', 'fpb', 'fcu', 'heater'], // Phase 2 (2026-11-13): widened to the types where the same point means the same thing.
   },
   {
     col: 'oaAirflow',
@@ -845,7 +845,7 @@ var EM_POINT_MAP = [
     // on single-zone RTUs/AHUs to zoneAirTemp. Gate in emComputeBuildingZoneStats prevents
     // true multizone AHUs from being counted as zone equipment at runtime.
     // 425c0cb3: added 'furnace' — furnace.zoneTemp catDef aliases cover 'Zone Air Temp' label
-    cats: ['vav', 'fpb', 'ddvav', 'ahu', 'furnace'],
+    cats: ['vav', 'fpb', 'ddvav', 'ahu', 'furnace', 'rtu'], // Phase 2 (2026-11-13): widened to the types where the same point means the same thing.
   },
   {
     col: 'zoneCoolSetpoint',
@@ -879,7 +879,7 @@ var EM_POINT_MAP = [
     // Setpoint", "Occupied Cooling Set Point") as AHU-category units. Without 'rtu'/'mau'
     // in cats, the category gate drops these points during WebCTRL import.
     // 425c0cb3: added 'furnace' — furnace.coolSP catDef aliases cover 'Zone Cooling Setpoint' label
-    cats: ['vav', 'fpb', 'ddvav', 'fcu', 'ahu', 'rtu', 'mau', 'furnace'],
+    cats: ['vav', 'fpb', 'ddvav', 'fcu', 'ahu', 'rtu', 'mau', 'furnace', 'heater'], // Phase 2 (2026-11-13): widened to the types where the same point means the same thing.
   },
   {
     col: 'zoneHtgSetpoint',
@@ -905,7 +905,7 @@ var EM_POINT_MAP = [
     // heating setpoints on single-zone RTUs/AHUs to zoneHtgSetpoint.
     // Phase 1 (item 21eb08f8): added 'rtu', 'mau' — same rationale as zoneCoolSetpoint above.
     // 425c0cb3: added 'furnace' — furnace.htgSP catDef aliases cover 'Zone Heating Setpoint' label
-    cats: ['vav', 'fpb', 'ddvav', 'fcu', 'ahu', 'rtu', 'mau', 'furnace'],
+    cats: ['vav', 'fpb', 'ddvav', 'fcu', 'ahu', 'rtu', 'mau', 'furnace', 'heater'], // Phase 2 (2026-11-13): widened to the types where the same point means the same thing.
   },
   // Zone cooling setpoint ADJUST (separate from occupied setpoint, which uses existing zoneCoolSetpoint)
   {
@@ -922,7 +922,7 @@ var EM_POINT_MAP = [
     types: ['SP', 'AV', 'BAV'],
     // Phase 1 (item 21eb08f8): added 'ahu', 'rtu', 'mau' — AHU/RTU/MAU all have adjust points
     // in the raw WebCTRL export; previously only zone/vav/fpb/ddvav were listed.
-    cats: ['zone', 'vav', 'fpb', 'ddvav', 'ahu', 'rtu', 'mau'],
+    cats: ['zone', 'vav', 'fpb', 'ddvav', 'ahu', 'rtu', 'mau', 'fcu', 'heater'], // Phase 2 (2026-11-13): widened to the types where the same point means the same thing.
   },
   // Zone heating setpoint ADJUST
   {
@@ -935,7 +935,7 @@ var EM_POINT_MAP = [
     negativePatterns: [/\b(unoccupied|effective|diagnostic|alarm|remote|command)\b/i],
     types: ['SP', 'AV', 'BAV'],
     // Phase 1 (item 21eb08f8): added 'ahu', 'rtu', 'mau' — same rationale as zoneCoolAdjust.
-    cats: ['zone', 'vav', 'fpb', 'ddvav', 'ahu', 'rtu', 'mau'],
+    cats: ['zone', 'vav', 'fpb', 'ddvav', 'ahu', 'rtu', 'mau', 'fcu', 'heater'], // Phase 2 (2026-11-13): widened to the types where the same point means the same thing.
   },
   {
     col: 'dischargeAirTemp',
@@ -1000,7 +1000,7 @@ var EM_POINT_MAP = [
       /\b(outdoor|outside|supply\s+fan|filter|switch|proof|loss|status|alarm|percentage|percent|chilled\s+water|condenser\s+water|hot\s+water)\b/i,
     ],
     types: ['AI'],
-    cats: ['vav', 'fpb', 'ddvav', 'fcu', 'zone'],
+    cats: ['vav', 'fpb', 'ddvav', 'fcu', 'zone', 'ahu'], // Phase 2 (2026-11-13): widened to the types where the same point means the same thing.
   },
   {
     col: 'flowControlInput',
@@ -1248,6 +1248,9 @@ var EM_POINT_MAP = [
       /\b(maximum|max|minimum|min|diagnostic|selection|outdoor|outside|oa\b)\b/i,
     ],
     types: ['AI', 'BAI', 'BAV', 'AV'],
+    // Phase 2 (2026-11-13): NOT widened to rtu. A widened column makes emComputeCompliance Source 3 (_emColKeyToCatKey) cover the REQUIRED
+    // rtu key co2 from any name this column accepts, for example "Return Air CO2 Limit", which the compliance mapper rejects. Zone CO2 on
+    // rtu already shows its compliance category (CO2 Sensor) in the Points panel through emPointPanelInfo.
     cats: ['ahu', 'vav', 'fpb', 'ddvav', 'fcu'],
   },
   // Milestone 1: Zone Humidity — surfaces from raw BAS point names at read time
@@ -1349,6 +1352,16 @@ var EM_POINT_MAP = [
     types: ['AI'],
     cats: ['zone', 'vav', 'fpb', 'ahu', 'ddvav'],
   },
+  // Phase 2 (2026-11-13): the AHU duct static pressure that the air source copies to every zone box. A zone copy, never the zone's
+  // own point: it has no audit key (compliance: airSourceDuctStatic, non-audit) and it must never map to the AHU column ductStaticPressure.
+  {
+    col: 'airSourceDuctStatic',
+    label: 'Air Source Duct Static',
+    patterns: [/^air\s+source\s+((cold|hot)\s+deck\s+)?duct\s+static\s*$/i],
+    negativePatterns: [/\b(alarm|setpoint|set\s*point|high|low)\b/i],
+    types: ['AI'],
+    cats: ['zone', 'vav', 'fpb', 'ddvav', 'fcu'],
+  },
   // Heat Source Supply Temp — hot-water / hydronic primary supply temperature at VVT/VAV terminal
   {
     col: 'heatSourceSupplyTemp',
@@ -1356,7 +1369,7 @@ var EM_POINT_MAP = [
     patterns: [/heat source supply\b/i],
     negativePatterns: [/setpoint|set\s?point|request|static|alarm|mode|status/i],
     types: ['AI', 'ANI'],
-    cats: ['vav', 'fpb', 'ddvav', 'ahu'],
+    cats: ['vav', 'fpb', 'ddvav', 'ahu', 'fcu', 'heater'], // Phase 2 (2026-11-13): widened to the types where the same point means the same thing.
   },
   // Cool Source Supply Temp — chilled-water primary supply temperature at VVT/VAV terminal
   {
@@ -1373,7 +1386,7 @@ var EM_POINT_MAP = [
     label: 'Effective Cooling Setpoint',
     patterns: [/effective cooling setpoint/i, /eff.*cool.*setpoint/i, /effective clg setpoint/i],
     types: ['SP', 'AV'],
-    cats: ['zone', 'vav', 'fpb', 'ddvav'],
+    cats: ['zone', 'vav', 'fpb', 'ddvav', 'fcu', 'heater', 'rtu', 'ahu'], // Phase 2 (2026-11-13): widened to the types where the same point means the same thing.
   },
   // Effective heating setpoint
   {
@@ -1381,7 +1394,7 @@ var EM_POINT_MAP = [
     label: 'Effective Heating Setpoint',
     patterns: [/effective heating setpoint/i, /eff.*htg.*setpoint/i, /effective htg setpoint/i],
     types: ['SP', 'AV'],
-    cats: ['zone', 'vav', 'fpb', 'ddvav'],
+    cats: ['zone', 'vav', 'fpb', 'ddvav', 'fcu', 'heater', 'rtu', 'ahu'], // Phase 2 (2026-11-13): widened to the types where the same point means the same thing.
   },
   // Primary Air Source Cool Request — DCV/demand signal from zone to air source
   {
@@ -1397,7 +1410,7 @@ var EM_POINT_MAP = [
       /primary air.*cool.*request/i,
     ],
     types: ['AV', 'AI'],
-    cats: ['zone', 'vav', 'fpb', 'ddvav'],
+    cats: ['zone', 'vav', 'fpb', 'ddvav', 'fcu'], // Phase 2 (2026-11-13): widened to the types where the same point means the same thing.
   },
   // Primary Air Source Heat Request
   {
@@ -1412,7 +1425,7 @@ var EM_POINT_MAP = [
       /primary air.*heat.*request/i,
     ],
     types: ['AV', 'AI'],
-    cats: ['zone', 'vav', 'fpb', 'ddvav'],
+    cats: ['zone', 'vav', 'fpb', 'ddvav', 'fcu'], // Phase 2 (2026-11-13): widened to the types where the same point means the same thing.
   },
   // Outside Air Dry Bulb — broadcast shared point appearing on non-ahu units via VVT controller
   {
@@ -1438,7 +1451,8 @@ var EM_POINT_MAP = [
   {
     col: 'zoneTemp',
     label: 'Zone Temperature',
-    patterns: [/^zone temp(erature)?$/i, /^zone\s+temperature$/i],
+    // Phase 2 (2026-11-13): "Zone Temperature ANI" (analog network input of the same zone temperature) maps here for fcu, heater, ef, furnace.
+    patterns: [/^zone temp(erature)?$/i, /^zone\s+temperature$/i, /^zone\s+temp(erature)?\s+ani$/i],
     // Phase 2B: removed "virtual" — "Virtual Zone Temperature" should match after virtual-stripping
     // in emMapPointToColumn; it was previously blocked here, hiding useful data.
     negativePatterns: [/high|low|alarm|effective|set\s?point/i],
@@ -1690,7 +1704,7 @@ var EM_POINT_MAP = [
     label: 'Unoccupied Cooling Setpoint',
     patterns: [/cooling\s+unoccupied\s+set/i, /unoccupied\s+cool.*set/i, /unoccupied\s+cooling/i],
     types: ['SP', 'AV'],
-    cats: ['vav', 'fpb', 'ddvav', 'fcu', 'furnace', 'zone'],
+    cats: ['vav', 'fpb', 'ddvav', 'fcu', 'furnace', 'zone', 'heater', 'rtu', 'ahu'], // Phase 2 (2026-11-13): widened to the types where the same point means the same thing.
   },
 
   // H10: Unoccupied Heating Setpoint
@@ -1706,7 +1720,7 @@ var EM_POINT_MAP = [
       /\bunoccupied\s+htsp\b/i,
     ],
     types: ['SP', 'AV'],
-    cats: ['vav', 'fpb', 'ddvav', 'fcu', 'furnace', 'zone'],
+    cats: ['vav', 'fpb', 'ddvav', 'fcu', 'furnace', 'zone', 'heater', 'rtu', 'ahu'], // Phase 2 (2026-11-13): widened to the types where the same point means the same thing.
   },
 
   // GROUP 5 — Airflow (AHU/Plant Level)
@@ -2020,7 +2034,7 @@ var EM_POINT_MAP = [
       /RTU\s+(Disabled|Enabled)|Unit\s+(Disabled|Enabled)/i,
     ],
     types: ['BI', 'BO', 'BAI', 'BAO', 'BAV', 'BV'],
-    cats: ['ahu', 'rtu', 'furnace', 'fcu'],
+    cats: ['ahu', 'rtu', 'furnace', 'fcu', 'other'], // Phase 2 (2026-11-13): widened to the types where the same point means the same thing.
   },
   {
     col: 'supplyFanEnable',
@@ -2036,7 +2050,7 @@ var EM_POINT_MAP = [
       /RTU\s+(Disabled|Enabled)|Unit\s+(Disabled|Enabled)/i,
     ],
     types: ['BI', 'BO', 'BAI', 'BAO', 'BAV', 'BV'],
-    cats: ['ahu', 'rtu', 'furnace', 'fcu'],
+    cats: ['ahu', 'rtu', 'furnace', 'fcu', 'other'], // Phase 2 (2026-11-13): widened to the types where the same point means the same thing.
   },
 
   // J6: Supply Fan Amperage
@@ -2087,7 +2101,7 @@ var EM_POINT_MAP = [
     patterns: [/\bair\s+source\s+mode\b/i],
     negativePatterns: [/\b(alarm|fault|override|run\s*for|runfor)\b/i],
     types: ['MSV', 'AV', 'BAV'],
-    cats: ['zone', 'vav', 'fpb', 'ddvav'],
+    cats: ['zone', 'vav', 'fpb', 'ddvav', 'fcu', 'ahu'], // Phase 2 (2026-11-13): widened to the types where the same point means the same thing.
   },
 
   // airSourceStatus: VVT air-source run status (running/idle) broadcast to zone terminals.
@@ -2101,7 +2115,7 @@ var EM_POINT_MAP = [
     patterns: [/\bair\s+source\s+status\b/i],
     negativePatterns: [/\b(alarm|fault|override|run\s*for|runfor)\b/i, /\s*-\s*runfor/i],
     types: ['BV', 'BI', 'BAV', 'AV'],
-    cats: ['zone', 'vav', 'fpb', 'ddvav'],
+    cats: ['zone', 'vav', 'fpb', 'ddvav', 'fcu', 'ahu'], // Phase 2 (2026-11-13): widened to the types where the same point means the same thing.
   },
 
   // zoneStatus: occupancy/thermal-mode state of the zone (Occupied/Unoccupied/Warmup/Cooldown).
@@ -6067,6 +6081,43 @@ function emColLabel(colKey) {
   return _emColLabelMap[colKey] || colKey;
 }
 
+/* ── emPointPanelInfo ────────────────────────────────────────────────────────
+   What the Points panel and the Audit table show in the "ASHRAE Category" cell for ONE raw point. One shared function (Phase 2, 2026-11-13).
+   1. The point has a column (emMapPointToColumn)            -> kind 'column',   label = column label, counts toward the score (blue).
+   2. No column, the compliance mapper (emNormalizePoint)
+      gives a named category                                  -> kind 'category', label = category label, notScored = the key is non-audit.
+   3. No column, the compliance mapper puts it in the
+      catch-all hvacSubObject                                 -> kind 'other',    label 'Other'.
+   Never builds a second mapper: it only reads emMapPointToColumn and emNormalizePoint.                                 */
+function emPointPanelInfo(rawName, equipCategory) {
+  var col = emMapPointToColumn(rawName, null, equipCategory);
+  var n = emNormalizePoint(rawName, equipCategory);
+  if (col) {
+    // Scored = the compliance mapper gives an audit key, or emComputeCompliance Source 3 maps this column to a category of this type.
+    // A column with neither (for example Air Source Duct Static, Outside Air Dewpoint on a zone box) is shown grey with "not scored".
+    emBuildColKeyToCatKey();
+    var viaCol = _emColKeyToCatKey[col] && _emColKeyToCatKey[col][equipCategory];
+    var viaColAudit =
+      viaCol &&
+      (EM_POINT_CATEGORIES[equipCategory] || []).some(function (cd) {
+        return cd.key === viaCol.catKey && !cd.nonAshrae;
+      });
+    var scored = !!((n && n.auditRelevant && n.categoryKey !== 'hvacSubObject') || viaColAudit);
+    return { kind: 'column', label: emColLabel(col), col: col, categoryKey: viaCol ? viaCol.catKey : n && n.categoryKey, notScored: !scored, isOther: false };
+  }
+  if (!n || !n.categoryKey || n.categoryKey === 'hvacSubObject') {
+    return { kind: 'other', label: 'Other', col: null, categoryKey: 'hvacSubObject', notScored: true, isOther: true };
+  }
+  return {
+    kind: 'category',
+    label: n.categoryLabel || n.categoryKey,
+    col: null,
+    categoryKey: n.categoryKey,
+    notScored: !n.auditRelevant,
+    isOther: false,
+  };
+}
+
 function emBuildAllPointsTableHtml(row) {
   var html = '';
   if (row.schema >= 2 && row.pointsRaw && Object.keys(row.pointsRaw).length > 0) {
@@ -6077,7 +6128,8 @@ function emBuildAllPointsTableHtml(row) {
       ' captured)</div>' +
       '<div style="font-size:10px;color:var(--text3);margin-bottom:6px">' +
       '<span style="background:var(--accent);color:#fff;border-radius:3px;padding:0 4px">Blue</span> = counts toward the ASHRAE 36 score. ' +
-      '<span style="background:var(--s2);border:1px solid var(--border);border-radius:3px;padding:0 4px;color:var(--text2)">Other</span> = found on the equipment, not scored.' +
+      '<span style="background:var(--s2);border:1px solid var(--border);border-radius:3px;padding:0 4px;color:var(--text2)">Grey name</span> = found on the equipment and named. A grey name with "not scored" does not count toward the score. ' +
+      '<span style="background:var(--s2);border:1px solid var(--border);border-radius:3px;padding:0 4px;color:var(--text2)">Other</span> = found on the equipment, not named, not scored.' +
       '</div>';
     // 561fe067 overflow fix: Point Name wraps per ui-standards.md ("Label/description columns
     // may use white-space:normal; word-break:break-word but must still have overflow:hidden") —
@@ -6116,7 +6168,8 @@ function emBuildAllPointsTableHtml(row) {
     for (var _ari = 0; _ari < _apKeys.length; _ari++) {
       var _arKey = _apKeys[_ari];
       var _arVal = row.pointsRaw[_arKey];
-      var _arMapped = emMapPointToColumn(_arKey, null, row.category);
+      var _arInfo = emPointPanelInfo(_arKey, row.category);
+      var _arMapped = _arInfo.col;
       var _arRealCt = _arMapped ? _apColRealCount[_arMapped] || 0 : 0;
       var _arVirtCt = _arMapped ? _apColVirtualCount[_arMapped] || 0 : 0;
       var _arIsVirtual = /^\s*virtual\s+/i.test(_arKey);
@@ -6126,8 +6179,10 @@ function emBuildAllPointsTableHtml(row) {
       var _arHasCollision = !_arMapped ? false : _arIsVirtual ? _arRealCt === 0 && _arVirtCt > 1 : _arRealCt > 1;
       // Plain-language rule (ui-standards.md): show the human label ("Mixed Air Temp"), never the
       // internal camelCase key ("mixedAirTemp"). Full key still available via title tooltip.
-      var _arLabel = _arMapped ? emColLabel(_arMapped) : '';
-      var _arBadge = _arMapped
+      var _arLabel = _arInfo.label;
+      // Phase 2 (2026-11-13): blue = counts toward the ASHRAE 36 score (the legend). A column that is not scored, or a named category, is grey.
+      var _arScored = !_arInfo.notScored && !_arInfo.isOther;
+      var _arBadge = _arScored
         ? '<span style="background:var(--accent);color:#fff;border-radius:3px;padding:1px 5px;font-size:10px;' +
           'display:inline-block;max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;vertical-align:bottom"' +
           ' title="' +
@@ -6143,7 +6198,20 @@ function emBuildAllPointsTableHtml(row) {
               _apColCount[_arMapped] +
               ' points map here">&#x26A0;</span>'
             : '')
-        : '<span style="background:var(--s2);border:1px solid var(--border);color:var(--text2);border-radius:3px;padding:1px 5px;font-size:10px">Other</span>';
+        : '<div style="display:flex;align-items:center;gap:4px;min-width:0">' +
+          '<span style="background:var(--s2);border:1px solid var(--border);color:var(--text2);border-radius:3px;padding:1px 5px;font-size:10px;' +
+          'display:inline-block;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="' +
+          _escHtml(_arInfo.label + (_arInfo.notScored && !_arInfo.isOther ? ' (not scored)' : '')) +
+          '">' +
+          _escHtml(_arInfo.label) +
+          '</span>' +
+          (_arInfo.notScored && !_arInfo.isOther
+            ? '<span style="flex:none;font-size:9px;color:var(--text3);white-space:nowrap">not scored</span>'
+            : '') +
+          (_arHasCollision
+            ? '<span style="flex:none;color:#f59e0b;cursor:default" title="Collision: ' + _apColCount[_arMapped] + ' points map here">&#x26A0;</span>'
+            : '') +
+          '</div>';
       var _arValDisplay = _arVal === '' ? '<span style="color:var(--text3)">empty</span>' : _escHtml(String(_arVal));
       html +=
         '<tr>' +
@@ -13176,6 +13244,7 @@ var EM_NAMED_EXCLUSIONS = [
       /occupied\s*override/i, // Wave 1 occupied override
       /occupancy\s*override/i,
       /virtual.*override\s+time/i, // Wave 1 virtual override time
+      /override\s+time\s+remaining/i, // Phase 2 (2026-11-13): "Zone Temp / Override Time Remaining" is an override timer, never the zone temperature
     ],
   },
   // ── Energy / Consumption Tracking ───────────────────────────────────────
@@ -14158,7 +14227,26 @@ var EM_NAMED_EXCLUSIONS = [
   {
     key: 'testValidationMode',
     label: 'Test & Validation Mode',
-    patterns: [/^Test\s+&\s+Validation\s+Mode\b/i],
+    // Phase 2 (2026-11-13): "Testing Airflow Percentage" is a test-mode percent, never the airflow sensor (discFlow / primaryFlow).
+    patterns: [/^Test\s+&\s+Validation\s+Mode\b/i, /^Testing\s+Airflow\s+Percentage\b/i],
+    nonAshrae: true,
+    required: false,
+  },
+  // Phase 2 (2026-11-13): the Vmin family is the zone minimum airflow SETPOINT, not the airflow sensor. Named exclusions fire
+  // before the discFlow patterns (/cfm/, /zone.?cfm/), so these names stop counting as the discharge airflow sensor.
+  // Phase 2 (2026-11-13): "Cooling Set Point BACnet PID / Setpoint" and "Heating Evaporator BACnet PID / Setpoint" are the target of a
+  // discharge or coil temperature loop, not the zone setpoint. Every equipment type. "Economizer BACnet PID / Setpoint" keeps econSp.
+  {
+    key: 'pidLoopSetpoint',
+    label: 'Control Loop Setpoint',
+    patterns: [/^(Cooling|Heating)\b.*\bBACnet\s+PID\s*\/\s*Setpoint\b/i],
+    nonAshrae: true,
+    required: false,
+  },
+  {
+    key: 'zoneMinAirflowSP',
+    label: 'Zone Minimum Airflow Setpoint',
+    patterns: [/^Minimum\s+CFM\b/i, /^Write\s+CFM\s+Minimum\b/i, /^Associated\s+Zone\s+CFM\b/i],
     nonAshrae: true,
     required: false,
   },
@@ -15697,6 +15785,19 @@ var EM_POINT_CATEGORIES = {
         'setpoint / heating setpoint adjust',
       ],
     },
+    // Phase 2 (2026-11-13): the zone temperature that a single-zone unit (rtu, ahu) reads. NOT scored, no price entry (Manager 2026-11-13).
+    // ownTypeOnly: the all-types fallback keeps using the vav / fpb zoneTemp.
+    {
+      key: 'unitZoneTemp',
+      negativeGuards: [_EM_ALARM_LIMIT_NAME, /override|\bstatus\b|\bsetpoint\b|set\s+point/i],
+      label: 'Unit Zone Temperature',
+      nonAshrae: true,
+      required: false,
+      auditRelevant: false,
+      ownTypeOnly: true,
+      patterns: [/^(Virtual\s+)?Zone\s+Temp(erature)?\s*$/i],
+      aliases: [],
+    },
     // Phase 1 (item 21eb08f8): Alarms category for AHU/RTU ——————————————————
     // Alarm relay points are present on all Carrier/Lennox RTU programs in Client D data.
     // "Alarm Relay Active" (BALM type) and "Compressor Lockout Alarm BNI" are real
@@ -16489,7 +16590,7 @@ var EM_POINT_CATEGORIES = {
         /^Outside\s+Air\s+Wet\s+Bulb\s*$/i, // Outside Air Wet Bulb (1724 vav rows)
         /^Outside\s+Air\s+Enthalpy\s*$/i, // Outside Air Enthalpy (1730 vav rows) — Bucket-A in ahu
         /^Outside\s+Air\s+Temperature\s+-\s+RNet\s*$/i, // Outside Air Temperature - RNet (109 vav rows)
-        /^Air\s+Source\s+Duct\s+Static\s*$/i, // Air Source Duct Static (804 vav rows)
+        // "Air Source Duct Static" moved to airSourceDuctStatic (Phase 2, 2026-11-13): it is the AHU duct static copied to the box.
       ],
     },
     {
@@ -17221,6 +17322,19 @@ var EM_POINT_CATEGORIES = {
       patterns: [
         /^Air\s+Source\s+(Cold|Hot)\s+Deck\s+Supply\s+Temp\s*$/i, // Air Source Cold/Hot Deck Supply Temp (77+77)
       ],
+    },
+    // Phase 2 (2026-11-13): the dual-duct box "Supply Temperature". NOT scored, no price entry (Manager 2026-11-13).
+    // The deck copies of the AHU supply temperature are ddvavDeckTemp above, so they are guarded out here.
+    {
+      key: 'ddvavSupplyTemp',
+      negativeGuards: [_EM_ALARM_LIMIT_NAME, /\b(deck|air\s+source|source)\b/i],
+      label: 'Dual Duct Supply Temperature',
+      nonAshrae: true,
+      required: false,
+      auditRelevant: false,
+      ownTypeOnly: true,
+      patterns: [/^Supply\s+Temperature\s*$/i],
+      aliases: [],
     },
     {
       key: 'ddvavDamperPos',
@@ -20277,6 +20391,53 @@ var EM_POINT_CATEGORIES = {
   ],
 };
 
+/* ── Phase 2 (2026-11-13): NON-AUDIT named categories for zone types ─────────────────────────────────────────────────────────
+   Points that were in the catch-all hvacSubObject on every zone terminal (vav, fpb, ddvav, fcu, heater, zone).
+   Each key is nonAshrae + required:false: never scored, never counted in coverage, no PRICE_POINT_MAP entry.
+   They are appended LAST, so every ASHRAE category of the type still wins first. ownTypeOnly: the all-types fallback skips them,
+   so "Schedule" keeps its audit key `schedule` on ef / other.                                                                */
+var EM_ZONE_NONAUDIT_CATEGORIES = [
+  {
+    key: 'zoneTempAlarm',
+    label: 'Zone Temperature Alarms',
+    patterns: [/^(High|Low)\s+Zone\s+Temp(erature)?\b/i, /^(High|Low)\s+(Supply|Discharge)\s+Air\s+Temp(erature)?\b/i],
+  },
+  {
+    key: 'vvtAirRequest',
+    label: 'Variable Volume Terminal Zone Air (Pressure) Request',
+    patterns: [/^I\s+Need\s+Air\s+Request\b/i],
+  },
+  {
+    key: 'airSourceDuctStatic',
+    label: 'Air Source Duct Static (copy from AHU)',
+    patterns: [/^Air\s+Source\s+((Cold|Hot)\s+Deck\s+)?Duct\s+Static\b/i],
+  },
+  {
+    key: 'scheduleObject',
+    label: 'Schedule Object',
+    patterns: [/^Schedule\s*$/i],
+  },
+  {
+    key: 'valveFlowAdjust',
+    label: 'Valve Flow Adjust',
+    patterns: [/^Heating\s+Valve\s+Flow\s+Adjust\b/i],
+  },
+];
+['vav', 'fpb', 'ddvav', 'fcu', 'heater', 'zone'].forEach(function (_zt) {
+  EM_ZONE_NONAUDIT_CATEGORIES.forEach(function (_zc) {
+    EM_POINT_CATEGORIES[_zt].push({
+      key: _zc.key,
+      label: _zc.label,
+      nonAshrae: true,
+      required: false,
+      auditRelevant: false,
+      ownTypeOnly: true,
+      aliases: [],
+      patterns: _zc.patterns,
+    });
+  });
+});
+
 // RTU uses the same ASHRAE 36 compliance profile as AHU — alias the category key.
 // This ensures EM_POINT_CATEGORIES['rtu'] resolves correctly for compliance scoring,
 // gap analysis, and any other code that indexes into EM_POINT_CATEGORIES by category string.
@@ -21535,6 +21696,9 @@ function emNormalizePointInner(rawName, equipCategory) {
     if (_negGuarded) continue;
     // Item 45832938: feedback names (fault, alarm, failure, status, diagnostic) never map to a command category.
     if (_EM_COMMAND_CAT_KEY.test(cat.key) && _EM_FEEDBACK_NAME.test(rawName)) continue;
+    // Phase 2 (2026-11-13): ownTypeOnly categories apply to a known equipment type only. The all-types fallback (unknown or
+    // 'other' type) skips them, so its mapping (for example the ef / other audit key `schedule`) does not change.
+    if (cat.ownTypeOnly && _skipTier2) continue;
 
     // ── Tier 1: Exact canonical name match (case-insensitive) ────────
     var canonNorm = emNormalizePointName(cat.ashrae36Name || cat.label);
