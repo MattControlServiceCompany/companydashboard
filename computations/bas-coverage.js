@@ -700,7 +700,11 @@
     }
     if (!live.length) return done('offsite', 'Off-site');
     var snap = snapshotForDate(ctx.snaps, date);
-    if (!snap) return done('nocopy', 'No BAS copy for this weekday');
+    if (!snap) {
+      // no BAS copy for the matched parts: the unmatched parts of the place can still be read against the building main schedule
+      var sg3 = unmatched.length ? checkUnmatched() : null;
+      return sg3 ? done('suggest', sg3) : done('nocopy', 'No BAS copy for this weekday');
+    }
     res.from = snap.date;
     res.exact = snap.exact;
     res.source = sourceText(snap);

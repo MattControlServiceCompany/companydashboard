@@ -147,6 +147,9 @@ eq(st2(ev('Club', '2026-10-29', 9, 0, 10, 0, 'Nowhere Gym')).status, 'notmapped'
 eq(C.checkStatus([ev('Club', '2026-10-31', 9, 0, 10, 0, 'TAH Conf Rm'), ev('Club', '2026-10-29', 9, 0, 10, 0, 'TAH Conf Rm')], ctx2).suggest, 1, 'checkStatus counts suggest');
 eq(C.checkStatus([ev('Club', '2026-10-31', 9, 0, 10, 0, 'TAH Conf Rm')], ctx2).reasons.length >= 1, true, 'checkStatus gives a reason for suggest events');
 
+eq(st2(ev('Debate', '2026-10-31', 9, 0, 10, 0, 'TAH Gym, Conf Rm')).status, 'suggest', 'Saturday, matched part has no BAS copy: the unmatched part is read against the main schedule');
+eq(st2(ev('Debate', '2026-10-31', 9, 0, 10, 0, 'TAH Gym')).status, 'nocopy', 'Saturday, all parts matched: no BAS copy as before');
+
 // one coverage function: the events list and the space map card do not repeat the rules
 const read = (f) => fs.readFileSync(path.join(__dirname, '..', f), 'utf8');
 eq(/eventCoverage\(/.test(read('app/project-calendar.js')) && !/minutesShort|isServingProgram/.test(read('app/project-calendar.js')), true, 'events list calls eventCoverage only');
