@@ -317,6 +317,7 @@
 
   var MARK_DAYS = 7;
   var AUTO_SYNC_MS = 60 * 60 * 1000;
+  var STALE_MS = 26 * 60 * 60 * 1000; // 24 hours between daily updates plus 2 hours for a late start
 
   // Should the tab sync by itself on open? Needs a saved feed, a signed-in user, and a copy older than 1 hour (or none).
   // Client copy of the feed address rule in netlify/functions/lib/calendar/feed-url.mjs (the server stays the real gate).
@@ -338,6 +339,12 @@
     if (!o.cfg || !o.token) return false;
     var t = o.snap && o.snap.fetchedAt ? Date.parse(o.snap.fetchedAt) : NaN;
     return isNaN(t) || o.nowMs - t > AUTO_SYNC_MS;
+  }
+
+  // True when the saved copy is older than 26 hours: the daily update (scripts/calendar-daily-sync.js, every 24 hours) did not run.
+  function isStale(o) {
+    var t = o.snap && o.snap.fetchedAt ? Date.parse(o.snap.fetchedAt) : NaN;
+    return !isNaN(t) && o.nowMs - t > STALE_MS;
   }
 
   // The marks to show: every New / Changed / Canceled from the kept history records (newest first) that were first seen
@@ -371,6 +378,7 @@
   var api = {
     MARK_DAYS: MARK_DAYS,
     needsAutoSync: needsAutoSync,
+    isStale: isStale,
     feedUrlProblem: feedUrlProblem,
     carriedMarks: carriedMarks,
     calendarDay: calendarDay,

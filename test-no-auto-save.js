@@ -245,6 +245,7 @@ const seed = () => ({
     const calCtx = {
       window: { CH_AUTH: { getToken: () => 'tok' }, addEventListener() {} },
       CalendarDiff: require('./app/calendar-diff.js'),
+      CalendarSync: require('./computations/calendar-sync.js'),
       console, Date, Math, JSON, Object, Array, Promise, Intl, isNaN, Number, String, parseInt, parseFloat, setTimeout,
       _escHtml: (x) => String(x),
       document: { getElementById: () => null, createElement: () => ({ style: {}, setAttribute() {} }), head: { appendChild() {} }, querySelector: () => null },
@@ -280,6 +281,7 @@ const seed = () => ({
     const ctx = {
       window: { CH_AUTH: { getToken: () => 'tok' }, addEventListener() {} },
       CalendarDiff: require('./app/calendar-diff.js'),
+      CalendarSync: require('./computations/calendar-sync.js'),
       console, Date, Math, JSON, Object, Array, Promise, Intl, isNaN, Number, String, parseInt, parseFloat, setTimeout,
       _escHtml: (x) => String(x),
       document: { getElementById: () => null, createElement: () => ({ style: {}, setAttribute() {} }), head: { appendChild() {} }, querySelector: () => null },

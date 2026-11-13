@@ -23,7 +23,7 @@ function boot(store, fetchImpl, token) {
   const el = (id) => (els[id] = els[id] || { innerHTML: '', textContent: '', value: '', style: {} });
   const win = { CH_AUTH: { getToken: () => token } };
   const ctx = {
-    window: win, CalendarDiff: D, console, Date, Math, JSON, Object, Array, Promise, Intl, isNaN, Number, String, parseInt, parseFloat, setTimeout,
+    window: win, CalendarDiff: D, CalendarSync: require(path.join(ROOT, 'computations', 'calendar-sync.js')), console, Date, Math, JSON, Object, Array, Promise, Intl, isNaN, Number, String, parseInt, parseFloat, setTimeout,
     _escHtml: (x) => String(x),
     document: { getElementById: (id) => el(id), createElement: () => ({ style: {}, setAttribute() {} }), head: { appendChild() {} }, querySelector: () => null },
     DB: { get: (k, d) => (store[k] === undefined || store[k] === null ? d : store[k]), set: async (k, v) => { store[k] = v; } },

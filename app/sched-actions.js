@@ -16,7 +16,6 @@
 (function () {
   'use strict';
 
-  var HIST_MAX = 50;
   var _ids = {}; // per project: the action ids of the buttons on screen, by position
 
   function whoName() {
@@ -29,42 +28,32 @@
   function esc(s) {
     return _escHtml(String(s == null ? '' : s));
   }
+  // The page's io for SchedActions.buildInput (computations/sched-actions.js, the one copy of the input rules).
   function input(pid) {
-    var cfg = DB.get('en_cal_cfg_' + pid, null);
-    var snap = DB.get('en_cal_snap_' + pid, null);
-    var snaps = DB.get('en_bas_snap_' + pid, {});
-    if (!snaps || typeof snaps !== 'object' || Array.isArray(snaps)) snaps = {};
-    var tz = (cfg && cfg.timezone) || 'America/Chicago';
-    var g = DB.get('en_bas_groups_' + pid, null);
-    // The imported WebCTRL audit log, read only through BasAuditLog.changeList: its schedule rows and its newest day.
-    // The Equipment Matrix rows give the WebCTRL path of each program: the room number -> Area line reads them.
     var mx = typeof emLoadMatrix === 'function' ? emLoadMatrix(pid) : null;
-    var log = window.BasAuditLog ? window.BasAuditLog.changeList(DB.get('en_bas_auditevents_' + pid, null), {}) : { lastDay: '', rows: [] };
-    return {
-      scheduleEdits: log.rows.filter(function (r) { return /^Schedule/.test(r.type); }),
-      auditLastDay: log.lastDay,
-      events: Object.assign({}, (snap && snap.events) || {}, typeof distCalManualRows === 'function' ? distCalManualRows(pid) : {}),
-      map: DB.get('en_space_map_' + pid, null),
-      snaps: snaps,
-      groups: (g && g.groups) || {},
-      locations: (g && g.locations) || [],
-      matrixRooms: ((mx && mx.rows) || [])
-        .filter(function (r) { return r.bacnetLocation && r.equipName; })
-        .map(function (r) { return { location: r.bacnetLocation, name: r.equipName }; }),
-      tz: tz,
-      today: CalendarDiff.calendarDay(new Date().toISOString(), tz),
-      stored: DB.get('en_sched_actions_' + pid, null),
-      now: new Date().toISOString(),
-      latestImport: SchedActions.latestImport(snaps, snap && snap.fetchedAt),
-      snapFetchedAt: (snap && snap.fetchedAt) || '',
-    };
+    return SchedActions.buildInput(
+      {
+        get: function (key, fb) {
+          return DB.get(key, fb);
+        },
+        matrixRows: function () {
+          return (mx && mx.rows) || [];
+        },
+        manualRows: function (p) {
+          return typeof distCalManualRows === 'function' ? distCalManualRows(p) : {};
+        },
+        auditList: function (store) {
+          return window.BasAuditLog ? window.BasAuditLog.changeList(store, {}) : { lastDay: '', rows: [] };
+        },
+        now: new Date().toISOString(),
+      },
+      pid,
+    );
   }
   async function writeHistory(pid, changes, by) {
     if (!changes.length) return;
-    var h = DB.get('en_bas_acthist_' + pid, []);
     var id = 'bash_' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
-    var rec = SchedActions.historyRecord(changes, new Date().toISOString(), by, id);
-    await DB.set('en_bas_acthist_' + pid, [rec].concat(Array.isArray(h) ? h : []).slice(0, HIST_MAX));
+    await DB.set('en_bas_acthist_' + pid, SchedActions.appendHistory(DB.get('en_bas_acthist_' + pid, []), changes, new Date().toISOString(), by, id));
   }
 
   // The headline of the card and the reasons why events could not be compared. st = SchedActions.periodView(...).status.
@@ -210,10 +199,11 @@
 
   // Saves what the check found now: new actions, closed actions, reopened actions. Called after a calendar sync and a BAS import.
   async function persist(pid) {
-    var v = SchedActions.reconcile(input(pid));
-    if (!v.changes.length) return;
-    await DB.set('en_sched_actions_' + pid, v.stored);
-    await writeHistory(pid, v.changes, 'automatic check');
+    var id = 'bash_' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
+    var plan = SchedActions.persistPlan(input(pid), DB.get('en_bas_acthist_' + pid, []), id);
+    if (!plan) return;
+    await DB.set('en_sched_actions_' + pid, plan.stored);
+    await DB.set('en_bas_acthist_' + pid, plan.hist);
   }
   window.sactRender = render;
   window.sactPersist = persist;

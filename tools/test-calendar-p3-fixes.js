@@ -58,7 +58,7 @@ const sb = {
   DB: { get: (k, d) => (store[k] === undefined ? d : store[k]), set: async (k, v) => { store[k] = v; } },
   CalendarDiff: CD,
   _escHtml: (x) => x,
-  SchedActions: Object.assign({}, SA, { reconcile: () => ({ stored: { actions: {} }, changes: [{ id: 'a', text: 't', what: 'Opened' }] }) }),
+  SchedActions: Object.assign({}, SA, { persistPlan: (inp, hist, id) => ({ stored: { actions: {} }, hist: SA.appendHistory(hist, [{ id: 'a', text: 't', what: 'Opened' }], inp.now, 'automatic check', id) }) }),
 };
 vm.createContext(sb);
 vm.runInContext(read('app/sched-actions.js'), sb);

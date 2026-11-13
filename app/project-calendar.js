@@ -11,12 +11,13 @@
 //
 // Network: ONE call to /.netlify/functions/calendar-fetch, when the user clicks Sync now, or once when the tab opens
 // and the saved copy is older than 1 hour (pcalAutoSync). There are no timers.
+// What a sync saves is decided by CalendarSync (computations/calendar-sync.js), also used by the daily update (scripts/calendar-daily-sync.js).
+// A line shows when the saved copy is older than 26 hours (CalendarDiff.isStale).
 // Text is escaped with _escHtml (lib/formatting.js). The comparison is done by CalendarDiff.diffSnapshots (app/calendar-diff.js), the only copy.
 (function () {
   'use strict';
 
   var FN_URL = '/.netlify/functions/calendar-fetch';
-  var HIST_MAX = 50;
   var PAGE_ROWS = 200;
   var DEFAULT_TZ = 'America/Chicago';
   var ZONES = [
@@ -522,6 +523,14 @@
     } else {
       summary = '';
     }
+    if (cfg && snap && CalendarDiff.isStale({ snap: snap, nowMs: Date.now() })) {
+      summary +=
+        '<div class="pcal-msg" id="pcal-stale-' +
+        pid +
+        '">' +
+        _escHtml('Calendar last updated ' + stamp(snap.fetchedAt) + '. The daily update did not run. Press Sync now.') +
+        '</div>';
+    }
     var leftOut = snap && snap.leftOut && snap.leftOut.length ? snap.leftOut : null;
     if (leftOut) {
       summary +=
@@ -667,8 +676,7 @@
       s.msg = (body && body.error) || 'The calendar feed could not be read. The last saved copy is kept.';
       return null;
     }
-    var fresh = body.snapshot;
-    return { fetchedAt: fresh.fetchedAt, count: fresh.count, window: fresh.window, leftOut: fresh.leftOut || [], events: fresh.events };
+    return CalendarSync.savedCopy(body.snapshot); // the one copy of which fields are saved (computations/calendar-sync.js)
   }
   // A person chose Sync now (or Save and sync): read the feed and SAVE the new copy and the history record.
   async function sync(pid) {
@@ -687,24 +695,9 @@
     try {
       var snap = await readFeed(pid, cfg, token);
       if (!snap) return;
-      var old = snapOf(pid);
-      var hist = histOf(pid);
       var id = 'calh_' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
-      var rec;
-      if (old) {
-        rec = CalendarDiff.historyRecord(CalendarDiff.diffSnapshots(old, snap), snap.fetchedAt, id);
-      } else {
-        rec = {
-          id: id,
-          at: snap.fetchedAt,
-          first: true,
-          counts: { added: 0, removed: 0, changed: 0, unchanged: snap.count, total: snap.count },
-          added: [],
-          removed: [],
-          changed: [],
-        };
-      }
-      await DB.set(k('hist', pid), [rec].concat(hist).slice(0, HIST_MAX));
+      var rec = CalendarSync.historyRecord(snapOf(pid), snap, id); // the one copy of this rule (computations/calendar-sync.js), also used by the daily update
+      await DB.set(k('hist', pid), CalendarSync.historyList(rec, histOf(pid)));
       await DB.set(k('snap', pid), snap);
       if (typeof window.sactPersist === 'function') await window.sactPersist(pid); // closes or reopens actions against the new copy
     } catch (e) {

@@ -219,10 +219,12 @@
             "pcalSync POSTs the address to calendar-fetch with the sign-in token",
             "calendar-fetch checks the address (https, calendar host, .ics), downloads, reads, returns a snapshot",
             "diffSnapshots(old snapshot, new snapshot) gives added, removed, changed, unchanged",
-            "historyRecord is saved to en_cal_hist_<pid>, then the new snapshot to en_cal_snap_<pid>; the panel redraws"
+            "historyRecord is saved to en_cal_hist_<pid>, then the new snapshot to en_cal_snap_<pid>; the panel redraws",
+            "Every day at 11:00 UTC, GitHub Actions runs scripts/calendar-daily-sync.js: the same feed read and the same CalendarSync.plan (computations/calendar-sync.js) save en_cal_hist_<pid>, en_cal_snap_<pid>, en_sched_actions_<pid> and en_bas_acthist_<pid> with a version check, with no page open and no Netlify call; no change means no write",
+            "When the saved copy is more than 26 hours old, the tab shows 'Calendar last updated <time>. The daily update did not run. Press Sync now.' (CalendarDiff.isStale)"
           ],
           "storageKeys": ["en_cal_cfg_<pid>", "en_cal_snap_<pid>", "en_cal_hist_<pid>"],
-          "keyFiles": ["app/project-calendar.js", "app/calendar-diff.js", "netlify/functions/calendar-fetch.mjs", "netlify/functions/lib/calendar/snapshot.mjs", "netlify/lib/auth.js", "tools/test-calendar-feed.js"]
+          "keyFiles": ["app/project-calendar.js", "app/calendar-diff.js", "computations/calendar-sync.js", "scripts/calendar-daily-sync.js", ".github/workflows/calendar-daily-sync.yml", "tools/test-calendar-daily-sync.js", "netlify/functions/calendar-fetch.mjs", "netlify/functions/lib/calendar/snapshot.mjs", "netlify/lib/auth.js", "tools/test-calendar-feed.js"]
         },
         {
           "id": "project-bas-schedules",

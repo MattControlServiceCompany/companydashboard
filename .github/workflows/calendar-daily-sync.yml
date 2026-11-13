@@ -1,0 +1,49 @@
+name: Calendar Daily Sync
+
+# Daily calendar update (Matt, 2026-10-29 and 2026-11-13: the calendar must sync every day).
+# Runs scripts/calendar-daily-sync.js: for every project with a calendar feed it does what the
+# District Calendar "Sync now" button does, and saves the result to the shared data store.
+# It needs no page open and no Netlify function. Secrets are repository secrets, set by the owner:
+# SUPABASE_URL and SUPABASE_SECRET_KEY (the same names kv-sync uses). They are never printed.
+#
+# Time: cron runs in UTC. 11:00 UTC = 05:00 CST (winter) and 06:00 CDT (summer). GitHub does not
+# move the time for daylight saving. GitHub can also start a scheduled run several minutes late
+# (up to about an hour when the service is busy). The District Calendar tab shows a warning when
+# the saved copy is more than 26 hours old.
+# A failed run (a feed error, a version conflict) turns this workflow red and GitHub sends a failure email.
+
+on:
+  schedule:
+    - cron: '0 11 * * *'
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: 'Dry run: read and compare, write nothing'
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+concurrency:
+  group: calendar-daily-sync
+  cancel-in-progress: false
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+      # The feed reader needs ical.js only (the other dependencies are not used by this script).
+      - run: npm install --no-save --ignore-scripts --no-audit --no-fund ical.js@^2.2.1
+      - name: Run the daily calendar update
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
+          DRY_RUN: ${{ inputs.dry_run }}
+        run: |
+          if [ "$DRY_RUN" = "true" ]; then node scripts/calendar-daily-sync.js --dry-run; else node scripts/calendar-daily-sync.js; fi

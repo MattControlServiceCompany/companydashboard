@@ -764,7 +764,54 @@
       });
   }
 
+  // --- the input of the check, and the save plan (one copy, used by the page and by the daily update) ---------
+  // io = { get(key, fallback), matrixRows(pid) -> rows, manualRows(pid) -> event rows, auditList(store) -> BasAuditLog.changeList result, now (ISO) }.
+  // The page (app/sched-actions.js) and scripts/calendar-daily-sync.js each pass their own io; the rules are here only.
+  function buildInput(io, pid) {
+    var cfg = io.get('en_cal_cfg_' + pid, null);
+    var snap = io.get('en_cal_snap_' + pid, null);
+    var snaps = io.get('en_bas_snap_' + pid, {});
+    if (!snaps || typeof snaps !== 'object' || Array.isArray(snaps)) snaps = {};
+    var tz = (cfg && cfg.timezone) || 'America/Chicago';
+    var g = io.get('en_bas_groups_' + pid, null);
+    var log = io.auditList(io.get('en_bas_auditevents_' + pid, null));
+    return {
+      scheduleEdits: log.rows.filter(function (r) { return /^Schedule/.test(r.type); }),
+      auditLastDay: log.lastDay,
+      events: Object.assign({}, (snap && snap.events) || {}, io.manualRows(pid)),
+      map: io.get('en_space_map_' + pid, null),
+      snaps: snaps,
+      groups: (g && g.groups) || {},
+      locations: (g && g.locations) || [],
+      matrixRooms: (io.matrixRows(pid) || [])
+        .filter(function (r) { return r.bacnetLocation && r.equipName; })
+        .map(function (r) { return { location: r.bacnetLocation, name: r.equipName }; }),
+      tz: tz,
+      today: CD.calendarDay(io.now, tz),
+      stored: io.get('en_sched_actions_' + pid, null),
+      now: io.now,
+      latestImport: latestImport(snaps, snap && snap.fetchedAt),
+      snapFetchedAt: (snap && snap.fetchedAt) || '',
+    };
+  }
+  var ACT_HIST_MAX = 50;
+  // The new en_bas_acthist_<pid> list: one record for these changes in front of the old list (50 kept). No changes: the old list.
+  function appendHistory(old, changes, at, by, id) {
+    var list = Array.isArray(old) ? old : [];
+    if (!changes.length) return list;
+    return [historyRecord(changes, at, by, id)].concat(list).slice(0, ACT_HIST_MAX);
+  }
+  // What a save after a calendar sync or a BAS import writes: null when no action changed, else { stored, hist } (en_sched_actions_<pid>, en_bas_acthist_<pid>).
+  function persistPlan(inp, histOld, id) {
+    var v = reconcile(inp);
+    if (!v.changes.length) return null;
+    return { stored: v.stored, hist: appendHistory(histOld, v.changes, inp.now, 'automatic check', id) };
+  }
+
   var api = {
+    buildInput: buildInput,
+    appendHistory: appendHistory,
+    persistPlan: persistPlan,
     computeActions: computeActions,
     periodNeeds: periodNeeds,
     periodView: periodView,
