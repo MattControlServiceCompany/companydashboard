@@ -15051,14 +15051,15 @@ function initUtilityTool() {
   // that are never explicitly re-focused (e.g. a second monitor that's always visible).
   // Netlify credit cost (2026-10-07): no timer. Check on load, and on visible or focus at most once per 60 s.
   // A new version that waits for a safe moment is tried again here (no server call), and on dataUpdated / chViewChanged.
-  // The update reload runs when the user does not look at the page or is changing page (bd22df0d, Matt 2026-11-11 and
+  // The update swap starts when the user does not look at the page or is changing page (bd22df0d, Matt 2026-11-11 and
   // 2026-11-12): the tab is hidden, the window lost focus to another program, or the user just went to another page or
-  // tab inside the site (chViewChanged from a user action). Then the reload looks like the page change and the saved
-  // page, project, tab and sub-tab open again. Checks: on visible/focus, on leaving the window and on a page change
-  // (each at most once per 60 s), so a version found while the user stays on one page waits for the next page change.
+  // tab inside the site (chViewChanged from a user action). The new version starts in a second frame behind this one and
+  // takes its place with no reload and no blank screen (_startVersionSwap). Checks: on visible/focus, on leaving the
+  // window and on a page change (each at most once per 60 s), so a version found while the user stays on one page waits
+  // for the next page change.
   const _verRecheck = () => {
     if (_chPendingVer) {
-      _reloadForNewVersionWhenSafe();
+      _updateWhenSafe();
       return;
     }
     if (Date.now() - _chVerLastCheck < _CH_VER_MIN_GAP_MS) return;
@@ -15082,18 +15083,18 @@ function initUtilityTool() {
   });
   // Wait one tick: app/sync-ui.js clears its dirty mark in its own listener for these events.
   const _verRetry = () => {
-    if (_chPendingVer) setTimeout(_reloadForNewVersionWhenSafe, 0);
+    if (_chPendingVer) setTimeout(_updateWhenSafe, 0);
   };
   window.addEventListener('dataUpdated', _verRetry);
   // A page or tab change by the user (not the internal redraw, which sets window._chRefreshing): mark the moment, then
-  // reload now if a version waits, or run the check (60 s gap) so a tab left open finds new versions.
+  // update now if a version waits, or run the check (60 s gap) so a tab left open finds new versions.
   window.addEventListener('chViewChanged', () => {
     if (window._chRefreshing) return;
     _chLastNavAt = Date.now();
-    if (_chPendingVer) setTimeout(_reloadForNewVersionWhenSafe, 0);
+    if (_chPendingVer) setTimeout(_updateWhenSafe, 0);
     else if (Date.now() - _chVerLastCheck >= _CH_VER_MIN_GAP_MS) _checkForVersionUpdate();
   });
-  // Restore any state saved before a version-triggered page reload (issue 066423b5)
+  // Restore any state saved before a version-triggered update swap (issue 066423b5)
   _restorePageStateAfterVersionUpdate();
 }
 
@@ -15117,14 +15118,14 @@ function _checkForVersionUpdate() {
       if (loadedVer && loadedVer !== fetchedVer) {
         _showVersionUpdateBanner(fetchedVer);
         _chPendingVer = fetchedVer;
-        _reloadForNewVersionWhenSafe();
+        _updateWhenSafe();
       }
       localStorage.setItem('ch_last_seen_version', fetchedVer);
     })
     .catch(() => {});
 }
 
-/* ONE rule for "reloading now loses nothing": no queued or in-flight write, no unsaved extracted bills,
+/* ONE rule for "swapping to the new version now loses nothing": no queued or in-flight write, no unsaved extracted bills,
    no running extraction, no open dialog, no edited view (rules live in app/db.js, app/tooltips-help.js, app/sync-ui.js). */
 function chSafeToReload() {
   const DBx = window.DB;
@@ -15136,13 +15137,29 @@ function chSafeToReload() {
   return true;
 }
 
-/* A newer version is live (_chPendingVer). When it is safe AND the user is away (tab hidden or another program has
-   focus) OR just changed page or tab inside the site (_userJustNavigated): save the page state, reload. Otherwise the
-   sidebar link stays and this runs again on leave, focus, dataUpdated and chViewChanged.
-   Once per version per tab session (sessionStorage), so a server that never matches cannot cause a reload loop. */
+/* UPDATE BY SWAP (Matt 2026-11-12: no reload, no blank screen). The app runs in a frame of the shell (the top of
+   energy-department.html, window.chShell). A newer version is live (_chPendingVer). When it is safe AND the user is away
+   (tab hidden or another program has focus) OR just changed page or tab inside the site (_userJustNavigated):
+   _startVersionSwap saves the page state and asks the shell for a second frame behind this one. The new frame starts the
+   new version, draws the saved page and tells the shell it is ready (_announceFrameReady). The shell then calls
+   chSwapStillValid() on THIS frame and, if it says yes, removes this frame and shows the new one in one task. If the user
+   did something in the meantime, the shell removes the new frame, calls chSwapAborted() and the swap runs again at the next
+   page change or away moment. Nothing navigates the top window. Without a shell (file://) nothing updates by itself.
+   Once per version per tab session (sessionStorage), so a server that never matches cannot cause a swap loop. */
 let _chPendingVer = null;
 let _chLastNavAt = 0;
+let _chInputSeq = 0; // counts real user input; a swap is dropped when it changed since the page state was saved
+let _chSwap = null; // the swap in progress: { nav, input, manual }
 const _CH_NAV_WINDOW_MS = 3000; // a version found by the check that a page change started still counts as that page change
+['keydown', 'pointerdown', 'wheel', 'touchstart', 'input', 'paste'].forEach((n) =>
+  window.addEventListener(
+    n,
+    (e) => {
+      if (e.isTrusted) _chInputSeq++;
+    },
+    { capture: true, passive: true },
+  ),
+);
 function _userJustNavigated() {
   return Date.now() - _chLastNavAt < _CH_NAV_WINDOW_MS;
 }
@@ -15150,14 +15167,61 @@ function _userIsAway() {
   if (document.hidden) return true;
   return typeof document.hasFocus === 'function' && !document.hasFocus() && !(document.activeElement && document.activeElement.tagName === 'IFRAME');
 }
-function _reloadForNewVersionWhenSafe() {
-  if (!_chPendingVer || !(_userIsAway() || _userJustNavigated()) || !chSafeToReload()) return;
+function _chFrameShell() {
   try {
-    if (sessionStorage.getItem('ch_auto_reload_ver') === _chPendingVer) return;
-    sessionStorage.setItem('ch_auto_reload_ver', _chPendingVer);
+    return window.parent !== window && window.parent.chShell ? window.parent.chShell : null;
+  } catch (e) {
+    return null;
+  }
+}
+function _updateWhenSafe() {
+  if (!_chPendingVer || !(_userIsAway() || _userJustNavigated()) || !chSafeToReload()) return;
+  _startVersionSwap(false);
+}
+function _startVersionSwap(manual) {
+  const shell = _chFrameShell();
+  if (!shell || _chSwap) return;
+  try {
+    if (sessionStorage.getItem('ch_update_swap_ver') === _chPendingVer) return;
+    sessionStorage.setItem('ch_update_swap_ver', _chPendingVer);
   } catch (e) {}
   _savePageStateForVersionUpdate();
-  location.reload();
+  _chSwap = { nav: _chLastNavAt, input: _chInputSeq, manual: manual };
+  if (!shell.swap(_chPendingVer)) _chSwapDropped();
+}
+// The shell asks this just before it removes this frame: still the same safe state as when the page state was saved?
+window.chSwapStillValid = function () {
+  return !!_chSwap && chSafeToReload() && _chLastNavAt === _chSwap.nav && _chInputSeq === _chSwap.input;
+};
+// The shell dropped the swap (input, a page change, no longer safe, or the new frame did not start): try again later.
+window.chSwapAborted = function () {
+  const manual = _chSwap && _chSwap.manual;
+  _chSwapDropped();
+  if (manual && typeof showToast === 'function') showToast('The update did not finish because the page changed. Select New version again.');
+};
+function _chSwapDropped() {
+  _chSwap = null;
+  try {
+    sessionStorage.removeItem('ch_update_swap_ver');
+    sessionStorage.removeItem('ch_update_reload');
+    sessionStorage.removeItem('ch_page_state_ver_update');
+  } catch (e) {}
+}
+// This page may be a frame the shell started for an update: tell the shell when the saved page is drawn (app visible,
+// saved scroll restored, two paints). The shell then swaps. A frame that never gets there is removed by the shell after 30 s.
+function _announceFrameReady() {
+  const shell = _chFrameShell();
+  if (!shell) return;
+  let tries = 0;
+  const poll = () => {
+    const appUp = document.getElementById('app')?.classList.contains('visible');
+    if (appUp && !window._projScrollRestoring) {
+      requestAnimationFrame(() => requestAnimationFrame(() => shell.ready(window)));
+    } else if (++tries < 400) {
+      setTimeout(poll, 50);
+    }
+  };
+  poll();
 }
 
 /* The version baked into the code this tab already has (RELEASE_NOTES ships with app/site-functions.js),
@@ -15178,36 +15242,37 @@ function _paintLoadedVersion() {
   if (v) el.textContent = v + (_isCDP ? ' [CDP]' : '');
 }
 
-/* Persistent, actionable "New version: reload" sidebar link shown when this tab's already-
+/* Persistent, actionable "New version: update" sidebar link shown when this tab's already-
    loaded code (loadedVer) no longer matches the live server (fetchedVer). Replaces
    the old passive toast (issue e9f1157c) which told the user the site had updated
    but gave them no way to actually get the new code short of guessing to hit F5.
-   The page reloads by itself only when chSafeToReload() is true (_reloadForNewVersionWhenSafe);
-   otherwise the user clicks the link. Reuses the existing _savePageStateForVersionUpdate() /
+   The page swaps to the new version by itself only when chSafeToReload() is true (_updateWhenSafe);
+   otherwise the user clicks the link (the same swap, _startVersionSwap). Reuses the existing _savePageStateForVersionUpdate() /
    _restorePageStateAfterVersionUpdate() plumbing (issue 066423b5) rather than
    reinventing state preservation. */
 function _showVersionUpdateBanner(fetchedVer) {
   // A plain text link in the sidebar footer (window.chSidebarLink, app/sync-ui.js). No bar, no layout space.
   const link = typeof window.chSidebarLink === 'function' ? window.chSidebarLink('ch-ver-update-link') : null;
   if (!link) return; // no sidebar (login page): nothing to show
-  link.textContent = 'New version: reload';
-  link.setAttribute('data-sync-short', 'Reload');
-  link.title = 'Version ' + fetchedVer + ' is available. Reload to update. Your in-progress work is kept.';
+  link.textContent = 'New version: update';
+  link.setAttribute('data-sync-short', 'Update');
+  link.title = 'Version ' + fetchedVer + ' is available. Select to update. Your in-progress work is kept.';
   link.style.display = '';
   link.onclick = function () {
-    _savePageStateForVersionUpdate();
-    location.reload();
+    if (!_chFrameShell()) return showToast('Reload this page to get the new version.');
+    if (!chSafeToReload()) return showToast('Save or close your open work first, then select New version again.');
+    _startVersionSwap(true);
   };
 }
 
-/* Save current page state to sessionStorage before a version-triggered reload.
+/* Save current page state to sessionStorage before a version-triggered swap.
          Issue 066423b5: ensures in-progress form values survive a forced page refresh. */
 function _savePageStateForVersionUpdate() {
   try {
     const state = {};
     // Page, project, main tab, sub-tab and scroll are NOT saved here: sv(), saveProjSession() and the per-project
     // tab keys already keep them in browser storage and init() (app/core.js) restores them. One mechanism (bd22df0d).
-    // Marker: this load follows an update reload (no login flash, no What's New dialog: energy-department.html, site-functions.js).
+    // Marker: this load follows an update swap (no login flash, no What's New dialog: energy-department.html, site-functions.js).
     sessionStorage.setItem('ch_update_reload', _chPendingVer || '1');
     const billModal = document.getElementById('billModal');
     if (billModal && billModal.classList.contains('open')) {
@@ -15236,7 +15301,7 @@ function _restorePageStateAfterVersionUpdate() {
     if (state.udSelProjId) udSelProjId = state.udSelProjId;
     if (state.udSelBldgId) udSelBldgId = state.udSelBldgId;
     // No sv() here (bd22df0d): this runs inside init() BEFORE init() reads the saved project session. sv('projects')
-    // calls showList(), which overwrote ch_proj with the list view, so every update reload landed on the Projects list.
+    // calls showList(), which overwrote ch_proj with the list view, so every update landed on the Projects list.
     if (state.billModalOpen && state.billModalValues && state.savedMeterId) {
       showToast('Your in-progress form has been restored after the site update');
       setTimeout(function () {
@@ -15650,6 +15715,7 @@ window.addEventListener('DOMContentLoaded', function () {
     // the counter will correctly go > 0 again for genuine unsaved edits.
     DB.resetPendingWrites();
     document.querySelector('.content')?.classList.add('app-ready');
+    _announceFrameReady();
   });
 });
 window.addEventListener('resize', () => {

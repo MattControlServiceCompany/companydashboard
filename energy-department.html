@@ -1,6 +1,126 @@
 <!doctype html>
 <html lang="en">
-  <script src="lib/theme.js?v=6d4fe58f"></script>
+  <script src="lib/theme.js?v=6d4fe58f"></script> <!-- first: sets data-theme, so the shell below paints the theme colour -->
+  <script>
+    /* FRAME SHELL (Matt 2026-11-12: update with no reload and no blank screen). Loaded as the TOP window over http(s),
+       this page does not start the app. It becomes a shell: one borderless full-window frame of this same page, and the
+       app runs in that frame. To update, the app in the frame asks the shell (parent.chShell.swap, app/report-engine.js)
+       for a second frame BEHIND the first. That frame starts the new version, draws the saved page and tells the shell it is
+       ready (parent.chShell.ready). Then the shell asks the old frame once more (chSwapStillValid), and in ONE task removes
+       the old frame, so the new frame, already drawn, shows. If the old frame says no (the user did something), the new
+       frame is removed and the old one stays. The top window never navigates. file:// pages, pages already in a frame (the
+       frames themselves) and browser automation (tests, the regression gate; unless the address has shell=1) skip this and
+       start the app as before. How the rest of this file is kept out of the shell: the markup written below ends in an open
+       <plaintext> element, so the parser reads everything after this script as hidden text (no script, no style, no request).
+       window.stop() is not used: it stops the first paint of the shell in Chromium. */
+    (function () {
+      if (window.top !== window.self || !/^https?:$/.test(location.protocol)) return;
+      if (navigator.webdriver && !/[?&]shell=1(&|$)/.test(location.search)) return;
+      var url = new URL(location.href);
+      url.searchParams.set('frame', '1'); // other query and the hash stay
+      var cur = null; // the frame the user sees
+      var next = null; // the frame that starts the new version (behind cur)
+      var timer = 0;
+      var watch = null;
+      // The tab shows the title and icon of the frame the user sees, and the focus stays in that frame (also after
+      // the frame loads another page itself, for example after a sign-out).
+      function watchLoad(f) {
+        f.addEventListener('load', function () {
+          if (f !== cur) return;
+          mirror();
+          focusCur();
+        });
+      }
+      // The new version starts in a frame behind the current one (same place and size, earlier in the page).
+      function makeBehind(src) {
+        var f = document.createElement('iframe');
+        f.title = 'CompanyHub';
+        f.setAttribute('allowfullscreen', '');
+        f.setAttribute('inert', ''); // no focus, no click while it starts
+        f.style.cssText = 'position:fixed;inset:0;width:100%;height:100%;border:0;';
+        watchLoad(f);
+        f.src = src;
+        document.body.insertBefore(f, cur);
+        return f;
+      }
+      function mirror() {
+        if (watch) watch.disconnect();
+        try {
+          var d = cur.contentDocument;
+          var fav = document.querySelector('link[rel~="icon"]');
+          var sync = function () {
+            document.title = d.title;
+            var l = d.querySelector('link[rel~="icon"]');
+            if (l && l.href !== fav.href) fav.href = l.href;
+          };
+          sync();
+          watch = new MutationObserver(sync);
+          watch.observe(d.documentElement, { subtree: true, childList: true, attributes: true, characterData: true });
+        } catch (e) {}
+      }
+      function focusCur() {
+        try {
+          cur.contentWindow.focus();
+        } catch (e) {}
+      }
+      function endSwap() {
+        clearTimeout(timer);
+        if (next) next.remove();
+        next = null;
+      }
+      function abort(why) {
+        if (!next) return;
+        endSwap();
+        try {
+          cur.contentWindow.chSwapAborted(why);
+        } catch (e) {}
+      }
+      window.chShell = {
+        // The app in the frame saved its page state and asks for the new version. False = a swap is already running.
+        swap: function (ver) {
+          if (next) return false;
+          var u = new URL(url);
+          u.searchParams.set('ch_v', ver || '1'); // a new URL: the page itself is not taken from the cache
+          next = makeBehind(u.href);
+          timer = setTimeout(function () {
+            abort('timeout');
+          }, 30000);
+          return true;
+        },
+        // The new frame drew the saved page.
+        ready: function (win) {
+          if (!next || next.contentWindow !== win) return;
+          var ok = false;
+          try {
+            ok = !!cur.contentWindow.chSwapStillValid();
+          } catch (e) {}
+          if (!ok) return abort('changed');
+          var old = cur;
+          cur = next;
+          next = null;
+          clearTimeout(timer);
+          cur.removeAttribute('inert');
+          old.remove(); // ends the old page: its timers, sockets and listeners
+          focusCur();
+          mirror();
+        },
+      };
+      document.write(
+        '<title>CompanyHub</title><meta name="viewport" content="width=device-width, initial-scale=1.0"><link rel="icon" href="data:,">' +
+          '<style>html,body{margin:0;height:100%;overflow:hidden;background:#060810}html[data-theme=light],html[data-theme=light] body{background:#f0f2f7}</style>' + // --bg dark and light (tokens below)
+          '<iframe id="ch-shell-first" title="CompanyHub" allowfullscreen style="position:fixed;inset:0;width:100%;height:100%;border:0"></iframe><plaintext id="ch-shell-text" style="display:none">',
+      );
+      document.getElementById('ch-shell-first').src = url.href; // set on the element: no HTML escape of the address needed
+      document.addEventListener('DOMContentLoaded', function () {
+        cur = document.getElementById('ch-shell-first');
+        document.getElementById('ch-shell-text').textContent = ''; // drop the rest of this file
+        watchLoad(cur);
+        mirror();
+        focusCur();
+      });
+      window.addEventListener('focus', focusCur);
+    })();
+  </script>
   <script>
     (function () {
       try {
@@ -9522,7 +9642,7 @@
           <span class="login-brand">CompanyHub</span>
         </div>
         <p class="login-sub">Sign in with your CompanyHub email and password to access all departments and tools.</p>
-        <button class="btn-ms" onclick="window.location.href = 'index.html'">← Return to Sign In</button>
+        <button class="btn-ms" onclick="window.top.location.href = 'index.html'">← Return to Sign In</button>
         <button
           class="btn-ms"
           id="chDemoBtn"
@@ -16754,10 +16874,10 @@
     <script src="computations/data-quality.js?v=a6adcbcf"></script>
     <script src="extraction/pdf-engine.js?v=761630e7"></script>
     <script src="app/sync-classification.js?v=b23bbfc5"></script>
-    <script src="app/db.js?v=545dac8d"></script>
-    <script src="app/sync-ui.js?v=5be33306"></script>
+    <script src="app/db.js?v=988976e5"></script>
+    <script src="app/sync-ui.js?v=e98f04fa"></script>
     <script src="app/ems-leads-store.js?v=4c52e6d5"></script>
-    <script src="app/core.js?v=46e6065b"></script>
+    <script src="app/core.js?v=03d58b38"></script>
     <script src="app/energy-savings.js?v=856d7622"></script>
     <script src="app/bill-analysis.js?v=df96e63c"></script>
     <script src="extraction/bill-validation.js?v=ce36eb70"></script>
@@ -16795,8 +16915,8 @@
     <script src="app/docx-skeleton.js?v=939b4e69"></script>
     <script src="app/docx-writer.js?v=9edf3193"></script>
     <script src="app/meeting-export.js?v=3a99c987"></script>
-    <script src="app/picture-folder.js?v=06719e89"></script>
-    <script src="app/report-engine.js?v=f98f998a"></script>
+    <script src="app/picture-folder.js?v=4ebb92d8"></script>
+    <script src="app/report-engine.js?v=4fe88225"></script>
     <script src="app/report-printed.js?v=9212dd7b"></script>
     <script src="app/report-engine-woodland.js?v=ff6ebd7c"></script>
     <script src="app/report-preview.js?v=fc2af226"></script>
@@ -16829,7 +16949,7 @@
     <script src="app/agreement-engine.js?v=5589d907"></script>
 
     <script src="app/restore-merge.js?v=6166147f"></script>
-    <script src="app/site-functions.js?v=fe03efca"></script>
+    <script src="app/site-functions.js?v=5d35c146"></script>
     <script>
       /* -- DRAG-TO-RESIZE PANELS -- */
       (function () {
@@ -17018,6 +17138,7 @@
         if (!projId) return;
         // Clean URL to avoid re-triggering on refresh
         window.history.replaceState({}, '', window.location.pathname);
+        if (window.top !== window) window.top.history.replaceState({}, '', window.location.pathname); // the shell's address bar too
 
         // Poll until projects array is populated (max 4s, retry every 100ms)
         var attempts = 0;

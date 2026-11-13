@@ -3172,6 +3172,7 @@ const DB = (() => {
       };
       req.onsuccess = (e) => {
         _db = e.target.result;
+        _db.onversionchange = () => { _db.close(); _db = null; }; // a newer version (another frame or tab) needs the database: let it open
         resolve(_db);
       };
       req.onerror = () => reject(req.error);

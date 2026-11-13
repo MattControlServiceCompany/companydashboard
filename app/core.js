@@ -65,6 +65,7 @@ function _openPdfDB() {
     };
     req.onsuccess = () => {
       _pdfDB.db = req.result;
+    _pdfDB.db.onversionchange = () => { _pdfDB.db.close(); _pdfDB.db = null; }; // a newer version needs the database: let it open
       resolve(_pdfDB.db);
     };
     req.onerror = () => reject(req.error);
@@ -991,7 +992,7 @@ async function signOut() {
   // B2: clear the Supabase session first (CH_AUTH.signOut clears it locally even if the network call fails).
   if (window.CH_AUTH && typeof window.CH_AUTH.signOut === 'function') await window.CH_AUTH.signOut();
   if (window.CH_AUTH && window.CH_AUTH.clearSavedUser) window.CH_AUTH.clearSavedUser();
-  window.location.href = 'index.html';
+  window.top.location.href = 'index.html'; // the top window is the shell (energy-department.html): it goes to the sign-in page, not its frame
 }
 // Initials for the top-bar badge: first letters of the first two name parts, or the first two letters of a single part (an email uses the part before @).
 function userInitials(name) {

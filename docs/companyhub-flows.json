@@ -198,6 +198,19 @@
           "keyFiles": ["app/auto-repair.js", "computations/bill-repair.js", "app/bill-analysis.js (extractBillsFromText)", "tools/gate-auto-repair.js"]
         },
         {
+          "id": "version-update-swap",
+          "name": "Update to a new version by frame swap (no reload)",
+          "description": "energy-department.html opened as the top window over http(s) is a shell: one full-window frame that runs the app (inline script at the first line of the file). A new version is swapped in by starting a second frame behind the first and removing the first when the second has drawn the saved page. The top window never navigates. file:// pages, frames and browser automation (unless ?shell=1) start the app directly.",
+          "steps": [
+            "_checkForVersionUpdate (app/report-engine.js) finds that CH_VERSION in site-ui.js differs from RELEASE_NOTES[0].v",
+            "_updateWhenSafe: chSafeToReload() AND (user away OR just changed page): _startVersionSwap saves the page state and a snapshot (last page change, user input count) and calls parent.chShell.swap",
+            "The shell adds a hidden, inert frame behind the first; it starts the new version with no login screen and no What's New, restores page, project, tab, sub-tab and scroll",
+            "_announceFrameReady: when #app is visible and the saved scroll is restored, the new frame calls parent.chShell.ready",
+            "The shell asks the old frame chSwapStillValid() (still safe, no page change, no input); yes = remove the old frame in the same task, focus the new one; no or 30 s = remove the new frame, chSwapAborted() clears the markers, try again at the next page change or away moment"
+          ],
+          "keyFiles": ["energy-department.html (FRAME SHELL script)", "app/report-engine.js (_startVersionSwap, chSwapStillValid, _announceFrameReady)", "netlify.toml (X-Frame-Options SAMEORIGIN)", "tools/test-update-frame-swap.js"]
+        },
+        {
           "id": "project-calendar-feed",
           "name": "Project page, Calendar tab: calendar feed and what changed",
           "description": "The Calendar feed panel (app/project-calendar.js, container pcal-panel-<pid> in the Calendar tab) shows the feed copy and the changes since the last sync. Opening the page or the tab makes no call. Only the Sync button calls the Netlify function calendar-fetch (netlify/functions/calendar-fetch.mjs, same sign-in check as kv-sync via netlify/lib/auth.js), which downloads and reads the feed (netlify/functions/lib/calendar/). The browser compares the new copy with the stored copy with CalendarDiff.diffSnapshots (app/calendar-diff.js, the only comparison). A change is a different title, start, end, all-day flag or location. Only events inside the overlap of the old and new sync windows count as added or removed. Stored in three shared keys per project: en_cal_cfg_<pid> (feed address), en_cal_snap_<pid> (last copy), en_cal_hist_<pid> (sync history, merged by id).",

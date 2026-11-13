@@ -2507,6 +2507,12 @@ async function siteResetAllMeterTableSettings() {
    site-ui.js delegates to this array and should NOT maintain its own copy.
 */
 var RELEASE_NOTES = [
+  { v: 'v2026.11.12.281', date: '2026-11-12', title: 'Site updates with no reload and no blank screen',
+    items: [
+      { type: 'change', text: 'A new version now loads behind the page you see. When it is ready, it takes the place of the old page in one step. The page does not reload, and you see no blank or loading screen.' },
+      { type: 'change', text: 'The update still happens when you change page or tab, or when you are in another window. If you type or click while it loads, it waits for the next page change.' },
+      { type: 'change', text: 'The sidebar link is now "New version: update". It shows only while you have unsaved work or an open dialog.' }
+    ] },
   { v: 'v2026.11.12.280', date: '2026-11-12', title: 'Site updates load when you change page',
     items: [
       { type: 'change', text: 'When a new version is live, it loads the next time you go to another page or tab, and you stay on the page you chose. You do not need to reload. A page change also checks for a new version (at most once a minute).' },

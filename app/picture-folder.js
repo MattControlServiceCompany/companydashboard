@@ -60,6 +60,9 @@ function _pictureFolderOpenDb() {
       if (!db.objectStoreNames.contains(PICTURE_FOLDER_SAVED_STORE)) db.createObjectStore(PICTURE_FOLDER_SAVED_STORE);
     };
     request.onsuccess = function () {
+      request.result.onversionchange = function () {
+        request.result.close(); // a newer version (another frame or tab) needs the database: let it open
+      };
       resolve(request.result);
     };
     request.onerror = function () {

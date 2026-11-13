@@ -203,7 +203,7 @@
       btn.textContent = 'Sign in';
       btn.onclick = function () {
         if (window.CH_AUTH && window.CH_AUTH.clearSavedUser) window.CH_AUTH.clearSavedUser();
-        window.location.href = 'index.html';
+        window.top.location.href = 'index.html'; // the top window is the shell (energy-department.html)
       };
       el.appendChild(btn);
     }

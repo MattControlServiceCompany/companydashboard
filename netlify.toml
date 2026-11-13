@@ -12,10 +12,13 @@
 # combine restrictively with those per-page meta tags and could break the
 # app. If a site-wide CSP is ever wanted, it must be reconciled with every
 # page's existing meta tag first, not bolted on here.
+# X-Frame-Options SAMEORIGIN (was DENY): energy-department.html runs inside a frame of itself (the update shell), so the site must be
+# allowed to frame itself. No other site may. No CSP header is set here (see above), so there is no frame-ancestors; the meta
+# CSP tags cannot carry frame-ancestors.
 [[headers]]
   for = "/*"
   [headers.values]
-    X-Frame-Options = "DENY"
+    X-Frame-Options = "SAMEORIGIN"
     X-Content-Type-Options = "nosniff"
     Referrer-Policy = "strict-origin-when-cross-origin"
     Permissions-Policy = "camera=(), microphone=(), geolocation=()"

@@ -230,7 +230,7 @@ const ok = (body) => ({ ok: true, status: 200, json: async () => body });
     const m = core.match(/async function signOut\(\) \{[\s\S]*?\n\}/);
     assert.ok(m, 'signOut not async');
     assert.ok(m[0].indexOf('await window.CH_AUTH.signOut()') > -1);
-    assert.ok(m[0].indexOf('await window.CH_AUTH.signOut()') < m[0].indexOf('window.location.href'));
+    assert.ok(m[0].indexOf('await window.CH_AUTH.signOut()') < m[0].indexOf('location.href'));
   });
   await t('B2 ch-auth: needsSignIn only on the sync host while signed out', () => {
     const src = fs.readFileSync(path.join(__dirname, 'app', 'ch-auth.js'), 'utf8');
@@ -3984,7 +3984,7 @@ await t(
   },
 );
 await t(
-  "CREDIT7 version check: no timer, one small Range GET of site-ui.js, compares CH_VERSION, 60 s limit, reload only while the user is away",
+  "CREDIT7 version check: no timer, one small Range GET of site-ui.js, compares CH_VERSION, 60 s limit, the swap runs only while the user is away or changing page",
   async () => {
     const src = fs.readFileSync(path.join(__dirname, "app", "report-engine.js"), "utf8");
     const a = src.indexOf("let _chVerLastCheck");
@@ -4000,53 +4000,55 @@ await t(
     assert.strictEqual(gets.length, 1, "exactly one request");
     assert.ok(/CH_VERSION/.test(block) && /loadedVer !== fetchedVer/.test(block), "compares the version string");
     assert.ok(/_CH_VER_MIN_GAP_MS\s*=\s*60 \* 1000/.test(block), "60 second limit");
-    // Rule since v.270: the reload (not the check) runs only while the user is away; see CREDIT8 and tools/test-update-reload-state.js.
-    assert.ok(/_userIsAway\(\)/.test(src.slice(src.indexOf("function _reloadForNewVersionWhenSafe"), b)), "the update reload waits for the user to be away");
+    // The swap (not the check) runs only while the user is away or changing page; see CREDIT8 and tools/test-update-reload-state.js.
+    assert.ok(/_userIsAway\(\)/.test(src.slice(src.indexOf("function _updateWhenSafe"), b)), "the update swap waits for the user to be away");
     assert.ok(/addEventListener\('visibilitychange'/.test(init) && /addEventListener\('focus'/.test(init) && /addEventListener\('blur'/.test(init));
   },
 );
 
 await t(
-  "CREDIT8 automatic reload to a new version: reloads only when safe; no timer, no extra server call",
+  "CREDIT8 automatic swap to a new version: swaps only when safe; no reload, no timer, no extra server call",
   async () => {
     const src = fs.readFileSync(path.join(__dirname, "app", "report-engine.js"), "utf8");
     const a = src.indexOf("function chSafeToReload");
     const b = src.indexOf("/* The version baked into the code");
-    assert.ok(a > 0 && b > a, "reload block found");
+    assert.ok(a > 0 && b > a, "swap block found");
     const block = src.slice(a, b);
-    assert.ok(!/fetch\(|setInterval/.test(block), "the reload block makes no request and no loop");
+    assert.ok(!/fetch\(|setInterval/.test(block), "the swap block makes no request and no loop");
+    assert.ok(!/location\.reload|location\.replace|location\.href\s*=/.test(block), "the swap block never reloads or moves the top window");
     function run(w, doc) {
-      const log = { reloads: 0, toasts: [], saves: 0, timers: [] };
+      const log = { swaps: 0, toasts: [], saves: 0, timers: [] };
+      w.parent = { chShell: { swap: () => (log.swaps++, true) } }; // the update shell (top of energy-department.html)
+      w.addEventListener = () => {};
       const sandbox = {
         window: w,
         document: doc || { hidden: false },
-        sessionStorage: { _v: {}, getItem(k) { return this._v[k] || null; }, setItem(k, v) { this._v[k] = v; } },
+        sessionStorage: { _v: {}, getItem(k) { return this._v[k] || null; }, setItem(k, v) { this._v[k] = v; }, removeItem(k) { delete this._v[k]; } },
         showToast: (m) => log.toasts.push(m),
         _savePageStateForVersionUpdate: () => log.saves++,
-        location: { reload: () => log.reloads++ },
         setTimeout: (f, ms) => { log.timers.push({ f, ms }); return log.timers.length; },
       };
       vm.createContext(sandbox);
-      vm.runInContext(block + "; this.go = (v) => { _chPendingVer = v; _reloadForNewVersionWhenSafe(); }; this.safe = chSafeToReload;", sandbox);
+      vm.runInContext(block + "; this.go = (v) => { _chPendingVer = v; _updateWhenSafe(); }; this.safe = chSafeToReload;", sandbox);
       return { sandbox, log };
     }
     const base = () => ({ DB: { getQueueDepth: () => 0, hasPendingWrites: () => false } });
-    // The user is away (tab hidden): the reload may run. The user is looking at the page: it must not (v.270 rule).
+    // The user is away (tab hidden): the swap may run. The user is looking at the page: it must not.
     const away = { hidden: true };
     let r = run(base(), { hidden: false });
     r.sandbox.go("v999");
-    assert.strictEqual(r.log.toasts.length + r.log.timers.length + r.log.reloads, 0, "page visible and focused: no reload");
-    // safe and away: no toast, no timer; the page state is saved and the page reloads at once (the user does not see it)
+    assert.strictEqual(r.log.toasts.length + r.log.timers.length + r.log.swaps, 0, "page visible and focused: no swap");
+    // safe and away: no toast, no timer; the page state is saved and the shell starts the new frame at once
     r = run(base(), away);
     r.sandbox.go("v999");
     assert.deepStrictEqual(r.log.toasts, []);
     assert.strictEqual(r.log.timers.length, 0);
-    assert.strictEqual(r.log.reloads, 1);
-    assert.strictEqual(r.log.saves, 1, "page state saved before the reload");
-    // second time for the same version in this session: no loop
+    assert.strictEqual(r.log.swaps, 1);
+    assert.strictEqual(r.log.saves, 1, "page state saved before the swap");
+    // second time for the same version in this session: no loop (the shell has not dropped the swap, so it stays one)
     r.sandbox.go("v999");
-    assert.strictEqual(r.log.reloads, 1, "no second reload for the same version");
-    // each blocker stops the reload
+    assert.strictEqual(r.log.swaps, 1, "no second swap for the same version");
+    // each blocker stops the swap
     const blockers = {
       "queued write": (w) => (w.DB.getQueueDepth = () => 1),
       "write in flight": (w) => (w.DB.hasPendingWrites = () => true),
@@ -4060,22 +4062,22 @@ await t(
       blockers[name](w);
       r = run(w, away);
       r.sandbox.go("v999");
-      assert.strictEqual(r.log.toasts.length + r.log.timers.length + r.log.reloads, 0, name + ": no toast, no reload");
+      assert.strictEqual(r.log.toasts.length + r.log.timers.length + r.log.swaps, 0, name + ": no toast, no swap");
       assert.strictEqual(r.sandbox.safe(), false, name + ": not safe");
     }
-    // blocker cleared: the next retry reloads
+    // blocker cleared: the next retry swaps
     const w = base();
     w.chViewIsDirty = () => true;
     r = run(w, away);
     r.sandbox.go("v999");
-    assert.strictEqual(r.log.reloads, 0, "dirty view: no reload");
+    assert.strictEqual(r.log.swaps, 0, "dirty view: no swap");
     w.chViewIsDirty = () => false;
     r.sandbox.go("v999");
-    assert.strictEqual(r.log.reloads, 1, "reload after the blocker clears");
-    // window lost focus to another program (tab still visible): the user is away, so the reload runs
+    assert.strictEqual(r.log.swaps, 1, "swap after the blocker clears");
+    // window lost focus to another program (tab still visible): the user is away, so the swap runs
     r = run(base(), { hidden: false, hasFocus: () => false, activeElement: null });
     r.sandbox.go("v999");
-    assert.strictEqual(r.log.reloads, 1, "window without focus: the page reloads");
+    assert.strictEqual(r.log.swaps, 1, "window without focus: the swap starts");
   },
 );
 
