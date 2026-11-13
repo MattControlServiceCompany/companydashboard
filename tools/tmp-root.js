@@ -29,8 +29,11 @@ function profilePath(task, kind) {
 }
 
 // Delete a folder. On Windows a browser can still hold a file for a short time (EPERM/EBUSY): retry with backoff.
+// Under a busy job pool the browser holds the profile longer than 10 s, so wait up to about 60 s (120 x 500 ms),
+// after a short first wait that lets the browser child processes exit.
 function rmTmp(p) {
-  fs.rmSync(p, { recursive: true, force: true, maxRetries: 20, retryDelay: 500 });
+  Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 500);
+  fs.rmSync(p, { recursive: true, force: true, maxRetries: 120, retryDelay: 500 });
 }
 
 module.exports = { tmpRoot, mkTmpDir, tmpPath, profilePath, rmTmp };

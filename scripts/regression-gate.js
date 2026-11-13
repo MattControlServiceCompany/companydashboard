@@ -13,7 +13,7 @@
 //
 // USAGE
 //   node scripts/regression-gate.js [--data <backup.json>] [--oracle <oracle.json>]
-//        [--skip-reconcile] [--capture-baseline] [--json <out.json>]
+//        [--skip-reconcile] [--capture-baseline] [--json <out.json>] [--jobs N]
 //   Default --data   = the file named in the oracle (oracle._input.backupFile, looked up in <home>\Downloads). If it is
 //     missing the gate fails; it NEVER falls back to the newest file. --data overrides.
 //   Default --oracle = <context dir>\reference\known-good-values\regression-oracle.json  (context dir = CH_CONTEXT_DIR, default <home>\AI\_context)
@@ -756,9 +756,9 @@ async function main() {
     if (TEST_EXCLUDE[f]) add('feature-tests', f, 'INFO', 'EXCLUDED: ' + TEST_EXCLUDE[f]);
     return !TEST_EXCLUDE[f];
   });
-  // ---- job pool: static gates, reconciliation and feature tests, 3 child processes at a time, known slow jobs first ----
+  // ---- job pool: static gates, reconciliation and feature tests, N child processes at a time (--jobs), known slow jobs first ----
   // Feature tests stop after 240 s; gates and the reconciliation after 600 s.
-  const SLOW_FIRST = ['tools/gate-read-chain-correction.js', 'tools/test-physics-single-source.js', 'scripts/verify-report-reconciliation.js', 'tools/test-pdf-view-after-reload.js', 'tools/test-bill-corrections-review.js', 'tools/gate-single-bill-flag-count.js', 'tools/gate-bill-flag-behavior.js'];
+  const SLOW_FIRST = ['tools/gate-read-chain-correction.js', 'tools/test-physics-single-source.js', 'tools/test-matrix-sync-put-bodies.js', 'tools/test-no-grey-text.js', 'tools/test-fan-savings.js', 'tools/test-report-download-buttons.js', 'tools/test-pdf-view-after-reload.js', 'tools/test-bill-corrections-review.js', 'scripts/verify-report-reconciliation.js', 'tools/test-ocr-review-bar.js', 'test-estimate-workbook-export.js', 'test-auto-sync-remote-refresh.js', 'tools/test-report-header-overflow.js', 'test-equipment-matrix-render-performance.js', 'test-sync-golive-blockers.js', 'tools/gate-single-bill-flag-count.js', 'tools/gate-bill-flag-behavior.js']; // measured 2026-11-12, slowest first
   const jobs = staticGates
     .map((f) => ({ group: 'static-gates', f, ms: 600000 }))
     .concat(reconcile ? [{ group: 'reconciliation', f: 'scripts/verify-report-reconciliation.js', ms: 600000 }] : [])
@@ -767,6 +767,12 @@ async function main() {
   jobs.sort((a, b) => rank(a) - rank(b));
   if (liveGroup) liveLine(liveGroup);
   liveGroup = null;
+  const jobTimes = [];
+  // Pool size: --jobs N, else DEFAULT_JOBS capped by CPU count and free memory (about 1.5 GB per job).
+  const DEFAULT_JOBS = 6;
+  const poolCap = Math.max(1, Math.min(os.cpus().length - 2, Math.floor(os.freemem() / 1.5e9)));
+  const poolSize = args.jobs && args.jobs !== true && parseInt(args.jobs, 10) > 0 ? parseInt(args.jobs, 10) : Math.min(DEFAULT_JOBS, poolCap);
+  console.log('job pool: ' + poolSize + ' child processes at a time');
   const runJob = (j) =>
     new Promise((resolve) => {
       const cp = require('child_process').spawn(process.execPath, [j.f], {
@@ -777,9 +783,11 @@ async function main() {
       let out = '';
       cp.stdout.on('data', (c) => (out += c));
       cp.stderr.on('data', (c) => (out += c));
+      const jt0 = Date.now();
       const timer = setTimeout(() => cp.kill(), j.ms);
       cp.on('close', (code) => {
         clearTimeout(timer);
+        jobTimes.push({ job: j.f, group: j.group, secs: Math.round((Date.now() - jt0) / 100) / 10 });
         const lines = out.trim().split(/\r?\n/);
         const bad = lines.filter((l) => /FAIL|VIOLATION|FATAL|ERROR/i.test(l)).slice(0, 6);
         const tail = (bad.length ? bad : lines.slice(-3)).join(' | ').slice(0, 300);
@@ -787,7 +795,7 @@ async function main() {
         resolve();
       });
     });
-  await Promise.all([1, 2, 3].map(async () => { while (jobs.length) await runJob(jobs.shift()); }));
+  await Promise.all(Array.from({ length: poolSize }, async () => { while (jobs.length) await runJob(jobs.shift()); }));
   POOL_GROUPS.forEach((g) => live[g] && liveLine(g));
 
   // ---- temp-leak guard: the run (gate + every test) must leave nothing in its own run folder under CH_TMP_ROOT ----
@@ -904,13 +912,17 @@ async function main() {
     diffs.slice(0, 40).forEach((d) => console.log('  ' + d));
     if (diffs.length > 40) console.log('  ... ' + (diffs.length - 40) + ' more');
   }
+  if (jobTimes.length) {
+    console.log('\n---- 15 slowest pool jobs (pool ' + poolSize + ') ----');
+    jobTimes.slice().sort((a, b) => b.secs - a.secs).slice(0, 15).forEach((t) => console.log('  ' + String(t.secs).padStart(7) + ' s  ' + t.job));
+  }
   const nFail = results.filter((r) => r.status === 'FAIL').length;
   const nX = results.filter((r) => r.status === 'XFAIL').length;
   const secs = Math.round((Date.now() - t0) / 1000);
   console.log(
     `\nREGRESSION GATE${FAST ? ' (FAST)' : ''} ${nFail ? 'FAIL' : 'PASS'}: ${results.filter((r) => r.status === 'PASS').length} pass, ${nFail} fail, ${nX} known-defect (XFAIL)  in ${secs}s`,
   );
-  if (args.json && args.json !== true) fs.writeFileSync(args.json, JSON.stringify({ results, probe, diffs }, null, 1));
+  if (args.json && args.json !== true) fs.writeFileSync(args.json, JSON.stringify({ results, probe, diffs, jobTimes }, null, 1));
   process.exit(nFail ? 1 : 0);
 }
 

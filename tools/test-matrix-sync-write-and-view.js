@@ -97,7 +97,8 @@ async function expireAction(page) {
   page.on('pageerror', (e) => errs.push(String(e)));
   try {
     await page.goto(SITE, { waitUntil: 'networkidle', timeout: 60000 });
-    await page.waitForTimeout(1200);
+    // Ready condition (not a fixed time): the app functions this test calls exist.
+    await page.waitForFunction(() => typeof DB !== 'undefined' && typeof closeQuickStart === 'function' && typeof loadCoreLists === 'function' && typeof renderProjTable === 'function' && typeof emRenderMatrix === 'function', null, { timeout: 90000 });
     await page.evaluate(() => typeof closeQuickStart === 'function' && closeQuickStart());
     const demo = page.locator('button.btn-demo, button:has-text("Continue as Demo"), button:has-text("Continue in Demo Mode")');
     if ((await demo.count()) > 0) await demo.first().click({ force: true });
@@ -111,11 +112,12 @@ async function expireAction(page) {
     await page.evaluate(() => { loadCoreLists(true); });
     await seedMatrix(page);
     await page.evaluate(() => { sv('projects'); renderProjTable(); });
-    await page.waitForTimeout(800);
-    await page.locator('#projTableBody tr', { hasText: 'Fixture Project' }).first().locator('td').first().click();
-    await page.waitForTimeout(1500);
-    await page.locator('button:has-text("Equipment Matrix")').first().click();
-    await page.waitForTimeout(2000);
+    await page.locator('#projTableBody tr', { hasText: 'Fixture Project' }).first().waitFor({ state: 'visible', timeout: 90000 });
+    await page.evaluate(() => typeof closeQuickStart === 'function' && closeQuickStart());
+    await page.locator('#projTableBody tr', { hasText: 'Fixture Project' }).first().locator('td').first().click({ timeout: 90000 });
+    await page.locator('button:has-text("Equipment Matrix")').first().waitFor({ state: 'visible', timeout: 90000 });
+    await page.locator('button:has-text("Equipment Matrix")').first().click({ timeout: 90000 });
+    await page.locator('#em-clear-all-btn').waitFor({ state: 'attached', timeout: 90000 }).catch(() => {});
     assert((await page.locator('#em-clear-all-btn').count()) === 1, 'matrix toolbar is shown for the synthetic project');
 
     // ---- Defect 3: view and edit mode survive a remote refresh ----
