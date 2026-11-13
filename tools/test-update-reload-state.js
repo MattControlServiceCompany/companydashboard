@@ -86,7 +86,8 @@ const state = () => ({
     eq([before.view, before.detail, before.proj, before.tab, before.sub], ['view-projects', true, PID, 'eq-matrix', 'setpoints'], 'before update: project, tab, sub-tab');
     // 2. a new version is live: use the real auto-update path and wait for the reload
     await page.evaluate(() => localStorage.setItem('ch_seen_version', 'v0.0.0.0')); // user has not read the new notes
-    // While the user looks at the page, no reload happens.
+    // While the user looks at the page, no reload happens (wait past the 3 s that follow a page change).
+    await page.waitForTimeout(3300);
     const stayed = await page.evaluate(() => {
       _chPendingVer = 'v9999.01.01.1';
       _reloadForNewVersionWhenSafe();

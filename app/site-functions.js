@@ -2507,6 +2507,11 @@ async function siteResetAllMeterTableSettings() {
    site-ui.js delegates to this array and should NOT maintain its own copy.
 */
 var RELEASE_NOTES = [
+  { v: 'v2026.11.12.280', date: '2026-11-12', title: 'Site updates load when you change page',
+    items: [
+      { type: 'change', text: 'When a new version is live, it loads the next time you go to another page or tab, and you stay on the page you chose. You do not need to reload. A page change also checks for a new version (at most once a minute).' },
+      { type: 'change', text: 'With unsaved work, an open dialog or a running extraction, the update waits. The "New version: reload" link shows only then.' }
+    ] },
   { v: 'v2026.11.12.279', date: '2026-11-12', title: 'District Calendar: scheduling group members, groups inside groups, and the Area of each room',
     items: [
       { type: 'feature', text: 'Import scheduling groups also reads the group members file (building, group, member). Pick it together with the Schedule Instances report. The members of each group in the file replace the saved members of that group.' },
