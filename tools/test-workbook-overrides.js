@@ -350,6 +350,8 @@ function auditBox(store, srcs) {
     sb.buildComplianceRows = () => T.compliance;
     sb.buildRecommendedRows = () => T.recommended;
     sb.buildFullScopeRows = () => T['full-scope'];
+    // The tier summary reads each tier through _pricingTierRowsSplit (base rows + optional zone CO2 rows). Synthetic tiers have no optional rows.
+    sb._pricingTierRowsSplit = (p, t) => ({ base: T[t], optional: [] });
     sb._pricingApplyLaborOverrides = (p, r) => r;
     sb._pricingApplyQtyOverrides = (p, r) => r;
     sb._pricingGetEstimate = () => est;
@@ -358,7 +360,7 @@ function auditBox(store, srcs) {
 
   // The phase split (Phase 2 = programming alone, Phase 1 = rest) deliberately differs from live v.63; compare everything else (per-building hw/lb/total shares follow the split too).
   const nonPhase = (t, shares) =>
-    JSON.parse(JSON.stringify(t, (k, v) => (k === 'phase1' || k === 'phase2' || k === 'rowShares' || (shares && (k === 'hw' || k === 'lb' || k === 'total')) ? undefined : v)));
+    JSON.parse(JSON.stringify(t, (k, v) => (k === 'phase1' || k === 'phase2' || k === 'rowShares' || k === 'optional' || (shares && (k === 'hw' || k === 'lb' || k === 'total')) ? undefined : v)));
   // C1. nothing stored: totals, summary data, export sets identical to live v.63; nothing written
   {
     const store = { en_pricing_catalog: catalog };

@@ -3162,12 +3162,70 @@ function buildSensorInvestigationRows(projId) {
    Savings-type sequences (SAT reset, DSP reset, DCV, etc.) are NOT compliance
    items — they live in Recommended (budget-fit) and Full Scope (all).
    ─────────────────────────────────────────────────────────────────────────── */
-function buildComplianceRows(projId) {
+function _pricingComplianceRowsAll(projId) {
   return buildCatalogRows(projId).filter(function (row) {
     if (row.phase === 1) return true;
     var def = SEQUENCE_SAVINGS_IMPACT[row.seqKey];
     return !!(def && def.type === 'safety');
   });
+}
+
+/* ── Optional zone CO2 scope (Matt, 2026-11-13) ──────────────────────────────────────────────
+   Owner decision: "for G36 we call out the zones that lack CO2 sensors but in our proposal we
+   show it as an optional scope to include." The ASHRAE 36 Audit Report still lists those zones
+   (it reads buildCatalogRows and the Equipment Matrix, not these tier builders). In every cost
+   tier (Compliance, Recommended, Full Scope) the zone CO2 scope is NOT in the base total; it is
+   listed apart as the "Optional: Zone CO2 Sensors" section with its own quantity and cost.
+
+   ONE rule decides what is optional: _pricingIsOptionalZoneCo2Row. Zone CO2 scope is
+     - phase 1 hardware rows whose _pointKey is co2_zone or co2_zone_standalone (any zone
+       category: vav, fpb, ddvav, fcu, ...; both the required-gap rows from buildCatalogRows and the
+       beyond-compliance rows from buildOptionalPointRows), and
+     - phase 2 vav_dcv programming rows of the 'gap' group (zones that still need the sensor).
+       The 'ready' group (zones that already have the sensor) is base scope: nothing there waits
+       for a sensor the client has to buy.
+   Air handler CO2 (co2_ahu, demandCtrl) is not optional. Zones exempt by space type (restroom,
+   corridor, mechanical) never reach buildCatalogRows as a CO2 gap (emComputeCompliance marks the
+   category N/A), so they are in neither section.
+   The three public tier builders return the BASE rows. buildOptionalZoneCo2Rows returns the
+   optional rows of the same tier. _pricingTierRowsSplit returns both from one build.
+   ─────────────────────────────────────────────────────────────────────────── */
+var PRICING_OPTIONAL_ZONE_CO2_LABEL = 'Optional: Zone CO2 Sensors';
+var PRICING_OPTIONAL_ZONE_CO2_POINT_KEYS = { co2_zone: true, co2_zone_standalone: true };
+function _pricingIsOptionalZoneCo2Row(row) {
+  if (!row) return false;
+  if (row.phase === 1) return !!PRICING_OPTIONAL_ZONE_CO2_POINT_KEYS[row._pointKey];
+  return row.phase === 2 && row.seqKey === 'vav_dcv' && row._hwGroup === 'gap';
+}
+function _pricingSplitOptionalZoneCo2(rows) {
+  var base = [];
+  var optional = [];
+  (rows || []).forEach(function (r) {
+    (_pricingIsOptionalZoneCo2Row(r) ? optional : base).push(r);
+  });
+  return { base: base, optional: optional };
+}
+// tier: 'compliance' | 'recommended' | 'full-scope'. One build of the tier, split by the rule above.
+function _pricingTierRowsSplit(projId, tier) {
+  var all =
+    tier === 'recommended'
+      ? _pricingRecommendedRowsAll(projId)
+      : tier === 'full-scope'
+        ? _pricingFullScopeRowsAll(projId)
+        : _pricingComplianceRowsAll(projId);
+  return _pricingSplitOptionalZoneCo2(all);
+}
+function buildComplianceRows(projId) {
+  return _pricingTierRowsSplit(projId, 'compliance').base;
+}
+function buildRecommendedRows(projId) {
+  return _pricingTierRowsSplit(projId, 'recommended').base;
+}
+function buildFullScopeRows(projId) {
+  return _pricingTierRowsSplit(projId, 'full-scope').base;
+}
+function buildOptionalZoneCo2Rows(projId, tier) {
+  return _pricingTierRowsSplit(projId, tier).optional;
 }
 
 /* ── Label helpers ── */
@@ -3787,6 +3845,115 @@ function _pricingBothRecAmount(recRow, recTotals) {
     return sh != null ? sh : null;
   }
   return recRow.lineTotal;
+}
+
+/* ── Optional zone CO2 section: quantity and cost (Matt, 2026-11-13) ──────────────────────────
+   rows: the optional rows of one tier (labor and quantity overrides already applied; see
+   _pricingIsOptionalZoneCo2Row for the rule). Returns the section's figures; every output (tab,
+   proposal, Excel) reads these, none adds its own.
+     sensorQty — zone CO2 sensors in the section (included phase 1 rows)
+     totals    — _pricingComputeTotals of the optional rows priced on their own, same method
+                 (hourly or workbook) as the tier total. Base + optional can differ from the old
+                 single total only by workbook rounding and fixed workbook lines.
+   ─────────────────────────────────────────────────────────────────────────── */
+function _pricingOptionalZoneCo2Summary(projId, estimate, rows) {
+  var toggles = (estimate && estimate.rowToggles) || {};
+  var sensorQty = 0;
+  rows.forEach(function (r) {
+    if (r.phase === 1 && toggles[r._baseId || r.id] !== false) sensorQty += r.qty || 0;
+  });
+  var totals = rows.length ? _pricingComputeTotals(rows, estimate, projId) : null;
+  // The same sensors must show the same hardware figure in every tier. The workbook split is
+  // phase1 = grand - phase2, so programming rows that join the pricing move the hardware figure by
+  // a few dollars. Hardware here = the hardware rows priced alone (same method); programming = the
+  // rest, so hardware + programming still equals the section total.
+  if (totals && totals.method === 'workbook' && totals.grand !== null && totals.phase2) {
+    var hwRows = rows.filter(function (r) {
+      return r.phase === 1;
+    });
+    var hwAlone = hwRows.length ? _pricingComputeTotals(hwRows, estimate, projId) : null;
+    if (hwAlone && hwAlone.grand !== null) {
+      totals.phase1 = hwAlone.grand;
+      totals.phase2 = Math.round((totals.grand - hwAlone.grand) * 100) / 100;
+    }
+  }
+  return {
+    label: PRICING_OPTIONAL_ZONE_CO2_LABEL,
+    rows: rows,
+    sensorQty: sensorQty,
+    totals: totals,
+  };
+}
+
+/* Cost Estimate tab: the "Optional: Zone CO2 Sensors" section. Read-only. rawRows = the optional rows of
+   the tier the tab shows (from _pricingTierRowsSplit, the same build that gave the base rows).
+   Quantity and cost come from _pricingOptionalZoneCo2Summary / _pricingComputeFilteredTotals, the same
+   functions the proposal and the Excel export read. Returns '' when the tier has no optional rows. */
+function _pricingOptionalZoneCo2HTML(projId, rawRows) {
+  if (!rawRows || !rawRows.length) return '';
+  var estimate = _pricingGetEstimate(projId);
+  var all = _pricingApplyQtyOverrides(projId, _pricingApplyLaborOverrides(projId, rawRows));
+  var filterBldg = _pricingBldgFilter[projId] || '';
+  var shown = filterBldg
+    ? all.filter(function (r) {
+        return r.building === filterBldg;
+      })
+    : all;
+  if (!shown.length) return '';
+  var toggles = estimate.rowToggles || {};
+  var totals = _pricingComputeFilteredTotals(all, shown, estimate, projId);
+  var shares = totals.rowShares || null;
+  var included = shown.filter(function (r) {
+    return toggles[r._baseId || r.id] !== false;
+  });
+  var sensorQty = included.reduce(function (n, r) {
+    return r.phase === 1 ? n + (r.qty || 0) : n;
+  }, 0);
+  var th =
+    'background:var(--s1);color:var(--text2);font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:0.5px;' +
+    'padding:8px 10px;white-space:nowrap;border-right:1px solid var(--border);border-bottom:1px solid var(--border2);';
+  var td =
+    'padding:6px 10px;border-right:1px solid var(--border);border-bottom:1px solid var(--border);font-size:11px;' +
+    'font-variant-numeric:tabular-nums;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:260px;';
+  var num = td + 'text-align:right;';
+  var money = function (v) {
+    return v === null || v === undefined || isNaN(v) ? '—' : _pricingFmt(v);
+  };
+  var body = included
+    .map(function (r) {
+      var amt = shares ? shares[r._baseId || r.id] : r.lineTotal;
+      return (
+        '<tr><td style="' + td + '">' + _escHtml(r.building) + '</td>' +
+        '<td style="' + td + '">' + _escHtml(r.item) + '</td>' +
+        '<td style="' + td + '">' + _escHtml(r.equipment) + '</td>' +
+        '<td style="' + td + '">' + (r.phase === 1 ? 'Hardware and installation' : 'Programming') + '</td>' +
+        '<td style="' + num + '">' + (r.qty || 0) + '</td>' +
+        '<td style="' + num + '">' + money(amt) + '</td></tr>'
+      );
+    })
+    .join('');
+  var tf =
+    'padding:6px 10px;background:var(--s1);font-weight:700;border-top:2px solid var(--border2);border-right:1px solid var(--border);' +
+    'font-variant-numeric:tabular-nums;white-space:nowrap;';
+  var foot =
+    '<tr><td style="' + tf + '" colspan="4">Hardware and installation</td><td style="' + tf + 'text-align:right">' + sensorQty +
+    ' sensors</td><td style="' + tf + 'text-align:right">' + money(totals.phase1) + '</td></tr>' +
+    '<tr><td style="' + tf + '" colspan="5">Programming</td><td style="' + tf + 'text-align:right">' + money(totals.phase2) + '</td></tr>' +
+    '<tr><td style="' + tf + '" colspan="5">' + _escHtml(PRICING_OPTIONAL_ZONE_CO2_LABEL) + ' total (not in the totals above)</td>' +
+    '<td style="' + tf + 'text-align:right">' + money(totals.grand) + '</td></tr>';
+  return (
+    '<div id="pricing-optional-zone-co2-' + projId + '" style="flex-shrink:0;margin:10px 14px 14px">' +
+    '<div style="font-weight:700;color:var(--text2);margin-bottom:4px;font-size:11px;text-transform:uppercase;letter-spacing:0.5px">' +
+    _escHtml(PRICING_OPTIONAL_ZONE_CO2_LABEL) + '</div>' +
+    '<div style="font-size:10px;color:var(--text3);margin-bottom:6px">Zones with no carbon dioxide sensor. The audit report lists them. ' +
+    'This work is not in the tier total. The client can add it.</div>' +
+    '<div class="ch-tbl-outer" style="border:1px solid var(--border);border-radius:6px;overflow:hidden"><div class="ch-tbl-scroll" style="overflow-x:auto">' +
+    '<table class="ch-tbl" style="border-collapse:separate;border-spacing:0;width:100%;font-size:12px;color:var(--text)">' +
+    '<thead><tr><th style="' + th + 'text-align:left">Building</th><th style="' + th + 'text-align:left">Item</th>' +
+    '<th style="' + th + 'text-align:left">Equipment</th><th style="' + th + 'text-align:left">Work</th>' +
+    '<th style="' + th + 'text-align:right">Quantity</th><th style="' + th + 'text-align:right;border-right:none">Line Total</th></tr></thead>' +
+    '<tbody>' + body + '</tbody><tfoot>' + foot + '</tfoot></table></div></div></div>'
+  );
 }
 
 /* ── Main Tab Renderer ── */
@@ -4430,7 +4597,7 @@ function _pricingFindCheapestSku(pointKey, catalog, cfg) {
    4. Kept rows (sequence + its claimed hardware) are returned in the
       existing building-grouped / phase-sorted order.
    ─────────────────────────────────────────────────────────────────────────── */
-function buildRecommendedRows(projId) {
+function _pricingRecommendedRowsAll(projId) {
   // Start from the FULL catalog (every hardware gap + every applicable
   // sequence), not the Compliance-restricted subset — Recommended candidates
   // include savings sequences Compliance no longer carries.
@@ -4912,7 +5079,7 @@ function buildOptionalPointRows(projId) {
    Ordering: Full Scope >= Compliance in every building (structural
    guarantee); Full Scope ⊇ Compliance and ⊇ Recommended's _baseId sets.
    ─────────────────────────────────────────────────────────────────────────── */
-function buildFullScopeRows(projId) {
+function _pricingFullScopeRowsAll(projId) {
   var catRows = buildCatalogRows(projId);
   if (!catRows.length) return [];
 
@@ -7331,8 +7498,8 @@ function _pricingComputeCondensedRows(rows, estimate) {
    Installation / Programming) still shows its own Subtotal row in the table itself.
    ─────────────────────────────────────────────────────────────────────────── */
 function _pricingRenderCondensedTab(projId, el, estimate, tier) {
-  var builder = tier === 'full-scope' ? buildFullScopeRows : buildComplianceRows;
-  var baseRows = builder(projId);
+  var _tierSplit = _pricingTierRowsSplit(projId, tier === 'full-scope' ? 'full-scope' : 'compliance');
+  var baseRows = _tierSplit.base;
   baseRows = _pricingApplyLaborOverrides(projId, baseRows);
   baseRows = _pricingApplyQtyOverrides(projId, baseRows);
 
@@ -7478,6 +7645,7 @@ function _pricingRenderCondensedTab(projId, el, estimate, tier) {
     '<div class="ch-panel-body" style="flex:1;min-height:220px;overflow:auto;padding-top:10px">',
     _pricingGetShowHardware(projId) ? section('Hardware & Installation', agg.hw) : '',
     section('Programming', agg.lb),
+    _pricingOptionalZoneCo2HTML(projId, _tierSplit.optional),
     emptyState,
     '</div>',
     '<div class="ch-panel-footer" style="display:flex;flex-wrap:wrap;gap:10px 20px;align-items:center;padding:10px 14px;background:var(--s1);border-top:2px solid var(--border2);flex-shrink:0">',
@@ -8952,14 +9120,9 @@ initCostEstimateTab = function initCostEstimateTab(projId) {
     });
   }
 
-  var baseRows;
-  if (tier === 'recommended') {
-    baseRows = buildRecommendedRows(projId);
-  } else if (tier === 'full-scope') {
-    baseRows = buildFullScopeRows(projId);
-  } else {
-    baseRows = buildComplianceRows(projId);
-  }
+  var _tierSplit = _pricingTierRowsSplit(projId, tier === 'recommended' || tier === 'full-scope' ? tier : 'compliance');
+  var baseRows = _tierSplit.base;
+  var optionalZoneCo2Rows = _tierSplit.optional; // shown apart by _pricingOptionalZoneCo2HTML, never in the totals
   var recRows = null;
   if (tier === 'both') {
     recRows = buildRecommendedRows(projId);
@@ -10393,9 +10556,11 @@ initCostEstimateTab = function initCostEstimateTab(projId) {
   // that wins first) — means this combined "extra info" region absorbs whatever slack is left and
   // scrolls internally if it doesn't fit, instead of anything above it being invisibly cut off.
   // Each table's own bounded max-height/scroll (240px / 220px) is unchanged.
+  var optionalZoneCo2HTML = _pricingOptionalZoneCo2HTML(projId, optionalZoneCo2Rows);
   var extraInfoHTML =
-    laborBreakdownHTML || timelineHTML
+    optionalZoneCo2HTML || laborBreakdownHTML || timelineHTML
       ? '<div style="flex:1;min-height:0;overflow:auto;display:flex;flex-direction:column">' +
+        optionalZoneCo2HTML +
         laborBreakdownHTML +
         timelineHTML +
         '</div>'
@@ -10583,7 +10748,8 @@ function _pricingWorkbookPanelHTML(projId, wbSet) {
 
 /* ── Excel export of the Cost Estimate (WP6, 2026-10-01) ─────────────────────────────────────
    Workbook mode only. One file, one sheet set per priced tier (Compliance, Recommended, Full
-   Scope). Each set is filled with the same EstimateWorkbook input _pricingComputeTotals priced the
+   Scope), then one "Opt CO2 <tier>" set per tier for the Optional: Zone CO2 Sensors scope (not in the
+   tier sets). Each set is filled with the same EstimateWorkbook input _pricingComputeTotals priced the
    tier with, so the sheet totals equal the tier footer total. Parts price order is the page's
    (typed manualPrices -> catalog) because the input comes from _pricingComputeTotals itself. */
 var PRICING_EXPORT_TIERS = [
@@ -10602,6 +10768,22 @@ function _pricingExportSets(projId) {
       p.desc = 'Materials, ' + t.label + ' tier';
     });
     sets.push({ name: t.label, input: input, grand: tt.grand, meta: { title: t.label + ' Cost Estimate' } });
+  });
+  // Optional: Zone CO2 Sensors, one set per tier (priced alone through the same workbook). Not in the
+  // tier sets above. The sheet name prefix has room for 19 characters.
+  PRICING_EXPORT_TIERS.forEach(function (t) {
+    var ot = data.optional[t.key] && data.optional[t.key].totals;
+    if (!ot || ot.method !== 'workbook' || ot.grand == null) return;
+    var oInput = JSON.parse(JSON.stringify(ot.workbook.input));
+    (oInput.parts || []).forEach(function (p) {
+      p.desc = 'Zone CO2 sensors, ' + t.label + ' tier (optional)';
+    });
+    sets.push({
+      name: 'Opt CO2 ' + t.label,
+      input: oInput,
+      grand: ot.grand,
+      meta: { title: PRICING_OPTIONAL_ZONE_CO2_LABEL + ', ' + t.label },
+    });
   });
   return sets;
 }
@@ -10699,22 +10881,33 @@ function pricingExportExcel(projId) {
 //   { buildings: [{ building, tiers: { recommended: {items,hw,lb,total}, compliance: {...},
 //                    'full-scope': {...} } }, ...],
 //     tierTotals: { recommended: <totals from _pricingComputeTotals>, compliance: {...},
-//                   'full-scope': {...} } }
+//                   'full-scope': {...} },
+//     perTier: { <tier>: base rows (no optional zone CO2 rows) },
+//     optional: { <tier>: _pricingOptionalZoneCo2Summary(...) } }
 function _pricingComputeSummaryData(projId, estimate) {
   var tierDefs = [
-    { key: 'compliance', builder: buildComplianceRows },
-    { key: 'recommended', builder: buildRecommendedRows },
-    { key: 'full-scope', builder: buildFullScopeRows },
+    { key: 'compliance' },
+    { key: 'recommended' },
+    { key: 'full-scope' },
   ];
   var perTier = {};
   var bldgOrder = [];
   var bldgSeen = {};
 
+  var optionalByTier = {};
   tierDefs.forEach(function (t) {
-    var rows = t.builder(projId);
+    // One build per tier, split by the one optional-zone-CO2 rule: perTier = base rows only,
+    // optional[tier] = the "Optional: Zone CO2 Sensors" section (own quantity and cost).
+    var split = _pricingTierRowsSplit(projId, t.key);
+    var rows = split.base;
     rows = _pricingApplyLaborOverrides(projId, rows);
     rows = _pricingApplyQtyOverrides(projId, rows);
     perTier[t.key] = rows;
+    optionalByTier[t.key] = _pricingOptionalZoneCo2Summary(
+      projId,
+      estimate,
+      _pricingApplyQtyOverrides(projId, _pricingApplyLaborOverrides(projId, split.optional)),
+    );
     rows.forEach(function (r) {
       if (r.building && !bldgSeen[r.building]) {
         bldgSeen[r.building] = true;
@@ -10759,7 +10952,7 @@ function _pricingComputeSummaryData(projId, estimate) {
   // perTier exposed so the client proposal's optional "Itemized Measures" sub-option can
   // aggregate measures across the portfolio without recomputing any pricing. Rows carry the
   // final lineTotal / item name / clientSummary only; no cost build-up. (No new math here.)
-  return { buildings: buildings, tierTotals: tierTotals, perTier: perTier };
+  return { buildings: buildings, tierTotals: tierTotals, perTier: perTier, optional: optionalByTier };
 }
 
 /* ── Phase 4: patch _pricingRefreshFooter to apply labor overrides ──────── */

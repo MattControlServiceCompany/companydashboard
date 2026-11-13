@@ -71,6 +71,8 @@ function make(peSrc, store, tiers) {
     sb.buildComplianceRows = () => tiers.compliance;
     sb.buildRecommendedRows = () => tiers.recommended;
     sb.buildFullScopeRows = () => tiers['full-scope'];
+    // The tier summary reads each tier through _pricingTierRowsSplit (base rows + optional zone CO2 rows). Synthetic tiers have no optional rows.
+    sb._pricingTierRowsSplit = (p, t) => ({ base: tiers[t], optional: [] });
     sb._pricingApplyLaborOverrides = (p, r) => r;
     sb._pricingApplyQtyOverrides = (p, r) => r;
   }
@@ -154,10 +156,10 @@ const plain = (x) => JSON.parse(JSON.stringify(x));
     assert.deepStrictEqual(plain(newC._pricingComputeTotals(T[t], est)), plain(o), 'totals no projId ' + t);
   }
   ok('hourly totals identical to main (3 tiers, with and without projId)');
-  assert.deepStrictEqual(
-    plain(newC._pricingComputeSummaryData('p', est)),
-    plain(oldC._pricingComputeSummaryData('p', est)),
-  );
+  // `optional` (Optional: Zone CO2 Sensors, 2026-11-13) is new; main has no such key. Compare the rest.
+  const newSd = plain(newC._pricingComputeSummaryData('p', est));
+  delete newSd.optional;
+  assert.deepStrictEqual(newSd, plain(oldC._pricingComputeSummaryData('p', est)));
   ok('hourly summary data identical to main');
 }
 
