@@ -5014,9 +5014,11 @@ function emRenderToolbar(data, pid, projBadge) {
     '<span title="Amber = point likely present but name is non-standard (lower-confidence match). Hover cell for point name." style="padding:1px 10px;border-radius:3px;background:rgba(230,126,34,0.15);color:#e67e22;font-weight:600">&nbsp;</span>' +
     '<span style="font-size:10px;color:var(--text3)">Likely match</span>' +
     '<span title="Red = required ASHRAE 36 point not found in Building Automation System data." style="padding:1px 10px;border-radius:3px;background:rgba(192,57,43,0.15);color:#c0392b;font-weight:600">&nbsp;</span>' +
-    '<span style="font-size:10px;color:var(--text3)">Not found</span>' +
-    '<span title="Not applicable to this equipment type" style="padding:1px 6px;border-radius:3px;background:rgba(128,128,128,0.08);color:var(--text3)">N/A</span>' +
+    '<span style="font-size:10px;color:var(--text3)">Not found (required)</span>' +
+    '<span title="Hover an N/A cell to see the reason" style="padding:1px 6px;border-radius:3px;background:rgba(128,128,128,0.08);color:var(--text3)">N/A</span>' +
+    '<span style="font-size:10px;color:var(--text3)">not needed for this unit (hover for why)</span>' +
     '<span title="Optional point — not present in Building Automation System data" style="padding:1px 6px;border-radius:3px;background:rgba(128,128,128,0.05);color:var(--text3)">--</span>' +
+    '<span style="font-size:10px;color:var(--text3)">optional, not present</span>' +
     '</span>' +
     '</div>';
   return (
@@ -9659,7 +9661,7 @@ function emRenderAuditTable(data, filters) {
     }
     var naMap = {};
     for (var np = 0; np < compliance.naPoints.length; np++) {
-      naMap[compliance.naPoints[np].categoryKey] = true;
+      naMap[compliance.naPoints[np].categoryKey] = compliance.naPoints[np];
     }
     var missingMap = {};
     for (var mp = 0; mp < compliance.missingPoints.length; mp++) {
@@ -9789,6 +9791,19 @@ function emRenderAuditTable(data, filters) {
    Renders a single <td> for a compliance column in audit view.
    Returns HTML string.
    behaviorSummary (optional) — per-building map from btGetBuildingBehaviorSummary().  */
+// Plain-words reason shown as the hover title of an N/A cell (one function, used by the cell renderer).
+var EM_NA_TYPE_TEXT = 'Not applicable: this equipment type does not have this point';
+function emNaReasonText(entry) {
+  if (!entry) return EM_NA_TYPE_TEXT;
+  if (entry.source === 'spaceType') {
+    return 'Not needed: ' + (EM_SPACE_TYPE_LABELS[entry.spaceType] || entry.spaceType) + ' (space type)';
+  }
+  if (entry.source === 'flagDefault') return 'Not required for this unit (optional point)';
+  if (entry.source === 'flagSet') return 'Set to not needed on this unit';
+  if (entry.source === 'singleZone') return 'Not needed: ' + entry.reason;
+  return 'Not needed: ' + (entry.reason || 'not required for this unit');
+}
+
 function emRenderAuditCell(row, def, compliance, coveredMap, naMap, missingMap, seqReadiness, behaviorSummary) {
   var baseStyle =
     'border-bottom:1px solid var(--border);border-right:1px solid var(--border);vertical-align:middle;text-align:center;';
@@ -9978,15 +9993,20 @@ function emRenderAuditCell(row, def, compliance, coveredMap, naMap, missingMap, 
       return (
         '<td style="' +
         baseStyle +
-        'background:rgba(128,128,128,0.08);color:var(--text3)" title="Not applicable to this equipment type">N/A</td>'
+        'background:rgba(128,128,128,0.08);color:var(--text3)" title="' +
+        _escHtml(EM_NA_TYPE_TEXT) +
+        '">N/A</td>'
       );
     }
-    // N/A due to config flag
-    if (naMap[catKey]) {
+    // N/A for this unit (config flag, space type, single-zone). A matched point is checked first:
+    // a point that exists is never hidden behind N/A.
+    if (naMap[catKey] && !coveredMap[catKey]) {
       return (
         '<td style="' +
         baseStyle +
-        'background:rgba(128,128,128,0.08);color:var(--text3)" title="N/A for this equipment">N/A</td>'
+        'background:rgba(128,128,128,0.08);color:var(--text3)" title="' +
+        _escHtml(emNaReasonText(naMap[catKey])) +
+        '">N/A</td>'
       );
     }
     // Matched: determine tier
@@ -10085,7 +10105,7 @@ function emRenderAuditCell(row, def, compliance, coveredMap, naMap, missingMap, 
       return (
         '<td style="' +
         baseStyle +
-        'background:rgba(128,128,128,0.08);color:var(--text3)" title="Not applicable to this equipment type">N/A</td>'
+        'background:rgba(128,128,128,0.08);color:var(--text3)" title="Not applicable: this equipment type does not have this sequence">N/A</td>'
       );
     }
     return emRenderSequenceCell(def.label, seqResult);
@@ -10304,13 +10324,13 @@ function emAuditGetSortVal(row, def) {
     var catKey = def.catKey;
     if (!row.category || def.catEquipTypes.indexOf(row.category) === -1) return -1;
     _sortMaps = _sortMaps || emLoadCustomMappings(window._emActivePid || '');
-    // Note: coveredPoints is flag-invariant (config flags only gate naPoints/missingPoints,
-    // never coveredPoints), so passing real flags here would be a no-op for matchTier —
-    // left as {} intentionally, but kept consistent below for isAuditSeq which DOES read
-    // naPoints (via emComputeSequenceReadiness's space-type NA check).
-    var comp = emComputeCompliance(row, {}, _sortMaps);
+    // Same flags and same N/A rule as the cells: matched first, then N/A (-1), then missing/optional (99).
+    var comp = emComputeCompliance(row, emLoadEquipConfigFlags(window._emActivePid || '', row.id), _sortMaps);
     for (var i = 0; i < comp.coveredPoints.length; i++) {
       if (comp.coveredPoints[i].categoryKey === catKey) return comp.coveredPoints[i].matchTier;
+    }
+    for (var ni = 0; ni < comp.naPoints.length; ni++) {
+      if (comp.naPoints[ni].categoryKey === catKey) return -1;
     }
     return 99; // missing
   }
@@ -14543,7 +14563,7 @@ var EM_SPACE_TYPE_PATTERNS = [
   { spaceType: 'corridor', re: /corridor|hallway/i }, // NOT \bhall\b — "Bunk Hall" is an occupied bunkroom
   {
     spaceType: 'mech_elec',
-    re: /mech(anical)?\s*(room|rm)\b|ele[ck]\w*ical(\s*(room|rm))?$|electric\s*(room|rm)\b/i,
+    re: /mech(anical)?\s*(room|rm)\b|\bele[ck]\w*ical\b(?!\s*(heat|coil))|electric\s*(room|rm)\b/i,
   },
   { spaceType: 'storage', re: /\bstorage\b/i },
   { spaceType: 'stairwell', re: /\bstair/i },
@@ -14551,6 +14571,9 @@ var EM_SPACE_TYPE_PATTERNS = [
   { spaceType: 'networking', re: /server|\bidf\b|\bmdf\b|data (room|center)/i },
   { spaceType: 'secure_cell', re: /\bcell\b|inmate|\bpod\b(?!ium)|housing/i },
 ];
+
+var EM_SPACE_TYPE_UTILITY_PAIR_RE =
+  /\belec(tric(al)?)?\s*\/\s*(water|mech(anical)?|plumbing|utility|telecom|data)\b|\b(water|mech(anical)?|plumbing|utility)\s*\/\s*elec(tric(al)?)?\b/i;
 
 var EM_SPACE_TYPE_LABELS = {
   vav: 'General VAV Zone',
@@ -14611,6 +14634,10 @@ function emClassifySpaceType(equipRow, flags) {
   if (!EM_SPACE_TYPE_ZONE_TERMINAL_CATS[category]) return null; // zone-terminal only
   var label = _emSpaceTypeExtractLabel(equipRow.equipName);
   if (label === null) return null; // no separator -> unclassified
+  // A utility-room pair such as "Electric/Water" names ONE room, so it passes the guard below.
+  if (EM_SPACE_TYPE_UTILITY_PAIR_RE.test(label)) {
+    return { spaceType: 'mech_elec', source: 'name', matchedLabel: label };
+  }
   if (label.indexOf(',') !== -1 || label.indexOf('/') !== -1) return null; // multi-room-label guard
   for (var i = 0; i < EM_SPACE_TYPE_PATTERNS.length; i++) {
     var p = EM_SPACE_TYPE_PATTERNS[i];
@@ -15409,16 +15436,8 @@ var EM_POINT_CATEGORIES = {
       patterns: [/return\s+air\s+hum/i, /\bra\s+hum\b/i],
       aliases: ['return air humidity', 'return air relative humidity', 'ra hum', 'ra humidity', 'ahu return humidity'],
     },
-    // E2: Return Air CO2
-    {
-      key: 'co2Return',
-      label: 'Return Air CO2',
-      required: false,
-      ashrae36Name: 'Return Air CO2',
-      ashrae36Section: '5.16',
-      patterns: [/\bra\s+co2\b/i, /return\s+air\s+co2/i, /return\s+co2/i],
-      aliases: ['ra co2', 'return air co2', 'return co2', 'ahu co2', 'ahu-1 - co2', 'ahu-2 - co2'],
-    },
+    // E2: Return Air CO2 is NOT a separate AHU/RTU category. The ahu 'co2' category above
+    // takes the return air CO2 point, so one CO2 point fills one column (DOAS keeps co2Return).
     // G2: Duct Static Pressure Setpoint
     {
       key: 'dspSp',
@@ -21978,6 +21997,7 @@ function emComputeCompliance(equipRow, configFlags, customMappings) {
 
   var missingPoints = [];
   var naPoints = [];
+  var spaceTypeExemptCovered = [];
   var totalRequired = 0;
   var totalNA = 0;
   var totalMatched = 0;
@@ -22000,7 +22020,7 @@ function emComputeCompliance(equipRow, configFlags, customMappings) {
 
     // A36-3: single-zone ahu/rtu — points for parts the unit does not show are not applicable.
     // An explicit per-unit config flag still wins (handled by the configFlag branch below).
-    if (_szUnit && !(def.configFlag && def.configFlag in flags)) {
+    if (_szUnit && !coveredKeys[def.key] && !(def.configFlag && def.configFlag in flags)) {
       var _szReason = emSingleZonePointNaReason(def.key, coveredKeys, _szStages);
       if (_szReason) {
         naPoints.push({ categoryKey: def.key, categoryLabel: def.label, reason: _szReason, source: 'singleZone' });
@@ -22039,7 +22059,12 @@ function emComputeCompliance(equipRow, configFlags, customMappings) {
       }
       if (!flagVal) {
         var _naReason = def.configFlag + '=false';
-        var _naEntry = { categoryKey: def.key, categoryLabel: def.label, reason: _naReason };
+        var _naEntry = {
+          categoryKey: def.key,
+          categoryLabel: def.label,
+          reason: _naReason,
+          source: def.configFlag in flags ? 'flagSet' : 'flagDefault',
+        };
         // Re-derive independently of which branch set flagVal=false: emLoadEquipConfigFlags
         // may have already merged a derived hasCO2:false into `flags` upstream (so a
         // consumer that reads config flags directly, e.g. buildOptionalPointRows, sees the
@@ -22056,9 +22081,15 @@ function emComputeCompliance(equipRow, configFlags, customMappings) {
           _naEntry.source = 'spaceType';
           _naEntry.spaceType = _naCls.spaceType;
         }
-        naPoints.push(_naEntry);
-        totalNA++;
-        continue;
+        // A point that exists is never hidden: a covered point counts as matched, not N/A.
+        if (!coveredKeys[def.key]) {
+          naPoints.push(_naEntry);
+          totalNA++;
+          continue;
+        }
+        // The point shows as matched, but a space-type exemption still makes the sequence that
+        // needs it N/A (a corridor does not need demand ventilation). emComputeSequenceReadiness reads this.
+        if (_naEntry.source === 'spaceType') spaceTypeExemptCovered.push(_naEntry);
       }
     }
 
@@ -22082,6 +22113,7 @@ function emComputeCompliance(equipRow, configFlags, customMappings) {
     coveredPoints: coveredPoints,
     missingPoints: missingPoints,
     naPoints: naPoints,
+    spaceTypeExemptCovered: spaceTypeExemptCovered,
     coveragePct: coveragePct,
     totalRequired: totalRequired,
     totalMatched: totalMatched,
@@ -23132,6 +23164,7 @@ function emComputeSequenceReadiness(equipRow, complianceData) {
         presentCats: [],
         missingCats: seq.requiredCats.slice(),
         keyCatsMissing: false,
+        naReason: 'Not applicable: this equipment type does not have this sequence',
       };
       continue;
     }
@@ -23146,6 +23179,7 @@ function emComputeSequenceReadiness(equipRow, complianceData) {
         missingCats: seq.requiredCats.slice(),
         keyCatsMissing: false,
         singleZoneNA: true,
+        naReason: 'Not needed: single-zone unit without this part',
       };
       continue;
     }
@@ -23169,6 +23203,7 @@ function emComputeSequenceReadiness(equipRow, complianceData) {
           presentCats: [],
           missingCats: seq.requiredCats.slice(),
           keyCatsMissing: false,
+          naReason: 'Not required for this unit (optional)',
         };
         continue;
       }
@@ -23206,6 +23241,7 @@ function emComputeSequenceReadiness(equipRow, complianceData) {
           presentCats: [],
           missingCats: seq.requiredCats.slice(),
           keyCatsMissing: false,
+          naReason: 'Not needed: this unit has none of the points this sequence needs',
         };
         continue;
       }
@@ -23228,7 +23264,9 @@ function emComputeSequenceReadiness(equipRow, complianceData) {
     // this, NA-ing a zone's CO2 would drop the sensor but still price DCV programming
     // for a sensor that will never exist).
     var _spaceTypeNASet = {};
-    var _naPointsArr = (complianceData && complianceData.naPoints) || [];
+    var _naPointsArr = ((complianceData && complianceData.naPoints) || []).concat(
+      (complianceData && complianceData.spaceTypeExemptCovered) || [],
+    );
     for (var _npi = 0; _npi < _naPointsArr.length; _npi++) {
       if (_naPointsArr[_npi] && _naPointsArr[_npi].source === 'spaceType') {
         _spaceTypeNASet[_naPointsArr[_npi].categoryKey] = true;
@@ -23250,6 +23288,7 @@ function emComputeSequenceReadiness(equipRow, complianceData) {
         missingCats: requiredCats.slice(),
         keyCatsMissing: false,
         spaceTypeNA: true,
+        naReason: 'Not needed: space type exemption (zone CO2 not required)',
       };
       continue;
     }
@@ -23352,7 +23391,9 @@ function emRenderSequenceCell(seqName, readiness) {
     return (
       '<td style="' +
       baseStyle +
-      'background:rgba(128,128,128,0.08);color:var(--text3)" title="N/A for this equipment">N/A</td>'
+      'background:rgba(128,128,128,0.08);color:var(--text3)" title="' +
+      _escHtml((readiness && readiness.naReason) || 'Not needed for this unit') +
+      '">N/A</td>'
     );
   }
 

@@ -2507,6 +2507,13 @@ async function siteResetAllMeterTableSettings() {
    site-ui.js delegates to this array and should NOT maintain its own copy.
 */
 var RELEASE_NOTES = [
+  { v: 'v2026.11.13.284', date: '2026-11-13', title: 'Equipment Matrix: clear N/A, blank and -- cells',
+    items: [
+      { type: 'change', text: 'Equipment Matrix Audit View: the legend now says what each cell means. Red = required and not found. N/A = not needed for this unit. -- = optional and not present. Hover an N/A cell to see why, for example "Not needed: Corridor (space type)".' },
+      { type: 'fix', text: 'A point that exists in the BAS data now always shows its value, also in spaces that do not need it (for example an occupancy sensor or a CO2 sensor in a corridor). A sequence the space does not need is still not priced.' },
+      { type: 'fix', text: 'Air handlers: the empty "Return Air CO2" column is removed. The return air CO2 value shows in the "CO2 Sensor" column.' },
+      { type: 'fix', text: 'Rooms named "Electrical ..." or "Mechanical/Electrical" now count as electrical rooms, which need no zone CO2 sensor. Sorting a point column now uses the same rules as the cells.' }
+    ] },
   { v: 'v2026.11.13.283', date: '2026-11-13', title: 'Service Proposal cost pages no longer cut off text',
     items: [
       { type: 'fix', text: 'ASHRAE 36 Service Proposal (PDF, preview and Word): long "Install & Programming Detail" lists no longer run past the bottom of the Cost Estimate page. When the list does not fit, it moves to the following pages. Short blocks (the optional zone CO2 table and the disclaimer) now share a page when they fit. No number or price changed.' }
