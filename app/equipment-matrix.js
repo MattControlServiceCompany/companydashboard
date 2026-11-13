@@ -13876,6 +13876,7 @@ var EM_NAMED_EXCLUSIONS = [
     key: 'bareFan',
     label: 'Fan',
     patterns: [/^Fan\s*$/i], // bare "Fan" (fpb terminal fan relay, 120 rows; safe: hvacSubObject in all other contexts)
+    exceptCats: ['fpb'], // 2026-11-13: on fpb, bare "Fan" is the terminal fan command (fpb termFanEnable), not a non-audit point
     nonAshrae: true,
     required: false,
   },
@@ -14254,9 +14255,10 @@ var EM_NAMED_EXCLUSIONS = [
 /* ── emMatchNamedExclusion ──────────────────────────────────────────────────
    Finds the first EM_NAMED_EXCLUSIONS group whose patterns[] match rawName.
    Returns the group object { key, label } or null if no match.            */
-function emMatchNamedExclusion(rawName) {
+function emMatchNamedExclusion(rawName, equipCategory) {
   for (var _ni = 0; _ni < EM_NAMED_EXCLUSIONS.length; _ni++) {
     var _ng = EM_NAMED_EXCLUSIONS[_ni];
+    if (_ng.exceptCats && equipCategory && _ng.exceptCats.indexOf(equipCategory) !== -1) continue;
     for (var _np = 0; _np < _ng.patterns.length; _np++) {
       if (_ng.patterns[_np].test(rawName)) return _ng;
     }
@@ -14735,6 +14737,19 @@ var GL36_CO2_DEFAULTS = {
    Anchored on purpose: names with Heating/Cooling/Occupied/Active/Offset/Feedback/To-device words do not match. */
 var EM_COMBINED_SETPOINT_RE = /^\s*(?:(?:zone|room|space)\s+)?temp(?:erature)?\s+set\s?point\s*$/i;
 
+/* Point-mapping fixes (Matt, 2026-11-13). Shared rules for the compliance mapper (EM_POINT_CATEGORIES):
+   _EM_CO2_NOT_SENSOR   an alarm, limit, setpoint, max/min, ratio or request name is never a CO2 sensor.
+                        Same intent as the column mapper's zoneCO2 negativePatterns, plus limit/ratio/request. ("level" is not guarded: "Return Air Carbon Dioxide Level" is a real sensor.)
+   _EM_ADJUST_GUARD     "Cooling Setpoint Adjust" is an occupant offset (coolAdj/htgAdj), never the setpoint (coolSP/htgSP)
+                        or a valve command (reheatValve, "Heating Valve Flow Adjust").
+   _EM_ALARM_LIMIT_NAME alarm-limit name; guards the zoneTemp and dat categories (tier 3 and exact tiers). Tier 2b has its own veto (_emAlarmLimitVeto).
+   _EM_ZONE_DAMPER_RE   "Zone Damper" is the terminal damper command on vav and fpb.                          */
+var _EM_CO2_NOT_SENSOR = /\b(alarms?|limits?|max(imum)?|min(imum)?|ratio|request|high|low|override|fault|diagnostic|selection)\b|set\s*points?/i; // setpoint unbounded: the internal column key "zoneCO2Setpoint" has no word break
+var _EM_ADJUST_GUARD = /\badjust(ment)?\b/i;
+var _EM_ZONE_DAMPER_RE = /zone.?damper/i;
+// _EM_ALARM_LIMIT_NAME: "Low Zone Temperature", "High Supply Air Temperature" are alarm limits, never the zone temp or DAT sensor.
+var _EM_ALARM_LIMIT_NAME = /\b(high|low|alarms?|limits?)\b/i;
+
 /* ── EM_POINT_CATEGORIES ────────────────────────────────────────────────────
    Structured per-equipment-type point category map.
    Each entry: { key, label, ashrae36Name, ashrae36Section, required,
@@ -14777,6 +14792,7 @@ var EM_POINT_CATEGORIES = {
       ],
       // M6 6B: block control objects, diagnostics, and mode-select points from ahu.sat
       negativeGuards: [
+        _EM_ALARM_LIMIT_NAME,
         /\b(pid|bacnet\s*pid|control\s+selection|diagnostic|sensor\s+fail(ure)?|enable|lockout|output|bno)\b/i,
       ],
     },
@@ -14799,7 +14815,7 @@ var EM_POINT_CATEGORIES = {
         'return air temperature',
       ],
       // M6 6B: block control objects and diagnostics from ahu.rat
-      negativeGuards: [/\b(pid|bacnet\s*pid|control\s+selection|diagnostic|sensor\s+fail(ure)?)\b/i],
+      negativeGuards: [_EM_ALARM_LIMIT_NAME, /\b(pid|bacnet\s*pid|control\s+selection|diagnostic|sensor\s+fail(ure)?)\b/i],
     },
     {
       key: 'mat',
@@ -14819,7 +14835,7 @@ var EM_POINT_CATEGORIES = {
         'post-mix temp',
       ],
       // M6 6B: block control objects and diagnostics from ahu.mat
-      negativeGuards: [/\b(pid|bacnet\s*pid|control\s+selection|diagnostic|sensor\s+fail(ure)?)\b/i],
+      negativeGuards: [_EM_ALARM_LIMIT_NAME, /\b(pid|bacnet\s*pid|control\s+selection|diagnostic|sensor\s+fail(ure)?)\b/i],
     },
     {
       key: 'oat',
@@ -14889,7 +14905,7 @@ var EM_POINT_CATEGORIES = {
         'dp duct',
       ],
       // FIX5: "Building Static Pressure" must fall through to bldgPressure, not match here
-      negativeGuards: [/\bbuilding\b/i],
+      negativeGuards: [_EM_ALARM_LIMIT_NAME, /\bbuilding\b/i],
     },
     {
       key: 'oaFlow',
@@ -15221,6 +15237,7 @@ var EM_POINT_CATEGORIES = {
     },
     {
       key: 'co2',
+      negativeGuards: [_EM_CO2_NOT_SENSOR],
       label: 'CO2 Sensor',
       required: true,
       ashrae36Name: 'CO2 Sensor (Return or Zone)',
@@ -15973,6 +15990,7 @@ var EM_POINT_CATEGORIES = {
     },
     {
       key: 'zoneTemp',
+      negativeGuards: [_EM_ALARM_LIMIT_NAME],
       label: 'Zone Air Temperature',
       required: true,
       ashrae36Name: 'Zone Air Temperature',
@@ -16005,6 +16023,7 @@ var EM_POINT_CATEGORIES = {
     },
     {
       key: 'coolSP',
+      negativeGuards: [_EM_ADJUST_GUARD],
       label: 'Zone Cooling Setpoint',
       required: true,
       ashrae36Name: 'Zone Cooling Setpoint',
@@ -16037,6 +16056,7 @@ var EM_POINT_CATEGORIES = {
     },
     {
       key: 'htgSP',
+      negativeGuards: [_EM_ADJUST_GUARD],
       label: 'Zone Heating Setpoint',
       required: true,
       ashrae36Name: 'Zone Heating Setpoint',
@@ -16114,6 +16134,7 @@ var EM_POINT_CATEGORIES = {
     },
     {
       key: 'dat',
+      negativeGuards: [_EM_ALARM_LIMIT_NAME],
       label: 'Discharge Air Temperature',
       required: true,
       ashrae36Name: 'Discharge Air Temperature',
@@ -16181,7 +16202,7 @@ var EM_POINT_CATEGORIES = {
         /damper.?command/i,
         /damper.?signal/i,
         /air.?valve/i,
-        /zone.?damper/i,
+        _EM_ZONE_DAMPER_RE,
       ],
       aliases: [
         'damper position',
@@ -16197,6 +16218,7 @@ var EM_POINT_CATEGORIES = {
     },
     {
       key: 'reheatValve',
+      negativeGuards: [_EM_ADJUST_GUARD],
       label: 'Reheat Valve Position Command',
       required: false,
       ashrae36Name: 'Reheat Valve Position Command',
@@ -16278,6 +16300,7 @@ var EM_POINT_CATEGORIES = {
     },
     {
       key: 'co2',
+      negativeGuards: [_EM_CO2_NOT_SENSOR],
       label: 'Zone CO2 Sensor',
       required: true,
       ashrae36Name: 'Zone CO2 Concentration',
@@ -16549,6 +16572,7 @@ var EM_POINT_CATEGORIES = {
     },
     {
       key: 'zoneTemp',
+      negativeGuards: [_EM_ALARM_LIMIT_NAME],
       label: 'Zone Air Temperature',
       required: true,
       ashrae36Name: 'Zone Air Temperature',
@@ -16558,6 +16582,7 @@ var EM_POINT_CATEGORIES = {
     },
     {
       key: 'coolSP',
+      negativeGuards: [_EM_ADJUST_GUARD],
       label: 'Zone Cooling Setpoint',
       required: true,
       ashrae36Name: 'Zone Cooling Setpoint',
@@ -16574,6 +16599,7 @@ var EM_POINT_CATEGORIES = {
     },
     {
       key: 'htgSP',
+      negativeGuards: [_EM_ADJUST_GUARD],
       label: 'Zone Heating Setpoint',
       required: true,
       ashrae36Name: 'Zone Heating Setpoint',
@@ -16625,6 +16651,7 @@ var EM_POINT_CATEGORIES = {
     },
     {
       key: 'dat',
+      negativeGuards: [_EM_ALARM_LIMIT_NAME],
       label: 'Discharge Air Temperature',
       required: true,
       ashrae36Name: 'Discharge Air Temperature',
@@ -16671,7 +16698,7 @@ var EM_POINT_CATEGORIES = {
       required: true,
       ashrae36Name: 'Primary Damper Position Command',
       ashrae36Section: '5.7',
-      patterns: [/primary.?damper/i, /damper.?position/i, /vav.?damper/i, /box.?damper/i, /cold.?deck.?damper/i],
+      patterns: [/primary.?damper/i, /damper.?position/i, /vav.?damper/i, /box.?damper/i, /cold.?deck.?damper/i, _EM_ZONE_DAMPER_RE],
       aliases: ['damper position', 'primary damper', 'cold deck damper', 'vav damper', 'box damper'],
     },
     {
@@ -16680,7 +16707,7 @@ var EM_POINT_CATEGORIES = {
       required: true,
       ashrae36Name: 'Terminal Fan Enable Command',
       ashrae36Section: '5.7',
-      patterns: [/term.?fan.?enable/i, /box.?fan.?enable/i, /terminal.?fan.?command/i, /\by1fan\b/i, /fan.?enable/i],
+      patterns: [/term.?fan.?enable/i, /box.?fan.?enable/i, /terminal.?fan.?command/i, /\by1fan\b/i, /fan.?enable/i, /^fan\s*$/i],
       aliases: [
         'term fan enable',
         'box fan enable',
@@ -16692,6 +16719,7 @@ var EM_POINT_CATEGORIES = {
     },
     {
       key: 'reheatValve',
+      negativeGuards: [_EM_ADJUST_GUARD],
       label: 'Reheat Valve Position Command',
       required: false,
       ashrae36Name: 'Reheat Valve Position Command',
@@ -16799,6 +16827,7 @@ var EM_POINT_CATEGORIES = {
     // in EM_EQUIP_CONFIG_FLAGS but no category entry existed, so CO2 never surfaced in Audit view.
     {
       key: 'co2',
+      negativeGuards: [_EM_CO2_NOT_SENSOR],
       label: 'Zone CO2 Sensor',
       required: false,
       ashrae36Name: 'Zone CO2 Concentration',
@@ -16929,6 +16958,7 @@ var EM_POINT_CATEGORIES = {
     },
     {
       key: 'zoneTemp',
+      negativeGuards: [_EM_ALARM_LIMIT_NAME],
       label: 'Zone Air Temperature',
       required: true,
       ashrae36Name: 'Zone Air Temperature',
@@ -16938,6 +16968,7 @@ var EM_POINT_CATEGORIES = {
     },
     {
       key: 'coolSP',
+      negativeGuards: [_EM_ADJUST_GUARD],
       label: 'Zone Cooling Setpoint',
       required: true,
       ashrae36Name: 'Zone Cooling Setpoint',
@@ -16947,6 +16978,7 @@ var EM_POINT_CATEGORIES = {
     },
     {
       key: 'htgSP',
+      negativeGuards: [_EM_ADJUST_GUARD],
       label: 'Zone Heating Setpoint',
       required: true,
       ashrae36Name: 'Zone Heating Setpoint',
@@ -17091,6 +17123,7 @@ var EM_POINT_CATEGORIES = {
     // in EM_EQUIP_CONFIG_FLAGS but no category entry existed, so CO2 never surfaced in Audit view.
     {
       key: 'co2',
+      negativeGuards: [_EM_CO2_NOT_SENSOR],
       label: 'Zone CO2 Sensor',
       required: false,
       ashrae36Name: 'Zone CO2 Concentration',
@@ -18773,6 +18806,7 @@ var EM_POINT_CATEGORIES = {
     },
     {
       key: 'zoneTemp',
+      negativeGuards: [_EM_ALARM_LIMIT_NAME],
       label: 'Zone Air Temperature',
       required: true,
       ashrae36Name: 'Zone Air Temperature',
@@ -18782,6 +18816,7 @@ var EM_POINT_CATEGORIES = {
     },
     {
       key: 'coolSP',
+      negativeGuards: [_EM_ADJUST_GUARD],
       label: 'Cooling Setpoint',
       required: false,
       ashrae36Name: 'Zone Cooling Setpoint',
@@ -18791,6 +18826,7 @@ var EM_POINT_CATEGORIES = {
     },
     {
       key: 'htgSP',
+      negativeGuards: [_EM_ADJUST_GUARD],
       label: 'Heating Setpoint',
       required: false,
       ashrae36Name: 'Zone Heating Setpoint',
@@ -18809,6 +18845,7 @@ var EM_POINT_CATEGORIES = {
     },
     {
       key: 'hwValve',
+      negativeGuards: [_EM_ADJUST_GUARD],
       label: 'Hot Water / Heating Valve',
       required: false,
       ashrae36Name: 'Heating Valve Position',
@@ -18822,8 +18859,9 @@ var EM_POINT_CATEGORIES = {
       required: false,
       ashrae36Name: 'Fan Status',
       ashrae36Section: 'FCU',
-      patterns: [/fan.?status/i, /fan.?run/i, /fan speed/i, /fan.?enable/i],
-      aliases: ['fan status', 'fan run', 'fan speed', 'fan enable'],
+      // 2026-11-13: an enable is a command, not status. FCU has no fan command category, so "Fan Enable" is left unmapped.
+      patterns: [/fan.?status/i, /fan.?run/i, /fan speed/i],
+      aliases: ['fan status', 'fan run', 'fan speed'],
     },
     // M7: broadcast categories — present on all equipment types
     {
@@ -18902,6 +18940,7 @@ var EM_POINT_CATEGORIES = {
     // shows no CO2 or humidity columns for FCU rows even when data is present.
     {
       key: 'co2',
+      negativeGuards: [_EM_CO2_NOT_SENSOR],
       label: 'Zone CO2 Sensor',
       required: false,
       ashrae36Name: 'Zone CO2 Concentration',
@@ -19032,6 +19071,7 @@ var EM_POINT_CATEGORIES = {
   heater: [
     {
       key: 'zoneTemp',
+      negativeGuards: [_EM_ALARM_LIMIT_NAME],
       label: 'Zone Air Temperature',
       required: false,
       ashrae36Name: 'Zone Air Temperature',
@@ -19203,24 +19243,15 @@ var EM_POINT_CATEGORIES = {
   ef: [
     {
       key: 'fanStatus',
-      label: 'Fan Status / Enable',
+      label: 'Fan Status',
       required: true,
       ashrae36Name: 'Exhaust Fan Status',
       ashrae36Section: 'EF',
-      patterns: [
-        /exhaust fan.?enable/i,
-        /exhaust fan.?status/i,
-        /ef.?enable/i,
-        /ef.?status/i,
-        /fan.?enable/i,
-        /fan.?status/i,
-      ],
+      // 2026-11-13: an enable is a command, not status. EF has no fan command category, so "Exhaust Fan Enable" is left unmapped.
+      patterns: [/exhaust fan.?status/i, /ef.?status/i, /fan.?status/i],
       aliases: [
-        'exhaust fan enable',
         'exhaust fan status',
-        'ef enable',
         'ef status',
-        'fan enable',
         'fan status',
         'exhaustFanStatus', // Phase 4: Engine 1 col key alias for enriched-CSV import path
       ],
@@ -19371,6 +19402,7 @@ var EM_POINT_CATEGORIES = {
       aliases: ['supply air temp', 'sat', 'discharge air temp', 'dat'],
       // M7: carry negativeGuards from ahu.sat so control objects don't match here either
       negativeGuards: [
+        _EM_ALARM_LIMIT_NAME,
         /\b(pid|bacnet\s*pid|control\s+selection|diagnostic|sensor\s+fail(ure)?|enable|lockout|output|bno)\b/i,
       ],
     },
@@ -19382,7 +19414,7 @@ var EM_POINT_CATEGORIES = {
       ashrae36Section: 'DOAS',
       patterns: [/\brat\b/i, /return air temp/i, /ra temp/i, /return.?air.?temp/i],
       aliases: ['rat', 'return air temp', 'return temp', 'return temperature', 'ra temp', 'return air temperature'],
-      negativeGuards: [/\b(pid|bacnet\s*pid|control\s+selection|diagnostic|sensor\s+fail(ure)?)\b/i],
+      negativeGuards: [_EM_ALARM_LIMIT_NAME, /\b(pid|bacnet\s*pid|control\s+selection|diagnostic|sensor\s+fail(ure)?)\b/i],
     },
     {
       key: 'mat',
@@ -19392,7 +19424,7 @@ var EM_POINT_CATEGORIES = {
       ashrae36Section: 'DOAS',
       patterns: [/\bmat\b/i, /mixed air temp/i, /mix air temp/i],
       aliases: ['mat', 'mixed air temp', 'mix air temp', 'mixed-air temp'],
-      negativeGuards: [/\b(pid|bacnet\s*pid|control\s+selection|diagnostic|sensor\s+fail(ure)?)\b/i],
+      negativeGuards: [_EM_ALARM_LIMIT_NAME, /\b(pid|bacnet\s*pid|control\s+selection|diagnostic|sensor\s+fail(ure)?)\b/i],
     },
     {
       key: 'oat',
@@ -19423,7 +19455,7 @@ var EM_POINT_CATEGORIES = {
       patterns: [/\bdsp\b/i, /duct static pressure/i, /duct static/i, /static pressure/i],
       aliases: ['dsp', 'duct static', 'static pressure', 'supply duct static', 'duct pressure'],
       // FIX5: "Building Static Pressure" must fall through to bldgPressure, not match here
-      negativeGuards: [/\bbuilding\b/i],
+      negativeGuards: [_EM_ALARM_LIMIT_NAME, /\bbuilding\b/i],
     },
     {
       key: 'oaDamp',
@@ -19740,6 +19772,7 @@ var EM_POINT_CATEGORIES = {
     // ── Core §5.18 control-loop points (always required) ──────────────────────
     {
       key: 'sat',
+      negativeGuards: [_EM_ALARM_LIMIT_NAME],
       label: 'Supply Air Temperature',
       required: true,
       ashrae36Name: 'Supply Air Temperature',
@@ -19786,6 +19819,7 @@ var EM_POINT_CATEGORIES = {
     },
     {
       key: 'zoneTemp',
+      negativeGuards: [_EM_ALARM_LIMIT_NAME],
       label: 'Zone Air Temperature',
       required: true,
       ashrae36Name: 'Zone Air Temperature',
@@ -19806,6 +19840,7 @@ var EM_POINT_CATEGORIES = {
     },
     {
       key: 'coolSP',
+      negativeGuards: [_EM_ADJUST_GUARD],
       label: 'Zone Cooling Setpoint',
       required: true,
       ashrae36Name: 'Zone Cooling Setpoint',
@@ -19824,6 +19859,7 @@ var EM_POINT_CATEGORIES = {
     },
     {
       key: 'htgSP',
+      negativeGuards: [_EM_ADJUST_GUARD],
       label: 'Zone Heating Setpoint',
       required: true,
       ashrae36Name: 'Zone Heating Setpoint',
@@ -20015,6 +20051,7 @@ var EM_POINT_CATEGORIES = {
     },
     {
       key: 'zoneTemp',
+      negativeGuards: [_EM_ALARM_LIMIT_NAME],
       label: 'Zone Air Temperature',
       required: true,
       ashrae36Name: 'Zone Air Temperature',
@@ -20042,6 +20079,7 @@ var EM_POINT_CATEGORIES = {
     },
     {
       key: 'coolSP',
+      negativeGuards: [_EM_ADJUST_GUARD],
       label: 'Cooling Setpoint',
       required: true,
       ashrae36Name: 'Zone Cooling Setpoint',
@@ -20057,6 +20095,7 @@ var EM_POINT_CATEGORIES = {
     },
     {
       key: 'htgSP',
+      negativeGuards: [_EM_ADJUST_GUARD],
       label: 'Heating Setpoint',
       required: true,
       ashrae36Name: 'Zone Heating Setpoint',
@@ -21376,6 +21415,28 @@ var _EM_CONTRADICTING_PAIRS = [
 var _EM_COMMAND_CAT_KEY = /(Cmd|Command)$/;
 // Round 3: a drive measurement (amps, voltage, current) or a bypass state is also feedback ("Supply Fan VFD Amps"
 // covered sfSpeedCmd through the alias "supply fan vfd").
+/* 2026-11-13: an alarm-limit name ("Low Supply Air Temperature", "High Zone Temperature") is never a sensor.
+   Tier 2b (alias subset) skips a category when the name carries high, low, alarm or limit and the
+   category itself has no such word in its label, ASHRAE name, aliases or patterns. Categories about limits keep matching. */
+var _EM_ALARM_LIMIT_WORDS = ['high', 'low', 'alarm', 'alarms', 'limit', 'limits'];
+function _emAlarmLimitVeto(rawName, cat) {
+  var vocab = null;
+  rawName = rawName.replace(/\b(high|low)\s+(speed|enable|stage)\b/gi, ' ');
+  for (var wi = 0; wi < _EM_ALARM_LIMIT_WORDS.length; wi++) {
+    var wre = new RegExp('\\b' + _EM_ALARM_LIMIT_WORDS[wi] + '\\b', 'i');
+    if (!wre.test(rawName)) continue;
+    if (vocab === null) {
+      vocab = [cat.label, cat.ashrae36Name].concat(cat.aliases || []);
+      (cat.patterns || []).forEach(function (p) {
+        vocab.push(p.source);
+      });
+      vocab = vocab.join(' | ');
+    }
+    if (!wre.test(vocab)) return true;
+  }
+  return false;
+}
+
 var _EM_FEEDBACK_NAME = /\b(fault(ed|s)?|alarm(s|ed)?|fail(ed|ure|ures|s)?|status|diagnostics?|trip(ped)?|amps?|amperage|volts?|voltage|current|bypass\s+(initiated|active|mode))\b/i;
 
 function emNormalizePointInner(rawName, equipCategory) {
@@ -21398,7 +21459,7 @@ function emNormalizePointInner(rawName, equipCategory) {
   // ── Named exclusion check (Step 1 overhaul — 2026-06-29) ────────────
   // Returns a NAMED category for all formerly-excluded points so they are
   // visible in the Manage Mappings modal. Fires BEFORE ASHRAE 36 matching.
-  var _namedExcl = emMatchNamedExclusion(rawName);
+  var _namedExcl = emMatchNamedExclusion(rawName, equipCategory);
   if (_namedExcl) {
     return {
       categoryKey: _namedExcl.key,
@@ -21514,6 +21575,7 @@ function emNormalizePointInner(rawName, equipCategory) {
           return nameTokens.indexOf(tok) !== -1;
         });
         if (!allPresent) continue;
+        if (_emAlarmLimitVeto(rawName, cat)) continue;
         // Step 3: contradicting-word veto
         var vetoed = false;
         for (var vp = 0; vp < _EM_CONTRADICTING_PAIRS.length; vp++) {
