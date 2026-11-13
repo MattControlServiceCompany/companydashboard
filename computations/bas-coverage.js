@@ -13,7 +13,10 @@
 //   event  en_cal_snap_<pid> row [title, start, end, allDay, location]; the space is CalendarDiff.eventPlace
 // Statuses (eventCoverage): covered, short (not covered, with minutes short), nobas (no BAS schedule for this space),
 //   offsite, notmapped, nocopy (no BAS copy for that kind of day), allday (no times to check),
-//   unknown (not covered by the saved schedules, but a scheduling group with no saved members has a schedule that spans the event).
+//   unknown (not covered by the saved schedules, but a scheduling group with no saved members has a schedule that spans the event),
+//   suggest (the place, or a part of it, is not in the space map and the building main schedule does not cover the event; the label suggests a fix).
+// A place is looked up by findSpace (exact key first, then a form where Rm, Rm. and Room are one word). A place with several parts
+// ("LHS Commons, Conf Rm") is split by splitPlace. An unmatched part of a known building is read against that building's main schedule.
 // Serving units (AHU/RTU/ERV/DOAS that serve boxes, HW/CHW plants) run on requests and have no schedule to check:
 //   isServingProgram. They are never suggested and never checked. Domestic hot water (DHW) is NOT serving: it is out of
 //   scope (isOutOfScopeProgram). isUnchecked is the one test for both.
@@ -43,6 +46,41 @@
   }
   function spaceKey(space) {
     return norm(space);
+  }
+  // The form used to compare a place with the stored keys: Rm, Rm. and Room are one word, "#" before a number is dropped,
+  // spaces and punctuation are folded. Stored keys are never rewritten.
+  function canonPlace(space) {
+    return norm(space)
+      .replace(/#\s*(?=\d)/g, '')
+      .replace(/\brm\b\.?/g, 'room')
+      .replace(/[^a-z0-9]+/g, ' ')
+      .trim();
+  }
+  var _canonIdx = typeof WeakMap === 'function' ? new WeakMap() : null;
+  function canonIndex(spaces) {
+    var keys = Object.keys(spaces);
+    var sig = keys.join('|');
+    var c = _canonIdx && _canonIdx.get(spaces);
+    if (c && c.sig === sig) return c.map;
+    var map = {};
+    keys.forEach(function (k) {
+      var ck = canonPlace(k);
+      if (!ck) return;
+      var cur = map[ck];
+      // two keys with one canonical form: a confirmed entry wins, else the first
+      if (!cur || (!(spaces[cur] && spaces[cur].confirmed) && spaces[k] && spaces[k].confirmed)) map[ck] = k;
+    });
+    if (_canonIdx) _canonIdx.set(spaces, { sig: sig, map: map });
+    return map;
+  }
+  // THE one lookup of a place in the space map: the exact key first, else the key with the same canonical form.
+  // -> { key, entry } or null. Every reader of the map (coverage, actions, the Space map card) calls this.
+  function findSpace(spaces, place) {
+    if (!spaces || !place) return null;
+    var k = spaceKey(place);
+    if (spaces[k]) return { key: k, entry: spaces[k] };
+    var hit = canonIndex(spaces)[canonPlace(place)];
+    return hit ? { key: hit, entry: spaces[hit] } : null;
   }
   function keyParts(key) {
     var p = BD.splitKey(key);
@@ -429,6 +467,20 @@
     if (ck && cache) cache[ck] = out;
     return out;
   }
+  // The main schedule of a building on one date: the schedules on the building's own location path (the district and the building
+  // name, nothing below), read by BD.effectiveBlocksOn, the one reader. -> { has, occ:[[from,to,'occ']] }. has = false when the building
+  // has no such schedule. A Holiday or Override unoccupied period is already left out of occ.
+  function mainScheduleOn(locations, building, ymd) {
+    var nb = norm(building);
+    var schedules = [];
+    (locations || []).forEach(function (l) {
+      var lp = String(l.location || '').split('/').map(norm).filter(Boolean);
+      if (lp.length === 2 && lp[1] === nb) schedules.push(l.schedule);
+    });
+    if (!schedules.length) return { has: false, occ: [] };
+    var e = BD.effectiveBlocksOn(schedules, ymd);
+    return { has: true, occ: e.occ.map(function (r) { return [r[0], r[1], 'occ']; }) };
+  }
   // A group whose members are not saved (an empty members list) in the event's building with schedules that together span [from,to] on
   // the date: the event is probably covered by it, but the program may not be in the group. -> { group, text } or null. Group name order.
   function probableGroup(groups, building, ymd, from, to) {
@@ -518,6 +570,76 @@
     };
   }
 
+  // The row keys of the newest BAS copy: { all, reps }. reps = one key per building (enough for buildingOfPlace, which only reads
+  // the buildings of its keys). Cached for the snaps object while it is the same object and has the same dates.
+  var _bkeys = typeof WeakMap === 'function' ? new WeakMap() : null;
+  function buildingKeys(snaps) {
+    var none = { all: [], reps: [] };
+    if (!snaps || typeof snaps !== 'object') return none;
+    var dates = Object.keys(snaps).filter(function (d) { return BD.isDate(d) && snaps[d] && snaps[d].rows; }).sort();
+    if (!dates.length) return none;
+    var newest = dates[dates.length - 1];
+    var c = _bkeys && _bkeys.get(snaps);
+    if (c && c.date === newest && c.rows === snaps[newest].rows) return c.val;
+    var seen = {};
+    var val = { all: Object.keys(snaps[newest].rows), reps: [] };
+    val.all.forEach(function (k) {
+      var b = BD.keyBuilding(k);
+      if (!seen[b]) {
+        seen[b] = 1;
+        val.reps.push(k);
+      }
+    });
+    if (_bkeys) _bkeys.set(snaps, { date: newest, rows: snaps[newest].rows, val: val });
+    return val;
+  }
+  // The parts of a place: [{ orig, text, hit }]. A place that is itself a map key stays whole (keys like "bes gym/commons" exist).
+  // Else it is split on commas, "/", "&" and "and". A part with no building word of its own takes the first word of the first
+  // part ("LHS Commons, Conf Rm" -> "LHS Commons", "LHS Conf Rm"). hit = findSpace of the part, or null.
+  function splitPlace(spaces, place, bkeys) {
+    var whole = findSpace(spaces, place);
+    if (whole) return [{ orig: place, text: place, hit: whole }];
+    var raw = String(place || '')
+      .split(/\s*(?:,|\/|&|\band\b)\s*/i)
+      .map(function (x) { return x.trim(); })
+      .filter(Boolean);
+    if (raw.length < 2) return [{ orig: place, text: place, hit: null }];
+    var lead = raw[0].split(/\s+/)[0];
+    return raw.map(function (t, i) {
+      var hit = findSpace(spaces, t);
+      var text = t;
+      if (!hit && i > 0 && !buildingOfPlace(t, bkeys)) {
+        text = lead + ' ' + t;
+        hit = findSpace(spaces, text);
+      }
+      return { orig: t, text: text, hit: hit };
+    });
+  }
+  function lastArea(stored) {
+    var parts = keyParts(stored).location.split('/').map(function (x) { return x.trim(); }).filter(Boolean);
+    return parts.length > 2 ? parts[parts.length - 1] : '';
+  }
+  // The "suggest" result for unmatched parts. matched = parts that matched a map entry (their BAS areas are suggested).
+  function suggestText(unmatched, matched, building, allKeys) {
+    var names = unmatched.map(function (p) { return p.orig; });
+    var areas = [];
+    matched.forEach(function (p) {
+      (p.hit.entry.programs || []).forEach(function (s) {
+        var a = lastArea(s);
+        if (a && areas.indexOf(a) === -1) areas.push(a);
+      });
+    });
+    var t = 'Not mapped: ' + names.join(', ') + '. Suggest: schedule the whole ' + building + ' for this event';
+    if (areas.length) t += ', or the areas of its mapped parts (' + areas.join(', ') + ')';
+    t += '.';
+    unmatched.forEach(function (p) {
+      if (!/\d/.test(p.orig)) return;
+      var progs = suggestPrograms(p.text, allKeys).map(function (k) { return programOfKey(k); });
+      if (progs.length) t += ' Possible programs for ' + p.orig + ': ' + progs.join(', ') + '.';
+    });
+    return t;
+  }
+
   // --- the one coverage function --------------------------------------------------------------
   // eventCoverage(row, ctx) -> { status, label, space, short, program, from, exact }
   //   row = [title, start, end, allDay, location]; ctx = { tz, map, snaps, groups, locations }
@@ -538,23 +660,61 @@
     var allDay = !!row[3] || /^\d{4}-\d{2}-\d{2}$/.test(row[1]);
     if (allDay) return done('allday', 'All-day, no times');
     var spaces = (ctx.map && ctx.map.spaces) || {};
-    var entry = place ? spaces[spaceKey(place)] : null;
-    if (!entry || !entry.confirmed) return done('notmapped', 'Not mapped');
-    if (entry.offsite) return done('offsite', 'Off-site');
+    var bk = buildingKeys(ctx.snaps);
+    var parts = place ? splitPlace(spaces, place, bk.reps) : [];
+    // a part counts as mapped only when its map entry is confirmed
+    var matched = parts.filter(function (p) { return p.hit && p.hit.entry.confirmed; });
+    var unmatched = parts.filter(function (p) { return !(p.hit && p.hit.entry.confirmed); });
+    var live = matched.filter(function (p) { return !p.hit.entry.offsite; });
     var date = CD.calendarDay(row[1], ctx.tz);
-    var snap = snapshotForDate(ctx.snaps, date);
-    if (!snap) return done('nocopy', 'No BAS copy for this weekday');
-    res.from = snap.date;
-    res.exact = snap.exact;
-    res.source = sourceText(snap);
-    var keys = resolveKeys(snap.rows, entry.programs);
-    if (!keys.length) return done('nobas', 'No BAS schedule for this space');
-    res.keys = keys; // every BAS program of the space (program is only the worst one, and only when short)
     var from = minuteOfDay(row[1], ctx.tz);
     var to;
     if (!row[2]) to = from + NO_END_MIN;
     else to = CD.calendarDay(row[2], ctx.tz) > date ? 1440 : minuteOfDay(row[2], ctx.tz);
     if (to <= from) to = Math.min(1440, from + NO_END_MIN);
+    // The unmatched parts of a known building: read the main schedule of that building. -> null when none has a building or all are
+    // covered; else the "suggest" result. The matched parts' BAS areas are part of the suggestion.
+    var checkUnmatched = function () {
+      var open = [];
+      var building = '';
+      unmatched.forEach(function (p) {
+        var b = buildingOfPlace(p.text, bk.reps);
+        if (!b) return;
+        var m = mainScheduleOn(ctx.locations, b, date);
+        if (m.has && !minutesShort(m.occ, from, to)) return;
+        open.push(p);
+        building = building || b;
+      });
+      if (!open.length) return null;
+      return suggestText(open, live, building, bk.all);
+    };
+    if (!matched.length) {
+      // nothing is mapped: the main schedule of the building decides; no building word keeps "Not mapped"
+      var withBuilding = unmatched.filter(function (p) { return buildingOfPlace(p.text, bk.reps); });
+      if (!withBuilding.length) return done('notmapped', 'Not mapped');
+      res.fromMin = from;
+      res.toMin = to;
+      var sg = checkUnmatched();
+      if (sg) return done('suggest', sg);
+      return done('covered', 'Covered: main building schedule');
+    }
+    if (!live.length) return done('offsite', 'Off-site');
+    var snap = snapshotForDate(ctx.snaps, date);
+    if (!snap) {
+      // no BAS copy for the matched parts: the unmatched parts of the place can still be read against the building main schedule
+      var sg3 = unmatched.length ? checkUnmatched() : null;
+      return sg3 ? done('suggest', sg3) : done('nocopy', 'No BAS copy for this weekday');
+    }
+    res.from = snap.date;
+    res.exact = snap.exact;
+    res.source = sourceText(snap);
+    var stored = [];
+    live.forEach(function (p) {
+      (p.hit.entry.programs || []).forEach(function (x) { if (stored.indexOf(x) === -1) stored.push(x); });
+    });
+    var keys = resolveKeys(snap.rows, stored);
+    if (!keys.length) return done('nobas', 'No BAS schedule for this space');
+    res.keys = keys; // every BAS program of the space (program is only the worst one, and only when short)
     res.fromMin = from;
     res.toMin = to;
     keys.forEach(function (k) {
@@ -567,7 +727,10 @@
         res.gaps = gapsOf(blocks, from, to);
       }
     });
-    if (!res.short) return done('covered', 'Covered');
+    if (!res.short) {
+      var sg2 = unmatched.length ? checkUnmatched() : null;
+      return sg2 ? done('suggest', sg2) : done('covered', 'Covered');
+    }
     // No saved member list to say which group holds the program: a group with no saved members whose schedule spans the event is named
     // as the probable cover. It is not a to-do (no change is known to be needed) until the members are imported.
     var maybe = probableGroup(ctx.groups, BD.keyBuilding(res.program), date, from, to);
@@ -588,7 +751,7 @@
     var copyDates = Object.keys(ctx.snaps || {}).filter(function (d) {
       return BD.isDate(d) && ctx.snaps[d] && ctx.snaps[d].rows;
     });
-    var out = { total: 0, covered: 0, short: 0, unknown: 0, notmapped: 0, offsite: 0, nocopy: 0, nobas: 0, allday: 0, checked: 0, skipped: 0, uncheckable: 0, noCopyDay: 0, noCopyDays: [], noPlace: 0, unmappedPlaces: [], copies: copyDates.length, copyWeekdays: [], reasons: [] };
+    var out = { total: 0, covered: 0, short: 0, unknown: 0, suggest: 0, notmapped: 0, offsite: 0, nocopy: 0, nobas: 0, allday: 0, checked: 0, skipped: 0, uncheckable: 0, noCopyDay: 0, noCopyDays: [], noPlace: 0, unmappedPlaces: [], copies: copyDates.length, copyWeekdays: [], reasons: [] };
     var seen = {};
     copyDates.forEach(function (d) {
       var w = WD[dow(d)];
@@ -630,6 +793,7 @@
       if (out.copies && out.noCopyDay) {
         out.reasons.push('Days with no BAS copy (' + out.noCopyDays.join(', ') + '): ' + out.noCopyDay + (out.noCopyDay === 1 ? ' event cannot' : ' events cannot') + ' be checked. BAS copies exist for ' + out.copyWeekdays.join(', ') + (out.copyWeekdays.some(function (w) { return ['Mon', 'Tue', 'Wed', 'Thu'].indexOf(w) !== -1; }) ? ' (one copy covers Mon-Thu)' : '') + '.');
       }
+      if (out.suggest) out.reasons.push(out.suggest + (out.suggest === 1 ? ' event has' : ' events have') + ' a place (or a part of it) that is not matched to a BAS space, in a building whose main schedule does not cover the event. Match it in the Space map card, or schedule the whole building.');
       if (out.unknown) out.reasons.push(out.unknown + (out.unknown === 1 ? ' event is' : ' events are') + ' probably covered by a scheduling group whose members are not saved. Import the group members to confirm.');
       if (out.nobas) out.reasons.push(out.nobas + (out.nobas === 1 ? ' event is' : ' events are') + ' in a space with no BAS schedule.');
     }
@@ -639,6 +803,9 @@
   var api = {
     checkStatus: checkStatus,
     spaceKey: spaceKey,
+    findSpace: findSpace,
+    splitPlace: splitPlace,
+    mainScheduleOn: mainScheduleOn,
     isServingProgram: isServingProgram,
     isOutOfScopeProgram: isOutOfScopeProgram,
     isUnchecked: isUnchecked,

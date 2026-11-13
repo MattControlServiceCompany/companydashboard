@@ -275,7 +275,7 @@
     if (status === 'canceled' || !window.BasCoverage) return '';
     var c = BasCoverage.eventCoverage(row, ctx);
     if (c.status === 'allday') return '';
-    var cls = c.status === 'covered' ? ' pcal-new' : c.status === 'short' ? ' pcal-changed' : '';
+    var cls = c.status === 'covered' ? ' pcal-new' : c.status === 'short' || c.status === 'suggest' ? ' pcal-changed' : ''; // suggest = a to-do, shown like short
     var tip = '';
     if (c.from) {
       tip = 'Checked against the ' + c.source + (c.program ? '. Least covered: ' + BasDiff.splitKey(c.program).program : '');

@@ -65,6 +65,7 @@
     var t = today(tz);
     var by = {};
     var events = Object.assign({}, (snap && snap.events) || {}, typeof distCalManualRows === 'function' ? distCalManualRows(pid) : {});
+    var spaces = mapOf(pid).spaces;
     Object.keys(events).forEach(function (id) {
       var row = events[id];
       if (!row[1]) return;
@@ -73,8 +74,9 @@
       if (last < t) return;
       var place = CalendarDiff.eventPlace({ title: row[0], location: row[4] }).text;
       if (!place) return;
-      var key = BasCoverage.spaceKey(place);
-      by[key] = by[key] || { key: key, space: place, count: 0 };
+      var hit = BasCoverage.findSpace(spaces, place); // 'LHS Rm 323' joins the saved 'lhs room 323'
+      var key = hit ? hit.key : BasCoverage.spaceKey(place);
+      by[key] = by[key] || { key: key, space: hit ? hit.entry.space || place : place, count: 0 };
       by[key].count++;
     });
     return Object.keys(by)
