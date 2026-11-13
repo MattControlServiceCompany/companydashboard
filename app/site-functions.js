@@ -2507,6 +2507,13 @@ async function siteResetAllMeterTableSettings() {
    site-ui.js delegates to this array and should NOT maintain its own copy.
 */
 var RELEASE_NOTES = [
+  { v: 'v2026.11.13.282', date: '2026-11-13', title: 'Zone CO2 sensors are optional scope; BAS point matching fixes',
+    items: [
+      { type: 'change', text: 'Cost Estimate and proposal: zone CO2 sensors and their zone programming are now an optional section, "Optional: Zone CO2 Sensors", with their own count and cost. They are not in the Compliance, Recommended or Full Scope totals. Air handler CO2 stays in the totals. The ASHRAE 36 Audit Report still lists the zones with no CO2 sensor.' },
+      { type: 'fix', text: 'Alarm and limit points (for example "CO2 Max", "High Zone Temperature", "Low Supply Air Temperature", "High Supply Air Static Pressure") no longer count as the real sensor.' },
+      { type: 'fix', text: '"Setpoint Adjust" no longer counts as the zone setpoint, "Heating Valve Flow Adjust" no longer counts as the valve, and "Fan Enable" no longer counts as fan status.' },
+      { type: 'fix', text: 'Fan-powered boxes: the "Fan" point now counts as the terminal fan command, and "Zone Damper" counts as the damper command.' }
+    ] },
   { v: 'v2026.11.12.281', date: '2026-11-12', title: 'Site updates with no reload and no blank screen',
     items: [
       { type: 'change', text: 'A new version now loads behind the page you see. When it is ready, it takes the place of the old page in one step. The page does not reload, and you see no blank or loading screen.' },

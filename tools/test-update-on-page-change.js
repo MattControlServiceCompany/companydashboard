@@ -87,6 +87,8 @@ function eq(a, b, l) {
     srv.liveVer = 'v9999.01.01.2';
     await app().evaluate(() => sv('home'));
     eq(await waitSwap(), true, '(d) found by the page-change check: the new frame takes over');
+    // The new frame announces itself 800 ms after it loads (openReleaseNotesIfNeeded). Wait for that toast: a later step must not meet the marker of this swap.
+    await app().waitForFunction(() => window.__toasts.length > 0, null, { timeout: 5000 });
     let after = await app().evaluate(appState);
     eq([after.view, after.loginShown, after.whatsNewOpen], ['view-home', false, false], "(d) the new frame is on the new page, no login, no What's New");
     eq(after.loginFrames, 0, '(d) the new frame drew no frame with the login screen');
