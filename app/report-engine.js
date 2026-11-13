@@ -24694,10 +24694,11 @@ function rptPageASHRAE36ProposalPricing(n, d, opts) {
     detailFitsInline = _maxTierRows <= DETAIL_INLINE_ROW_LIMIT;
   }
 
-  var detailRow = '';
-  if (summaryData && summaryData.perTier && detailFitsInline) {
-    var detailCellStyle = 'padding:8px 10px 12px;border:1px solid var(--rpt-border);vertical-align:top';
-    detailRow =
+  var detailCellStyle = 'padding:8px 10px 12px;border:1px solid var(--rpt-border);vertical-align:top';
+  var detailNoteStyle =
+    'padding:10px;font-size:9px;color:var(--rpt-page-text);font-style:italic;border:1px solid var(--rpt-border);text-align:center';
+  function _detailRowInline() {
+    return (
       '<tr>' +
       tierCols
         .map(function (c) {
@@ -24711,35 +24712,65 @@ function rptPageASHRAE36ProposalPricing(n, d, opts) {
           );
         })
         .join('') +
-      '</tr>';
-  } else if (summaryData && summaryData.perTier && !detailFitsInline) {
-    var detailNoteStyle =
-      'padding:10px;font-size:9px;color:var(--rpt-page-text);font-style:italic;border:1px solid var(--rpt-border);text-align:center';
+      '</tr>'
+    );
+  }
+  function _detailRowNote() {
     // Reworded 2026-07-27 (coordinator review): the bare "detail for each scope" line let a
     // reader assume all three tiers' continuation pages are the same kind of thing (priced
     // detail). Recommended's continuation pages (item 6/7 above, _buildTierDetailPages/
-    // _buildItemizedPages) no longer carry any price — only scope/quantity — so this note now
+    // _buildItemizedPages) no longer carry any price, only scope/quantity, so this note now
     // says so explicitly instead of implying parity with Compliance/Full Scope's priced detail.
-    detailRow =
+    return (
       '<tr><td colspan="3" style="' +
       detailNoteStyle +
       '">Full Install &amp; Programming Detail for each scope is provided on the following pages. ' +
       'Compliance and Full Scope detail includes pricing; Recommended detail lists scope and ' +
-      'quantities only, funded through the monthly service allowance.</td></tr>';
+      'quantities only, funded through the monthly service allowance.</td></tr>'
+    );
+  }
+  function _buildTable(detailRowHtml) {
+    return (
+      '<table style="width:684px;max-width:684px;border-collapse:collapse;table-layout:fixed;margin-bottom:12px">' +
+      colgroup +
+      '<thead>' +
+      headRow +
+      '</thead><tbody>' +
+      descRow +
+      lblRow +
+      amtRow +
+      phaseSplitRow +
+      detailRowHtml +
+      '</tbody></table>'
+    );
   }
 
-  var table =
-    '<table style="width:684px;max-width:684px;border-collapse:collapse;table-layout:fixed;margin-bottom:12px">' +
-    colgroup +
-    '<thead>' +
-    headRow +
-    '</thead><tbody>' +
-    descRow +
-    lblRow +
-    amtRow +
-    phaseSplitRow +
-    detailRow +
-    '</tbody></table>';
+  // Recommended-tier phased implementation timeline (Task 2, 2026-07-22), allocated from (never added on
+  // top of) the Recommended tier's existing grand total. Guarded/silent-until-priced. Built here (before
+  // the page is assembled) so the page-fit measure below sees it.
+  var timelineBlock = _rptA36RecommendedTimelineHTML(d);
+
+  // MEASURED FIT (2026-11-13, proposal overflow): the row-count limit above is a model. A wrapped bullet
+  // in a 228px column takes 2-3 lines, so 17 rows overflowed the page and the rest of the detail was lost
+  // behind the footer. Measure the real page body (title + intro + table with every panel open, as the
+  // PDF and Word export print it + timeline) with the same DOM measurer the other report pages use
+  // (_rptMeasureHtmlH) against the page body budget; when it does not fit, the detail moves to the
+  // continuation pages (_buildTierDetailPages) which paginate by measured height.
+  var _pageBudget = _rptContentBudget('flush');
+  if (summaryData && summaryData.perTier && detailFitsInline) {
+    var _openH = _rptMeasureHtmlH(
+      (titleBlock + intro + _buildTable(_detailRowInline()) + timelineBlock).replace(
+        /(id="rpt-tier-detail-[^"]*" style=")display:none/g,
+        '$1display:block',
+      ),
+    );
+    if (_openH !== null && _openH > _pageBudget) detailFitsInline = false;
+  }
+
+  var detailRow = '';
+  if (summaryData && summaryData.perTier) detailRow = detailFitsInline ? _detailRowInline() : _detailRowNote();
+
+  var table = _buildTable(detailRow);
 
   // M&V / savings disclaimer — attached wherever estimates appear (verbatim SAVINGS_DISCLAIMER_TEXT).
   var disc =
@@ -24809,37 +24840,38 @@ function rptPageASHRAE36ProposalPricing(n, d, opts) {
   var bodyHTML = titleBlock + intro + table + timelineBlock;
   var trailerHTML = discBlock + svcBlock;
 
-  var resultPages = [
-    rptPage(n, 'ASHRAE 36 Service Proposal: Cost Estimate', bodyHTML, {
-      hideIntHdr: true,
-      data: fakeData,
-      label: 'Page ' + n + ' — Cost Estimate',
-    }),
-  ];
-  var nextPageNum = n + 1;
   // Optional: Zone CO2 Sensors (Matt, 2026-11-13). Same _pricingComputeSummaryData chain as the tier
   // table above (summaryData.optional, built by _pricingOptionalZoneCo2Summary); not in any tier total.
   var optionalHTML = _rptA36OptionalZoneCo2HTML(summaryData, tierCols);
-  if (optionalHTML) {
+
+  // PACKING (2026-11-13, proposal overflow + near-empty pages): the table page, the optional zone CO2
+  // block and the disclaimer / service agreement block share one page while the measured height fits the
+  // page body (_pageBudget); a block that does not fit starts the next page with the section title.
+  // Measurement unavailable (no DOM): every block keeps its own page, as before.
+  var costBlocks = [bodyHTML, optionalHTML, trailerHTML].filter(Boolean);
+  var costPageBodies = [];
+  costBlocks.forEach(function (blk, i) {
+    if (i === 0) {
+      costPageBodies.push(blk);
+      return;
+    }
+    var cur = costPageBodies[costPageBodies.length - 1];
+    var h = _rptMeasureHtmlH(cur + blk);
+    if (h !== null && h <= _pageBudget) costPageBodies[costPageBodies.length - 1] = cur + blk;
+    else costPageBodies.push(titleBlock + blk);
+  });
+  var resultPages = [];
+  var nextPageNum = n;
+  costPageBodies.forEach(function (body, i) {
     resultPages.push(
-      rptPage(nextPageNum, 'ASHRAE 36 Service Proposal: Cost Estimate', titleBlock + optionalHTML, {
+      rptPage(nextPageNum, 'ASHRAE 36 Service Proposal: Cost Estimate', body, {
         hideIntHdr: true,
         data: fakeData,
-        label: 'Page ' + nextPageNum + ' — Cost Estimate, Optional Zone CO2 Sensors',
+        label: 'Page ' + nextPageNum + ' — Cost Estimate' + (i ? ' (continued)' : ''),
       }),
     );
     nextPageNum++;
-  }
-  if (trailerHTML) {
-    resultPages.push(
-      rptPage(nextPageNum, 'ASHRAE 36 Service Proposal: Cost Estimate', titleBlock + trailerHTML, {
-        hideIntHdr: true,
-        data: fakeData,
-        label: 'Page ' + nextPageNum + ' — Cost Estimate Disclaimer',
-      }),
-    );
-    nextPageNum++;
-  }
+  });
 
   // ── "Per-building pricing breakdown" (costEstimatePerBuilding) REMOVED 2026-07-22 ─────────────
   // Matt's explicit request: "The Cost Estimate per building I do not like and it honestly gives
@@ -25096,6 +25128,7 @@ function rptPageASHRAE36ProposalPricing(n, d, opts) {
     if (!summaryData || !summaryData.perTier) return [];
     var toggles = (estimateState && estimateState.rowToggles) || {};
     var pages = [];
+    var detailBodies = [];
     var pageN = startN;
 
     function roundingBulletHTML(delta) {
@@ -25303,15 +25336,32 @@ function rptPageASHRAE36ProposalPricing(n, d, opts) {
           _escHtml(c.label) +
           (numChunks > 1 ? ' (' + (idx + 1) + ' of ' + numChunks + ')' : '') +
           '</div>';
-        pages.push(
-          rptPage(pageN, 'ASHRAE 36 Service Proposal: Cost Estimate', pageTitle + rowsHTML, {
-            hideIntHdr: true,
-            data: fakeData,
-            label: 'Page ' + pageN + ' — Install & Programming Detail (' + c.label + ')',
-          }),
-        );
-        pageN++;
+        detailBodies.push({ body: pageTitle + rowsHTML, label: c.label });
       });
+    });
+
+    // PACKING (2026-11-13): a tier's detail that is shorter than a page shares the page with the next tier's
+    // detail while the measured height fits (_rptMeasureHtmlH, same measurer as the cost page above); no
+    // measurement (no DOM) keeps one block per page.
+    var packed = [];
+    detailBodies.forEach(function (b) {
+      var cur = packed[packed.length - 1];
+      var joined = cur ? cur.body + '<div style="margin-top:16px">' + b.body + '</div>' : null;
+      var h = cur ? _rptMeasureHtmlH(joined) : null;
+      if (cur && h !== null && h <= _pageBudget) {
+        cur.body = joined;
+        cur.label += ', ' + b.label;
+      } else packed.push({ body: b.body, label: b.label });
+    });
+    packed.forEach(function (b) {
+      pages.push(
+        rptPage(pageN, 'ASHRAE 36 Service Proposal: Cost Estimate', b.body, {
+          hideIntHdr: true,
+          data: fakeData,
+          label: 'Page ' + pageN + ' — Install & Programming Detail (' + b.label + ')',
+        }),
+      );
+      pageN++;
     });
 
     return pages;

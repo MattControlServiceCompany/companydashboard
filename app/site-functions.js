@@ -2507,6 +2507,10 @@ async function siteResetAllMeterTableSettings() {
    site-ui.js delegates to this array and should NOT maintain its own copy.
 */
 var RELEASE_NOTES = [
+  { v: 'v2026.11.13.283', date: '2026-11-13', title: 'Service Proposal cost pages no longer cut off text',
+    items: [
+      { type: 'fix', text: 'ASHRAE 36 Service Proposal (PDF, preview and Word): long "Install & Programming Detail" lists no longer run past the bottom of the Cost Estimate page. When the list does not fit, it moves to the following pages. Short blocks (the optional zone CO2 table and the disclaimer) now share a page when they fit. No number or price changed.' }
+    ] },
   { v: 'v2026.11.13.282', date: '2026-11-13', title: 'Zone CO2 sensors are optional scope; BAS point matching fixes',
     items: [
       { type: 'change', text: 'Cost Estimate and proposal: zone CO2 sensors and their zone programming are now an optional section, "Optional: Zone CO2 Sensors", with their own count and cost. They are not in the Compliance, Recommended or Full Scope totals. Air handler CO2 stays in the totals. The ASHRAE 36 Audit Report still lists the zones with no CO2 sensor.' },
