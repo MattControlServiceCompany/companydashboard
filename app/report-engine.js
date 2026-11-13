@@ -24155,6 +24155,63 @@ function _rptA36TierDetailPanelHTML(key, tt, summaryData, estimateState, wantIte
 }
 
 /**
+ * _rptA36OptionalZoneCo2HTML - the "Optional: Zone CO2 Sensors" block of the Service Proposal cost page.
+ * Reads summaryData.optional[tier] (_pricingOptionalZoneCo2Summary, pricing-estimator.js), the one place
+ * that decides which rows are optional (_pricingIsOptionalZoneCo2Row) and prices them. Dollar parts use
+ * _rptFootTier like the tier table. Returns '' when no tier has optional zone CO2 rows.
+ * Matt, 2026-11-13: the audit report names the zones that lack CO2 sensors; the proposal offers them as
+ * optional scope, outside every tier total.
+ */
+function _rptA36OptionalZoneCo2HTML(summaryData, tierCols) {
+  if (!summaryData || !summaryData.optional) return '';
+  var lines = [];
+  var heading = '';
+  tierCols.forEach(function (c) {
+    var o = summaryData.optional[c.key];
+    if (!o || !o.rows || !o.rows.length || !(o.sensorQty > 0)) return;
+    var t = o.totals;
+    var f =
+      t && t.grand !== null && t.grand !== undefined && !isNaN(t.grand)
+        ? _rptFootTier(t.grand, t.phase1, t.phase2, t.method === 'workbook')
+        : null;
+    heading = o.label;
+    lines.push({ label: c.label, qty: o.sensorQty, foot: f });
+  });
+  if (!lines.length) return '';
+  var th =
+    'padding:8px 10px;font-size:11px;font-weight:700;color:var(--rpt-page-text);text-align:center;' +
+    'border:1px solid var(--rpt-border)';
+  var td = 'padding:8px 10px;font-size:10px;color:var(--rpt-page-text);border:1px solid var(--rpt-border)';
+  var money = function (v) {
+    // No bare $0 in client output: a tier with no optional programming prints a dash.
+    return v === null || v === undefined ? 'Available upon request' : v === 0 ? '—' : _fmtUSD(v);
+  };
+  var body = lines
+    .map(function (l) {
+      return (
+        '<tr><td style="' + td + ';font-weight:700">' + _escHtml(l.label) + '</td>' +
+        '<td style="' + td + ';text-align:right">' + l.qty + '</td>' +
+        '<td style="' + td + ';text-align:right">' + money(l.foot ? l.foot.p1r : null) + '</td>' +
+        '<td style="' + td + ';text-align:right">' + money(l.foot ? l.foot.p2r : null) + '</td>' +
+        '<td style="' + td + ';text-align:right;font-weight:700">' + money(l.foot ? l.foot.totalR : null) + '</td></tr>'
+      );
+    })
+    .join('');
+  return (
+    '<div style="font-size:11px;font-weight:700;color:var(--rpt-blue);margin:4px 0 6px">' +
+    _escHtml(heading) + '</div>' +
+    '<div style="font-size:10px;color:var(--rpt-page-text);line-height:1.6;margin-bottom:12px">' +
+    'The assessment found zones with no carbon dioxide sensor. This work is optional. It is not in any total ' +
+    'on the previous page. To add it, add the cost below to the option you choose.</div>' +
+    '<table style="width:684px;max-width:684px;border-collapse:collapse;table-layout:fixed;margin-bottom:12px">' +
+    '<colgroup><col style="width:144px"><col style="width:120px"><col style="width:140px"><col style="width:140px"><col style="width:140px"></colgroup>' +
+    '<thead><tr><th style="' + th + '">Option</th><th style="' + th + '">Zone CO2 sensors</th>' +
+    '<th style="' + th + '">Hardware &amp; Installation</th><th style="' + th + '">Programming</th>' +
+    '<th style="' + th + '">Optional cost</th></tr></thead><tbody>' + body + '</tbody></table>'
+  );
+}
+
+/**
  * _rptA36RecommendedTimelineHTML — Task 2 (2026-07-22); rebuilt 2026-07-26 (fix/phase-cost-
  * budget-model); REFRAMED 2026-07-27 (Matt's correction: "stop thinking of the recommended as a
  * 1 time cost... here is the timeline through 2028 and what parts/programming will happen during
@@ -24760,6 +24817,19 @@ function rptPageASHRAE36ProposalPricing(n, d, opts) {
     }),
   ];
   var nextPageNum = n + 1;
+  // Optional: Zone CO2 Sensors (Matt, 2026-11-13). Same _pricingComputeSummaryData chain as the tier
+  // table above (summaryData.optional, built by _pricingOptionalZoneCo2Summary); not in any tier total.
+  var optionalHTML = _rptA36OptionalZoneCo2HTML(summaryData, tierCols);
+  if (optionalHTML) {
+    resultPages.push(
+      rptPage(nextPageNum, 'ASHRAE 36 Service Proposal: Cost Estimate', titleBlock + optionalHTML, {
+        hideIntHdr: true,
+        data: fakeData,
+        label: 'Page ' + nextPageNum + ' — Cost Estimate, Optional Zone CO2 Sensors',
+      }),
+    );
+    nextPageNum++;
+  }
   if (trailerHTML) {
     resultPages.push(
       rptPage(nextPageNum, 'ASHRAE 36 Service Proposal: Cost Estimate', titleBlock + trailerHTML, {

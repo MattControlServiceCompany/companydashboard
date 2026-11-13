@@ -80,6 +80,8 @@ function make(store, tiers) {
   sb.buildComplianceRows = () => tiers.compliance;
   sb.buildRecommendedRows = () => tiers.recommended;
   sb.buildFullScopeRows = () => tiers['full-scope'];
+  // The tier summary reads each tier through _pricingTierRowsSplit (base rows + optional zone CO2 rows). Synthetic tiers have no optional rows.
+  sb._pricingTierRowsSplit = (p, t) => ({ base: tiers[t], optional: [] });
   sb._pricingApplyLaborOverrides = (p, r) => r;
   sb._pricingApplyQtyOverrides = (p, r) => r;
   return sb;
