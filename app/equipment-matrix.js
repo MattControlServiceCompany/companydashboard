@@ -8013,6 +8013,23 @@ function emRenderTable(data, filters) {
    function. Consumers needing "does this equipment have a failed sensor" for the Cost
    Estimate/Service Proposal (deficiency + replacement line) or a non-ASHRAE-36 audit mode
    should call this function per row; do not re-implement plausibility checks elsewhere.   */
+// Item 16 (2026-11-14): a unit is offline when the building automation system returns "?" for at least 10 points and for at
+// least 90 percent of the points that have a value (a fixed input such as a flow setting can still show a number). The one
+// definition; the audit rules and the Setpoint Programming Review read it (never a second copy).
+function emIsUnitOffline(row) {
+  var raw = row && row.pointsRaw;
+  if (!raw || typeof raw !== 'object') return false;
+  var unknown = 0;
+  var valued = 0;
+  for (var k in raw) {
+    var v = String(raw[k] == null ? '' : raw[k]).trim();
+    if (v === '') continue;
+    valued++;
+    if (/^\?(\s|$)/.test(v)) unknown++;
+  }
+  return unknown >= 10 && unknown >= 0.9 * valued;
+}
+
 function emGetSensorDeficiencies(row) {
   if (!row) return [];
   var pts = emGetNormalizedPoints(row);
@@ -15207,7 +15224,7 @@ var EM_POINT_CATEGORIES = {
       ashrae36Name: 'Return Air Damper Position Command',
       ashrae36Section: '5.16',
       configFlag: 'hasEconomizer',
-      patterns: [/ra.?damper/i, /return air damper/i, /return damper/i, /rad.?position/i, /exhaust damper/i],
+      patterns: [/ra.?damper/i, /return air damper/i, /return damper/i, /rad.?position/i], // item 13: an exhaust damper is not a return air damper
       aliases: [
         'ra damper',
         'return air damper',
@@ -15215,7 +15232,6 @@ var EM_POINT_CATEGORIES = {
         'ra damper command',
         'rad position',
         'return-damper',
-        'exhaust damper',
       ],
     },
     {
@@ -22042,6 +22058,24 @@ function emSingleZoneSequenceApplies(seqKey, coveredKeys) {
   return false;
 }
 
+// Item 12 (2026-11-14): positive evidence of a refrigerant (DX) cooling coil or a gas/electric
+// stage heating coil on ANY air handler or rooftop unit. A unit with this evidence and no
+// water-valve point has no chilled/hot water coil to report, so the valve point is N/A.
+var EM_COIL_EVIDENCE_PATTERNS = {
+  dx: [/compressor/i, /\bdx\b/i, /liquid\s*line/i, /\b(cool(ing)?|clg)\s*stage\s*\d/i, /\bstage\s*\d+\s*(cool(ing)?|clg)\b/i],
+  stageHeat: [/\bgas\s*(valve|heat)/i, /\bburner\b/i, /\bfurnace\b/i, /\belectric\s*heat/i, /\b(heat(ing)?|htg)\s*stage\s*\d/i, /\bstage\s*\d+\s*(heat(ing)?|htg)\b/i],
+};
+function emCoilEvidence(pointNames) {
+  var out = { dx: false, stageHeat: false };
+  for (var kind in EM_COIL_EVIDENCE_PATTERNS) {
+    var pats = EM_COIL_EVIDENCE_PATTERNS[kind];
+    for (var i = 0; i < pointNames.length && !out[kind]; i++) {
+      for (var pi = 0; pi < pats.length; pi++) { if (pats[pi].test(pointNames[i])) { out[kind] = true; break; } }
+    }
+  }
+  return out;
+}
+
 function emSingleZoneStagePoints(pointNames) {
   var out = { cool: false, heat: false };
   var pats = EM_SZ_AIR_UNIT_RULES.stagePatterns;
@@ -22179,6 +22213,7 @@ function emComputeCompliance(equipRow, configFlags, customMappings) {
 
   var _szUnit = emIsSingleZoneAirUnit(equipRow);
   var _szStages = _szUnit ? emSingleZoneStagePoints(rawNames) : null;
+  var _coilEv = (category === 'ahu' || category === 'rtu') ? emCoilEvidence(rawNames) : null;
   for (var di = 0; di < catDefs.length; di++) {
     var def = catDefs[di];
     if (!def.required) continue; // Only count required points toward coverage
@@ -22189,6 +22224,13 @@ function emComputeCompliance(equipRow, configFlags, customMappings) {
     // separate heating/cooling setpoint is N/A, not missing. A real split point still counts.
     if ((def.key === 'coolSP' || def.key === 'htgSP') && coveredKeys.combinedSP && !coveredKeys[def.key]) {
       naPoints.push({ categoryKey: def.key, categoryLabel: def.label, reason: 'single combined setpoint' });
+      totalNA++;
+      continue;
+    }
+
+    // Item 12: DX cooling or gas/electric stage heating is evidence the water valve does not exist.
+    if (_coilEv && !coveredKeys[def.key] && ((def.key === 'clgValve' && _coilEv.dx) || (def.key === 'htgValve' && _coilEv.stageHeat))) {
+      naPoints.push({ categoryKey: def.key, categoryLabel: def.label, reason: def.key === 'clgValve' ? 'refrigerant (DX) cooling, no chilled water coil' : 'gas or electric stage heating, no hot water coil', source: 'coilType' });
       totalNA++;
       continue;
     }

@@ -148,7 +148,12 @@ check(szOa.seq.ahu_economizer.status !== 'na' && szOa.seq.ahu_min_oa.status !== 
 check(szOa.seq.ahu_dsp_reset.status === 'na', 'sz rtu WITH OA damper: duct static pressure reset is still na');
 const szFreeze = seqFor(Object.assign({ id: 'syn-sz-d', points: Object.assign({ 'Freeze Stat': 'Normal' }, szPts) }, szBase));
 check(szFreeze.seq.ahu_freeze_prot.status !== 'na', 'sz rtu WITH freeze stat: freeze protection applies (got ' + szFreeze.seq.ahu_freeze_prot.status + ')');
-const mzPts = Object.assign({ 'Duct Static Pressure': '1.1', 'Supply Fan Speed': '60', 'Outside Air Damper Command': '20' }, szPts);
+// 2026-11-14 (round 1 item 12): stage points on ANY air handler are DX or gas/electric evidence and make the coil valve N/A, so the
+// multi-zone water-coil case uses the same points without the stage points.
+const mzBase = Object.assign({}, szPts);
+delete mzBase['Cooling Stage 1'];
+delete mzBase['Heating Stage 1'];
+const mzPts = Object.assign({ 'Duct Static Pressure': '1.1', 'Supply Fan Speed': '60', 'Outside Air Damper Command': '20' }, mzBase);
 const mz = seqFor({ id: 'syn-mz-a', category: 'ahu', subtype: 'vav', equipName: 'SYN AHU-1', equipType: 'SYN AHU-1', points: mzPts });
 const mzNoSub = seqFor({ id: 'syn-mz-b', category: 'ahu', subtype: '', equipName: 'SYN AHU-2', equipType: 'SYN AHU-2', points: { 'Supply Fan Status': 'On' } });
 const SIX = ['ahu_sat_reset', 'ahu_dsp_reset', 'ahu_economizer', 'ahu_freeze_prot', 'ahu_min_oa', 'demandCtrl'];

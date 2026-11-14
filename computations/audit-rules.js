@@ -100,15 +100,27 @@ function auditRuleSetpointsOffStandard(row, ctx) {
   ];
 }
 
-// Rule: sensor readings that are dead or suspect (emGetSensorDeficiencies is the one source).
+// Rule: sensor readings with an impossible or unusual value (emGetSensorDeficiencies is the one source).
+// A unit that returns no readings at all (emIsUnitOffline) is one finding, not one per sensor (2026-11-14).
 function auditRuleSensorDeficiency(row) {
+  if (typeof emIsUnitOffline === 'function' && emIsUnitOffline(row)) {
+    return [
+      _auditFinding(row, 'unit-offline', {
+        issueType: 'Deficiency',
+        deficiency: true,
+        issue: 'The unit did not report any readings during the review (offline).',
+        change: 'Check the unit power and network connection.',
+      }),
+    ];
+  }
   return emGetSensorDeficiencies(row).map(function (d) {
     var nm = EM_SENSOR_DEFICIENCY_CATEGORY_LABELS[d.col] || d.col;
+    var shown = d.raw == null || String(d.raw).trim() === '' ? '' : ' ' + String(d.raw).trim();
     return _auditFinding(row, 'sensor-' + d.col, {
       issueType: 'Deficiency',
       deficiency: true,
-      issue: nm + ' sensor reading looks ' + (d.status === 'failed' ? 'dead' : 'suspect') + '.',
-      change: 'Check the sensor and replace it if it is bad.',
+      issue: nm + ' sensor reads' + shown + (d.status === 'failed' ? ', a value outside the possible range.' : ', a value outside the normal range.'),
+      change: 'Check the sensor and replace it if it has failed.',
     });
   });
 }

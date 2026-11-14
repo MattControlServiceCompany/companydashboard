@@ -2507,6 +2507,12 @@ async function siteResetAllMeterTableSettings() {
    site-ui.js delegates to this array and should NOT maintain its own copy.
 */
 var RELEASE_NOTES = [
+  { v: 'v2026.11.14.291', date: '2026-11-14', title: 'ASHRAE 36 Detailed audit: round 1 fixes',
+    items: [
+      { type: 'fix', text: 'The Detailed audit report says "ASHRAE 36" everywhere, uses one word for outdoor air and setpoint, adds the date of the data on the cover, adds a Glossary page, and explains why the devices to install are fewer than the missing points.' },
+      { type: 'fix', text: 'A unit with refrigerant (DX) cooling or gas or electric stage heating is no longer told it lacks a chilled water or hot water valve. An exhaust damper no longer counts as the return air damper. Findings for air handlers of two types in one library now name the right units.' },
+      { type: 'fix', text: 'A zone terminal that returns no readings is one "offline" finding, not two sensor findings, and Appendix B says how many zones its averages cover. A 24-hour schedule no longer changes the building average schedule.' }
+    ] },
   { v: 'v2026.11.14.290', date: '2026-11-14', title: 'Cost Estimate: demand ventilation wording for CO2 sensor work',
     items: [
       { type: 'fix', text: 'In the phase timeline, a phase that installs CO2 sensors now says that it includes demand-controlled ventilation work. Before, the sensor rows did not start this wording.' }

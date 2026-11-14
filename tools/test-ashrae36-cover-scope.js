@@ -74,7 +74,7 @@ const RUN_DIR =
 // was 1127 before the 2026-11-13 space type fix: one "Electrical <id>" room is now an electrical room, so its demand ventilation sequence is N/A (-1)
 // was 1126/1112 before A36-4 (2026-11-14): fpb and ddvav zone CO2 are required, so missing zone CO2 on those boxes is called out (+86 devices; one demand ventilation sequence fewer)
 const EXPECTED_FULL_SEQUENCES = 1125;
-const EXPECTED_FULL_SENSORS = 1198;
+const EXPECTED_FULL_SENSORS = 1181; // was 1198 before round 1 item 12 (2026-11-14): DX / gas-electric stage units have no water valve to install
 // The one-building case uses the first building of the restored data (set after the full-selection run); no building name is kept in this file.
 let oneBuildingName = null;
 
