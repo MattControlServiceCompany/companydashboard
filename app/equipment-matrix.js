@@ -1525,7 +1525,7 @@ var EM_POINT_MAP = [
   },
 
   // Phase 4: Return Air Enthalpy
-  // ASHRAE 36 §5.3.3 — differential enthalpy economizer control.
+  // ASHRAE 36 §5.1.17 — differential enthalpy economizer control.
   // Required ONLY when differential enthalpy economizer control is used.
   // Engine 2: gated by new configFlag hasDiffEnthalpyEcon (default:false).
   // PLACEMENT: near oaEnthalpy entry (C3 group — economizer sensors).
@@ -1592,7 +1592,7 @@ var EM_POINT_MAP = [
   },
 
   // Phase 4: Occupancy Sensor
-  // ASHRAE 36 §3.1.5 — optional/conditional ("where a zone has an occupancy sensor").
+  // ASHRAE 36 §5.2.1 — optional/conditional ("where a zone has an occupancy sensor").
   // hasOccSensor configFlag in EM_EQUIP_CONFIG_FLAGS.vav/ddvav (default:false) guards coverage.
   // Engine 2 adds this to vav/ddvav EM_POINT_CATEGORIES with required:true + configFlag.
   // \bmode\b in negativePatterns prevents future collision with scheduledOccupied's
@@ -1950,7 +1950,7 @@ var EM_POINT_MAP = [
   },
 
   // Phase 4: Exhaust Fan Status / Enable
-  // ASHRAE 36 §5.16.1 / §4.2.9 — exhaust fan run monitoring.
+  // ASHRAE 36 §5.19 — exhaust fan run monitoring.
   // ef.fanStatus in Engine 2 already requires this for ef-category rows.
   // Engine 1 col adds Raw View visibility for ef-type programs and AHU programs
   // that directly control their own exhaust fan (18 of 329 Client D AHU rows have this).
@@ -2016,6 +2016,8 @@ var EM_POINT_MAP = [
       /supply\s+fan\s+\d+\s+(vfd\s+)?status\b/i,
       // Proving status: "Supply Fan Proving Status ANI"
       /supply\s+fan\s+proving\s+status\b/i,
+      // Item 3: AHU-1 CD Supply Fan VFD Status is the supply fan status.
+      /supply\s+fan\s+vfd\s+status\b/i,
     ],
     // M3: expanded negativePatterns. Exhaust/EF-N fans are not supply fans. Relief/return fans are
     // not supply fans. Smoke evac and destratification fans are life-safety/specialty. Latched failure
@@ -2030,7 +2032,7 @@ var EM_POINT_MAP = [
     negativePatterns: [
       /alarm|fault|speed/i,
       /\bvfd\s+speed\b|\bvfd\s+fault\b/i,
-      /\b(exhaust|ef-?\d+|relief|return\s+fan|smoke|evac|destratif|latched|failure|disabled|enabled|enable|command)\b/i,
+      /\b(exhaust|ef-?\d+|relief|return\s+fan|smoke|evac|destratif|latched|failure|disabled|enabled|enable|command|bypass)\b/i,
       /RTU\s+(Disabled|Enabled)|Unit\s+(Disabled|Enabled)/i,
     ],
     types: ['BI', 'BO', 'BAI', 'BAO', 'BAV', 'BV'],
@@ -3106,6 +3108,18 @@ function emVerifyTypeByPoints(group) {
   )
     return { category: 'ddvav', subtype: '', rule: '6b', confidence: 'strong' };
 
+  // 6c. Dual-deck VAV with two named air sources: a cold deck air source AND a hot deck air source
+  // ("CD Air Source Status" + "HD Air Source Status", or the Minimum pair). Positive evidence is the pair.
+  // Item 3 (round 3). Gated on !hasDxSignal like 6 and 6b.
+  if (
+    hasPointNonDiag(/\bcd air source (status|minimum)/) &&
+    hasPointNonDiag(/\bhd air source (status|minimum)/) &&
+    hasZoneTemp &&
+    !hasSupplyFan &&
+    !hasDxSignal
+  )
+    return { category: 'ddvav', subtype: '', rule: '6c', confidence: 'strong' };
+
   // 7. Fan-powered box (FPB): airflow + terminal fan + heating valve + air source mode
   // fix/point-evidence-all-rows: gated on !hasDxSignal — see hasDxSignal comment above.
   if (
@@ -4050,6 +4064,18 @@ function emLoadMatrix(projId) {
         _hwprow.category = 'plumbing';
         continue;
       }
+    }
+    // Step 4C (round 1b item 8, 2026-11-14): an air handler or rooftop unit filed as single-zone, in a building whose zones are served by
+    // terminal units (VAV boxes, fan-powered boxes or dual-duct boxes), serves those terminals: it is a multi-zone unit. Classified by served
+    // terminals. Both must hold: the building has terminal units AND the unit's own points show it serves them (emServesTerminals). In-memory only, like the shims above.
+    var _termByBuilding = {};
+    for (var _tbi = 0; _tbi < _emData.rows.length; _tbi++) {
+      var _tbr = _emData.rows[_tbi];
+      if (_tbr && (_tbr.category === 'vav' || _tbr.category === 'fpb' || _tbr.category === 'ddvav')) _termByBuilding[_tbr.building || ''] = true;
+    }
+    for (var _tci = 0; _tci < _emData.rows.length; _tci++) {
+      var _tcr = _emData.rows[_tci];
+      if (_tcr && (_tcr.category === 'ahu' || _tcr.category === 'rtu') && _tcr.subtype === 'sz' && _termByBuilding[_tcr.building || ''] && emServesTerminals(_tcr)) _tcr.subtype = 'mtz';
     }
     _emSelfHealDone[projId] = true;
   }
@@ -5539,7 +5565,7 @@ function emGetAuditColDefs(filteredRows) {
     co2: 2,
     rhReturn: 2,
     co2Return: 2,
-    occSensor: 2, // Phase 4: occupancy sensor (§3.1.5, configFlag-gated)
+    occSensor: 2, // Phase 4: occupancy sensor (§5.2.1, configFlag-gated)
     // Group 3 — Air Temperatures
     sat: 3,
     rat: 3,
@@ -5561,7 +5587,7 @@ function emGetAuditColDefs(filteredRows) {
     oaRh: 5,
     oaDewpoint: 5,
     oaEnthalpy: 5,
-    raEnthalpy: 5, // Phase 4: return air enthalpy (§5.3, configFlag-gated)
+    raEnthalpy: 5, // Phase 4: return air enthalpy (§5.1.17, configFlag-gated)
     oaWetBulb: 5,
     // Group 6 — Non-Zone Setpoints
     dspSp: 6,
@@ -5745,7 +5771,7 @@ function emGetAuditColDefs(filteredRows) {
       'Upload trend CSVs via the BAS Trends view to populate this column.',
   });
 
-  // Phase 4.1 — "Setpoint Values" column (GL36 §3.1.1.1 / Table 3.1.1.3 value compliance).
+  // Phase 4.1 — "Setpoint Values" column (GL36 Table 3.1.1.1 and Section 3.1.1.3 value compliance).
   // Only applies to zone equipment (vav, fpb, ddvav, zone, fcu). Shows pill per row.
   var _spZoneCats = { vav: true, fpb: true, ddvav: true, zone: true, fcu: true };
   var _hasSpZoneType = false;
@@ -5764,7 +5790,7 @@ function emGetAuditColDefs(filteredRows) {
       isAuditSpValues: true,
       spZoneEquipTypes: Object.keys(_spZoneCats),
       title:
-        'ASHRAE 36 §3.1.1.1 / Table 3.1.1.3 — Compares actual zone setpoint values against ASHRAE 36 defaults. ' +
+        'ASHRAE 36 Table 3.1.1.1 — Compares actual zone setpoint values against ASHRAE 36 defaults. ' +
         'Green = All Match, Amber = Needs Review (deviations found — may be intentional per §3.1.1.1), ' +
         'Gray = No Data (setpoints not in BAS export), — = not applicable to this equipment type. ' +
         'Click Coverage % cell to see the full ASHRAE 36 Setpoint Check detail.',
@@ -6659,6 +6685,9 @@ function emGetNormalizedPoints(row) {
   // hwSupplyTemp: one boiler outlet is not the system hot water supply. A system supply point displaces it.
   function _isVirtual(name, col) {
     if (/^\s*virtual\s+/i.test(name)) return true;
+    // Item 3: an ERV-prefixed supply fan point is a fallback; the air handler's own supply fan displaces it,
+    // so status and speed come from the same fan.
+    if (/^(supplyFanStatus|supplyFanSpeed|supplyFanEnable|supplyFanAmps)$/.test(col) && /^\s*erv\b/i.test(name)) return true;
     return col === 'hwSupplyTemp' && /\bboiler\b/i.test(name);
   }
 
@@ -10297,7 +10326,7 @@ function emRenderAuditCell(row, def, compliance, coveredMap, naMap, missingMap, 
   }
 
   // ── Setpoint Values column (Phase 4.1) ──
-  // GL36 §3.1.1.1 / Table 3.1.1.3 value compliance pill.
+  // GL36 Table 3.1.1.1 and Section 3.1.1.3 value compliance pill.
   // Green "All Match", Amber "N Needs Review", Gray "No Data", dash for N/A types.
   if (def.isAuditSpValues) {
     var _spCats = { vav: true, fpb: true, ddvav: true, zone: true, fcu: true };
@@ -10755,9 +10784,9 @@ function emShowComplianceDetail(rowId) {
       '<div style="margin-bottom:16px">' +
       '<div style="font-weight:600;font-size:12px;color:var(--text2);text-transform:uppercase;letter-spacing:0.05em;margin-bottom:4px">ASHRAE 36 Setpoint Check</div>' +
       '<div style="font-size:10px;color:var(--text3);margin-bottom:8px" ' +
-      'title="ASHRAE 36 §3.1.1.1/Table 3.1.1.3 provides default setpoints. Designers may intentionally use different values; ' +
+      'title="ASHRAE 36 Table 3.1.1.1 provides default setpoints. Designers may intentionally use different values; ' +
       'items marked Needs Review should be confirmed as intentional.">' +
-      'ASHRAE 36 §3.1.1.1/Table 3.1.1.3 defaults. Deviations may be intentional (hover for details).' +
+      'ASHRAE 36 Table 3.1.1.1 defaults. Deviations may be intentional (hover for details).' +
       '</div>' +
       '<table style="width:100%;border-collapse:collapse;font-size:11px">' +
       '<thead><tr style="background:var(--s1)">' +
@@ -14416,7 +14445,7 @@ var EM_EQUIP_CONFIG_FLAGS = {
     // M4 Part C: default true so missing CO2 lowers audit coverage for AHU/VAV
     { key: 'hasCO2', label: 'Has CO2 Sensor', default: true },
     { key: 'hasOAFlow', label: 'Has Outside Air Flow Meter', default: false },
-    // Phase 4: differential enthalpy economizer requires return air enthalpy sensor (§5.3.3).
+    // Phase 4: differential enthalpy economizer requires return air enthalpy sensor (§5.1.17).
     // default:false — not universal; only set true when this specific economizer type is used.
     { key: 'hasDiffEnthalpyEcon', label: 'Has Differential Enthalpy Economizer', default: false },
   ],
@@ -14492,7 +14521,7 @@ var EM_EQUIP_CONFIG_FLAGS = {
     },
     {
       key: 'occupancyCat',
-      label: 'Occupancy Category (ASHRAE 36 Table 3.1.1.3)',
+      label: 'Occupancy Category (ASHRAE 36 Section 3.1.1.3)',
       type: 'select',
       options: 'Object.keys(GL36_CO2_DEFAULTS)',
       default: 'office_space',
@@ -14526,7 +14555,7 @@ var EM_EQUIP_CONFIG_FLAGS = {
     },
     {
       key: 'occupancyCat',
-      label: 'Occupancy Category (ASHRAE 36 Table 3.1.1.3)',
+      label: 'Occupancy Category (ASHRAE 36 Section 3.1.1.3)',
       type: 'select',
       options: 'Object.keys(GL36_CO2_DEFAULTS)',
       default: 'office_space',
@@ -14559,7 +14588,7 @@ var EM_EQUIP_CONFIG_FLAGS = {
     },
     {
       key: 'occupancyCat',
-      label: 'Occupancy Category (ASHRAE 36 Table 3.1.1.3)',
+      label: 'Occupancy Category (ASHRAE 36 Section 3.1.1.3)',
       type: 'select',
       options: 'Object.keys(GL36_CO2_DEFAULTS)',
       default: 'office_space',
@@ -14606,7 +14635,7 @@ var EM_EQUIP_CONFIG_FLAGS = {
     },
     {
       key: 'occupancyCat',
-      label: 'Occupancy Category (ASHRAE 36 Table 3.1.1.3)',
+      label: 'Occupancy Category (ASHRAE 36 Section 3.1.1.3)',
       type: 'select',
       options: 'Object.keys(GL36_CO2_DEFAULTS)',
       default: 'office_space',
@@ -14635,7 +14664,7 @@ var EM_EQUIP_CONFIG_FLAGS = {
     },
     {
       key: 'occupancyCat',
-      label: 'Occupancy Category (ASHRAE 36 Table 3.1.1.3)',
+      label: 'Occupancy Category (ASHRAE 36 Section 3.1.1.3)',
       type: 'select',
       options: 'Object.keys(GL36_CO2_DEFAULTS)',
       default: 'office_space',
@@ -14799,7 +14828,7 @@ var GL36_TEMP_DEFAULTS = {
 };
 
 /* ── GL36_CO2_DEFAULTS ──────────────────────────────────────────────────────
-   GL36-2021 Table 3.1.1.3, pp.5-6 — Default CO2 setpoints (ppm)
+   GL36-2021 Section 3.1.1.3, pp.5-6 — Default CO2 setpoints (ppm)
    Values assume 400 ppm outdoor air, 90% steady-state per Lawrence 2008     */
 var GL36_CO2_DEFAULTS = {
   /* Correctional Facilities */
@@ -15205,7 +15234,8 @@ var EM_POINT_CATEGORIES = {
       ashrae36Name: 'Outdoor Air Damper Position Command',
       ashrae36Section: '5.16',
       configFlag: 'hasEconomizer',
-      patterns: [/oa.?damper/i, /outdoor air damper/i, /econ.?damper/i, /oad.?position/i, /outside air damper/i],
+      // round 1b item 2: "Economizer Position" is the outdoor air damper position ("Economizer Minimum Position" is a setpoint and does not match)
+      patterns: [/oa.?damper/i, /outdoor air damper/i, /econ.?damper/i, /oad.?position/i, /outside air damper/i, /^economizer\s+position/i],
       aliases: [
         'oa damper',
         'outdoor air damper',
@@ -15407,7 +15437,7 @@ var EM_POINT_CATEGORIES = {
       patterns: [/oa.?enthalpy/i, /outdoor.?enthalpy/i, /outside air enthalpy/i, /enthalpy sensor/i],
       aliases: ['oa enthalpy', 'outdoor enthalpy', 'outside air enthalpy', 'oa-h', 'outdoor air h', 'enthalpy sensor'],
     },
-    // Phase 4: Return Air Enthalpy (ASHRAE 36 §5.3.3 — differential enthalpy economizer only)
+    // Phase 4: Return Air Enthalpy (ASHRAE 36 §5.1.17 — differential enthalpy economizer only)
     // Required only when hasDiffEnthalpyEcon=true. Default false → all AHU rows N/A by default.
     // negativeGuards block OA enthalpy variants and mode-select BV objects.
     {
@@ -15416,7 +15446,7 @@ var EM_POINT_CATEGORIES = {
       required: true,
       configFlag: 'hasDiffEnthalpyEcon', // NEW flag, default:false → all N/A by default
       ashrae36Name: 'Return Air Enthalpy',
-      ashrae36Section: '5.3',
+      ashrae36Section: '5.1.17',
       patterns: [/return\s+air\s+enthalpy\b/i, /\bra\s+enthalpy\b/i, /\brat\s+enthalpy\b/i],
       aliases: [
         'return air enthalpy',
@@ -16456,7 +16486,7 @@ var EM_POINT_CATEGORIES = {
       patterns: [/\bco2\b/i, /carbon dioxide/i, /co2.?ppm/i, /zone.?co2/i],
       aliases: ['zone co2', 'room co2', 'co2 sensor', 'co2 ppm', 'carbon dioxide', 'space co2'],
     },
-    // Phase 4: Occupancy Sensor (ASHRAE 36 §3.1.5 — conditional: "where a zone has an occupancy sensor")
+    // Phase 4: Occupancy Sensor (ASHRAE 36 §5.2.1 — conditional: "where a zone has an occupancy sensor")
     // hasOccSensor configFlag in EM_EQUIP_CONFIG_FLAGS.vav (default:false) keeps Coverage % unchanged
     // until the user explicitly marks a unit. required:true + configFlag means N/A when flag=false.
     {
@@ -16465,7 +16495,7 @@ var EM_POINT_CATEGORIES = {
       required: true,
       configFlag: 'hasOccSensor', // existing in EM_EQUIP_CONFIG_FLAGS.vav, default:false
       ashrae36Name: 'Occupancy Sensor',
-      ashrae36Section: '3.1.5',
+      ashrae36Section: '5.2.1',
       patterns: [/\boccupancy\s+sensor\b/i, /\bmotion\s+sensor\b/i, /\bpir\s+sensor\b/i],
       aliases: [
         'occupancy sensor',
@@ -16697,7 +16727,7 @@ var EM_POINT_CATEGORIES = {
     },
   ],
 
-  /* ── FPB (Fan-Powered Box — Parallel or Series, ASHRAE 36 §5.7/5.8) ─ */
+  /* ── FPB (Fan-Powered Box — Parallel or Series, ASHRAE 36 §5.7 to 5.10) ─ */
   fpb: [
     // afe7abb5: single combined Temperature Setpoint (heat = cool, deadband 0). Its own category,
     // listed FIRST so the point is claimed here and not also by zoneTemp's /space temp/ (one point = one point).
@@ -16723,7 +16753,7 @@ var EM_POINT_CATEGORIES = {
       label: 'Zone Air Temperature',
       required: true,
       ashrae36Name: 'Zone Air Temperature',
-      ashrae36Section: '5.7',
+      ashrae36Section: '5.7 to 5.10',
       patterns: [/zone.?temp/i, /room.?temp/i, /space temp/i, /\bzat\b/i],
       aliases: ['zone temp', 'room temp', 'zone air temp', 'space temp', 'space temperature', 'zat', 'zone-temp'],
     },
@@ -16733,7 +16763,7 @@ var EM_POINT_CATEGORIES = {
       label: 'Zone Cooling Setpoint',
       required: true,
       ashrae36Name: 'Zone Cooling Setpoint',
-      ashrae36Section: '5.7',
+      ashrae36Section: '5.7 to 5.10',
       patterns: [/cooling.?setpoint/i, /cool.?setpoint/i, /t.?cool/i, /cooling occupied setpoint/i],
       aliases: [
         'cooling setpoint',
@@ -16750,7 +16780,7 @@ var EM_POINT_CATEGORIES = {
       label: 'Zone Heating Setpoint',
       required: true,
       ashrae36Name: 'Zone Heating Setpoint',
-      ashrae36Section: '5.7',
+      ashrae36Section: '5.7 to 5.10',
       patterns: [/heating.?setpoint/i, /heat.?setpoint/i, /t.?heat/i, /heating occupied setpoint/i],
       aliases: [
         'heating setpoint',
@@ -16766,7 +16796,7 @@ var EM_POINT_CATEGORIES = {
       label: 'Primary (Cold Deck) Airflow',
       required: true,
       ashrae36Name: 'Primary (Cold Deck) Airflow',
-      ashrae36Section: '5.7',
+      ashrae36Section: '5.7 to 5.10',
       patterns: [
         /primary.?airflow/i,
         /cold.?deck.?flow/i,
@@ -16802,7 +16832,7 @@ var EM_POINT_CATEGORIES = {
       label: 'Discharge Air Temperature',
       required: true,
       ashrae36Name: 'Discharge Air Temperature',
-      ashrae36Section: '5.7',
+      ashrae36Section: '5.7 to 5.10',
       patterns: [/discharge air temp/i, /\bdat\b/i, /reheat discharge/i, /\btdis\b/i, /supply temperature/i],
       aliases: [
         'dat',
@@ -16819,7 +16849,7 @@ var EM_POINT_CATEGORIES = {
       label: 'Terminal Fan Status',
       required: true,
       ashrae36Name: 'Terminal Fan Status',
-      ashrae36Section: '5.7',
+      ashrae36Section: '5.7 to 5.10',
       patterns: [
         /term.?fan.?status/i,
         /box.?fan.?status/i,
@@ -16835,7 +16865,7 @@ var EM_POINT_CATEGORIES = {
       label: 'Air Handling Unit Supply Fan Status',
       required: true,
       ashrae36Name: 'Air Handling Unit Supply Fan Status',
-      ashrae36Section: '5.7',
+      ashrae36Section: '5.7 to 5.10',
       patterns: [/ahu fan.?status/i, /supply fan.?status/i, /fan status/i, /air source status/i],
       aliases: ['fan status', 'ahu fan status', 'supply fan status', 'ahu fan run', 'air source status'],
     },
@@ -16844,7 +16874,7 @@ var EM_POINT_CATEGORIES = {
       label: 'Primary Damper Position Command',
       required: true,
       ashrae36Name: 'Primary Damper Position Command',
-      ashrae36Section: '5.7',
+      ashrae36Section: '5.7 to 5.10',
       patterns: [/primary.?damper/i, /damper.?position/i, /vav.?damper/i, /box.?damper/i, /cold.?deck.?damper/i, _EM_ZONE_DAMPER_RE],
       aliases: ['damper position', 'primary damper', 'cold deck damper', 'vav damper', 'box damper'],
     },
@@ -16853,7 +16883,7 @@ var EM_POINT_CATEGORIES = {
       label: 'Terminal Fan Enable Command',
       required: true,
       ashrae36Name: 'Terminal Fan Enable Command',
-      ashrae36Section: '5.7',
+      ashrae36Section: '5.7 to 5.10',
       patterns: [/term.?fan.?enable/i, /box.?fan.?enable/i, /terminal.?fan.?command/i, /\by1fan\b/i, /fan.?enable/i, /^fan\s*$/i],
       aliases: [
         'term fan enable',
@@ -16870,7 +16900,7 @@ var EM_POINT_CATEGORIES = {
       label: 'Reheat Valve Position Command',
       required: false,
       ashrae36Name: 'Reheat Valve Position Command',
-      ashrae36Section: '5.7',
+      ashrae36Section: '5.7 to 5.10',
       configFlag: 'hasReheat',
       patterns: [/reheat.?valve/i, /hw.?reheat/i, /heating.?valve/i, /hot water valve/i, /hw.?valve/i],
       aliases: ['reheat valve', 'hw reheat valve', 'heating valve', 'hot water valve', 'hw valve'],
@@ -16880,7 +16910,7 @@ var EM_POINT_CATEGORIES = {
       label: 'Terminal Fan Speed Command',
       required: false,
       ashrae36Name: 'Terminal Fan Speed Command',
-      ashrae36Section: '5.8',
+      ashrae36Section: '5.7 to 5.10',
       configFlag: 'isSeries',
       patterns: [
         /term.?fan.?speed/i,
@@ -16904,7 +16934,7 @@ var EM_POINT_CATEGORIES = {
       label: 'Demand Level',
       required: false,
       ashrae36Name: 'Demand Level',
-      ashrae36Section: '5.7',
+      ashrae36Section: '5.7 to 5.10',
       patterns: [/\bdemand\s+level\b/i, /\bkw\s+demand\s+level\b/i],
       aliases: [
         'demand level',
@@ -16921,7 +16951,7 @@ var EM_POINT_CATEGORIES = {
       label: 'Outdoor Air Relative Humidity',
       required: false,
       ashrae36Name: 'Outdoor Air Relative Humidity',
-      ashrae36Section: '5.7',
+      ashrae36Section: '5.7 to 5.10',
       patterns: [
         /oa.?rh\b/i,
         /outdoor.{0,10}humidity/i,
@@ -16951,7 +16981,7 @@ var EM_POINT_CATEGORIES = {
       label: 'Outdoor Air Dewpoint',
       required: false,
       ashrae36Name: 'Outdoor Air Dewpoint',
-      ashrae36Section: '5.7',
+      ashrae36Section: '5.7 to 5.10',
       patterns: [
         /outside\s+air\s+dew\s?point/i,
         /outdoor\s+air\s+dew\s?point/i,
@@ -16978,7 +17008,7 @@ var EM_POINT_CATEGORIES = {
       label: 'Zone CO2 Sensor',
       required: true, // A36-4: Matt 2026-11-13, missing zone CO2 is called out; the proposal prices it as optional scope
       ashrae36Name: 'Zone CO2 Concentration',
-      ashrae36Section: '5.7 / DCV',
+      ashrae36Section: '5.7 to 5.10 / DCV',
       configFlag: 'hasCO2',
       patterns: [/\bco2\b/i, /carbon dioxide/i, /co2.?ppm/i, /zone.?co2/i],
       aliases: ['zone co2', 'room co2', 'co2 sensor', 'co2 ppm', 'carbon dioxide', 'space co2'],
@@ -16991,7 +17021,7 @@ var EM_POINT_CATEGORIES = {
       label: 'Zone Humidity',
       required: false,
       ashrae36Name: 'Zone Relative Humidity',
-      ashrae36Section: '5.7',
+      ashrae36Section: '5.7 to 5.10',
       patterns: [/zone.?humidity/i, /zone.?r\.?h/i, /space.?humidity/i, /\bhumidity\b/i, /ambient.?humidity/i],
       aliases: ['zone humidity', 'zone rh', 'space humidity', 'humidity', 'ambient humidity'],
     },
@@ -17000,7 +17030,7 @@ var EM_POINT_CATEGORIES = {
       label: 'Cooling Setpoint Adjust',
       required: false,
       ashrae36Name: 'Cooling Setpoint Adjustment',
-      ashrae36Section: '5.7',
+      ashrae36Section: '5.7 to 5.10',
       patterns: [/cooling setpoint adjust/i, /clg setpoint adj/i, /cooling set point adjust/i, /cool setpoint adj/i],
       aliases: [
         'cooling setpoint adjust',
@@ -17015,7 +17045,7 @@ var EM_POINT_CATEGORIES = {
       label: 'Heating Setpoint Adjust',
       required: false,
       ashrae36Name: 'Heating Setpoint Adjustment',
-      ashrae36Section: '5.7',
+      ashrae36Section: '5.7 to 5.10',
       patterns: [/heating setpoint adjust/i, /htg setpoint adj/i, /heating set point adjust/i, /heat setpoint adj/i],
       aliases: [
         'heating setpoint adjust',
@@ -17083,7 +17113,7 @@ var EM_POINT_CATEGORIES = {
     },
   ],
 
-  /* ── DDVAV (Dual Duct VAV, ASHRAE 36 §5.13) ────────────────────────── */
+  /* ── DDVAV (Dual Duct VAV, ASHRAE 36 §5.11 to 5.14) ────────────────────────── */
   ddvav: [
     // afe7abb5: single combined Temperature Setpoint (heat = cool, deadband 0). Its own category,
     // listed FIRST so the point is claimed here and not also by zoneTemp's /space temp/ (one point = one point).
@@ -17109,7 +17139,7 @@ var EM_POINT_CATEGORIES = {
       label: 'Zone Air Temperature',
       required: true,
       ashrae36Name: 'Zone Air Temperature',
-      ashrae36Section: '5.13',
+      ashrae36Section: '5.11 to 5.14',
       patterns: [/zone.?temp/i, /room.?temp/i, /space temp/i, /\bzat\b/i],
       aliases: ['zone temp', 'room temp', 'zone air temp', 'space temp', 'space temperature', 'zat', 'zone-temp'],
     },
@@ -17119,7 +17149,7 @@ var EM_POINT_CATEGORIES = {
       label: 'Zone Cooling Setpoint',
       required: true,
       ashrae36Name: 'Zone Cooling Setpoint',
-      ashrae36Section: '5.13',
+      ashrae36Section: '5.11 to 5.14',
       patterns: [/cooling.?setpoint/i, /cool.?setpoint/i, /t.?cool/i],
       aliases: ['cooling setpoint', 'cool setpoint', 'zone cooling sp', 't-cool', 'cooling sp'],
     },
@@ -17129,7 +17159,7 @@ var EM_POINT_CATEGORIES = {
       label: 'Zone Heating Setpoint',
       required: true,
       ashrae36Name: 'Zone Heating Setpoint',
-      ashrae36Section: '5.13',
+      ashrae36Section: '5.11 to 5.14',
       patterns: [/heating.?setpoint/i, /heat.?setpoint/i, /t.?heat/i],
       aliases: ['heating setpoint', 'heat setpoint', 'zone heating sp', 't-heat', 'heating sp'],
     },
@@ -17138,7 +17168,7 @@ var EM_POINT_CATEGORIES = {
       label: 'Discharge Airflow',
       required: true,
       ashrae36Name: 'Discharge Airflow',
-      ashrae36Section: '5.13',
+      ashrae36Section: '5.11 to 5.14',
       patterns: [
         /discharge.?flow/i,
         /total.?discharge.?cfm/i,
@@ -17165,7 +17195,7 @@ var EM_POINT_CATEGORIES = {
       label: 'Air Handling Unit Supply Fan Status',
       required: true,
       ashrae36Name: 'Air Handling Unit Supply Fan Status',
-      ashrae36Section: '5.13',
+      ashrae36Section: '5.11 to 5.14',
       patterns: [/ahu fan.?status/i, /supply fan.?status/i, /fan status/i, /air source status/i],
       aliases: ['fan status', 'ahu fan status', 'supply fan status', 'air source status'],
     },
@@ -17174,7 +17204,7 @@ var EM_POINT_CATEGORIES = {
       label: 'Cold Deck Damper Position Command',
       required: true,
       ashrae36Name: 'Cold Deck Damper Position Command',
-      ashrae36Section: '5.13',
+      ashrae36Section: '5.11 to 5.14',
       patterns: [/cold.?deck.?damper/i, /cold.?damper/i, /cooling.?damper/i, /supply.?damper/i, /cold air damper/i],
       aliases: [
         'cold deck damper',
@@ -17190,7 +17220,7 @@ var EM_POINT_CATEGORIES = {
       label: 'Hot Deck Damper Position Command',
       required: true,
       ashrae36Name: 'Hot Deck Damper Position Command',
-      ashrae36Section: '5.13',
+      ashrae36Section: '5.11 to 5.14',
       patterns: [/hot.?deck.?damper/i, /hot.?damper/i, /heating.?damper/i, /warm.?damper/i, /hot air damper/i],
       aliases: ['hot deck damper', 'hot damper', 'heating damper', 'hot duct damper', 'warm damper', 'hot air damper'],
     },
@@ -17200,7 +17230,7 @@ var EM_POINT_CATEGORIES = {
       label: 'Demand Level',
       required: false,
       ashrae36Name: 'Demand Level',
-      ashrae36Section: '5.13',
+      ashrae36Section: '5.11 to 5.14',
       patterns: [/\bdemand\s+level\b/i, /\bkw\s+demand\s+level\b/i],
       aliases: [
         'demand level',
@@ -17217,7 +17247,7 @@ var EM_POINT_CATEGORIES = {
       label: 'Outdoor Air Relative Humidity',
       required: false,
       ashrae36Name: 'Outdoor Air Relative Humidity',
-      ashrae36Section: '5.13',
+      ashrae36Section: '5.11 to 5.14',
       patterns: [
         /oa.?rh\b/i,
         /outdoor.{0,10}humidity/i,
@@ -17247,7 +17277,7 @@ var EM_POINT_CATEGORIES = {
       label: 'Outdoor Air Dewpoint',
       required: false,
       ashrae36Name: 'Outdoor Air Dewpoint',
-      ashrae36Section: '5.13',
+      ashrae36Section: '5.11 to 5.14',
       patterns: [
         /outside\s+air\s+dew\s?point/i,
         /outdoor\s+air\s+dew\s?point/i,
@@ -17274,12 +17304,12 @@ var EM_POINT_CATEGORIES = {
       label: 'Zone CO2 Sensor',
       required: true, // A36-4: Matt 2026-11-13, missing zone CO2 is called out; the proposal prices it as optional scope
       ashrae36Name: 'Zone CO2 Concentration',
-      ashrae36Section: '5.13 / DCV',
+      ashrae36Section: '5.11 to 5.14 / DCV',
       configFlag: 'hasCO2',
       patterns: [/\bco2\b/i, /carbon dioxide/i, /co2.?ppm/i, /zone.?co2/i],
       aliases: ['zone co2', 'room co2', 'co2 sensor', 'co2 ppm', 'carbon dioxide', 'space co2'],
     },
-    // Phase 4: Occupancy Sensor (ASHRAE 36 §3.1.5 — conditional: "where a zone has an occupancy sensor")
+    // Phase 4: Occupancy Sensor (ASHRAE 36 §5.2.1 — conditional: "where a zone has an occupancy sensor")
     // hasOccSensor configFlag in EM_EQUIP_CONFIG_FLAGS.ddvav (default:false) keeps Coverage % unchanged.
     {
       key: 'occSensor',
@@ -17287,7 +17317,7 @@ var EM_POINT_CATEGORIES = {
       required: true,
       configFlag: 'hasOccSensor', // existing in EM_EQUIP_CONFIG_FLAGS.ddvav, default:false
       ashrae36Name: 'Occupancy Sensor',
-      ashrae36Section: '3.1.5',
+      ashrae36Section: '5.2.1',
       patterns: [/\boccupancy\s+sensor\b/i, /\bmotion\s+sensor\b/i, /\bpir\s+sensor\b/i],
       aliases: [
         'occupancy sensor',
@@ -17304,7 +17334,7 @@ var EM_POINT_CATEGORIES = {
       label: 'Zone Humidity',
       required: false,
       ashrae36Name: 'Zone Relative Humidity',
-      ashrae36Section: '5.13',
+      ashrae36Section: '5.11 to 5.14',
       patterns: [/zone.?humidity/i, /zone.?r\.?h/i, /space.?humidity/i, /\bhumidity\b/i, /ambient.?humidity/i],
       aliases: ['zone humidity', 'zone rh', 'space humidity', 'humidity', 'ambient humidity'],
     },
@@ -17313,7 +17343,7 @@ var EM_POINT_CATEGORIES = {
       label: 'Cooling Setpoint Adjust',
       required: false,
       ashrae36Name: 'Cooling Setpoint Adjustment',
-      ashrae36Section: '5.13',
+      ashrae36Section: '5.11 to 5.14',
       patterns: [/cooling setpoint adjust/i, /clg setpoint adj/i, /cooling set point adjust/i, /cool setpoint adj/i],
       aliases: [
         'cooling setpoint adjust',
@@ -17328,7 +17358,7 @@ var EM_POINT_CATEGORIES = {
       label: 'Heating Setpoint Adjust',
       required: false,
       ashrae36Name: 'Heating Setpoint Adjustment',
-      ashrae36Section: '5.13',
+      ashrae36Section: '5.11 to 5.14',
       patterns: [/heating setpoint adjust/i, /htg setpoint adj/i, /heating set point adjust/i, /heat setpoint adj/i],
       aliases: [
         'heating setpoint adjust',
@@ -17686,6 +17716,8 @@ var EM_POINT_CATEGORIES = {
         /hot.?water.?pump.?\d*.?status/i,
         /hhwp.?\d.?vfd.?status/i,
         /pump.?p.?\d.?status/i,
+        // Round 3 B2: a numbered secondary pump drive status is the hot water pump status.
+        /secondary.?pump.?\d+.?vfd.?status/i,
       ],
       aliases: [
         'phwp status',
@@ -17845,6 +17877,8 @@ var EM_POINT_CATEGORIES = {
         /hot.?water.?pump.?\d+.?speed/i,
         /hhwp.?\d.?vfd.?signal/i,
         /pump.?p.?\d.?speed/i,
+        // Round 3 B2: a numbered secondary pump drive speed is the hot water pump speed.
+        /secondary.?pump.?\d+.?vfd.?speed/i,
       ],
       aliases: [
         'primary hw pump vfd speed',
@@ -18543,14 +18577,14 @@ var EM_POINT_CATEGORIES = {
     },
   ],
 
-  /* ── CT (Cooling Tower Plant, ASHRAE 36 §5.21) ─────────────────────── */
+  /* ── CT (Cooling Tower Plant, ASHRAE 36 §5.20.12) ─────────────────────── */
   ct: [
     {
       key: 'cwst',
       label: 'Condenser Water Supply Temperature',
       required: true,
       ashrae36Name: 'Condenser Water Supply Temperature',
-      ashrae36Section: '5.21',
+      ashrae36Section: '5.20.12',
       patterns: [
         /\bcwst\b/i,
         /cw.?supply.?temp/i,
@@ -18584,7 +18618,7 @@ var EM_POINT_CATEGORIES = {
       label: 'Condenser Water Return Temperature',
       required: true,
       ashrae36Name: 'Condenser Water Return Temperature',
-      ashrae36Section: '5.21',
+      ashrae36Section: '5.20.12',
       patterns: [
         /\bcwrt\b/i,
         /cw.?return.?temp/i,
@@ -18617,7 +18651,7 @@ var EM_POINT_CATEGORIES = {
       label: 'Outdoor Air Wet Bulb Temperature',
       required: true,
       ashrae36Name: 'Outdoor Air Wet Bulb Temperature',
-      ashrae36Section: '5.21',
+      ashrae36Section: '5.20.12',
       // Phase 3a: removed /dewpoint.?temp/i pattern and 'dewpoint temp' alias —
       // dewpoint is a distinct measurement from wet bulb; "Outside Air Dewpoint"
       // must map to oaDewpoint (new category), not be aliased to wet bulb.
@@ -18639,7 +18673,7 @@ var EM_POINT_CATEGORIES = {
       label: 'Outdoor Air Relative Humidity',
       required: false,
       ashrae36Name: 'Outdoor Air Relative Humidity',
-      ashrae36Section: '5.21',
+      ashrae36Section: '5.20.12',
       patterns: [/oa.?rh\b/i, /outdoor.?humidity/i, /outside.?air.?humidity/i, /relative.?humidity/i, /\boat.?rh\b/i],
       aliases: [
         'oa rh',
@@ -18658,7 +18692,7 @@ var EM_POINT_CATEGORIES = {
       label: 'Cooling Tower Fan Status',
       required: true,
       ashrae36Name: 'Cooling Tower Fan Status',
-      ashrae36Section: '5.21',
+      ashrae36Section: '5.20.12',
       patterns: [
         /tower.?fan.?status/i,
         /ct.?fan.?status/i,
@@ -18689,7 +18723,7 @@ var EM_POINT_CATEGORIES = {
       label: 'Condenser Water Pump Status',
       required: true,
       ashrae36Name: 'Condenser Water Pump Status',
-      ashrae36Section: '5.21',
+      ashrae36Section: '5.20.12',
       patterns: [
         /cw.?pump.?status/i,
         /condenser.?pump.?status/i,
@@ -18721,7 +18755,7 @@ var EM_POINT_CATEGORIES = {
       label: 'Sump Level',
       required: true,
       ashrae36Name: 'Sump Level',
-      ashrae36Section: '5.21',
+      ashrae36Section: '5.20.12',
       patterns: [
         /sump.?level/i,
         /ct.?sump/i,
@@ -18747,7 +18781,7 @@ var EM_POINT_CATEGORIES = {
       label: 'Condenser Water Isolation Valve Status',
       required: false,
       ashrae36Name: 'Condenser Water Isolation Valve Status',
-      ashrae36Section: '5.21',
+      ashrae36Section: '5.20.12',
       configFlag: 'hasCWIsoValve',
       patterns: [
         /condenser.?iso.?valve/i,
@@ -18772,7 +18806,7 @@ var EM_POINT_CATEGORIES = {
       label: 'Cooling Tower Fan Enable Command',
       required: true,
       ashrae36Name: 'Cooling Tower Fan Enable Command',
-      ashrae36Section: '5.21',
+      ashrae36Section: '5.20.12',
       patterns: [
         /tower.?fan.?enable/i,
         /ct.?fan.?enable/i,
@@ -18801,7 +18835,7 @@ var EM_POINT_CATEGORIES = {
       label: 'Cooling Tower Fan Speed Command',
       required: false,
       ashrae36Name: 'Cooling Tower Fan Speed Command',
-      ashrae36Section: '5.21',
+      ashrae36Section: '5.20.12',
       configFlag: 'hasVFD',
       patterns: [/tower.?fan.?speed/i, /ct.?fan.?vfd.?speed/i, /ct.?\d+.?fan.?speed/i, /ct.?fan.?speed/i],
       aliases: [
@@ -18822,7 +18856,7 @@ var EM_POINT_CATEGORIES = {
       label: 'Condenser Water Pump Enable Command',
       required: true,
       ashrae36Name: 'Condenser Water Pump Enable Command',
-      ashrae36Section: '5.21',
+      ashrae36Section: '5.20.12',
       patterns: [
         /cw.?pump.?enable/i,
         /condenser.?pump.?enable/i,
@@ -18851,7 +18885,7 @@ var EM_POINT_CATEGORIES = {
       label: 'Condenser Water Isolation Valve Command',
       required: false,
       ashrae36Name: 'Condenser Water Isolation Valve Command',
-      ashrae36Section: '5.21',
+      ashrae36Section: '5.20.12',
       configFlag: 'hasCWIsoValve',
       patterns: [
         /cw.?iso.?valve.?command/i,
@@ -18878,7 +18912,7 @@ var EM_POINT_CATEGORIES = {
       label: 'Makeup Water Valve Command',
       required: false,
       ashrae36Name: 'Makeup Water Valve Command',
-      ashrae36Section: '5.21',
+      ashrae36Section: '5.20.12',
       configFlag: 'hasMakeupValve',
       patterns: [
         /makeup.?water.?valve/i,
@@ -18906,7 +18940,7 @@ var EM_POINT_CATEGORIES = {
       label: 'Demand Level',
       required: false,
       ashrae36Name: 'Demand Level',
-      ashrae36Section: '5.21',
+      ashrae36Section: '5.20.12',
       patterns: [/\bdemand\s+level\b/i, /\bkw\s+demand\s+level\b/i],
       aliases: [
         'demand level',
@@ -18923,7 +18957,7 @@ var EM_POINT_CATEGORIES = {
       label: 'Outdoor Air Dewpoint',
       required: false,
       ashrae36Name: 'Outdoor Air Dewpoint',
-      ashrae36Section: '5.21',
+      ashrae36Section: '5.20.12',
       patterns: [
         /outside\s+air\s+dew\s?point/i,
         /outdoor\s+air\s+dew\s?point/i,
@@ -19956,7 +19990,7 @@ var EM_POINT_CATEGORIES = {
       required: true,
       ashrae36Name: 'Supply Fan Status',
       ashrae36Section: '5.18',
-      // §5.18.3.1: fan proof-of-operation is required; also covers supply fan enable/command
+      // §5.18.3: fan proof-of-operation is required; also covers supply fan enable/command
       // per emBuildColKeyToCatKey: supplyFanStatus col label 'Supply Fan Status' matches
       // sfStatus aliases; 'supply fan enable' and 'supply fan command' added so the col-key
       // reverse bridge resolves correctly when BAS uses enable-command naming.
@@ -19984,7 +20018,7 @@ var EM_POINT_CATEGORIES = {
       required: true,
       ashrae36Name: 'Zone Air Temperature',
       ashrae36Section: '5.18',
-      // §5.18.4.1: zone temperature is the feedback sensor for the control loop.
+      // §5.3: zone temperature is the feedback sensor for the control loop.
       // aliases cover both zoneAirTemp col label ('Zone Air Temp') and zoneTemp col label
       // ('Zone Temperature') so emBuildColKeyToCatKey bridges either col to this key.
       patterns: [/zone.?temp/i, /zone air temp/i, /room.?temp/i, /space temp/i, /zone temperature/i],
@@ -20005,7 +20039,7 @@ var EM_POINT_CATEGORIES = {
       required: true,
       ashrae36Name: 'Zone Cooling Setpoint',
       ashrae36Section: '5.18',
-      // §5.18.4.2: cooling setpoint is mandatory for mode-logic scoring
+      // §5.3: cooling setpoint is mandatory for mode-logic scoring
       // maps to zoneCoolSetpoint col (label 'Zone Cooling Setpoint')
       patterns: [/cooling.*setpoint/i, /cooling.*set\s+point/i, /clg setpoint/i, /zone cool.*setpoint/i],
       aliases: [
@@ -20024,7 +20058,7 @@ var EM_POINT_CATEGORIES = {
       required: true,
       ashrae36Name: 'Zone Heating Setpoint',
       ashrae36Section: '5.18',
-      // §5.18.4.2: heating setpoint is mandatory for mode-logic scoring
+      // §5.3: heating setpoint is mandatory for mode-logic scoring
       // maps to zoneHtgSetpoint col (label 'Zone Heating Setpoint')
       patterns: [/heating.*setpoint/i, /heating.*set\s+point/i, /htg setpoint/i, /zone htg.*setpoint/i],
       aliases: [
@@ -20044,7 +20078,7 @@ var EM_POINT_CATEGORIES = {
       required: true,
       ashrae36Name: 'Cooling Stage 1',
       ashrae36Section: '5.18',
-      // §5.18.6: DX cooling stage is required for units with DX cooling.
+      // G36 has no DX stage sequence: DX cooling stage is required for units with DX cooling.
       // configFlag hasDXCooling default:true → F-2/F-4 are penalized if missing.
       // Set hasDXCooling=false for heat-only furnaces → goes to naPoints (N/A), not counted.
       // No EM_POINT_MAP col entry — matched by BAS name regex at compliance time (patterns/aliases).
@@ -20058,7 +20092,7 @@ var EM_POINT_CATEGORIES = {
       required: true,
       ashrae36Name: 'Gas Heat Stage 1',
       ashrae36Section: '5.18',
-      // §5.18.5: heat stage is required for units with gas heat.
+      // G36 has no gas heat stage sequence: heat stage is required for units with gas heat.
       // configFlag hasGasHeat default:true → F-2/F-4 are penalized if missing.
       // Set hasGasHeat=false for cool-only units → goes to naPoints (N/A), not counted.
       // No EM_POINT_MAP col entry — matched by BAS name regex at compliance time.
@@ -20074,7 +20108,7 @@ var EM_POINT_CATEGORIES = {
       required: false,
       ashrae36Name: 'Outdoor Air Damper',
       ashrae36Section: '5.18',
-      // §5.18.7: OA damper optional — not all single-zone units have one.
+      // §5.18.6: OA damper optional — not all single-zone units have one.
       // required:false → never counted against coverage regardless of whether the point exists.
       // maps to oaDamperPosition col (label 'OA Damper Position')
       patterns: [/oa.?damper/i, /outdoor air damper/i, /bypass damper/i, /supply air bypass/i],
@@ -22076,6 +22110,119 @@ function emCoilEvidence(pointNames) {
   return out;
 }
 
+// The one rule that says a row is a heating hot water or chilled water PLANT although the Equipment Matrix files it under plumbing / other /
+// controls (moved here from report-engine.js _a36PlantCategoryByName, which calls it). A plant name has the shape "Hot Water System - X",
+// "Hot Water - X", "Heating Water System - X" or "Chilled Water System - X". Domestic hot water is never a plant. Returns 'hwp', 'chwp', or
+// the stored category unchanged.
+function emPlantCategoryByName(nameStr, storedCat) {
+  if (storedCat !== 'plumbing' && storedCat !== 'other' && storedCat !== 'controls') return storedCat;
+  var n = String(nameStr || '').trim();
+  if (/\b(?:domestic|dhw)\b/i.test(n)) return storedCat;
+  if (!/^(?:hot|heating|chilled)\s+water(?:\s+(?:system|plant))?\s+-\s*\S/i.test(n)) return storedCat;
+  return /^chilled/i.test(n) ? 'chwp' : 'hwp';
+}
+
+// Which plants the building of a row has: { chw: bool, hw: bool }, or null when the building of the row is not known (then nothing is
+// concluded from the absence of a plant). A plant is a row of category chwp / hwp, or a row that emPlantCategoryByName calls one. The
+// result is kept per row-lookup map (_emRowByIdCache), which emLoadMatrix rebuilds with the data.
+var _emPlantCache = typeof WeakMap === 'function' ? new WeakMap() : null;
+function emBuildingPlants(equipRow) {
+  if (!equipRow || equipRow.id == null) return null;
+  var map = null;
+  for (var pid in _emRowByIdCache) {
+    if (_emRowByIdCache[pid] && _emRowByIdCache[pid][equipRow.id]) {
+      map = _emRowByIdCache[pid];
+      break;
+    }
+  }
+  if (!map) return null;
+  var byBuilding = _emPlantCache && _emPlantCache.get(map);
+  if (!byBuilding) {
+    byBuilding = {};
+    for (var rid in map) {
+      var r = map[rid];
+      if (!r) continue;
+      var cat = emPlantCategoryByName(r.equipName, r.category);
+      var b = byBuilding[r.building || ''] || (byBuilding[r.building || ''] = { chw: false, hw: false });
+      if (cat === 'chwp') b.chw = true;
+      else if (cat === 'hwp') b.hw = true;
+    }
+    if (_emPlantCache) _emPlantCache.set(map, byBuilding);
+  }
+  return byBuilding[equipRow.building || ''] || null;
+}
+
+// Round 1b items 2 and 7 (2026-11-14): positive evidence in the point names of a zone terminal unit.
+//  damperEvidence: a zone damper position point, or an airflow control loop (the loop positions the damper), so the damper actuator exists
+//    and its missing separate position point is not a gap. Returns the reason, '' when there is no evidence.
+//  electricReheat: a "Heating SCR" point (silicon controlled rectifier, electric heat) or an electric heat point: the reheat is not a hot water valve.
+// The unit serves terminal units (VAV boxes) when its own points say so: a VAV box command it sends, the airflow requests it receives from boxes,
+// or a static pressure reset by requests. Positive evidence on the unit itself; the type of the other units of the building does not count.
+function emServesTerminals(equipRow) {
+  var names = Object.keys(Object.assign({}, equipRow.points || {}, equipRow.pointsRaw || {}));
+  for (var i = 0; i < names.length; i++) {
+    if (/\bvav box\b/i.test(names[i]) || /^air request \d/i.test(names[i]) || /^static reset selection\b/i.test(names[i])) return true;
+  }
+  return false;
+}
+function emDamperEvidence(pointNames) {
+  for (var i = 0; i < pointNames.length; i++) {
+    if (/zone\s*damper/i.test(pointNames[i]) && !/\/\s*(open|close)/i.test(pointNames[i])) return 'zone damper position point present';
+  }
+  for (var j = 0; j < pointNames.length; j++) {
+    if (/^(?:(?:hot|cold)\s+deck\s+)?flow\s*control$/i.test(pointNames[j])) return 'damper positioned by the airflow control loop';
+  }
+  return '';
+}
+function emElectricReheat(pointNames) {
+  for (var i = 0; i < pointNames.length; i++) {
+    if (/\bscr\b/i.test(pointNames[i]) || /\belectric(al)?\s*(re)?heat/i.test(pointNames[i])) return true;
+  }
+  return false;
+}
+// The one place that says a point category is not applicable to a unit on positive evidence (round 1b items 2, 5, 7; 2026-11-14):
+//   dampCmd / coldDampCmd / hotDampCmd: a zone damper position point or an airflow control loop (the damper actuator exists, positioned by
+//     the loop); reheatValve: electric (SCR) reheat, or a building with no hot water plant; clgValve: a building with no chilled water
+//     plant; freezeStat: no water coil (refrigerant or electric/gas coils, or no water plant in the building).
+// A category the unit covers is never N/A. A building that cannot be found concludes nothing from a missing plant.
+// Returns { reason, source } or null. Used by emComputeCompliance (required points) and emComputeSequenceReadiness (points a sequence needs).
+function emNaEvidence(equipRow, category, catKey, rawNames, coilEv) {
+  var why = '';
+  var source = '';
+  if ((category === 'vav' || category === 'fpb' || category === 'ddvav') && (catKey === 'dampCmd' || catKey === 'coldDampCmd' || catKey === 'hotDampCmd')) {
+    why = emDamperEvidence(rawNames);
+    source = 'damperEvidence';
+  } else if ((category === 'vav' || category === 'fpb') && catKey === 'reheatValve') {
+    if (emElectricReheat(rawNames)) {
+      why = 'electric (SCR) reheat, no hot water valve';
+      source = 'reheatType';
+    } else {
+      var bpR = emBuildingPlants(equipRow);
+      if (bpR && !bpR.hw) {
+        why = 'no hot water plant in this building';
+        source = 'noPlant';
+      }
+    }
+  } else if ((category === 'ahu' || category === 'rtu') && catKey === 'clgValve') {
+    var bpC = emBuildingPlants(equipRow);
+    if (bpC && !bpC.chw) {
+      why = 'no chilled water plant in this building';
+      source = 'noPlant';
+    }
+  } else if ((category === 'ahu' || category === 'rtu') && catKey === 'freezeStat' && coilEv) {
+    var bpF = emBuildingPlants(equipRow);
+    var noWaterCool = coilEv.dx || (bpF && !bpF.chw);
+    var noWaterHeat = coilEv.stageHeat || (bpF && !bpF.hw);
+    if (noWaterCool && noWaterHeat) {
+      why = 'no water coil (refrigerant or electric/gas coils, or no water plant)';
+      source = 'coilType';
+    }
+  }
+  return why ? { reason: why, source: source } : null;
+}
+// Point categories that a source of N/A below counts as satisfied for a sequence that needs them (emComputeSequenceReadiness).
+var EM_NA_SATISFIES_SEQUENCE = { coilType: true, noPlant: true, reheatType: true, damperEvidence: true };
+
 function emSingleZoneStagePoints(pointNames) {
   var out = { cool: false, heat: false };
   var pats = EM_SZ_AIR_UNIT_RULES.stagePatterns;
@@ -22214,6 +22361,14 @@ function emComputeCompliance(equipRow, configFlags, customMappings) {
   var _szUnit = emIsSingleZoneAirUnit(equipRow);
   var _szStages = _szUnit ? emSingleZoneStagePoints(rawNames) : null;
   var _coilEv = (category === 'ahu' || category === 'rtu') ? emCoilEvidence(rawNames) : null;
+  // N/A on positive evidence, for every point category of the type (also the optional ones a sequence needs): { categoryKey: { reason, source } }
+  var naEv = {};
+  for (var _nei = 0; _nei < catDefs.length; _nei++) {
+    if (!coveredKeys[catDefs[_nei].key]) {
+      var _ne = emNaEvidence(equipRow, category, catDefs[_nei].key, rawNames, _coilEv);
+      if (_ne) naEv[catDefs[_nei].key] = _ne;
+    }
+  }
   for (var di = 0; di < catDefs.length; di++) {
     var def = catDefs[di];
     if (!def.required) continue; // Only count required points toward coverage
@@ -22224,6 +22379,13 @@ function emComputeCompliance(equipRow, configFlags, customMappings) {
     // separate heating/cooling setpoint is N/A, not missing. A real split point still counts.
     if ((def.key === 'coolSP' || def.key === 'htgSP') && coveredKeys.combinedSP && !coveredKeys[def.key]) {
       naPoints.push({ categoryKey: def.key, categoryLabel: def.label, reason: 'single combined setpoint' });
+      totalNA++;
+      continue;
+    }
+
+    // Round 1b items 2, 5, 7 (2026-11-14): a point that is not applicable on positive evidence (emNaEvidence).
+    if (naEv[def.key]) {
+      naPoints.push({ categoryKey: def.key, categoryLabel: def.label, reason: naEv[def.key].reason, source: naEv[def.key].source });
       totalNA++;
       continue;
     }
@@ -22330,6 +22492,7 @@ function emComputeCompliance(equipRow, configFlags, customMappings) {
     coveredPoints: coveredPoints,
     missingPoints: missingPoints,
     naPoints: naPoints,
+    naEvidence: naEv,
     spaceTypeExemptCovered: spaceTypeExemptCovered,
     coveragePct: coveragePct,
     totalRequired: totalRequired,
@@ -22434,7 +22597,7 @@ function emInferZoneType(equipRow) {
      unoccHeat   — zone unoccupied heating setpoint vs GL36 default (±1°F)
      unoccCool   — zone unoccupied cooling setpoint vs GL36 default (±1°F)
      deadband    — occCool minus occHeat; <1°F→DEVIATION, 1–<2°F→PASS w/ note
-     co2         — zone CO2 setpoint vs GL36 Table 3.1.1.3 default (±50 ppm)
+     co2         — zone CO2 setpoint vs GL36 Section 3.1.1.3 default (±50 ppm)
 
    Status values:
      PASS          — within tolerance of GL36 default
@@ -23144,7 +23307,7 @@ var EM_SEQUENCE_DEFS = [
   {
     key: 'ahu_economizer',
     label: 'Economizer',
-    ashrae36: '§5.16.10',
+    ashrae36: '§5.16.4 to 5.16.6',
     equipTypes: ['ahu', 'rtu'],
     requiredCats: ['oat', 'oaDampCmd', 'mat'],
     keyCats: ['oaDampCmd'],
@@ -23161,7 +23324,7 @@ var EM_SEQUENCE_DEFS = [
   {
     key: 'ahu_min_oa',
     label: 'Minimum Outside Air',
-    ashrae36: '§5.16.6',
+    ashrae36: '§5.16.3 to 5.16.6',
     equipTypes: ['ahu', 'rtu'],
     requiredCats: ['oaDampCmd', 'sfSpeedCmd'],
     keyCats: ['oaDampCmd'],
@@ -23169,7 +23332,7 @@ var EM_SEQUENCE_DEFS = [
   {
     key: 'ahu_rf_control',
     label: 'Return Fan Control',
-    ashrae36: '§5.16.5',
+    ashrae36: '§5.16.10 to 5.16.11',
     equipTypes: ['ahu', 'rtu'],
     requiredCats: ['rfEnable', 'rfSpeedCmd'],
     keyCats: ['rfEnable'],
@@ -23188,7 +23351,7 @@ var EM_SEQUENCE_DEFS = [
     // Install column) — this only changes SEQUENCE readiness, not hardware coverage.
     key: 'vav_zone_temp',
     label: 'Zone Temperature Control',
-    ashrae36: '§5.6.1',
+    ashrae36: '§5.6.5',
     equipTypes: ['vav', 'fpb', 'ddvav'],
     requiredCats: ['zoneTemp'],
     keyCats: ['zoneTemp'],
@@ -23206,7 +23369,7 @@ var EM_SEQUENCE_DEFS = [
     // vav and fpb continue to use dampCmd for both applicability and evaluation.
     key: 'vav_damper_writeback',
     label: 'Damper Position Write-back',
-    ashrae36: '§5.6.2',
+    ashrae36: '§5.6.5',
     equipTypes: ['vav', 'fpb', 'ddvav'],
     requiredCats: ['dampCmd'],
     keyCats: ['dampCmd'],
@@ -23226,7 +23389,7 @@ var EM_SEQUENCE_DEFS = [
     // Write-back'). `key: 'vav_reheat'` (the only field ever used for matching/pricing lookups)
     // is unchanged -- this is a DISPLAY value only.
     label: 'Reheat Valve Control',
-    ashrae36: '§5.6.4',
+    ashrae36: '§5.6.5',
     equipTypes: ['vav', 'fpb'],
     requiredCats: ['reheatValve', 'zoneTemp', 'dat'],
     keyCats: ['reheatValve'],
@@ -23244,7 +23407,7 @@ var EM_SEQUENCE_DEFS = [
     // the one render site that remembered to add the prefix. `key: 'hwp_supply_reset'` unchanged.
     key: 'hwp_supply_reset',
     label: 'Hot Water Supply Temperature Reset',
-    ashrae36: '§5.21.1',
+    ashrae36: '§5.21.4',
     equipTypes: ['hwp'],
     requiredCats: ['hwst', 'oat', 'hwSetpoint'],
     keyCats: ['hwst', 'hwSetpoint'],
@@ -23253,7 +23416,7 @@ var EM_SEQUENCE_DEFS = [
     // Same label-enrichment reasoning as hwp_supply_reset immediately above.
     key: 'hwp_pump_dp_reset',
     label: 'Hot Water Pump Differential Pressure Reset',
-    ashrae36: '§5.21.2',
+    ashrae36: '§5.21.6 to 5.21.7',
     equipTypes: ['hwp'],
     requiredCats: ['hwdp', 'hwPumpSpeed'],
     keyCats: ['hwdp', 'hwPumpSpeed'],
@@ -23278,7 +23441,7 @@ var EM_SEQUENCE_DEFS = [
     // comment (2026-07-31).
     key: 'chwp_supply_reset',
     label: 'Chilled Water Supply Temperature Reset',
-    ashrae36: '§5.20.1',
+    ashrae36: '§5.20.5',
     equipTypes: ['chwp'],
     requiredCats: ['chwst', 'oat', 'chwSetpoint'],
     keyCats: ['chwst', 'chwSetpoint'],
@@ -23286,7 +23449,7 @@ var EM_SEQUENCE_DEFS = [
   {
     key: 'chwp_pump_dp_reset',
     label: 'Chilled Water Pump Differential Pressure Reset',
-    ashrae36: '§5.20.2',
+    ashrae36: '§5.20.5 to 5.20.7',
     equipTypes: ['chwp'],
     requiredCats: ['chwdp', 'schwpSpeed'],
     keyCats: ['chwdp', 'schwpSpeed'],
@@ -23296,7 +23459,7 @@ var EM_SEQUENCE_DEFS = [
     // requiredCats here (chillerStatus/chillerEnable/pchwpStatus) is chiller on/off staging.
     key: 'chwp_staging',
     label: 'Chiller Staging',
-    ashrae36: '§5.20.3',
+    ashrae36: '§5.20.4',
     equipTypes: ['chwp'],
     requiredCats: ['chillerStatus', 'chillerEnable', 'pchwpStatus'],
     keyCats: ['chillerEnable'],
@@ -23310,7 +23473,7 @@ var EM_SEQUENCE_DEFS = [
     // is a DISPLAY value only; `key: 'demandCtrl'` (matched elsewhere via _RPT_A36_DCV_SEQ,
     // SEQUENCE_SAVINGS_IMPACT, etc.) is unchanged.
     label: 'Occupancy-Based Ventilation (Air Handling Units)',
-    ashrae36: '§5.16',
+    ashrae36: '§5.16.3',
     equipTypes: ['ahu', 'rtu'],
     requiredCats: ['co2', 'oaDampCmd'],
     keyCats: ['co2'],
@@ -23321,10 +23484,13 @@ var EM_SEQUENCE_DEFS = [
     // Plain-language rewrite (no-abbreviations pass, 2026-07-31): was 'Demand-Controlled
     // Ventilation (VAV)'. `key: 'vav_dcv'` is unchanged.
     label: 'Occupancy-Based Ventilation (Zone Terminals)',
-    ashrae36: '§5.6',
+    ashrae36: '§5.2.1',
     equipTypes: ['vav', 'fpb', 'ddvav'],
     requiredCats: ['co2', 'dampCmd'],
     keyCats: ['co2'],
+    // A dual-duct box has a cold deck and a hot deck damper and no category 'dampCmd' (round 1b item 2: it could never satisfy this sequence).
+    requiredCatsByType: { ddvav: ['co2', 'coldDampCmd', 'hotDampCmd'] },
+    keyCatsByType: { ddvav: ['co2'] },
     configFlag: 'hasCO2',
   },
 ];
@@ -23510,23 +23676,49 @@ function emComputeSequenceReadiness(equipRow, complianceData) {
       continue;
     }
 
-    // Evaluate which required categories are present and which are missing
+    // Evaluate which required categories are present and which are missing. A category that is N/A on positive evidence (no water coil, no
+    // plant, electric reheat, a damper actuator without its own point) is neither present nor missing; a sequence whose required categories are
+    // all N/A on that evidence does not apply to the unit.
+    var _naSat = {};
+    var _naSatPts = (complianceData && complianceData.naPoints) || [];
+    for (var _nsi = 0; _nsi < _naSatPts.length; _nsi++) {
+      if (_naSatPts[_nsi] && EM_NA_SATISFIES_SEQUENCE[_naSatPts[_nsi].source]) _naSat[_naSatPts[_nsi].categoryKey] = true;
+    }
+    var _naEvMap = (complianceData && complianceData.naEvidence) || {};
+    for (var _nek in _naEvMap) {
+      if (_naEvMap.hasOwnProperty(_nek)) _naSat[_nek] = true;
+    }
     var presentCats = [];
     var missingCats = [];
+    var _naCount = 0;
     for (var ri = 0; ri < requiredCats.length; ri++) {
       var catKey = requiredCats[ri];
       if (coveredSet[catKey]) {
         presentCats.push(catKey);
+      } else if (_naSat[catKey]) {
+        _naCount++;
       } else {
         missingCats.push(catKey);
       }
+    }
+    if (requiredCats.length && _naCount === requiredCats.length) {
+      result[seq.key] = {
+        status: 'na',
+        label: seq.label,
+        ashrae36: seq.ashrae36,
+        presentCats: [],
+        missingCats: [],
+        keyCatsMissing: false,
+        naReason: 'Not needed: this unit has no part that this sequence controls',
+      };
+      continue;
     }
 
     // Check if any key categories are missing
     var keyCats = keyCatsResolved;
     var keyCatsMissing = false;
     for (var ki = 0; ki < keyCats.length; ki++) {
-      if (!coveredSet[keyCats[ki]]) {
+      if (!coveredSet[keyCats[ki]] && !_naSat[keyCats[ki]]) {
         keyCatsMissing = true;
         break;
       }

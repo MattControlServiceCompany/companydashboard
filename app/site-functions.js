@@ -2507,6 +2507,13 @@ async function siteResetAllMeterTableSettings() {
    site-ui.js delegates to this array and should NOT maintain its own copy.
 */
 var RELEASE_NOTES = [
+  { v: 'v2026.11.14.292', date: '2026-11-14', title: 'ASHRAE 36 Detailed audit: round 3 fixes',
+    items: [
+      { type: 'feature', text: 'The Detailed audit report opens with a plain Summary: what we did, what we found and what it takes. The cover says in one sentence what each percentage means.' },
+      { type: 'fix', text: 'Equipment that is present is no longer called missing. A terminal with an airflow control loop has no separate damper point to add. A dual-duct box needs its cold and hot deck dampers, not one damper. Hot water pumps and fans named by their drive status or speed are found. A rooftop unit that feeds terminal boxes is a multi-zone unit. A reheat valve, cooling valve or freeze stat is not asked of a unit that has electric heat, no hot water plant, no chilled water plant or no water coil. Sequence counts and device counts go down for these units.' },
+      { type: 'fix', text: 'The report states when the point data and the graphics were saved. A reading that cannot be true (static pressure of zero with the fan running, one CFM of outdoor air with the damper open, CO2 of exactly 400 ppm) is left out. A hot water plant in outdoor air lockout is described as off. Numbers use whole CFM and ppm, a thousands separator and "in. w.c.". Abbreviations are spelled out.' },
+      { type: 'fix', text: 'ASHRAE 36 section numbers were checked against the standard and corrected in the sequences, the point list and the cost estimate notes. A section the standard does not give prints no number. Appendix B no longer says weekends are unoccupied, lists heaters with heating setpoints only, and recommends a schedule that follows the open hours of each building.' }
+    ] },
   { v: 'v2026.11.14.291', date: '2026-11-14', title: 'ASHRAE 36 Detailed audit: round 1 fixes',
     items: [
       { type: 'fix', text: 'The Detailed audit report says "ASHRAE 36" everywhere, uses one word for outdoor air and setpoint, adds the date of the data on the cover, adds a Glossary page, and explains why the devices to install are fewer than the missing points.' },

@@ -1735,7 +1735,7 @@ const PRICE_POINT_MAP = {
     flags: ['engReview'],
     note: 'NSB duct temp, 8" probe — verify probe length',
     whyNeeded: 'Required for supply air temperature reset, reducing heating and cooling energy based on actual demand.',
-    g36Section: '§5.16.1',
+    g36Section: '§5.16.2',
   },
   rat: {
     defaultSku: 'N1-10K-2-D-8-BB-A',
@@ -1744,7 +1744,7 @@ const PRICE_POINT_MAP = {
     note: 'NSB duct temp, 8" probe — verify probe length',
     whyNeeded:
       'Measures return air temperature, providing feedback on how effectively the system conditions the building.',
-    g36Section: '§5.16.1',
+    g36Section: '',
   },
   mat: {
     defaultSku: 'N1-10K-2-D-8-BB-A',
@@ -1752,7 +1752,7 @@ const PRICE_POINT_MAP = {
     flags: ['engReview'],
     note: 'NSB duct temp, 8" probe — verify probe length',
     whyNeeded: 'Required for economizer control — enables the system to use outdoor air instead of mechanical cooling.',
-    g36Section: '§5.16.2',
+    g36Section: '',
   },
   oat: {
     defaultSku: 'N1-10K-2-D-12-WP-A',
@@ -1770,7 +1770,7 @@ const PRICE_POINT_MAP = {
     note: 'Low-range duct static pressure — verify range',
     whyNeeded:
       'Enables fan speed control based on actual demand; fan energy drops versus fixed-speed operation.',
-    g36Section: '§5.16.5',
+    g36Section: '§5.16.1',
   },
   co2_ahu: {
     defaultSku: 'N1-DCD10-D-BB-LED-A',
@@ -1779,7 +1779,7 @@ const PRICE_POINT_MAP = {
     note: 'AHU duct CO2 sensor',
     whyNeeded:
       'Reduces outdoor air intake to match actual occupancy, cutting fan and cooling energy when rooms are empty.',
-    g36Section: '§5.16.7',
+    g36Section: '§5.16.3',
   },
   /* ── VAV/FPB sensors ── */
   dat: {
@@ -1789,7 +1789,7 @@ const PRICE_POINT_MAP = {
     note: '4" duct temp probe',
     whyNeeded:
       'Monitors delivered air temperature, enabling precise reheat control and preventing overcooling at minimum airflow.',
-    g36Section: '§5.6.1',
+    g36Section: '§5.6.5',
   },
   /* ── Plant/CT sensors ── */
   hwst: {
@@ -1799,7 +1799,7 @@ const PRICE_POINT_MAP = {
     note: 'Immersion w/ 304SS thermowell',
     whyNeeded:
       'Required for boiler control and the outdoor reset strategy that lowers water temperature as outdoor air warms.',
-    g36Section: '§5.20.1',
+    g36Section: '§5.21.4',
   },
   hwrt: {
     defaultSku: 'N1-10K-2-I-2-BB-M304-A',
@@ -1808,7 +1808,7 @@ const PRICE_POINT_MAP = {
     note: 'Immersion w/ 304SS thermowell',
     whyNeeded:
       'Measures temperature drop across the heating system; a low reading signals pump, balancing, or coil problems.',
-    g36Section: '§5.20.1',
+    g36Section: '§5.21.4',
   },
   chwst: {
     defaultSku: 'N1-10K-2-I-2-BB-M304-A',
@@ -1816,7 +1816,7 @@ const PRICE_POINT_MAP = {
     flags: ['engReview'],
     note: 'Immersion w/ 304SS thermowell',
     whyNeeded: 'Verifies chiller output; enables the setpoint reset strategy that improves chiller efficiency.',
-    g36Section: '§5.22.1',
+    g36Section: '§5.20.5',
   },
   chwrt: {
     defaultSku: 'N1-10K-2-I-2-BB-M304-A',
@@ -1824,7 +1824,7 @@ const PRICE_POINT_MAP = {
     flags: ['engReview'],
     note: 'Immersion w/ 304SS thermowell',
     whyNeeded: 'Poor chilled water utilization causes the chiller to over-cycle and consume excess energy.',
-    g36Section: '§5.22.1',
+    g36Section: '§5.20.5',
   },
   cwst: {
     defaultSku: 'N1-10K-2-I-2-BB-M304-A',
@@ -1833,7 +1833,7 @@ const PRICE_POINT_MAP = {
     note: 'Immersion w/ 304SS thermowell',
     whyNeeded:
       'Required for cooling tower control and the condenser water reset strategy that improves chiller efficiency.',
-    g36Section: '§5.24.1',
+    g36Section: '§5.20.12',
   },
   cwrt: {
     defaultSku: 'N1-10K-2-I-2-BB-M304-A',
@@ -1842,7 +1842,7 @@ const PRICE_POINT_MAP = {
     note: 'Immersion w/ 304SS thermowell',
     whyNeeded:
       'Measures heat rejected through the cooling tower; a low temperature drop signals tower, chiller, or pumping problems.',
-    g36Section: '§5.24.1',
+    g36Section: '§5.20.12',
   },
   hwdp: {
     defaultSku: 'N2-A/WPR2-30-M20-A',
@@ -1850,7 +1850,7 @@ const PRICE_POINT_MAP = {
     flags: ['engReview'],
     note: 'NSA wet DP 0-30 PSID — verify range',
     whyNeeded: 'Allows the pump to slow when fewer zones call for heat rather than running at full design speed.',
-    g36Section: '§5.20.3',
+    g36Section: '§5.21.6 to 5.21.7',
   },
   chwdp: {
     defaultSku: 'N2-A/WPR2-30-M20-A',
@@ -1858,7 +1858,7 @@ const PRICE_POINT_MAP = {
     flags: ['engReview'],
     note: 'NSA wet DP 0-30 PSID — verify range',
     whyNeeded: 'Allows chilled water pumps to slow during light loads; pump energy drops sharply with speed.',
-    g36Section: '§5.22.3',
+    g36Section: '§5.20.5 to 5.20.7',
   },
   oaWetBulb: {
     defaultSku: 'N1-10K-2-H200-O-BB-A',
@@ -1866,7 +1866,7 @@ const PRICE_POINT_MAP = {
     flags: ['engReview'],
     note: 'OA humidity+temp combo — 1 per building',
     whyNeeded: 'Measures outdoor temperature and humidity for the most accurate economizer control.',
-    g36Section: '§5.16.2',
+    g36Section: '',
   },
   /* ── Zone sensors ── */
   zoneTemp: {
@@ -1877,14 +1877,14 @@ const PRICE_POINT_MAP = {
     note: 'Zone temp wall sensor — combos with CO2 zone sensor',
     whyNeeded:
       'The required feedback signal for zone control; without it, airflow cannot be modulated to meet setpoints.',
-    g36Section: '§5.6.1', // fallback (VAV single-duct)
+    g36Section: '§5.6.5', // fallback (VAV single-duct)
     // Per-equipment-category G36 section overrides (source: ASHRAE 36-2021 table of contents)
-    // vav=§5.6 (single-duct terminal units), fpb=§5.7 (fan-powered boxes),
-    // ddvav=§5.13 (dual-duct terminal units), fcu=§5.22 (fan coil units)
+    // vav=§5.6 (single-duct terminal units), fpb=§5.7 to 5.10 (fan-powered boxes),
+    // ddvav=§5.11 to 5.14 (dual-duct terminal units), fcu=§5.22 (fan coil units)
     g36SectionByCategory: {
-      vav: '§5.6.1',
-      fpb: '§5.7',
-      ddvav: '§5.13',
+      vav: '§5.6.5',
+      fpb: '§5.7 to 5.10',
+      ddvav: '§5.11 to 5.14',
       fcu: '§5.22',
     },
   },
@@ -1902,7 +1902,7 @@ const PRICE_POINT_MAP = {
     note: 'Zone Temp/Humidity/CO2 sensor — one physical device, replaces separate zone temp + CO2 sensors when both are missing',
     whyNeeded:
       'One wall sensor reads zone temperature, relative humidity, and CO2 in a single install — the temperature feedback zone control requires, plus the occupancy signal for demand-controlled ventilation.',
-    g36Section: '§5.6.7',
+    g36Section: '§5.2.1',
   },
   // co2_zone_standalone (2026-07-28, audit-finding correction): a STANDALONE zone CO2 room sensor
   // for the case where the zone's temperature sensor is ALREADY present and only CO2 is missing —
@@ -1918,7 +1918,7 @@ const PRICE_POINT_MAP = {
     note: 'Standalone CO2 room sensor — zone already has a working temp sensor',
     whyNeeded:
       'Provides the occupancy signal (CO2 ppm) for demand-controlled ventilation without replacing an already-working zone temperature sensor.',
-    g36Section: '§5.6.7',
+    g36Section: '§5.2.1',
   },
   // occSensor (2026-07-28, fix/zone-sku-from-existing-points): fixes the dormant PRICE_POINT_MAP
   // hole for the 'occSensor' category — the IDENTICAL dead-code shape as the co2 bug fixed
@@ -1940,7 +1940,7 @@ const PRICE_POINT_MAP = {
     note: 'Occupancy/motion sensor — verify against existing zone wall sensor before ordering',
     whyNeeded:
       'Occupancy sensing lets the zone controller use unoccupied setback more aggressively than a schedule alone, cutting reheat and fan energy when a scheduled-occupied room is actually empty.',
-    g36Section: '§3.1.5',
+    g36Section: '§5.2.1',
   },
   /* ── AHU actuators ── */
   oaDampCmd: {
@@ -1953,7 +1953,7 @@ const PRICE_POINT_MAP = {
       'Controls outdoor air volume for ventilation and free cooling; without it, economizer operation is not possible.',
     whyNotHardware:
       'Verify: the AHU may already have a modulating damper actuator (then this is a point-exposure/programming gap) vs genuinely needing a new actuator.',
-    g36Section: '§5.16',
+    g36Section: '§5.16.4 to 5.16.6',
   },
   raDampCmd: {
     defaultSku: 'AFB24-MFT-06-A',
@@ -1965,7 +1965,7 @@ const PRICE_POINT_MAP = {
       'Works with the outdoor air damper to maintain airflow balance and prevent over-pressurization during free cooling.',
     whyNotHardware:
       'Verify: the AHU may already have a modulating damper actuator (then this is a point-exposure/programming gap) vs genuinely needing a new actuator.',
-    g36Section: '§5.16',
+    g36Section: '§5.16.4 to 5.16.6',
   },
   // damperPositionControl: consolidated report/summary line item for oaDampCmd + raDampCmd (Matt,
   // 2026-07-27: "Why would you split up damper position control? Don't do that in these kind of
@@ -1982,7 +1982,7 @@ const PRICE_POINT_MAP = {
       'Controls outdoor air and return air damper position together for economizer operation and free-cooling airflow balance; without it, economizer operation is not possible.',
     whyNotHardware:
       'Verify: the AHU may already have modulating damper actuators (then this is a point-exposure/programming gap) vs genuinely needing new actuators.',
-    g36Section: '§5.16',
+    g36Section: '§5.16.4 to 5.16.6',
   },
   /* ── VAV/FPB/DDVAV actuators ──
      dampCmd / coldDampCmd / hotDampCmd are classified ioOnly (Phase 2 programming, $0 hardware).
@@ -1999,7 +1999,7 @@ const PRICE_POINT_MAP = {
     whyNeeded:
       'Modulates conditioned air delivery to meet zone temperature setpoints and maintain minimum ventilation requirements.',
     whyNotHardware: 'Terminal unit actuator is integral; this is a programming task, not new hardware.',
-    g36Section: '§5.6',
+    g36Section: '§5.6.5',
   },
   coldDampCmd: {
     defaultSku: null,
@@ -2009,7 +2009,7 @@ const PRICE_POINT_MAP = {
     whyNeeded:
       'Controls cool air delivery in a dual-duct system; without it, simultaneous heating and cooling cannot be prevented.',
     whyNotHardware: 'Terminal unit actuator is integral; this is a programming task, not new hardware.',
-    g36Section: '§5.6',
+    g36Section: '§5.11 to 5.14',
   },
   hotDampCmd: {
     defaultSku: null,
@@ -2019,7 +2019,7 @@ const PRICE_POINT_MAP = {
     whyNeeded:
       'Controls warm air in a dual-duct system; both deck dampers must coordinate to prevent simultaneous heating and cooling.',
     whyNotHardware: 'Terminal unit actuator is integral; this is a programming task, not new hardware.',
-    g36Section: '§5.6',
+    g36Section: '§5.11 to 5.14',
   },
   /* ── Plant valve actuators ── */
   chwIsoValveCmd: {
@@ -2029,7 +2029,7 @@ const PRICE_POINT_MAP = {
     note: '180 in-lb non-fail-safe',
     whyNeeded:
       'Controls chilled water flow to individual chillers; required for safe staging, lead/lag rotation, and preventing recirculation.',
-    g36Section: '§5.22',
+    g36Section: '§5.20.4 to 5.20.6',
   },
   cwIsoValveCmd: {
     defaultSku: 'AMB24-MFT-06-A',
@@ -2038,7 +2038,7 @@ const PRICE_POINT_MAP = {
     note: '180 in-lb non-fail-safe',
     whyNeeded:
       'Controls condenser water flow to individual cooling towers; required for safe tower staging and preventing recirculation.',
-    g36Section: '§5.24',
+    g36Section: '§5.20.12',
   },
   makeupValveCmd: {
     defaultSku: 'AMB24-MFT-06-A',
@@ -2047,7 +2047,7 @@ const PRICE_POINT_MAP = {
     note: '180 in-lb non-fail-safe',
     whyNeeded:
       'Automatically refills the cooling tower basin when level drops; prevents pump cavitation and maintains water balance.',
-    g36Section: '§5.24',
+    g36Section: '§5.20.13',
   },
   /* ── Coil valves (ENG-REVIEW — spec §3, §4 optimizer must skip) ── */
   clgValve: {
@@ -2057,7 +2057,7 @@ const PRICE_POINT_MAP = {
     note: '0.75" 2-way Cv7.4 spring-return — ENG-REVIEW: verify Cv and pipe size',
     whyNeeded:
       'Controls chilled water flow through the cooling coil; required for temperature reset and economizer coordination.',
-    g36Section: '§5.16.3',
+    g36Section: '§5.16.2',
   },
   htgValve: {
     defaultSku: 'B214+TFRB-3-06-A', // VERIFIED in catalog
@@ -2066,7 +2066,7 @@ const PRICE_POINT_MAP = {
     note: '0.75" 2-way Cv7.4 spring-return — ENG-REVIEW: verify Cv and pipe size',
     whyNeeded:
       'Controls hot water flow through the heating coil; required for morning warm-up, freeze protection, and supply air control.',
-    g36Section: '§5.16.3',
+    g36Section: '§5.16.2',
   },
   reheatValve: {
     defaultSku: 'B209+TFRB-3-06-A', // VERIFIED in catalog
@@ -2075,7 +2075,7 @@ const PRICE_POINT_MAP = {
     note: '0.5" Cv0.8 spring-return — ENG-REVIEW: verify Cv',
     whyNeeded:
       'Controls the terminal reheat coil; without it, zone heating must come from the primary air system at higher cost.',
-    g36Section: '§5.6.4',
+    g36Section: '§5.6.5',
   },
   /* ── VAV zone controller (discFlow/primaryFlow maps to controller, not sensor) ── */
   discFlow: {
@@ -2085,7 +2085,7 @@ const PRICE_POINT_MAP = {
     note: 'VAV zone controller w/ integral flow — ENG-REVIEW: verify if controller replacement or reprogramming only',
     whyNeeded:
       'Confirms minimum ventilation to each zone and enables the duct static pressure reset sequence; both require measured airflow.',
-    g36Section: '§5.6.2',
+    g36Section: '§5.6.5',
   },
   primaryFlow: {
     defaultSku: 'OF253A-E2',
@@ -2094,7 +2094,7 @@ const PRICE_POINT_MAP = {
     note: 'FPB zone controller w/ integral flow — ENG-REVIEW: verify if controller replacement or reprogramming only',
     whyNeeded:
       'Measures cold primary air delivered to the terminal, driving damper modulation and local fan operation.',
-    g36Section: '§5.8.2',
+    g36Section: '§5.8.5',
   },
   /* ── I/O Only ($0) ── */
   sfStatus: { defaultSku: null, qtyRule: 'perUnit', flags: ['ioOnly'], note: 'Controller I/O' },
@@ -2142,7 +2142,7 @@ const PRICE_POINT_MAP = {
     note: 'OA flow station — enter price (~$1,200 typical)',
     whyNeeded:
       'Measures actual outdoor air volume; without it, code-required minimum ventilation rates cannot be confirmed.',
-    g36Section: '§5.16.7',
+    g36Section: '§5.16.3 to 5.16.5',
   },
 };
 

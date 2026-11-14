@@ -73,8 +73,8 @@ const RUN_DIR =
 // was 1120/1101 before the 2026-11-13 point-mapping fixes (alarm, limit and adjust names no longer count as sensors; a CO2 limit is not a CO2 sensor; air handler SAT/RAT/MAT/DSP alarm limits are not sensors)
 // was 1127 before the 2026-11-13 space type fix: one "Electrical <id>" room is now an electrical room, so its demand ventilation sequence is N/A (-1)
 // was 1126/1112 before A36-4 (2026-11-14): fpb and ddvav zone CO2 are required, so missing zone CO2 on those boxes is called out (+86 devices; one demand ventilation sequence fewer)
-const EXPECTED_FULL_SEQUENCES = 1125;
-const EXPECTED_FULL_SENSORS = 1181; // was 1198 before round 1 item 12 (2026-11-14): DX / gas-electric stage units have no water valve to install
+const EXPECTED_FULL_SEQUENCES = 1009; // was 1125 before round 3 (2026-11-14): a damper, reheat valve, cooling valve or freeze stat the unit does not need is N/A (-116 sequences)
+const EXPECTED_FULL_SENSORS = 1146; // was 1181 before round 3 (2026-11-14): freeze stat N/A where the unit has no water coil (-35). was 1198 before round 1 item 12 (2026-11-14); old note: was 1198 before round 1 item 12 (2026-11-14): DX / gas-electric stage units have no water valve to install
 // The one-building case uses the first building of the restored data (set after the full-selection run); no building name is kept in this file.
 let oneBuildingName = null;
 

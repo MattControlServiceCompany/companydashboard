@@ -16374,19 +16374,19 @@ var ASHRAE36_GAP_DESCRIPTIONS = {
   // These describe deviations from GL36 §3.1.1.1 defaults, not missing hardware.
   // Label: "Needs Review" per design decision (never "Fail" — overrides are legitimate).
   spTempDeviation: {
-    short: 'Zone setpoint differs from ASHRAE 36 §3.1.1.1 default',
+    short: 'Zone setpoint differs from ASHRAE 36 Section 3.1.1.1 default',
     impact: 'Zero-hardware quick win',
     plain:
       'One or more zone setpoints differ from ASHRAE 36 defaults. Resetting them to the company-standard setpoints is a no-cost software change.',
   },
   spDeadbandTooNarrow: {
-    short: 'Heating/cooling deadband below ASHRAE 36 §3.1.1.1 minimum (1°F)',
+    short: 'Heating/cooling deadband below ASHRAE 36 Section 5.3.2 minimum (1°F)',
     impact: 'Zero-hardware quick win',
     plain:
       'The occupied deadband is below the ASHRAE 36 minimum of 1°F, causing heating and cooling to compete. Widening to at least 2°F requires only a programming change.',
   },
   spCO2Deviation: {
-    short: 'Carbon dioxide ventilation setpoint differs from ASHRAE 36 Table 3.1.1.3 default',
+    short: 'Carbon dioxide ventilation setpoint differs from ASHRAE 36 Section 3.1.1.3 default',
     impact: 'Zero-hardware quick win',
     plain:
       'Zone carbon dioxide setpoint differs from the ASHRAE 36 default; an incorrect value causes over-ventilation or under-ventilation. Correction is software-only.',
@@ -17875,7 +17875,7 @@ function _a36StatusChip(status, inPlace, required, seqNA, seqMatched, seqRequire
   // claims a verified sequence pass that never happened, so this word must not render for that
   // case. Neutral word only -- does not touch `status`, `color`, the composite score, or any
   // other caller's threshold logic for buildings that DO have applicable sequences.
-  if (seqNA) word = 'No Scope Required';
+  if (seqNA) word = 'Outside ASHRAE 36 Sequences';
   // Batch 3 item 2/3a: at 100% (inPlace === required, required > 0) the fraction is a
   // tautology ("High Readiness · 22/22 sensors" — 100% + a fraction that's obviously 1:1 tells
   // the reader nothing new, per Matt's flag) — drop it and show the word alone. Below 100%,
@@ -18014,6 +18014,32 @@ function _a36ScopedCatalogRows(d) {
 
 // ─── rptPageASHRAE36Cover ─────────────────────────────────────────────────
 /**
+ * _a36ConsolidatedCounts: the one source of the two work counts of the Audit Report: devices to install and control sequences to program.
+ * They come from the priced scope (_a36ScopedCatalogRows); the cover, the Summary of the Executive Summary and the Control Sequences table
+ * read this function. Falls back to the raw portfolio totals when buildCatalogRows is not loaded.
+ * @returns {{sensors:number, sequences:number}}
+ */
+function _a36ConsolidatedCounts(d) {
+  var p = d.portfolio;
+  var sensors = p.totalMissingHardwarePoints;
+  var sequences = p.totalNotReadySequences;
+  if (typeof buildCatalogRows === 'function') {
+    var rows = _a36ScopedCatalogRows(d);
+    var sensorSum = 0;
+    var seqSum = 0;
+    rows.forEach(function (r) {
+      if (r.phase === 1 && !r.ioOnly) sensorSum += r.qty || 0;
+      else if (r.phase === 2 && r.seqKey) seqSum += r.qty || 0;
+    });
+    if (rows.length) {
+      sensors = sensorSum;
+      sequences = seqSum;
+    }
+  }
+  return { sensors: sensors, sequences: sequences };
+}
+
+/**
  * Cover page: three gauge rings (overall/sensor/sequence), one-paragraph finding.
  * Hero page — no interior header, uses CSC letterhead.
  */
@@ -18041,30 +18067,9 @@ function rptPageASHRAE36Cover(n, d, perBuildingIncluded) {
   // never happen on energy-department.html, which always loads pricing-estimator.js alongside
   // report-engine.js, but avoids a hard crash if this function is ever reused in a context that
   // doesn't).
-  var _a36ConsolidatedSensors = p.totalMissingHardwarePoints;
-  var _a36ConsolidatedSequences = p.totalNotReadySequences;
-  if (typeof buildCatalogRows === 'function') {
-    var _a36CatalogRows = _a36ScopedCatalogRows(d);
-    var _a36SensorSum = 0;
-    var _a36SeqSum = 0;
-    _a36CatalogRows.forEach(function (r) {
-      if (r.phase === 1 && !r.ioOnly) _a36SensorSum += r.qty || 0;
-      // fix/per-building-sensor-reconcile (2026-07-29): require r.seqKey — buildCatalogRows
-      // concatenates buildSensorInvestigationRows()' phase-2 labor rows (suspect/failed sensor
-      // readings, fix/pricing-phases-and-sensor-hours) onto the SAME array. Those rows carry no
-      // seqKey (they are not a G36 sequence) and that function's own header comment is explicit:
-      // "must not reach the audit report... sensor failures are a service-scope/pricing matter,
-      // not an ASHRAE 36 compliance finding." A plain `r.phase === 2` sum missed that distinction
-      // and let 19 investigation rows (qty 19) inflate this cover figure by counting them as
-      // "sequences to program" — measured 2026-07-29 on real Client D data: 1,304 vs. 1,285 once
-      // excluded. r.seqKey is only ever set on the actual G36 sequence-programming rows.
-      else if (r.phase === 2 && r.seqKey) _a36SeqSum += r.qty || 0;
-    });
-    if (_a36CatalogRows.length) {
-      _a36ConsolidatedSensors = _a36SensorSum;
-      _a36ConsolidatedSequences = _a36SeqSum;
-    }
-  }
+  var _a36Counts = _a36ConsolidatedCounts(d);
+  var _a36ConsolidatedSensors = _a36Counts.sensors;
+  var _a36ConsolidatedSequences = _a36Counts.sequences;
   // Cover gauge color — R3 (2026-08-03), reverts R2 above. R2's readiness-band coloring
   // (a36ReadinessColor(pct) on all three rings, plus a "Ring color shows readiness" legend) was
   // an unrequested addition; Matt's original 2026-07-29 instruction (commit 5d09930) was fixed
@@ -18127,7 +18132,9 @@ function rptPageASHRAE36Cover(n, d, perBuildingIncluded) {
     '<div style="text-align:center">' +
     _a36GaugeSVG(p.seqPct, 'var(--rpt-green)', 'Sequences', 110, true) +
     '<div style="font-size:11px;color:var(--rpt-page-text);margin-top:4px">Sequence Readiness</div></div>' +
-    '</div>';
+    '</div>' +
+    // A2: what the percentage means, in one plain sentence
+    '<div style="font-size:12px;color:var(--rpt-page-text);text-align:center;line-height:1.5;margin:0 0 8px">Each percentage shows how much of what ASHRAE 36 calls for is already in place: 100% means nothing is missing.</div>';
 
   var bodyHTML =
     '<div style="padding:20px 48px 16px">' +
@@ -18397,7 +18404,11 @@ function rptPageASHRAE36Executive(n, d, detailedTitles) {
     dcvCallout = detailed
       ? _execItem(
           'Occupancy-Based Ventilation',
-          dcvSentence + ' Without it, these units ventilate at full design rates even when spaces are empty, wasting fan and cooling energy.',
+          dcvSentence + ' Without it, these units ventilate at their fixed minimum rate whether or not the space is occupied, wasting fan and cooling energy.' +
+            // B4: the Control Sequences table counts every unit that needs the sequence programmed; this sentence counts the missing sensors only
+            (typeof _execSeqCounts !== 'undefined' && (_execSeqCounts.demandCtrl || 0) + (_execSeqCounts.vav_dcv || 0) > _dcvAhuMissing + _dcvZonesMissing
+              ? ' In all, ' + rptCount((_execSeqCounts.demandCtrl || 0) + (_execSeqCounts.vav_dcv || 0)) + ' units need this sequence programmed, because some units that have a sensor lack other points the sequence needs.'
+              : ''),
         )
       : '<div class="rpt-a36-callout" style="margin-bottom:10px;padding:0">' +
       '<div style="font-size:' +
@@ -18408,9 +18419,54 @@ function rptPageASHRAE36Executive(n, d, detailedTitles) {
       // fix/report-tighten-exec-paragraphs (2026-08-03, Matt: "Can we not tighten those also?"):
       // was 3 sentences (fact + 2 explanatory); trimmed to fact + ONE crisp sentence, matching the
       // count+one-sentence shape of the 4 paragraphs below.
-      ' Without it, these units ventilate at full design rates even when spaces are empty, wasting fan and cooling energy.' +
+      ' Without it, these units ventilate at their fixed minimum rate whether or not the space is occupied, wasting fan and cooling energy.' +
       '</div>' +
       '</div>';
+  }
+
+  // A1: Summary (Detailed only): what we did, what we found, what it takes, in plain words. Every number is a shared value: the building
+  // and equipment counts and the score of collectASHRAE36Data, the point count of its point inventory, the largest gaps of the paragraphs
+  // below (the same sequence counts and the same carbon dioxide counts), and the two work counts of _a36ConsolidatedCounts (the cover's).
+  if (detailed) {
+    var _sumCounts = _a36ConsolidatedCounts(d);
+    var _allLib = d.buildings.length > 0 && d.buildings.every(function (b) { return /librar/i.test(b.name || ''); });
+    var _noun = _allLib ? 'librar' + (p.totalBuildings === 1 ? 'y' : 'ies') : 'building' + (p.totalBuildings === 1 ? '' : 's');
+    var _inv = d.pointInventory && d.pointInventory.totalAll ? d.pointInventory.totalAll : 0;
+    var _sumDid =
+      'Control Service Company reviewed the building automation system (the computer system that runs the heating, cooling and ventilation) at ' +
+      rptCount(p.totalBuildings) + ' ' + _noun + '. We ' + (_inv ? 'read ' + rptCount(_inv) + ' data points from ' : 'looked at ') + rptCount(p.totalEquip) +
+      ' pieces of equipment and compared the programming and the sensors with ASHRAE 36, the industry standard for this equipment.';
+    var _lowest = d.buildings
+      .filter(function (b) { return b.seqPct !== null && b.seqPct !== undefined; })
+      .sort(function (a, c) { return a.composite - c.composite || rptBuildingNameSort(a.name, c.name); })
+      .slice(0, 3);
+    var _gaps = [];
+    var _obvQty = typeof _execSeqCounts !== 'undefined' ? (_execSeqCounts.demandCtrl || 0) + (_execSeqCounts.vav_dcv || 0) : 0;
+    if (_dcvZonesMissing > 0) _gaps.push({ qty: Math.max(_obvQty, _dcvZonesMissing), text: rptCount(_dcvZonesMissing) + ' of ' + rptCount(dcv.totalZones) + ' rooms have no carbon dioxide sensor, so ventilation does not change with the number of people' });
+    (typeof topSeqTypes !== 'undefined' ? topSeqTypes : []).forEach(function (s) {
+      _gaps.push({ qty: s.qty, text: rptCount(s.qty) + ' pieces of equipment need ' + s.label.toLowerCase() + ' programmed' });
+    });
+    _gaps.sort(function (a, c) { return c.qty - a.qty; });
+    _gaps = _gaps.slice(0, 3);
+    var _sumFound =
+      'Overall the ' + _noun + ' meet ' + p.composite + '% of the standard.' +
+      (_lowest.length
+        ? ' The lowest scores are ' + _a36DetJoin(_lowest.map(function (b) { return _a36DisplayName(b) + ' (' + b.composite + '%)'; })) + '.'
+        : '') +
+      (_gaps.length ? ' The largest gaps are: ' + _a36DetJoin(_gaps.map(function (g) { return g.text; })) + '.' : '');
+    var _sumTakes =
+      rptCount(_sumCounts.sensors) + (_sumCounts.sensors === 1 ? ' device' : ' devices') + ' to install and ' + rptCount(_sumCounts.sequences) +
+      ' control sequence' + (_sumCounts.sequences === 1 ? '' : 's') + ' to program. The Service Proposal gives the cost of this work.';
+    var _sumHtml =
+      '<div style="margin-bottom:' + A36_DET_EXEC_ITEM_GAP_PX + 'px">' +
+      '<div style="font-size:' + A36_DET_EXEC_BODY_PX + 'px;font-weight:700;color:var(--rpt-page-text);line-height:1.4;margin-bottom:4px">Summary</div>' +
+      [_sumDid, _sumFound, _sumTakes]
+        .map(function (t) {
+          return '<p style="font-size:' + A36_DET_EXEC_BODY_PX + 'px;color:var(--rpt-page-text);line-height:1.6;margin:0 0 6px 0">' + _escHtml(t) + '</p>';
+        })
+        .join('') +
+      '</div>';
+    execIntro = execHeader + _sumHtml + execIntro.slice(execHeader.length);
   }
 
   // Fix B: compute dynamic row budgets now that callout presence is known.
@@ -18734,7 +18790,7 @@ function rptPageASHRAE36Executive(n, d, detailedTitles) {
     'and weighted by how many apply to each equipment type. ASHRAE 36 itself defines no composite score or compliance threshold. ' +
     '<strong>Readiness bands:</strong> High ≥' +
     ASHRAE36_READINESS_HIGH_THRESHOLD +
-    '% (meets the ASHRAE 36 baseline), Partial ' +
+    '%, Partial ' +
     ASHRAE36_READINESS_PARTIAL_THRESHOLD +
     '–' +
     (ASHRAE36_READINESS_HIGH_THRESHOLD - 1) +
@@ -19021,16 +19077,30 @@ function rptPageASHRAE36Executive(n, d, detailedTitles) {
 
   // When pushed, the paragraphs get their own page (no readiness table on it at all) so the
   // table's first chunk is never sharing a page with anything that could starve its row count.
+  // Round 3 A1: the Summary block makes the Detailed paragraph page taller than one page when the paragraphs below it are many. Then the Summary and the
+  // intro paragraph keep the first page and the sequence paragraphs take the next page. Heights are the budgets of this function (header 34, intro 150,
+  // Summary 300, 105 per paragraph), compared with the page budget.
+  var _paraEstH = 34 + 150 + (detailed ? 300 : 0) + (dcvCallout ? 105 : 0) + 105 * topSeqTypes.length;
+  var _paraSplit = _pushTableToNextPage && detailed && _paraEstH > _rptContentBudget('flush') - EXEC_SAFETY_H && (dcvCallout || callout);
   if (_pushTableToNextPage) {
-    resultPages.push(
-      rptPage(n, 'ASHRAE 36 Audit Report: Executive Summary', execIntro + dcvCallout + callout, {
-        hideIntHdr: true,
-        data: fakeData,
-        label: 'Page ' + n + ' — Executive Summary',
-      }),
-    );
+    if (_paraSplit) {
+      resultPages.push(
+        rptPage(n, 'ASHRAE 36 Audit Report: Executive Summary', execIntro, { hideIntHdr: true, data: fakeData, label: 'Page ' + n + ' — Executive Summary' }),
+      );
+      resultPages.push(
+        rptPage(n + 1, 'ASHRAE 36 Audit Report: Executive Summary', dcvCallout + callout, { hideIntHdr: true, data: fakeData, label: 'Page ' + (n + 1) + ' — Executive Summary' }),
+      );
+    } else {
+      resultPages.push(
+        rptPage(n, 'ASHRAE 36 Audit Report: Executive Summary', execIntro + dcvCallout + callout, {
+          hideIntHdr: true,
+          data: fakeData,
+          label: 'Page ' + n + ' — Executive Summary',
+        }),
+      );
+    }
   }
-  var _tableStartPageN = _pushTableToNextPage ? n + 1 : n;
+  var _tableStartPageN = _pushTableToNextPage ? n + (_paraSplit ? 2 : 1) : n;
 
   chunks.forEach(function (chunk, chunkIndex) {
     var tableRows = chunk
@@ -19213,6 +19283,11 @@ function rptPageASHRAE36CostEstimate(n, d, detailedSectionNo) {
       });
     });
 
+    // D1: the Detailed report lists only the sequences that have equipment to program (a row of 0 reads as work to do). The total is unchanged.
+    if (detailed)
+      rowSpecs = rowSpecs.filter(function (spec) {
+        return spec.qty > 0;
+      });
     rowSpecs.forEach(function (spec) {
       var sensorLine = spec.sensorLabels.join(', ');
       var seqName = spec.name;
@@ -20538,7 +20613,7 @@ function rptPageASHRAE36Recommendations(n, d) {
       '<div style="font-size:11px;font-weight:600;color:var(--rpt-page-text);margin-bottom:2px">Add carbon dioxide sensors — enable ventilation that adjusts to occupancy</div>' +
       '<div style="font-size:10px;color:var(--rpt-page-text);line-height:1.5">' +
       (dcvDesc.plain ||
-        'Carbon dioxide sensors measure occupancy indirectly and allow the building automation system to reduce outdoor air intake when spaces are unoccupied. Without them, these units ventilate at full design rates around the clock.') +
+        'Carbon dioxide sensors measure occupancy indirectly and allow the building automation system to reduce outdoor air intake when spaces are unoccupied. Without them, these units ventilate at their fixed minimum rate whether or not the space is occupied.') +
       '</div>' +
       '</td>' +
       '<td style="padding:6px 8px;font-size:10px;color:var(--rpt-orange);font-weight:600;border:1px solid var(--rpt-border);vertical-align:top;white-space:nowrap">' +
@@ -20698,13 +20773,16 @@ function rptPageASHRAE36SetpointReview(n, d, detailedTitle) {
           return r.checkKey === checkKey;
         });
       }
+      // A heater has no cooling setpoint and no deadband: its row shows heating only (E2).
+      var _heatOnly = eq.category === 'heater';
       var zone = {
         displayStatus: 'MATCHES',
+        heatOnly: _heatOnly,
         occHeat: entry('occHeat'),
-        occCool: entry('occCool'),
+        occCool: _heatOnly ? null : entry('occCool'),
         unoccHeat: entry('unoccHeat'),
-        unoccCool: entry('unoccCool'),
-        deadband: entry('deadband'),
+        unoccCool: _heatOnly ? null : entry('unoccCool'),
+        deadband: _heatOnly ? null : entry('deadband'),
         co2: null,
         existingSchedule: eq.existingSchedule || null,
         recommended: null,
@@ -20733,7 +20811,7 @@ function rptPageASHRAE36SetpointReview(n, d, detailedTitle) {
   if (bldgOrder.length === 0) {
     var emptyBody =
       '<div class="rpt-a36-callout" style="font-size:14px;color:var(--rpt-page-text);line-height:1.6">' +
-      'This project has no zone-level equipment with occupied heating and cooling setpoints to review under ASHRAE 36 §3.1.1.1.' +
+      'This project has no zone-level equipment with occupied heating and cooling setpoints to review under ASHRAE 36 Section 3.1.1.1.' +
       '</div>';
     return [
       rptPage(n, 'ASHRAE 36 Audit Report: Setpoint Programming Review', emptyBody, {
@@ -20866,6 +20944,7 @@ function rptPageASHRAE36SetpointReview(n, d, detailedTitle) {
     return {
       name: bldg.name,
       singleZone: !!bldg.singleZone,
+      heatOnly: zones.length > 0 && zones.every(function (z) { return z.heatOnly; }),
       // the unit tags only ("AHU-A and AHU-B"), the room in brackets is left out
       unitNote:
         bldg.singleZone && bldg.multi
@@ -20964,10 +21043,10 @@ function rptPageASHRAE36SetpointReview(n, d, detailedTitle) {
   // tells the reader what to do about it instead of flagging it as a problem.
   // The status of a building in one line: how many zones to reprogram to the recommended setpoints, or that all of them match.
   function _statusLine(row) {
-    if (row.singleZone) return '<span style="font-weight:700;color:var(--rpt-page-text)">Single-zone unit, no zone defaults</span>';
+    if (row.singleZone) return '<span style="font-weight:700;color:var(--rpt-page-text)">Single-zone unit: current setpoints shown, no zone review</span>';
     var zones = row.totalZones + (row.totalZones !== 1 ? ' zones' : ' zone');
     if (row.bStatus === 'NEEDS_REVIEW') {
-      return '<span style="font-weight:700;color:var(--rpt-orange)">Reprogram ' + row.deviatorCount + ' of ' + zones + ' to recommended setpoints</span>';
+      return '<span style="font-weight:700;color:var(--rpt-orange)">Change the setpoints of ' + row.deviatorCount + ' of ' + zones + ' to the recommended setpoints</span>';
     }
     return '<span style="font-weight:700;color:var(--rpt-green)">All ' + zones + ' match ASHRAE 36 defaults</span>';
   }
@@ -20975,7 +21054,8 @@ function rptPageASHRAE36SetpointReview(n, d, detailedTitle) {
   // Recommended setpoints and schedule (item 5aj, company standard: equipment-matrix.js EM_SP_DEFAULTS / _emComputeProposedSchedule). They
   // are the same for most buildings, so they print once in a box above the table; a building whose recommendation differs from the box
   // says so in its own row. A temperature pair always names the two setpoints: "70°F heating / 74°F cooling".
-  function _pairText(heat, cool, fmt) {
+  function _pairText(heat, cool, fmt, pairHeatOnly) {
+    if (heat !== null && heat !== undefined && (cool === null || cool === undefined) && pairHeatOnly) return fmt(heat) + ' heating';
     return heat === null || heat === undefined || cool === null || cool === undefined ? '—' : fmt(heat) + ' heating / ' + fmt(cool) + ' cooling';
   }
   function _recFieldsFor(row) {
@@ -20984,7 +21064,7 @@ function rptPageASHRAE36SetpointReview(n, d, detailedTitle) {
     return {
       occupied: _pairText(row.recOccHeat, row.recOccCool, _fmtDefaultVal),
       unoccupied: _pairText(row.avgRecUnoccHeat, row.avgRecUnoccCool, _fmtDefaultVal),
-      schedule: recSchedStartFmt && recSchedStopFmt ? 'Mon–Fri ' + recSchedStartFmt + '–' + recSchedStopFmt + ', Sat &amp; Sun: Unoccupied' : '—',
+      schedule: recSchedStartFmt && recSchedStopFmt ? 'occupied during each building’s open hours, unoccupied when closed' : '—',
     };
   }
   // The most common value of a list (the first one wins a tie).
@@ -21024,7 +21104,7 @@ function rptPageASHRAE36SetpointReview(n, d, detailedTitle) {
   var _detailedReview = !!detailedTitle;
   // Saturday and Sunday are unoccupied for every building (the source file has no weekend times), so the Detailed review states it once in
   // the box above the table and not in every row.
-  var _eschWeekend = _detailedReview ? '' : '<br>Sat &amp; Sun: Unoccupied';
+  var _eschWeekend = _detailedReview ? '' : '<br>Sat &amp; Sun: no times in the schedule data';
   function _eschCellFor(row) {
     if (!row.eschImported) return 'Not part of this review';
     if (row.eschHasTimes)
@@ -21047,10 +21127,10 @@ function rptPageASHRAE36SetpointReview(n, d, detailedTitle) {
   }
   var _spColDefs = [
     { w: 13, th: 'Building', td: tdBase, cell: function (r) { return '<span style="font-weight:600;color:var(--rpt-page-text)">' + _escHtml(_a36DisplayName(r)) + '</span>' + (r.unitNote ? '<div style="margin-top:3px;color:var(--rpt-page-text)">' + _escHtml(r.unitNote) + '</div>' : ''); } },
-    { w: _detailedReview ? 15 : 17, th: 'Occupied' + thSub + 'Existing average</span>', td: tdCenter, cell: function (r) { return _pairText(r.avgHeat, r.avgCool, _fmtAvg); } },
-    { w: _detailedReview ? 15 : 17, th: 'Unoccupied' + thSub + 'Existing average</span>', td: tdCenter, cell: function (r) { return _pairText(r.avgUnoccHeat, r.avgUnoccCool, _fmtAvg); } },
+    { w: _detailedReview ? 15 : 17, th: 'Occupied' + thSub + 'Existing average</span>', td: tdCenter, cell: function (r) { return _pairText(r.avgHeat, r.avgCool, _fmtAvg, r.heatOnly); } },
+    { w: _detailedReview ? 15 : 17, th: 'Unoccupied' + thSub + 'Existing average</span>', td: tdCenter, cell: function (r) { return _pairText(r.avgUnoccHeat, r.avgUnoccCool, _fmtAvg, r.heatOnly); } },
     { w: 17, th: 'ASHRAE 36<br>Default', td: tdCenter, zoneOnly: true, cell: function (r) { return r.singleZone ? '—' : _refCellFor(r); }, uniformNote: function (h) { var p = h.split('<br>'); return '<strong>ASHRAE 36 default:</strong> ' + p[0].replace(/^Occupied/, 'occupied') + '; ' + p[1].replace(/^Unoccupied/, 'unoccupied'); } },
-    { w: _detailedReview ? 12 : 10, th: 'Deadband' + thSub + 'Existing average</span>', td: tdCenter, cell: function (r) { return _fmtAvg(r.avgDb); } },
+    { w: _detailedReview ? 12 : 10, th: 'Deadband' + thSub + 'Existing average</span>', td: tdCenter, cell: function (r) { return r.heatOnly ? '—' : _fmtAvg(r.avgDb); } },
     { w: _detailedReview ? 17 : 14, th: 'Existing<br>Schedule' + thSub + (_detailedReview ? 'Mon–Fri' : 'Mon–Fri, Sat &amp; Sun') + '</span>', td: tdCenter, cell: _eschCellFor, uniformNote: function (h) { return h === 'Not part of this review' ? '' : '<strong>Existing schedule for every building:</strong> ' + h.replace(/<br>/g, '; '); }, dropIf: function (h) { return h === 'Not part of this review'; } },
     { w: _detailedReview ? 26 : 25, th: 'Status', td: tdBase, keep: true, cell: function (r) { return _statusLine(r) + _recDifferenceFor(r); } },
   ];
@@ -21114,7 +21194,7 @@ function rptPageASHRAE36SetpointReview(n, d, detailedTitle) {
   var summaryParts = [_shownCount + ' building' + (_shownCount !== 1 ? 's' : '')];
   if (needsReviewTotal > 0) summaryParts.push(needsReviewTotal + ' to reprogram to recommended setpoints');
   if (matchesTotal > 0) summaryParts.push(matchesTotal + ' match ASHRAE 36 defaults');
-  if (_singleCount > 0) summaryParts.push(_singleCount + ' with single-zone units only (no zone defaults)');
+  if (_singleCount > 0) summaryParts.push(_singleCount + ' with single-zone units only (current setpoints shown)');
 
   var totalsCallout =
     '<div style="font-size:10px;color:var(--rpt-page-text);margin-bottom:8px">' +
@@ -21131,7 +21211,7 @@ function rptPageASHRAE36SetpointReview(n, d, detailedTitle) {
       '<div class="rpt-a36-callout" style="margin-top:10px">' +
       '<div style="font-size:10px;font-weight:700;color:var(--rpt-blue);margin-bottom:3px">Carbon Dioxide Setpoints</div>' +
       '<div style="font-size:10px;color:var(--rpt-page-text);line-height:1.6">' +
-      'No carbon dioxide setpoints are programmed for occupancy-based ventilation. Control Service Company recommends adding them per ASHRAE 36 Table 3.1.1.3.' +
+      'No carbon dioxide setpoints are programmed for occupancy-based ventilation. Control Service Company recommends adding them per ASHRAE 36 Section 3.1.1.3.' +
       '</div>' +
       '</div>';
   }
@@ -21168,7 +21248,7 @@ function rptPageASHRAE36SetpointReview(n, d, detailedTitle) {
       '<div style="font-size:10px;color:var(--rpt-page-text);line-height:1.6">' +
       'This review covers the zone terminal equipment of each building: variable air volume boxes, fan-powered boxes, dual-duct boxes, fan coil units and zone controllers. ' +
       (_singleBuildings.length
-        ? _libraryNames(_singleBuildings) + (_singleBuildings.length === 1 ? ' has' : ' have') + ' no zone terminal equipment. ' + (_singleBuildings.length === 1 ? 'Its single-zone units are' : 'Their single-zone units are') + ' listed with their current setpoints. ASHRAE 36 has no zone defaults for them, so no recommended setpoints are shown. '
+        ? _libraryNames(_singleBuildings) + (_singleBuildings.length === 1 ? ' has' : ' have') + ' no zone terminal equipment. ' + (_singleBuildings.length === 1 ? 'Its single-zone units are' : 'Their single-zone units are') + ' listed with their current setpoints. The review compares zone terminal units with the ASHRAE 36 defaults, so it shows no comparison for them. '
         : '') +
       (_noZoneUnits.length
         ? _libraryNames(_noZoneUnits) + (_noZoneUnits.length === 1 ? ' has' : ' have') + ' no zone terminal equipment (' + (_noZoneUnits.length === 1 ? 'its' : 'their') + ' units are single-zone air handling units, rooftop units, heaters or exhaust fans), so ' + (_noZoneUnits.length === 1 ? 'it is' : 'they are') + ' not included. '
@@ -21182,9 +21262,9 @@ function rptPageASHRAE36SetpointReview(n, d, detailedTitle) {
 
   var preamble =
     '<div style="font-size:11px;color:var(--rpt-page-text);line-height:1.6;margin-bottom:10px">' +
-    'ASHRAE 36 §3.1.1.1 and Table 3.1.1.1 define default occupied and unoccupied temperature setpoints for three zone types. Control Service Company’s recommended setpoints and schedule are its company standard. ' +
+    'ASHRAE 36 Table 3.1.1.1 defines default occupied and unoccupied temperature setpoints for three zone types. Control Service Company’s recommended setpoints and schedule are its company standard. ' +
     'Occupied setpoints are the temperatures held while the building is in use. Unoccupied setpoints are the temperatures held while it is empty. The deadband is the gap between the heating and cooling setpoints. ' +
-    'Buildings marked Reprogram have zones that operate outside the ASHRAE 36 default setpoints. Control Service Company recommends resetting them to the recommended setpoints and schedule. ' +
+    'Buildings with a change listed in the Status column have zones that operate outside the ASHRAE 36 default setpoints. Control Service Company recommends resetting them to the recommended setpoints and schedule. ' +
     'Existing values shown are building averages across all zone equipment in the building automation system.' +
     '</div>';
 
@@ -21234,14 +21314,14 @@ function rptPageASHRAE36SetpointReview(n, d, detailedTitle) {
         '<strong>Recommended by Control Service Company:</strong> occupied ' + _recBox.occupied + '; unoccupied ' + _recBox.unoccupied + '; ' + _recBox.schedule,
       ]
     : []; // only single-zone rows: no recommendation
-  if (_detailedReview && buildingRows.some(function (r) { return r.eschImported; })) _uniformNotes.push('<strong>Existing schedule, Saturday and Sunday:</strong> unoccupied for every building.');
+  if (_detailedReview && buildingRows.some(function (r) { return r.eschImported; })) _uniformNotes.push('<strong>Existing schedule, Saturday and Sunday:</strong> the schedule data has no weekend times.');
   // Item 16: a library whose setpoint averages cover fewer zones than it has says so, and names the zones left out.
   Object.keys(_leftOut).forEach(function (bn) {
     var inTable = buildingRows.some(function (r) { return r.name === bn && !r.singleZone; });
     if (!inTable) return;
     var gone = _leftOut[bn].filter(function (z) { return z.offline; });
     if (!gone.length) return;
-    var names = gone.map(function (z) { return _a36DetEquipName(z.name); });
+    var names = gone.map(function (z) { return _escHtml(_a36DetEquipName(z.name)); });
     _uniformNotes.push('<strong>' + _escHtml(rptBuildingDisplayName(bn)) + ':</strong> the setpoint averages cover ' + (_zoneTotals[bn] - gone.length) + ' of ' + _zoneTotals[bn] + ' zones. ' + _a36DetJoin(names) + ' did not report any readings during the review (offline), so ' + (gone.length === 1 ? 'it is' : 'they are') + ' left out.');
   });
   var _boxLines = _uniformNotes.concat(_recLines);
@@ -25900,8 +25980,12 @@ function _a36DetReadingValue(label, raw) {
   // A value that rounds to zero prints without a minus sign ("-0.004" -> "0.00").
   var src = m[1].indexOf('.') === -1 ? 0 : m[1].length - m[1].indexOf('.') - 1;
   var x = parseFloat(m[1]);
-  var num = x.toFixed(Math.min(src, Math.abs(x) < 1 ? 2 : 1));
+  var unit0 = (m[2] || '').trim();
+  // Item C1: airflow and ppm print as whole numbers; degrees F always print one decimal; a thousands separator on every number of 1,000 or more.
+  var decimals = /^cfm$/i.test(unit0) || /^ppm$/i.test(unit0) ? 0 : /^°?\s*F$/i.test(unit0) ? 1 : Math.min(src, Math.abs(x) < 1 ? 2 : 1);
+  var num = x.toFixed(decimals);
   if (parseFloat(num) === 0) num = num.replace('-', '');
+  num = num.replace(/^(-?\d+)/, function (w) { return w.replace(/\B(?=(\d{3})+(?!\d))/g, ','); });
   if (unit === '') {
     var isTemp = /temperature|temp|setpoint|set point/i.test(label) && !/flow|pressure|humidity|position|speed|co2|damper|valve|request|mode|status/i.test(label);
     return isTemp ? num + '°F' : null;
@@ -25909,6 +25993,7 @@ function _a36DetReadingValue(label, raw) {
   // The one unit formatter of a reading: degrees and percent follow the number with no space ("72.3°F", "55.6%"); other units after one space.
   if (/^°?\s*F$/i.test(unit)) return num + '°F';
   if (/^°\s*C$/i.test(unit)) return num + '°C';
+  if (/^in\.?\s*(H2O|w\.?c\.?)$/i.test(unit)) return num + ' in. w.c.';
   if (unit === '%') return num + '%';
   if (/^%\s*rh$/i.test(unit)) return num + '%'; // humidity prints like the other humidity readings ("60.9%")
   return num + ' ' + unit;
@@ -26456,7 +26541,10 @@ function _a36DetLoadPictures(files, needed, picMap) {
   todo.forEach(function (f) {
     chain = chain.then(function () {
       return _a36DetScalePicture(f, picMap && !graphicFile[f.name] ? A36_DET_FIG_MIN_PRINT_SCALE_PAGE : A36_DET_FIG_MIN_PRINT_SCALE).then(function (r) {
-        if (r) out[f.name] = r;
+        if (r) {
+          r.modified = f.lastModified || 0; // the time the graphic file was saved: the capture time stated in the chapter
+          out[f.name] = r;
+        }
       });
     });
   });
@@ -26895,7 +26983,7 @@ function _a36DetImpactText(t) {
 
 // The Guideline 36 reference of a finding: "ASHRAE 36, Section 5.6", or "ASHRAE Guideline 36, Sections 5.16.6 and 5.16" for a finding of two sequences.
 function _a36DetSectionRef(f) {
-  return 'ASHRAE 36, Section' + (f.sectionPlural ? 's ' : ' ') + f.section;
+  return 'ASHRAE 36, Section' + (f.sectionPlural || / (to|and) /.test(f.section) ? 's ' : ' ') + f.section;
 }
 
 // "all 5 units", "3 of 25 units", "the unit".
@@ -27003,7 +27091,12 @@ function _a36DetModel(d, rowsById, picMap, loaded) {
         var seqKeys = extra.keys || [key];
         var many = seqKeys.length > 1;
         f.keys = seqKeys; // the sequences this finding stands for
-        f.section = seqKeys.map(_a36DetSeqSection).filter(Boolean).join(' and ');
+        // One section list: a plain section that a range of another sequence already covers ("5.16.3" inside "5.16.3 to 5.16.6") prints once.
+        var _secList = seqKeys.map(_a36DetSeqSection).filter(Boolean);
+        _secList = _secList.filter(function (s, i) {
+          return _secList.indexOf(s) === i && !_secList.some(function (o, j) { return j !== i && o !== s && o.split(' to ').indexOf(s) > -1; });
+        });
+        f.section = _secList.join(' and ');
         f.sectionPlural = many && f.section.indexOf(' and ') > -1;
         // What a sequence does is printed once, in Control Sequences (the Impact line of a sequence finding is gone).
         f.impact = '';
@@ -27032,6 +27125,9 @@ function _a36DetModel(d, rowsById, picMap, loaded) {
         f.observed = g ? 'The building automation system shows no ' + label + ' point' + pSec + ' on ' + frac + names + '.' : 'The building automation system shows no ' + label + ' point' + pSec + ' at building level (' + units + ' needed).';
         f.issueShort = label + ' point missing';
         f.recommendation = sensor ? 'Install the ' + label + ' sensor' + (g ? ' on ' + frac : ' (quantity ' + units + ')') + '.' : 'Add the ' + label + ' point' + (g ? ' on ' + frac : ' (quantity ' + units + ')') + '.';
+        // Item 6: a fan speed point on a constant-speed fan means a variable frequency drive (VFD).
+        if (/^(sfSpeed|sfSpeedCmd)$/.test(key))
+          f.recommendation = 'Add a variable frequency drive (VFD) to the supply fan where it runs at constant speed, so the building automation system can command and read the ' + label + (g ? ' on ' + frac : ' (quantity ' + units + ')') + '.';
       }
       // A picture only when the listed page text names the topic of this finding, on a non-graphic page of an affected unit.
       var wordList = (extra.keys || [key]).map(function (k) { return A36_DET_FINDING_PAGE_WORDS[k]; }).filter(Boolean);
@@ -27206,12 +27302,14 @@ function _a36DetModel(d, rowsById, picMap, loaded) {
         )
           gMatch = g;
       });
+      // C4: the unit that reports no readings is titled "Unit Offline"; the full sentence stays in the Observed line.
+      var isOffline = /did not report any readings during the review/i.test(df.issue || '');
       var f = {
         lib: _a36DisplayName(b),
         groupLabel: gMatch ? gMatch.label : df.type || 'Equipment',
         kind: 'deficiency',
         key: 'deficiency',
-        label: df.issue || '',
+        label: isOffline ? 'Unit Offline' : df.issue || '',
         units: 0,
         total: 0,
         affected: [df.equipment || ''],
@@ -27222,7 +27320,7 @@ function _a36DetModel(d, rowsById, picMap, loaded) {
         impact: '',
         effect: 'Equipment control',
         observed: (unitName ? unitName + ': ' : '') + (df.issue || ''),
-        issueShort: (unitName ? unitName + ': ' : '') + (df.issue || ''),
+        issueShort: (unitName ? unitName + ': ' : '') + (isOffline ? 'Unit Offline' : df.issue || ''),
         recommendation: df.change || df.how || '',
       };
       lib.findings.push(f);
@@ -27245,7 +27343,50 @@ function _a36DetContext(d) {
     pictures: pictures,
     model: _a36DetModel(d, rowsById, picMap, pictures),
     figure: { n: 0 },
+    // when the point readings were exported from the building automation system (the one time of every reading in the chapters)
+    pointTime: (function () {
+      var m = typeof emLoadMatrix === 'function' ? emLoadMatrix(d.project.id) : null;
+      return m && m.importedAt ? Date.parse(m.importedAt) || 0 : 0;
+    })(),
   };
+}
+
+// "November 14, 2026, 3:42 PM" for a time stamp in ms, '' when there is none.
+function _a36DetStamp(ms) {
+  if (!ms) return '';
+  var dt = new Date(ms);
+  var h = dt.getHours();
+  var mm = dt.getMinutes();
+  return (
+    ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'][dt.getMonth()] +
+    ' ' + dt.getDate() + ', ' + dt.getFullYear() + ', ' + (h % 12 || 12) + ':' + (mm < 10 ? '0' : '') + mm + ' ' + (h >= 12 ? 'PM' : 'AM')
+  );
+}
+
+// The sentence of a library chapter that says when its readings were taken (round 1b item 1a): the point export time and the dates of
+// the graphics of this chapter. A time that is not stored is not stated.
+function _a36DetTimeSentence(model, ctx) {
+  var pics = [];
+  model.descPics.forEach(function (list) {
+    list.forEach(function (p) { pics.push(p); });
+  });
+  model.findings.forEach(function (f) {
+    if (f.pic) pics.push(f.pic);
+  });
+  var times = [];
+  pics.forEach(function (p) {
+    var l = ctx.pictures[p.file];
+    if (l && l.modified) times.push(l.modified);
+  });
+  times.sort(function (a, c) { return a - c; });
+  var out = '';
+  if (ctx.pointTime) out += 'The point readings in this chapter are from the building automation system point export of ' + _a36DetStamp(ctx.pointTime) + '.';
+  if (times.length) {
+    var first = _a36DetStamp(times[0]);
+    var last = _a36DetStamp(times[times.length - 1]);
+    out += (out ? ' ' : '') + (first === last ? 'The graphics were saved on ' + first + '.' : 'The graphics were saved between ' + first + ' and ' + last + ', so a reading in a graphic can differ from the point reading.');
+  }
+  return out;
 }
 
 var A36_DET_P_TIGHT = 'margin:0 0 4px 0;font-size:13.34px;line-height:1.4;color:var(--rpt-page-text)';
@@ -27308,7 +27449,31 @@ function _a36DetUnitReadings(eq, rowsById) {
     var v = _a36DetReadingValue(cp.ashrae36PointName || cp.categoryLabel || '', raw);
     if (v !== null) out[cp.categoryKey] = v;
   });
-  return out;
+  return _a36DetCredibleReadings(out);
+}
+
+// Round 1b item 1c: a reading that cannot be true is not printed as a fact. It is left out (the point stays listed in Appendix A). The
+// tests need two readings of the same unit that contradict each other, so a reading with nothing to compare against always prints:
+//   duct static pressure of 0.05 in. w.c. or less while the supply fan runs at 30 percent or more;
+//   outdoor airflow under 5 CFM while the outdoor air damper is 20 percent or more open;
+//   outdoor airflow over 500 CFM while the outdoor air damper is closed (0 percent);
+//   a carbon dioxide reading of exactly 400 ppm (a sensor default, not a measurement).
+function _a36DetCredibleReadings(rd) {
+  function num(k) {
+    var x = rd[k] == null ? NaN : parseFloat(String(rd[k]).replace(/,/g, ''));
+    return isFinite(x) ? x : NaN;
+  }
+  var fan = Math.max(num('sfSpeedCmd') || 0, num('sfSpeed') || 0);
+  var damp = isFinite(num('oaDampCmd')) ? num('oaDampCmd') : num('oaDamp');
+  if (/in\. w\.c\./.test(rd.dsp || '') && num('dsp') <= 0.05 && fan >= 30) delete rd.dsp;
+  if (/CFM/i.test(rd.oaFlow || '')) {
+    if (num('oaFlow') < 5 && damp >= 20) delete rd.oaFlow;
+    else if (num('oaFlow') > 500 && damp === 0) delete rd.oaFlow;
+  }
+  ['co2', 'co2Return'].forEach(function (k) {
+    if (/ppm/i.test(rd[k] || '') && num(k) === 400) delete rd[k];
+  });
+  return rd;
 }
 
 // True when a unit has stored points that prove an airflow set point reset between a minimum and a maximum: one minimum airflow
@@ -27326,6 +27491,25 @@ function _a36DetAirflowResetProof(g, rowsById) {
     };
     return has(/\bmin(imum)?\b.*(flow|cfm)|(flow|cfm).*\bmin(imum)?\b/i) && has(/\bmax(imum)?\b.*(flow|cfm)|(flow|cfm).*\bmax(imum)?\b/i);
   });
+}
+
+// The reason a plant is off, read from a status point of the plant that states a lockout ("System Status = Lockout Ambient"): '' when no
+// point states it (item 4: a plant in lockout is off, whatever its supply temperature sensor reads).
+function _a36DetPlantLockout(g, rowsById) {
+  var why = '';
+  g.units.some(function (eq) {
+    var row = rowsById[eq.id];
+    var pts = row ? row.pointsRaw || row.points || {} : {};
+    return Object.keys(pts).some(function (k) {
+      if (!/\b(system|plant)\s+(status|mode)\b/i.test(k)) return false;
+      var raw = pts[k] && typeof pts[k] === 'object' ? pts[k].value : pts[k];
+      var m = /lockout\s*(ambient|outdoor|outside|oa)?/i.exec(String(raw == null ? '' : raw));
+      if (!m) return false;
+      why = m[1] ? 'outdoor air temperature lockout' : 'lockout';
+      return true;
+    });
+  });
+  return why;
 }
 
 // The control sentences of a group, from the points the group has: [{ fn, text }]. fn names the function the sentence belongs to
@@ -27408,6 +27592,10 @@ function _a36DetControlSentences(g, f, rd, proof) {
     if (has('hwIsoValve')) sentences.push(BAS + 'monitors the status of the hot water isolation valve' + (val('hwIsoValve') ? ' (' + val('hwIsoValve') + ')' : '') + '.');
     var supply = has('hwst') ? temperatureReading('hwst') : null;
     var ret = has('hwrt') ? temperatureReading('hwrt') : null;
+    if (proof && proof.plantLockout) {
+      sentences.push('At the time of the audit the plant was off (' + proof.plantLockout + '); the supply sensor read ' + (supply || 'no value') + (ret ? ' and the return sensor read ' + ret : '') + ', the temperature of the water standing in the pipes.');
+      return sentences.join(' ');
+    }
     if (supply && ret) sentences.push('At the time of the audit the plant supplied hot water at ' + supply + ' with a ' + ret + ' return.');
     else if (supply) sentences.push('At the time of the audit the plant supplied hot water at ' + supply + '.');
     else if (ret) sentences.push('At the time of the audit the hot water return was ' + ret + '.');
@@ -27490,7 +27678,7 @@ function _a36DetControlSentences(g, f, rd, proof) {
     if (has('htgValve')) coils.push('heating coil valve' + (val('htgValve') ? ' (' + val('htgValve') + ')' : ''));
     if (has('clgValve')) coils.push('cooling coil valve' + (val('clgValve') ? ' (' + val('clgValve') + ')' : ''));
     if (coils.length && has('sat'))
-      add(BAS + 'positions the ' + _a36DetJoin(coils) + ' by command to hold the supply air temperature' + (val('sat') ? ' (' + val('sat') + ')' : '') + '.', 'temp');
+      add(BAS + 'positions the ' + _a36DetJoin(coils) + ' by command and monitors the supply air temperature' + (val('sat') ? ' (' + val('sat') + ')' : '') + '.', 'temp');
     else if (has('sat')) add(BAS + 'monitors the supply air temperature' + (val('sat') ? ' (' + val('sat') + ')' : '') + '.', 'temp');
     else if (coils.length) add(BAS + 'positions the ' + _a36DetJoin(coils) + ' by command.', 'temp');
     var satSps = [val('satCoolSp') ? val('satCoolSp') + ' for cooling' : '', val('satHtgSp') ? val('satHtgSp') + ' for heating' : ''].filter(Boolean);
@@ -27521,18 +27709,22 @@ function _a36DetControlSentences(g, f, rd, proof) {
     var raK = has('raDampCmd') ? 'raDampCmd' : has('raDamp') ? 'raDamp' : '';
     var commanded = [];
     var monitored = [];
+    // Each damper prints with its own reading. A reading that exists for only one of the dampers is named for that damper (item 14).
     function damper(key, name, list) {
-      list.push(name + (val(key) ? ' (' + val(key) + ')' : ''));
+      list.push({ name: name, v: val(key) || '' });
+    }
+    function dampList(list) {
+      var withV = list.filter(function (x) { return x.v; });
+      if (withV.length === list.length || !withV.length)
+        return _a36DetJoin(list.map(function (x) { return x.name + (x.v ? ' (' + x.v + ')' : ''); }));
+      return _a36DetJoin(list.map(function (x) { return x.name; })) + ' (' + _a36DetJoin(withV.map(function (x) { return x.name + ' ' + x.v; })) + ')';
     }
     if (oaK) damper(oaK, 'outdoor air damper', oaK === 'oaDampCmd' ? commanded : monitored);
     if (raK) damper(raK, 'return air damper', raK === 'raDampCmd' ? commanded : monitored);
     if (has('reliefDamp')) damper('reliefDamp', 'relief damper', monitored);
-    if (commanded.length) add(BAS + 'positions the ' + _a36DetJoin(commanded) + ' by command.', 'oa');
+    if (commanded.length) add(BAS + 'positions the ' + dampList(commanded) + ' by command.', 'oa');
     var oaWatch = monitored.map(function (m) {
-      return 'the ' + m.replace(' (', ' position (');
-    });
-    oaWatch = oaWatch.map(function (m) {
-      return / position/.test(m) ? m : m + ' position';
+      return 'the ' + m.name + ' position' + (m.v ? ' (' + m.v + ')' : '');
     });
     if (has('oaFlow')) oaWatch.push('the outdoor airflow' + (val('oaFlow') ? ' (' + val('oaFlow') + ')' : ''));
     if (has('co2') || has('co2Return')) oaWatch.push('the return air carbon dioxide' + (val('co2') || val('co2Return') ? ' (' + (val('co2') || val('co2Return')) + ')' : ''));
@@ -27635,7 +27827,7 @@ function _a36DetDescriptionParas(g, ctx, repIdx, figureNum) {
   var total = g.units.length;
   var rep = g.units[repIdx >= 0 ? repIdx : 0];
   var rd = rep ? _a36DetUnitReadings(rep, ctx.rowsById) : {};
-  var body = _a36DetControlSentences(g, f, rd, { flowReset: _a36DetAirflowResetProof(g, ctx.rowsById) });
+  var body = _a36DetControlSentences(g, f, rd, { flowReset: _a36DetAirflowResetProof(g, ctx.rowsById), plantLockout: _a36DetPlantLockout(g, ctx.rowsById) });
   var nCtl = body.length;
   if (figureNum && nCtl) body[nCtl - 1].text = _a36DetCiteFigure(body[nCtl - 1].text, figureNum);
   var byFn = body.some(function (s) {
@@ -27661,7 +27853,7 @@ function _a36DetDescriptionParas(g, ctx, repIdx, figureNum) {
   });
   // The readings are from the audit: say so once at the start (a sentence that says "At the time of the audit" needs no lead sentence).
   if (Object.keys(rd).length && nCtl > 0 && !/time of the audit/.test(paras.join(' '))) {
-    paras[0] = (total > 1 ? 'The readings below are from ' + g.shown[repIdx >= 0 ? repIdx : 0] + ' at the time of the audit. ' : 'The readings below were taken at the time of the audit. ') + paras[0];
+    paras[0] = 'The readings below are from ' + g.shown[repIdx >= 0 ? repIdx : 0] + ' at the time of the audit. ' + paras[0];
   }
   return paras;
 }
@@ -27695,6 +27887,9 @@ function _a36DetLibraryTokens(d, b, ctx, sectionNo) {
     tokens.push(_a36DetTok('<p style="' + A36_DET_P + '">Building automation controller: ' + _escHtml(ctl.type) + ' (' + _a36DetOf(ctl.n, ctl.total) + ').</p>'));
   }
 
+  var _timeText = _a36DetTimeSentence(model, ctx);
+  if (_timeText) tokens.push(_a36DetTok('<p style="' + A36_DET_P + '">' + _escHtml(_timeText) + '</p>'));
+
   // N.2 System Descriptions: prose per equipment group, its graphic directly under it
   tokens.push(_a36DetTok('<h2 style="margin:10px 0 6px 0">' + sectionNo + '.2 System Descriptions</h2>', true));
   groups.forEach(function (g, gi) {
@@ -27717,7 +27912,15 @@ function _a36DetLibraryTokens(d, b, ctx, sectionNo) {
   // N.3 Findings: one block per finding (the same list as the Findings Summary; each finding has its own Recommendation line)
   tokens.push(_a36DetTok('<h2 style="margin:10px 0 6px 0">' + sectionNo + '.3 Findings</h2>', true));
   if (!model.findings.length) {
-    tokens.push(_a36DetTok('<p style="' + A36_DET_P + '">No sensors or sequences are missing against ASHRAE 36 for this library.</p>'));
+    tokens.push(
+      _a36DetTok(
+        '<p style="' + A36_DET_P + '">' +
+          (b.seqPct === null || b.seqPct === undefined
+            ? 'The equipment types at this library are outside the ASHRAE 36 sequences, so this review lists no sensors or sequences for it.'
+            : 'No sensors or sequences are missing against ASHRAE 36 for this library.') +
+          '</p>',
+      ),
+    );
   }
   var impactSeen = {};
   model.findings.forEach(function (f) {
@@ -27899,7 +28102,7 @@ function _a36DetPointTokens(ctx) {
     _a36DetTok(
       '<p style="' +
         A36_DET_P +
-        '">Each table lists the points the building automation system shows for one equipment type, in the groups Sensors, Commands, Status and Setpoints. A count such as "21 of 23 units" means that only those units have the point. A point with no count is on every unit. A point that every unit of a library has is listed once, in the first table of that library. Libraries whose equipment type has exactly the same points share one table, titled with every library it covers.</p>',
+        '">Each table lists the points the building automation system shows for one equipment type, in the groups Sensors, Commands, Status and Setpoints. A count such as "21 of 23 units" means that only those units have the point. A point with no count is on every unit. The findings count the units that need a carbon dioxide sensor but lack one; a unit in a space that needs no sensor, such as a storage room or a restroom, is in neither count, so the two counts need not add up to the number of units. A point that every unit of a library has is listed once, in the first table of that library. Libraries whose equipment type has exactly the same points share one table, titled with every library it covers.</p>',
     ),
   );
   var tableHead = _a36DetTableOpen([16, 84], ['Group', 'Points']);
@@ -28101,6 +28304,10 @@ function _a36DetNormalizeText(html) {
       t = t.replace(/\boutside air\b/g, 'outdoor air').replace(/\bOutside Air\b/g, 'Outdoor Air').replace(/\bOutside air\b/g, 'Outdoor air');
       t = t.replace(/\bset points\b/g, 'setpoints').replace(/\bset point\b/g, 'setpoint').replace(/\bSet Points\b/g, 'Setpoints').replace(/\bSet Point\b/g, 'Setpoint').replace(/\bSet points\b/g, 'Setpoints').replace(/\bSet point\b/g, 'Setpoint');
       t = t.replace(/\bcfm\b/gi, 'CFM');
+      // C3: no abbreviation in client text; C1: static pressure unit; C5: one bracket level around a unit name
+      t = t.replace(/\bTemp\b/g, 'Temperature').replace(/\bOA\b/g, 'Outdoor Air').replace(/\bCHW\b/g, 'Chilled Water');
+      t = t.replace(/\bin H2O\b/g, 'in. w.c.');
+      t = t.replace(/\(([^()]*[^()\s]) \(([^()]+)\)\)/g, '$1 ($2)');
       // CO2: spelled out once ("carbon dioxide (CO2)"), then "CO2"
       t = t.replace(/\b([Cc])arbon [Dd]ioxide(?: \(CO2\))?/g, function (m, c) {
         if (!co2Done) {
