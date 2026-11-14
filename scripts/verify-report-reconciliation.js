@@ -309,7 +309,7 @@ const REGISTRY = [
     checkType: 'a',
     site: 'report-engine.js rptPageASHRAE36ProposalPricing phaseSplitRow (~17558-17610) vs amtRow (~17530-17556)',
     predicate:
-      'rendered Hardware & Installation + rendered Programming === rendered Estimated Cost, for Compliance and Full Scope tiers (both read from the SAME tt[tier] object, same _fmtUSD rounding)',
+      'rendered Devices and installation + rendered Programming === rendered Estimated Cost, for Compliance and Full Scope tiers (both read from the SAME tt[tier] object, same _fmtUSD rounding)',
     run(b) {
       const bad = [];
       ['compliance', 'full-scope'].forEach((tier) => {
@@ -324,7 +324,7 @@ const REGISTRY = [
       });
       return {
         pass: bad.length === 0,
-        expected: 'Hardware + Programming === Estimated Cost for compliance and full-scope, exactly',
+        expected: 'Devices and installation + Programming === One-Time Cost for compliance and full-scope, exactly',
         actual: bad.length === 0 ? b.tierRendered : bad,
       };
     },
@@ -583,8 +583,8 @@ async function gatherPageData(page, projId) {
             const cells = tr.querySelectorAll('td');
             if (!cells.length || !cells[idx]) return;
             const cellText = cells[idx].textContent || '';
-            if (/Hardware\s*&\s*Installation/.test(cellText)) {
-              const m = cellText.match(/Hardware\s*&\s*Installation:\s*\$([\d,]+)/);
+            if (/Devices and installation/.test(cellText)) {
+              const m = cellText.match(/Devices and installation:\s*\$([\d,]+)/);
               if (m) hardware = parseInt(m[1].replace(/,/g, ''), 10);
               const m2 = cellText.match(/Programming:\s*\$([\d,]+)/);
               if (m2) programming = parseInt(m2[1].replace(/,/g, ''), 10);

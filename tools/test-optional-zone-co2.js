@@ -247,6 +247,10 @@ for (const method of ['hourly', 'workbook']) {
       else if (src[k] === '}' && --d === 0) return src.slice(i, k + 1);
     }
   };
+  // The proposal heading style (one style for every proposal page) is a shared var the block reads.
+  const headVar = src.match(/var _RPT_A36_HEAD_STYLE =[\s\S]*?;\r?\n/);
+  assert.ok(headVar, '_RPT_A36_HEAD_STYLE');
+  vm.runInContext('var RPT_SECTION_HEAD_PX = 14;' + headVar[0], sb);
   vm.runInContext(
     ['_rptA36OptionalZoneCo2HTML', '_rptFootTier', '_rptRoundUp100'].map(grab).join('\n'),
     sb,
@@ -259,7 +263,7 @@ for (const method of ['hourly', 'workbook']) {
   sb.__sd = summary;
   sb.__tc = tierCols;
   const html = vm.runInContext('_rptA36OptionalZoneCo2HTML(__sd, __tc)', sb);
-  assert.ok(html.indexOf('Optional: Zone CO2 Sensors') >= 0);
+  assert.ok(html.indexOf('Optional: Carbon Dioxide (CO2) Sensors in Rooms') >= 0);
   ['Recommended', 'Compliance', 'Full Scope'].forEach((l) => assert.ok(html.indexOf('>' + l + '<') >= 0, l));
   assert.ok(/>3<\/td>/.test(html) && />5<\/td>/.test(html), 'quantities 3 and 5 in the table');
   const fmt = (v) => sb._fmtUSD(v);

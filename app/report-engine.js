@@ -18421,7 +18421,7 @@ function rptPageASHRAE36Executive(n, d, detailedTitles) {
       'Control Service Company reviewed the building automation system (the computer system that runs the heating, cooling and ventilation) at ' +
       rptCount(p.totalBuildings) + ' ' + _noun + '. We ' + (_inv ? 'read ' + rptCount(_inv) + ' data points from ' : 'looked at ') + rptCount(p.totalEquip) +
       ' pieces of equipment and compared the programming and the sensors with ASHRAE 36, the industry standard for this equipment.';
-    var _lowest = d.buildings
+    var _lowScoreBldgs = d.buildings
       .filter(function (b) { return b.seqPct !== null && b.seqPct !== undefined; })
       .sort(function (a, c) { return a.composite - c.composite || rptBuildingNameSort(a.name, c.name); })
       .slice(0, 3);
@@ -18435,8 +18435,8 @@ function rptPageASHRAE36Executive(n, d, detailedTitles) {
     _gaps = _gaps.slice(0, 3);
     var _sumFound =
       'Overall the ' + _noun + ' meet ' + p.composite + '% of the standard.' +
-      (_lowest.length
-        ? ' The lowest scores are ' + _a36DetJoin(_lowest.map(function (b) { return _a36DisplayName(b) + ' (' + b.composite + '%)'; })) + '.'
+      (_lowScoreBldgs.length
+        ? ' The lowest scores are ' + _a36DetJoin(_lowScoreBldgs.map(function (b) { return _a36DisplayName(b) + ' (' + b.composite + '%)'; })) + '.'
         : '') +
       (_gaps.length ? ' The largest gaps are: ' + _a36DetJoin(_gaps.map(function (g) { return g.text; })) + '.' : '');
     var _sumTakes =
