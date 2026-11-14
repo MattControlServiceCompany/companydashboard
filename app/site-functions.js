@@ -2507,6 +2507,10 @@ async function siteResetAllMeterTableSettings() {
    site-ui.js delegates to this array and should NOT maintain its own copy.
 */
 var RELEASE_NOTES = [
+  { v: 'v2026.11.14.289', date: '2026-11-14', title: 'Full Scope: install labor on optional items',
+    items: [
+      { type: 'fix', text: 'In the Full Scope estimate, each optional (Beyond-Compliance) device now includes its install labor, the same as a required device. Before, an optional device showed the parts price only. Full Scope totals go up. Compliance and Recommended totals do not change.' }
+    ] },
   { v: 'v2026.11.14.288', date: '2026-11-14', title: 'Zone CO2: the same rule for all zone boxes',
     items: [
       { type: 'change', text: 'Fan-powered boxes and dual-duct boxes now follow the same zone CO2 rule as VAV boxes. The ASHRAE 36 audit calls out each zone that has no CO2 sensor, and the estimate shows those sensors in the "Optional: Zone CO2 Sensors" section, not in the base total. The sensor price on these boxes now includes install labor, the same as on VAV boxes.' }
