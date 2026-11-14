@@ -22074,7 +22074,7 @@ function _rptA36PhaseImprovementsText(rows, idx) {
   rows.forEach(function (r) {
     if (r.phase === 1) {
       hasSensor = true;
-      if (r._pointKey === 'co2') hasDCV = true;
+      if (/^co2_/.test(r._pointKey || '')) hasDCV = true; // co2_zone, co2_zone_standalone, co2_ahu (pricing row keys)
     } else if (r.phase === 2) {
       hasBAS = true;
       if (r.seqKey && _RPT_A36_DCV_SEQ[r.seqKey]) hasDCV = true;

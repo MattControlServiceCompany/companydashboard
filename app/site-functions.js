@@ -2507,6 +2507,10 @@ async function siteResetAllMeterTableSettings() {
    site-ui.js delegates to this array and should NOT maintain its own copy.
 */
 var RELEASE_NOTES = [
+  { v: 'v2026.11.14.290', date: '2026-11-14', title: 'Cost Estimate: demand ventilation wording for CO2 sensor work',
+    items: [
+      { type: 'fix', text: 'In the phase timeline, a phase that installs CO2 sensors now says that it includes demand-controlled ventilation work. Before, the sensor rows did not start this wording.' }
+    ] },
   { v: 'v2026.11.14.289', date: '2026-11-14', title: 'Full Scope: install labor on optional items',
     items: [
       { type: 'fix', text: 'In the Full Scope estimate, each optional (Beyond-Compliance) device now includes its install labor, the same as a required device. Before, an optional device showed the parts price only. Full Scope totals go up. Compliance and Recommended totals do not change.' }
