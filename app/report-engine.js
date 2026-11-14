@@ -21419,214 +21419,306 @@ function rptPageASHRAE36SetpointReview(n, d, detailedTitle) {
   return resultPages; // always an Array (length >= 1)
 }
 
-// ─── rptPageASHRAE36ProposalCover ─────────────────────────────────────────
+// ─── Service Proposal shared values ──────────────────────────────────────────
+// Heading style for every Service Proposal page, the cost pages included (one style, Manager 2026-11-14).
+var _RPT_A36_HEAD_STYLE =
+  'font-size:' + RPT_SECTION_HEAD_PX + 'px;font-weight:700;color:var(--rpt-page-text);margin:5px 0 6px';
+
+// One plain line per option: what it includes. The cover cost table and the Cost Estimate page both read it.
+var _RPT_A36_TIER_PLAIN = {
+  recommended: 'The control sequences that matter most for energy use and comfort, plus the few devices they need.',
+  compliance: 'The devices and safety programming that ASHRAE 36 needs first, such as freeze protection.',
+  'full-scope':
+    'Every ASHRAE 36 device and control sequence on all of the equipment, plus reports that flag equipment faults.',
+};
+
 /**
- * Proposal cover page with table of contents.
+ * _rptA36ScopeCounts - the ONE count of devices to install and control sequences to program that the
+ * Service Proposal prints. Same rule as the Audit Report cover (rptPageASHRAE36Cover): sums of the priced
+ * scope rows from _a36ScopedCatalogRows (devices = phase-1 rows that are not I/O only; sequences = phase-2
+ * rows with a sequence key). Falls back to the raw portfolio totals when no priced rows exist.
+ * Single-source note: the Audit cover still holds an inline copy of this loop (report as a defect).
  */
-// ─── _rptA36CoverPricingStrip ─────────────────────────────────────────────
+function _rptA36ScopeCounts(d) {
+  var p = d.portfolio || {};
+  var out = { sensors: p.totalMissingHardwarePoints || 0, sequences: p.totalNotReadySequences || 0 };
+  try {
+    var rows = _a36ScopedCatalogRows(d);
+    var sen = 0,
+      seq = 0;
+    rows.forEach(function (r) {
+      if (!r) return;
+      if (r.phase === 1 && !r.ioOnly) sen += r.qty || 0;
+      else if (r.phase === 2 && r.seqKey) seq += r.qty || 0;
+    });
+    if (rows.length) {
+      out.sensors = sen;
+      out.sequences = seq;
+    }
+  } catch (e) {
+    /* keep the raw portfolio totals */
+  }
+  return out;
+}
+
 /**
- * Compact 3-tier price-comparison summary for the ASHRAE-36 Proposal cover page
- * (Matt's decision: "summary comparison on the cover only; full detailed table stays
- * inside"). Reuses the SAME totals source as the full Cost Estimate table
- * (rptPageASHRAE36ProposalPricing, ~line 13990) via _pricingGetEstimate /
- * _pricingComputeSummaryData — never recomputes independently, so this strip can never
- * disagree with the inner table. Returns '' if pricing data is unavailable.
- *
- * Caller gates this on the costEstimate section flag (see generateASHRAE36ProposalHTML)
- * so client PDFs with dollars hidden (costEstimate defaults OFF) never show a summary here.
+ * _rptA36PlainName - the plain client name for a sequence or device label in the Service Proposal:
+ * "Outside Air" reads "Outdoor Air" (one word for one thing, proposal text only). The labels in the
+ * Equipment Matrix and the Audit Report keep their own names.
  */
-function _rptA36CoverPricingStrip(d) {
-  var tt = null;
+function _rptA36PlainName(label) {
+  return String(label == null ? '' : label).replace(/Outside Air/g, 'Outdoor Air');
+}
+
+/**
+ * _rptA36PlainRowLabel - the name one priced row prints in the Service Proposal detail lists.
+ * A sensor investigation row (isSensorInvestigation, pricing-estimator.js buildSensorInvestigationRows) is
+ * labor to check a sensor whose reading is wrong, so it says that. Every other row keeps its own item name
+ * with the plain-name rule applied.
+ */
+function _rptA36PlainRowLabel(r) {
+  var item = (r && r.item) || '';
+  if (r && r.isSensorInvestigation) {
+    var what = item.replace(/\s+Sensor Investigation$/, '').toLowerCase();
+    return 'Check a ' + what + ' sensor that reads wrong';
+  }
+  return _rptA36PlainName(item);
+}
+
+/**
+ * _rptA36TopGaps - the largest gaps in plain words, from the same priced scope rows as _rptA36ScopeCounts:
+ * the one device kind with the most units, then the two control sequences with the most units.
+ * Optional work is never counted as a control sequence the client buys: the optional carbon dioxide sensors
+ * come from _rptA36TierCostData (the number the Cost Summary prints) and say they are optional; the
+ * control sequences that use those sensors (_pricingIsOptionalZoneCo2Row) are left out of the sequence ranking.
+ * Returns [{ text, plain, qty }].
+ */
+function _rptA36TopGaps(d) {
+  var rows = [];
+  try {
+    rows = _a36ScopedCatalogRows(d);
+  } catch (e) {
+    rows = [];
+  }
+  var isOpt = function (r) {
+    return typeof _pricingIsOptionalZoneCo2Row === 'function' && _pricingIsOptionalZoneCo2Row(r);
+  };
+  var dev = {};
+  var seq = {};
+  rows.forEach(function (r) {
+    if (!r || isOpt(r)) return;
+    if (r.phase === 1 && !r.ioOnly) {
+      var pk = r._pointKey || r.item || 'device';
+      dev[pk] = (dev[pk] || 0) + (r.qty || 0);
+    } else if (r.phase === 2 && r.seqKey) {
+      var sk = r.seqKey === 'vav_dcv' ? 'demandCtrl' : r.seqKey;
+      seq[sk] = (seq[sk] || 0) + (r.qty || 0);
+    }
+  });
+  var optQty = _rptA36OptionalCo2Qty(d);
+  if (optQty > 0) dev.co2Optional = optQty;
+  function top(map, n) {
+    return Object.keys(map)
+      .sort(function (a, b) {
+        return map[b] - map[a];
+      })
+      .slice(0, n)
+      .map(function (k) {
+        return { key: k, qty: map[k] };
+      });
+  }
+  var out = [];
+  top(dev, 1).forEach(function (g) {
+    if (g.key === 'co2Optional') {
+      out.push({
+        qty: g.qty,
+        text:
+          rptCount(g.qty) +
+          ' carbon dioxide (CO2) ' +
+          (g.qty === 1 ? 'sensor' : 'sensors') +
+          ' in rooms (optional, priced separately)',
+        plain: '',
+      });
+    } else {
+      out.push({
+        qty: g.qty,
+        text: rptCount(g.qty) + ' ' + _rptA36PlainName(String(_pricingPointLabel(g.key)).toLowerCase()) + (g.qty === 1 ? ' device' : ' devices'),
+        plain: '',
+      });
+    }
+  });
+  top(seq, 2).forEach(function (g) {
+    var sd = null;
+    if (typeof EM_SEQUENCE_DEFS !== 'undefined') {
+      EM_SEQUENCE_DEFS.forEach(function (x) {
+        if (x.key === g.key) sd = x;
+      });
+    }
+    var name = g.key === 'demandCtrl' ? 'Occupancy-Based Ventilation' : sd ? _rptA36PlainName(_a36SeqDisplayLabel(sd)) : g.key;
+    out.push({
+      qty: g.qty,
+      text: name + ': ' + rptCount(g.qty) + (g.qty === 1 ? ' control sequence' : ' control sequences'),
+      plain: (typeof ASHRAE36_SEQUENCE_PLAIN !== 'undefined' && ASHRAE36_SEQUENCE_PLAIN[g.key]) || '',
+    });
+  });
+  return out;
+}
+
+/**
+ * _rptA36TierCostData - the one-time cost of each option, for the high-level cost table on page 1.
+ * Reads the SAME shared chain as the Cost Estimate page (_pricingGetEstimate -> _pricingComputeSummaryData
+ * tier totals -> _rptFootTier), so this table can never differ from that page. Also returns the optional
+ * carbon dioxide sensor cost per option (summaryData.optional). Returns { tiers: [{key,label,total}],
+ * optional: [{key,label,qty,total}] }; a tier with no total is left out (never a null price).
+ */
+function _rptA36TierCostData(d) {
+  if (d && d._a36TierCostCache) return d._a36TierCostCache;
+  var out = { tiers: [], optional: [] };
+  if (d) d._a36TierCostCache = out;
+  var sd = null;
   try {
     if (typeof _pricingGetEstimate === 'function' && typeof _pricingComputeSummaryData === 'function') {
-      var estimateState = _pricingGetEstimate(d.project.id);
-      var summaryData = _pricingComputeSummaryData(d.project.id, estimateState);
-      tt = summaryData && summaryData.tierTotals ? summaryData.tierTotals : null;
+      sd = _pricingComputeSummaryData(d.project.id, _pricingGetEstimate(d.project.id));
     }
   } catch (e) {
-    tt = null;
+    sd = null;
   }
-  if (!tt) return '';
-
-
-  // 2026-07-22 redesign (no-boxes-in-reports standard): tiers stacked vertically as plain
-  // heading + paragraph, not side-by-side cards. Same 3 tiers / keys / order as
-  // rptPageASHRAE36ProposalPricing's tierCols — numbers still come ONLY from the shared
-  // _pricingGetEstimate/_pricingComputeSummaryData chain above, no new pricing math.
-  var tierDefs = [
-    {
-      key: 'recommended',
-      label: 'Recommended',
-      isRec: true,
-      desc: function (amtStr, svcSentence) {
-        return (
-          'Installs the hardware points needed to close ASHRAE 36 gaps and programs the full set of ' +
-          'cost-optimized energy sequences: supply air and duct pressure reset, economizer control, optimal ' +
-          'start/stop, and equipment lead/lag rotation. ' +
-          (amtStr ? 'The estimated cost for this scope is <strong>' + amtStr + '</strong>. ' : '') +
-          svcSentence +
-          'Because these sequences directly target the largest controllable heating and cooling energy uses ' +
-          '(fan speed, mechanical cooling run time, and equipment cycling), this tier is expected to return the most energy ' +
-          'savings per dollar spent of the three scopes.'
-        );
-      },
-    },
-    {
-      key: 'compliance',
-      label: 'Compliance',
-      isRec: false,
-      desc: function (amtStr, svcSentence) {
-        return (
-          'Installs only the hardware points required to close ASHRAE 36 gaps and programs the sequences ' +
-          'classified as safety-critical (e.g. freeze protection, minimum ventilation). It does not add the ' +
-          'optimization sequences (temperature/pressure reset, economizer, optimal start) that generate ongoing ' +
-          'energy savings. ' +
-          (amtStr ? 'The estimated cost for this scope is <strong>' + amtStr + '</strong>. ' : '') +
-          svcSentence +
-          'This tier establishes monitoring and code-required control only, making it the right starting point ' +
-          'where budget is the primary constraint. The Recommended or Full Scope sequences can be added in a ' +
-          'later phase under the same service agreement once budget allows.'
-        );
-      },
-    },
-    {
-      key: 'full-scope',
-      label: 'Full Scope',
-      isRec: false,
-      desc: function (amtStr, svcSentence) {
-        return (
-          'Builds out every applicable ASHRAE 36 sequence across every piece of equipment in the portfolio ' +
-          'and adds building-wide automatic fault detection and diagnostics reporting; hardware is priced at ' +
-          'full/standard spec rather than the Recommended tier’s cost-optimized substitutions. ' +
-          (amtStr ? 'The estimated cost for this scope is <strong>' + amtStr + '</strong>. ' : '') +
-          svcSentence +
-          'This is the highest-cost of the three tiers, but it delivers full-portfolio coverage ' +
-          'and the earliest access to automatic fault alerts, so equipment problems that waste energy or shorten ' +
-          'equipment life are caught automatically instead of during periodic manual review.'
-        );
-      },
-    },
+  if (!sd || !sd.tierTotals) return out;
+  var defs = [
+    { key: 'recommended', label: 'Recommended' },
+    { key: 'compliance', label: 'Compliance' },
+    { key: 'full-scope', label: 'Full Scope' },
   ];
-
-  var anyPriced = tierDefs.some(function (t) {
-    return tt[t.key] && _fmtUSD(tt[t.key].grand);
-  });
-  if (!anyPriced) return '';
-
-  // Monthly Energy Management Service Agreement sentence — SAME guarded budget/config chain
-  // rptPageASHRAE36ProposalPricing's svcBlock uses (en_pricing_budget_{projId}.amount,
-  // en_pricing_config.hourlyRate). No new math: identical read, so a project with no configured
-  // monthly allowance simply omits this sentence rather than showing a fabricated number.
-  var svcSentence = '';
-  try {
-    if (typeof _pricingGetBudget === 'function' && typeof _pricingGetConfig === 'function') {
-      var _svcMonthly = _rptMonthlyAllowance(d.project.id);
-      var _svcCfg = _pricingGetConfig();
-      if (_svcMonthly) {
-        var _svcRate =
-          _svcCfg.hourlyRate || (typeof COST_LABOR_RATE_DEFAULT !== 'undefined' ? COST_LABOR_RATE_DEFAULT : 170);
-        svcSentence =
-          'Ongoing programming refinement and support draws on your existing Monthly Energy ' +
-          'Management Service Agreement (' +
-          _fmtUSD(_svcMonthly) +
-          '/month allowance at $' +
-          _svcRate +
-          '/hr, not-to-exceed) rather than a separate invoice. ';
-      }
-    }
-  } catch (e) {
-    svcSentence = '';
+  function foot(t) {
+    return t && t.grand !== null && t.grand !== undefined && !isNaN(t.grand)
+      ? _rptFootTier(t.grand, t.phase1, t.phase2, t.method === 'workbook')
+      : null;
   }
+  defs.forEach(function (c) {
+    var f = foot(sd.tierTotals[c.key]);
+    if (f) out.tiers.push({ key: c.key, label: c.label, total: f.totalR });
+    var o = sd.optional && sd.optional[c.key];
+    var fo = o && o.rows && o.rows.length && o.sensorQty > 0 ? foot(o.totals) : null;
+    if (fo) {
+      var seqQty = 0;
+      o.rows.forEach(function (r) {
+        if (r && r.phase === 2 && r.seqKey) seqQty += r.qty || 0;
+      });
+      out.optional.push({
+        key: c.key,
+        label: c.label,
+        qty: o.sensorQty,
+        seqQty: seqQty,
+        total: fo.totalR,
+        programming: fo.p2r > 0,
+      });
+    }
+  });
+  return out;
+}
 
-  var rows = tierDefs
-    .map(function (t) {
-      var g = tt[t.key] ? _fmtUSD(_rptTierTotal(tt[t.key])) : null;
-      var noCat = tt[t.key] && tt[t.key].noCatalog;
-      var amtStr = g ? (noCat ? 'Labor: ' + g : g) : null;
-      var headline =
-        t.label + (t.isRec ? ' (Recommended)' : '') + (amtStr ? ': ' + amtStr : ': Available upon request');
-      return (
-        '<div style="margin-bottom:12px">' +
-        // D-12 (2026-08-03): tier headline -> the 13pt section tier; the description directly
-        // beneath it is 14px/10.5pt body, so at 11px this heading printed smaller than its own text.
-        '<div style="font-size:' +
-        RPT_SECTION_HEAD_PX +
-        'px;font-weight:700;color:var(--rpt-page-text);border-bottom:2px solid var(--rpt-rule);' +
-        'padding-bottom:3px;margin-bottom:5px">' +
-        _escHtml(headline) +
-        '</div>' +
-        '<div style="font-size:14px;color:var(--rpt-page-text);line-height:1.6">' +
-        t.desc(amtStr, svcSentence) +
-        '</div>' +
-        '</div>'
-      );
-    })
-    .join('');
+/**
+ * _rptA36OptionalCo2Qty - the number of optional room carbon dioxide (CO2) sensors the Service Proposal prints
+ * everywhere (page 1 gaps and cost row, the Optional table): the quantity from _rptA36TierCostData.
+ * 0 when no option has optional rows.
+ */
+function _rptA36OptionalCo2Qty(d) {
+  var o = _rptA36TierCostData(d).optional;
+  return o.length ? o[0].qty : 0;
+}
 
+// "N existing control points need programming only" (plural from the count, with the reason there is no hardware cost).
+function _rptA36ExistingPointsLine(qty) {
+  var n = qty || 0;
   return (
-    '<div style="margin-bottom:8px">' +
-    // Title case (Matt, 2026-08-03, item 8): uppercase transform removed from section headings.
-    '<div style="font-size:10px;font-weight:700;color:var(--rpt-blue);' +
-    'margin-bottom:8px">Cost Summary</div>' +
-    rows +
-    '</div>'
+    n +
+    ' existing control ' +
+    (n === 1 ? 'point needs' : 'points need') +
+    ' programming only. The cost is in the programming price.'
   );
 }
 
 /**
- * _rptA36AssessmentFindingsData — pulls the client-facing pricing totals the Assessment Findings
- * section needs: the Compliance tier grand total (instrumentation + safety programming — the
- * mandatory first stage) and the Full Scope tier grand total (the complete Guideline 36 scope,
- * i.e. the ONE compliance total the client sees). Same _pricingGetEstimate /
- * _pricingComputeSummaryData chain every other pricing-derived number in this file uses — no new
- * pricing math. Returns fmt strings/raw numbers or null (never $0/NaN/undefined) so callers can
- * omit gracefully.
- *
- * 2026-07-27 (client review — "the page 1 above for my eyes still says the supply air temp, DCV
- * and similar sequences in ASHRAE 36?"): page 1 previously presented complianceFmt/fullScopeFmt
- * as two competing "levels" a client could choose between. That's wrong — instrumentation with no
- * sequences programmed is a prerequisite, not an alternative. Added `complianceGrand`/
- * `fullScopeGrand` (the raw numbers, not just the formatted strings) plus a third value,
- * `remainderFmt`/`remainderGrand` — the optimization-sequences-and-FDD portion — computed as
- * `fullScopeGrand - complianceGrand` from these SAME two live totals (never a separately-derived
- * or hardcoded figure), so the three numbers the proposal shows always reconcile by construction.
- * Guarded against a negative/NaN result (would indicate a pricing-data inconsistency upstream) —
- * `remainderFmt`/`remainderGrand` stay null rather than ever displaying a wrong number.
+ * _rptA36CostSummaryHTML - the high-level cost table of the Service Proposal (page 1): Option | What it
+ * includes | One-time cost, one row per option, then the optional carbon dioxide sensor line.
  */
-function _rptA36AssessmentFindingsData(d) {
-  var out = {
-    complianceFmt: null,
-    fullScopeFmt: null,
-    remainderFmt: null,
-    complianceGrand: null,
-    fullScopeGrand: null,
-    remainderGrand: null,
-  };
-  try {
-    if (typeof _pricingGetEstimate === 'function' && typeof _pricingComputeSummaryData === 'function') {
-      var estimateState = _pricingGetEstimate(d.project.id);
-      var summaryData = _pricingComputeSummaryData(d.project.id, estimateState);
-      var tt = summaryData && summaryData.tierTotals ? summaryData.tierTotals : null;
-      if (tt && tt.compliance && tt.compliance.grand != null && !isNaN(tt.compliance.grand)) {
-        out.complianceGrand = _rptTierTotal(tt.compliance);
-        out.complianceFmt = _fmtUSD(out.complianceGrand);
+function _rptA36CostSummaryHTML(d, HEAD, BODY) {
+  var cost = _rptA36TierCostData(d);
+  if (!cost.tiers.length) return '';
+  var th =
+    'padding:4px 8px;font-size:' + RPT_MIN_TEXT_PX + 'px;font-weight:700;color:var(--rpt-page-text);text-align:center;' +
+    'border:1px solid var(--rpt-border)';
+  var td =
+    'padding:4px 8px;font-size:' + RPT_MIN_TEXT_PX + 'px;color:var(--rpt-page-text);border:1px solid var(--rpt-border);vertical-align:top';
+  var rows = cost.tiers
+    .map(function (t) {
+      return (
+        '<tr><td style="' + td + ';font-weight:700">' + _escHtml(t.label) + '</td>' +
+        '<td style="' + td + '">' + _escHtml(_RPT_A36_TIER_PLAIN[t.key]) + '</td>' +
+        '<td style="' + td + ';text-align:right;font-weight:700">' + _fmtUSD(t.total) + '</td></tr>'
+      );
+    })
+    .join('');
+  var optLine = '';
+  if (cost.optional.length) {
+    // Options with the same optional cost share one phrase. With two different amounts the phrase names both,
+    // and says which option has no programming when that is why its amount is lower.
+    var byTotal = {};
+    var order = [];
+    var noProgLabels = {};
+    cost.optional.forEach(function (o) {
+      if (!byTotal[o.total]) {
+        byTotal[o.total] = [];
+        order.push(o.total);
       }
-      if (tt && tt['full-scope'] && tt['full-scope'].grand != null && !isNaN(tt['full-scope'].grand)) {
-        out.fullScopeGrand = _rptTierTotal(tt['full-scope']);
-        out.fullScopeFmt = _fmtUSD(out.fullScopeGrand);
-      }
-      if (out.complianceGrand != null && out.fullScopeGrand != null) {
-        var remainder = out.fullScopeGrand - out.complianceGrand;
-        if (!isNaN(remainder) && remainder >= 0) {
-          out.remainderGrand = remainder;
-          out.remainderFmt = _fmtUSD(remainder);
-        }
-      }
+      byTotal[o.total].push(o.label);
+      if (!o.programming) noProgLabels[o.label] = true;
+    });
+    function orList(arr) {
+      return arr.length > 1 ? arr.slice(0, -1).join(', ') + ' or ' + arr[arr.length - 1] : arr[0];
     }
-  } catch (e) {
-    /* leave everything null — caller renders the graceful fallback */
+    function noProgNote(labels) {
+      var only = labels.filter(function (l) {
+        return noProgLabels[l];
+      });
+      return only.length === labels.length ? ', which ' + (labels.length > 1 ? 'have' : 'has') + ' no programming' : '';
+    }
+    var sentence;
+    if (order.length === 1) {
+      sentence = 'Adds ' + _fmtUSD(Number(order[0])) + ' to ' + orList(byTotal[order[0]]) + '.';
+    } else {
+      var firstLabels = byTotal[order[0]];
+      var restParts = order.slice(1).map(function (tot) {
+        return _fmtUSD(Number(tot)) + ' to ' + orList(byTotal[tot]) + noProgNote(byTotal[tot]);
+      });
+      sentence = 'Adds ' + _fmtUSD(Number(order[0])) + ' to ' + orList(firstLabels) + ' (' + restParts.join('; ') + ').';
+    }
+    var q = _rptA36OptionalCo2Qty(d);
+    optLine =
+      '<tr><td style="' + td + ';font-weight:700">Optional</td>' +
+      '<td style="' + td + '">' + rptCount(q) + ' carbon dioxide (CO2) sensors in rooms, so ventilation can follow how many people are in each room. This work is not in the costs above.</td>' +
+      '<td style="' + td + ';text-align:right">' + _escHtml(sentence) + '</td></tr>';
   }
-  return out;
+  // Why Recommended can cost less than Compliance: said from the option definitions (_RPT_A36_TIER_PLAIN), only when the totals show it.
+  var recT = null;
+  var compT = null;
+  cost.tiers.forEach(function (t) {
+    if (t.key === 'recommended') recT = t.total;
+    if (t.key === 'compliance') compT = t.total;
+  });
+  var whyLess =
+    recT !== null && compT !== null && recT < compT
+      ? ' Recommended costs less than Compliance because it installs only the few devices its control sequences need.'
+      : '';
+  return (
+    '<div style="' + HEAD + '">Cost Summary</div>' +
+    '<div style="' + BODY + ';margin-bottom:6px">Each cost is a one-time cost. There is no monthly fee. ' +
+    'Pick one option.' + whyLess + '</div>' +
+    '<table style="width:100%;border-collapse:collapse;table-layout:fixed;page-break-inside:avoid;break-inside:avoid">' +
+    '<colgroup><col style="width:16%"><col style="width:47%"><col style="width:37%"></colgroup>' +
+    '<thead><tr><th style="' + th + '">Option</th><th style="' + th + '">What it includes</th><th style="' + th + '">One-time cost</th></tr></thead>' +
+    '<tbody>' + rows + optLine + '</tbody></table>'
+  );
 }
 
 // US state full names + 2-letter postal abbreviations. Used ONLY by
@@ -21824,10 +21916,6 @@ function rptPageASHRAE36ProposalCover(n, d) {
   var p = d.portfolio;
   // Rule 2.3: reportDate drives the footer date; label is empty (no period range for ASHRAE reports).
   var fakeData = { project: { client: d.project.name }, period: { label: '', reportDate: d.rawDate } };
-  // Prose-only display name (e.g. "Client D, Kansas" -> "Client D") — see
-  // _rptProposalDisplayClientName above. d.project.name (the stored client/project name) itself
-  // is untouched; only the mid-sentence renders on this page use the shortened form.
-  var displayClient = _rptProposalDisplayClientName(d.project.name);
 
   // Density pass (2026-07-26, page-1 clip fix): tightened from 12/5 margin, 1.55 line-height to
   // fit all 5 "Why This Approach" bullets above the wave footer without shrinking type past a
@@ -21877,105 +21965,81 @@ function rptPageASHRAE36ProposalCover(n, d) {
     '</div>' +
     '</div>';
 
-  // ── Executive Summary ───────────────────────────────────────────────────
+  // ── Executive Summary: what we did (plain words, Manager 2026-11-14) ──────────────────
+  // The reader is a facilities manager, not a controls engineer: every technical term is explained the
+  // first time it appears. Counts come from the shared values: building and equipment totals from
+  // d.portfolio (same as the Audit Report cover), devices and sequences from _rptA36ScopeCounts.
+  var nBld = p.totalBuildings;
   var execSummary =
     '<div style="' +
     HEAD +
     '">Executive Summary</div>' +
     '<div style="' +
     BODY +
-    '">Control Service Company completed an ASHRAE 36 readiness assessment across the ' +
-    _escHtml(displayClient) +
-    ' building portfolio. The assessment identified an overall readiness score of ' +
-    p.composite +
-    '% across ' +
-    rptCount(p.totalBuildings) +
-    ' buildings and ' +
-    rptCount(p.totalEquip) +
-    ' equipment units. The assessment found significant opportunities to improve heating and cooling ' +
-    'energy performance, ventilation control, occupant comfort, and overall building automation system ' +
-    'operational consistency through targeted controls upgrades and optimization strategies.</div>';
+    '">Control Service Company reviewed the building automation system at the ' +
+    rptCount(nBld) +
+    (nBld === 1 ? ' building' : ' buildings') +
+    ' in this assessment. The building automation system is the computer system that runs heating, ' +
+    'cooling and ventilation. We compared it with ASHRAE 36, the industry standard for how this ' +
+    'equipment should be controlled. This proposal lists the work that closes the gaps we found. It also ' +
+    'gives the cost of that work.</div>';
 
-  // ── Assessment Findings ─────────────────────────────────────────────────
-  // 2026-07-27 (client review — page 1 redesign, verbatim: "Like those are wildly different
-  // numbers and there is a ton of white space. Why not use all of that white space and explain
-  // what each one gets you... Explain it as if they read that 1 paragraph they could understand
-  // what the scope of work is and how the monthly cost works. Put it in ROI terms also."):
-  // findingsPara below is the single-paragraph comprehension bar he set — it states the total
-  // figure AND ties it to the monthly-allowance mechanism in one pass, so a reader who reads only
-  // this paragraph already understands the scope and the funding model.
-  //
-  // 2026-07-27 SAME-DAY REVISION (second client pass, verbatim): "the page 1 above for my eyes
-  // still says the supply air temp, DCV and similar sequences in ASHRAE 36? ... describing that
-  // level by the list of Guideline 36 sequences it fails to include is backwards. Supply air
-  // temperature reset, duct static pressure reset, demand-controlled ventilation, economizer
-  // control and fault detection are not omissions from a package — they ARE Guideline 36."
-  // The prior version of this section presented complianceFmt/fullScopeFmt as two competing
-  // "levels" a client could pick between, and described the first by the sequences it excludes.
-  // Both were wrong: instrumentation with no sequences programmed is a PREREQUISITE, not an
-  // alternative, and there is nothing to "exclude" once the copy describes one total with a
-  // first stage, not a menu. Reframed as ONE compliance total (af.fullScopeFmt) with its
-  // mandatory first stage broken out (af.complianceFmt), and the remaining stage
-  // (af.remainderFmt) computed live as fullScopeGrand - complianceGrand inside
-  // _rptA36AssessmentFindingsData — never a separately-derived or hardcoded number, so the three
-  // figures always reconcile by construction.
-  // 2026-07-29 (fix/proposal-remove-fixed-anchors, Matt's approved spec — verbatim: "We do not
-  // want to anchor a fixed total cost or timeline at all to them anywhere in anything we give
-  // them for a monthly agreement. That is the whole point. Just have the Service Proposal talk
-  // about what it would cost to get to ASHRAE 36 compliance and what that entails."): the prior
-  // paragraph stated af.fullScopeFmt/af.complianceFmt/af.remainderFmt — whole-scope dollar totals
-  // derived from _rptA36AssessmentFindingsData — deleted, not merely reworded, per that
-  // instruction. This paragraph now describes WHAT reaching compliance entails (the two
-  // categories of work, in sequence) using only the measured assessment facts already stated in
-  // execSummary above (readiness score, building count, equipment count) — no capital total
-  // anywhere on this page. _rptA36AssessmentFindingsData itself is left defined (unused) per this
-  // file's "do not destroy existing capability" convention. A reader who wants more scope detail
-  // than this one paragraph can enable the two new opt-in sections below (ASHRAE36_SECTIONS.proposal
-  // 'complianceScope' / 'fullScope', rendered by rptPageASHRAE36ProposalComplianceScope /
-  // ...FullScope near rptPageASHRAE36ProposalScope) — both still with no dollar total.
+  // ── Assessment Findings: what we found ────────────────────────────────────────────────
+  var counts = _rptA36ScopeCounts(d);
+  var gaps = _rptA36TopGaps(d);
   var findingsPara =
-    'Reaching full ASHRAE 36 compliance across the ' +
-    _escHtml(displayClient) +
-    ' portfolio requires two categories of work, in sequence. The first is the instrumentation ' +
-    'and safety programming every ASHRAE 36 sequence depends on (sensors, actuators, and ' +
-    'safety-critical programming such as freeze protection), which must be in place before any ' +
-    'optimization sequence can be programmed. The second is the ASHRAE 36 optimization ' +
-    'sequences themselves, together with portfolio-wide automatic fault detection and diagnostics ' +
-    'reporting: the work that delivers the energy, comfort, and compliance outcomes this service ' +
-    'is built around. Rather than fund this as a single capital project, Control Service Company ' +
-    'recommends delivering it through the Recommended Energy Management Services described below, a ' +
-    'monthly service allowance that funds continuous, staged progress toward full compliance over ' +
-    'time.';
-
-  // Stage 1 / Stage 2 dollar-anchored blocks DELETED 2026-07-29 (fix/proposal-remove-fixed-
-  // anchors) per Matt's approved spec above — headings, figures, and body paragraphs all removed,
-  // not renamed and not kept minus the number. The same two categories of work are now covered at
-  // the prose level in findingsPara above, and in full opt-in detail (still with no dollar total)
-  // in the "ASHRAE 36 Compliance" / "Full Scope" sections a user can enable via the report modal.
-
+    'The buildings now meet <strong>' +
+    p.composite +
+    '%</strong> of what ASHRAE 36 asks for. This is the readiness score. We checked <strong>' +
+    rptCount(p.totalEquip) +
+    (p.totalEquip === 1 ? ' piece' : ' pieces') +
+    ' of heating and cooling equipment</strong>. To meet the standard, the buildings need <strong>' +
+    rptCount(counts.sensors) +
+    (counts.sensors === 1 ? ' device' : ' devices') +
+    ' installed</strong> and <strong>' +
+    rptCount(counts.sequences) +
+    ' control ' +
+    (counts.sequences === 1 ? 'sequence' : 'sequences') +
+    ' programmed</strong>. A device is a sensor, which measures a value such as temperature, or an ' +
+    'actuator, which is the motor that moves a damper or a valve. A control sequence is a set of rules ' +
+    'that tells equipment how to run, for example when to open a valve or how much outdoor air to bring in.';
+  // Optional work (room carbon dioxide sensors) is inside these totals but in none of the options: say so once,
+  // from the same values the Cost Summary prints (_rptA36TierCostData).
+  var _opt = _rptA36TierCostData(d).optional;
+  if (_opt.length) {
+    findingsPara +=
+      ' The totals include <strong>' +
+      rptCount(_opt[0].qty) +
+      ' optional carbon dioxide (CO2) ' +
+      (_opt[0].qty === 1 ? 'sensor' : 'sensors') +
+      ' in rooms</strong>' +
+      (_opt[0].seqQty > 0
+        ? ' and the <strong>' + rptCount(_opt[0].seqQty) + ' control ' + (_opt[0].seqQty === 1 ? 'sequence' : 'sequences') + '</strong> that use them'
+        : '') +
+      '. The options below do not include them.';
+  }
+  var gapsHTML = gaps.length
+    ? '<div style="' +
+      BODY +
+      ';margin-top:5px">The largest gaps are:</div><ul style="' +
+      UL +
+      '">' +
+      gaps
+        .map(function (g) {
+          // The meaning of each sequence name is given on the Recommended Work page ("What the names mean").
+          return '<li>' + _escHtml(g.text) + '.</li>';
+        })
+        .join('') +
+      '</ul>'
+    : '';
   var assessmentFindings =
-    '<div style="' + HEAD + '">Assessment Findings</div>' + '<div style="' + BODY + '">' + findingsPara + '</div>';
+    '<div style="' + HEAD + '">Assessment Findings</div>' + '<div style="' + BODY + '">' + findingsPara + '</div>' + gapsHTML;
 
-  // 2026-08-02 (fix/docx-proposal-pagination-orphans): "Recommended Energy Management Services" +
-  // its 6-bullet list MOVED OFF this page onto its own page, rptPageASHRAE36ProposalRecommendedServicesCover
-  // (below) -- this function now returns ONLY title/execSummary/assessmentFindings. Reason: the
-  // 07-29 density pass above (and the 07-26 pass before it) both tuned this page's spacing to
-  // "0px overflow" measured against the BROWSER PREVIEW (Chromium) render only. A real Word
-  // export/render round-trip (verify-docx-proposal-merge, 2026-08-02) found the live 27-building
-  // Client D portfolio's real content actually needs the page's DESIGN height PLUS ~76px more than a
-  // single physical Word page provides -- only 2 of the 6 "Recommended Energy Management Services"
-  // bullets fit before Word's own pagination kicked in, orphaning the remaining 4 alone on an
-  // otherwise-blank page 2. Root cause: Word's real per-line metrics for this Arial-rendered body
-  // text do not match Chromium's -- e.g. the real Word bottom page margin measured from the
-  // exported docx's own <w:pgMar> is 1872 twips (93.6pt/124.8px), well above the 72px --rpt-ftr-h
-  // this budget was tuned against -- so a page tuned to "exactly fit" in Chromium can never
-  // reliably fit in Word; any exact-fit tuning is fragile by construction and will keep breaking
-  // as project data (building/equipment counts -> paragraph line-wrap counts) changes. Splitting
-  // into two purpose-sized pages (this one; rptPageASHRAE36ProposalRecommendedServicesCover) removes the
-  // exact-fit dependency entirely rather than re-tuning it a third time. Content is preserved
-  // verbatim -- nothing shortened or removed, only relocated, same as the "Why This Approach"
-  // move this same page's history already documents above.
-  var bodyHTML = '<div style="padding:4px 48px 2px">' + title + execSummary + assessmentFindings + '</div>';
+  // ── Cost Summary: what it costs, at a high level (always in the proposal) ─────────────
+  var costSummary = _rptA36CostSummaryHTML(d, HEAD, BODY);
+
+  var bodyHTML =
+    '<div style="padding:4px 48px 2px">' + title + execSummary + assessmentFindings + costSummary + '</div>';
 
   return rptPage(n, 'ASHRAE 36 Proposal', bodyHTML, {
     hero: true,
@@ -22006,69 +22070,25 @@ function rptPageASHRAE36ProposalCover(n, d) {
  *     following page)" aside is gone -- the schedule now sits on THIS page, right below.
  */
 function _rptA36RecommendedServicesInnerHTML(d) {
-  var displayClient = _rptProposalDisplayClientName(d.project.name);
-
   // D-12 (2026-08-03): 12px (9pt printed, 10.005pt after the floor) -> the 13pt section tier.
   // Same HEAD/BODY literals used throughout the ASHRAE 36 Proposal page family.
   var HEAD = 'font-size:' + RPT_SECTION_HEAD_PX + 'px;font-weight:700;color:var(--rpt-page-text);margin:5px 0 2px';
   var BODY = 'font-size:14px;color:var(--rpt-page-text);line-height:1.32';
 
-  // ── Recommended Energy Management Services (first heading) ───────────────────
-  var budgetFmt = _rptMonthlyAllowanceFmt(d.project.id);
-
-  var monthlyAllowanceBlock = budgetFmt
-    ? '<div style="' +
-      BODY +
-      // Docx item 14 (Matt, 2026-08-03): page-2+ body text carries no bold — only headings and
-      // table header rows may be bold outside page 1.
-      ';margin-top:5px">Monthly Allowance for the following: Parts, materials, ' +
-      'and on-site labor hours</div>' +
-      '<div style="' +
-      BODY +
-      '">' +
-      budgetFmt +
-      ' per Month</div>'
-    : '';
-
-  // 2026-07-29 (fix/proposal-remove-fixed-anchors): programCostModel/programTotalFmt/
-  // programRangeFmt/programMonths DELETED. This paragraph used to state the phased-rollout dollar
-  // total, month count, and Aug 2026 – Dec 2028-style date range computed from
-  // _pricingComputeProgramCostModel (pricing-estimator.js). Matt's approved spec (quoted in the
-  // Assessment Findings comment above) forbids anchoring a fixed total cost or timeline anywhere in
-  // this document; the paragraph below states only the $6,250/month allowance mechanism, never a
-  // total or an end date. 2026-08-03 (Matt, combine pages 2+3): trimmed to two sentences -- see
-  // this function's header comment for what was cut and why.
-  var recIntro;
-  if (budgetFmt) {
-    recIntro =
-      'Control Service Company recommends a phased Energy Management Services approach funded ' +
-      'through a predictable monthly service allowance of ' +
-      budgetFmt +
-      ' per month, carrying out the highest-return improvements first. Each phase is fully ' +
-      'funded as it is completed, so ' +
-      _escHtml(displayClient) +
-      ' is never asked to approve a large capital expenditure — a one-time capital expense ' +
-      'becomes a manageable ongoing operating cost.';
-  } else {
-    recIntro =
-      'Rather than pursuing a large one-time capital project, Control Service Company recommends a ' +
-      'phased Energy Management Services approach focused on the highest-value opportunities first. This approach ' +
-      'allows ' +
-      _escHtml(displayClient) +
-      ' to improve building performance using a predictable monthly budget while continuously ' +
-      'expanding optimization efforts over time.';
-  }
+  // ── Recommended work (one-time cost; no monthly fee, Matt 2026-11-02) ─────────────────
+  var recIntro =
+    'We recommend the Recommended option from the Cost Summary. It does the work in steps. Control ' +
+    'Service Company puts first the improvements expected to return the most. The steps are listed below.';
 
   return (
     '<div style="' +
     HEAD +
-    '">Recommended Energy Management Services</div>' +
+    '">Recommended Work</div>' +
     '<div style="' +
     BODY +
     '">' +
     recIntro +
-    '</div>' +
-    monthlyAllowanceBlock
+    '</div>'
   );
 }
 
@@ -22109,11 +22129,10 @@ function _rptA36WhyThisApproachHTML(HEAD, UL) {
     '<ul style="' +
     UL +
     '">' +
-    '<li>Addresses the highest-priority opportunities identified during the assessment.</li>' +
-    '<li>Improves comfort, ventilation, and energy performance.</li>' +
-    '<li>Avoids the need for a large capital expenditure.</li>' +
-    '<li>Allows implementation to align with budget planning cycles.</li>' +
-    '<li>Creates a sustainable long-term optimization strategy.</li>' +
+    '<li>It deals with the highest-priority gaps from the assessment first.</li>' +
+    '<li>It improves comfort, ventilation and energy performance.</li>' +
+    '<li>The work is done in steps, so it can fit your budget planning.</li>' +
+    '<li>It moves the buildings closer to ASHRAE 36.</li>' +
     '</ul>'
   );
 }
@@ -22357,7 +22376,7 @@ function _rptA36PhaseSeqCategoryNames(rows) {
       // function. Re-adding a prefix here would double it (e.g. 'Hot Water Boiler Staging').
       // V-11 (2026-08-03): through _a36SeqDisplayLabel so a sequence renamed for the client in one
       // client document is renamed in every one of them.
-      names.push(_a36SeqDisplayLabel(sd));
+      names.push(_rptA36PlainName(_a36SeqDisplayLabel(sd)));
     });
   }
   return names;
@@ -22389,7 +22408,7 @@ function _rptA36PhaseSeqCategoryDetails(rows) {
     EM_SEQUENCE_DEFS.forEach(function (sd) {
       if (!seen[sd.key]) return;
       var plain = (typeof ASHRAE36_SEQUENCE_PLAIN !== 'undefined' && ASHRAE36_SEQUENCE_PLAIN[sd.key]) || '';
-      details.push({ label: _a36SeqDisplayLabel(sd), plain: plain }); // V-11: one client-facing name everywhere
+      details.push({ label: _rptA36PlainName(_a36SeqDisplayLabel(sd)), plain: plain }); // V-11: one client-facing name everywhere
     });
   }
   return details;
@@ -22502,10 +22521,13 @@ function _rptA36MonthSequenceGroups(items) {
     // sensors = qty of phase-1 rows with !ioOnly (ioOnly wires to existing I/O — not a new sensor).
     var seqQty = 0;
     var senQty = 0;
+    var chkQty = 0; // checks of a sensor that reads wrong (phase-2 rows with no sequence key)
     (item.rows || []).forEach(function (r) {
       if (r.phase === 2 && r.seqKey) {
         seqRow = r;
         seqQty += r.qty || 0;
+      } else if (r.phase === 2) {
+        chkQty += r.qty || 0;
       } else if (r.phase === 1 && !r.ioOnly) {
         senQty += r.qty || 0;
       }
@@ -22518,13 +22540,14 @@ function _rptA36MonthSequenceGroups(items) {
       bySeq[seqRow.seqKey].sen += senQty;
     } else {
       var r0 = (item.rows || [])[0] || {};
-      var lbl = r0.item || 'Improvement';
+      var lbl = _rptA36PlainRowLabel(r0) || 'Improvement';
       if (!otherMap[lbl]) {
-        otherMap[lbl] = { b: {}, seq: 0, sen: 0 };
+        otherMap[lbl] = { b: {}, seq: 0, sen: 0, chk: 0 };
         otherOrder.push(lbl);
       }
       otherMap[lbl].b[bName] = true;
       otherMap[lbl].sen += senQty;
+      otherMap[lbl].chk += chkQty;
     }
   });
   var groups = [];
@@ -22553,7 +22576,7 @@ function _rptA36MonthSequenceGroups(items) {
         return;
       }
       groups.push({
-        label: _a36SeqDisplayLabel(sd),
+        label: _rptA36PlainName(_a36SeqDisplayLabel(sd)),
         buildings: Object.keys(bySeq[sd.key].b),
         seqCount: bySeq[sd.key].seq,
         sensorCount: bySeq[sd.key].sen,
@@ -22570,9 +22593,70 @@ function _rptA36MonthSequenceGroups(items) {
       buildings: Object.keys(otherMap[lbl].b),
       seqCount: otherMap[lbl].seq,
       sensorCount: otherMap[lbl].sen,
+      checkCount: otherMap[lbl].chk,
     });
   });
   return groups;
+}
+
+/**
+ * _rptA36PhaseUnits(rows) - the work units of a set of Recommended rows: each control sequence with the devices
+ * it needs (_pricingBuildRoiUnits, the same bundling the timeline uses), then every row no unit claimed as its
+ * own unit (the sensor checks). Returns [{ rows, building }] for _rptA36MonthSequenceGroups.
+ */
+function _rptA36PhaseUnits(rows) {
+  var units = _pricingBuildRoiUnits(rows).map(function (u) {
+    return { rows: u.hwRows.concat([u.seqRow]), building: u.seqRow.building };
+  });
+  var claimed = {};
+  units.forEach(function (u) {
+    u.rows.forEach(function (r) {
+      claimed[r.id] = true;
+    });
+  });
+  rows.forEach(function (r) {
+    if (!claimed[r.id]) units.push({ rows: [r], building: r.building });
+  });
+  return units;
+}
+
+/**
+ * _rptA36RecommendedStepPlan(d) - the ONE plan of the Recommended work: Step 1 checks the equipment, then one
+ * step per group of timeline phases (_pricingProposalTermAndFuture, at most 4 work steps). EVERY priced
+ * Recommended row is in exactly one step, so the step table, the Order of Work table and the quantities in the
+ * Install and Programming Detail all add up to the same totals. Each group is a control sequence type (or a
+ * sensor check) with its own count; isNew marks the step where the type first appears.
+ * Returns null when no priced timeline exists. Cached on d.
+ */
+var _RPT_A36_MAX_WORK_STEPS = 4;
+function _rptA36RecommendedStepPlan(d) {
+  if (d._a36StepPlan !== undefined) return d._a36StepPlan;
+  var plan = null;
+  var td = _pricingProposalTermAndFuture(d.project.id);
+  var tl = td.tl;
+  if (tl && tl.phases && tl.phases.length) {
+    var P = tl.phases.length;
+    var W = Math.min(P, _RPT_A36_MAX_WORK_STEPS);
+    var steps = [{ groups: [], rows: [] }];
+    var seen = {};
+    var allRows = [];
+    for (var k = 0; k < W; k++) {
+      var lo = Math.floor((k * P) / W);
+      var hi = Math.floor(((k + 1) * P) / W);
+      var rows = [];
+      for (var i = lo; i < hi; i++) rows = rows.concat(tl.phases[i].rows || []);
+      allRows = allRows.concat(rows);
+      var groups = _rptA36MonthSequenceGroups(_rptA36PhaseUnits(rows));
+      groups.forEach(function (g) {
+        g.isNew = !seen[g.label];
+        seen[g.label] = true;
+      });
+      steps.push({ groups: groups, rows: rows });
+    }
+    plan = { tl: tl, steps: steps, allRows: allRows, stepCount: 1 + W };
+  }
+  d._a36StepPlan = plan;
+  return plan;
 }
 
 /**
@@ -22680,50 +22764,35 @@ function _rptA36PhaseTableDerive(d, opts) {
   // this block's own 14px x 1.38 line-height). Spacing only; text unchanged.
   var intro =
     '<div style="font-size:14px;color:var(--rpt-page-text);line-height:1.38;margin-bottom:23px">' +
-    'The schedule below lists the improvements included in the current term and the month each one ' +
-    'is carried out. Ongoing monitoring and tuning continues every month of the term.' +
+    'The steps below show the order of the work in the Recommended option. Each step lists what is done ' +
+    'in that step. The meaning of each name is given under the table.' +
     '</div>';
 
   // 2026-07-29 (months + Future Work rebuild, replacing the PRICING_PROPOSAL_MAX_PHASES=3 cap —
   // see PRICING_PROPOSAL_TERM_PHASE_COUNT's header comment): the ONE shared term/future split.
   // Only termPhases is read here since the Future Work section was removed (Matt, 2026-08-03).
-  var td = _pricingProposalTermAndFuture(d.project.id);
-  var tl = td.tl;
-  var termPhases = td.termPhases;
+  // Round 3 (Manager 2026-11-14): one plan of the work (_rptA36RecommendedStepPlan) for this table and the Order of
+  // Work table. Every priced Recommended row is in exactly one step, so the counts here add up to the detail lists.
+  var plan = _rptA36RecommendedStepPlan(d);
 
-  if (!tl || !termPhases.length) {
+  if (!plan) {
     var fallback =
       '<div style="font-size:14px;color:var(--rpt-page-text);padding:10px 0">' +
-      'A phased facility rollout will populate here once pricing data has been imported and priced ' +
-      'for this project.' +
+      'The steps of the work will be listed here when the pricing for this project is complete.' +
       '</div>';
     // R7 (2026-08-03): intro is deliberately EMPTY here. It is now a lead-in that promises "the
-    // schedule below" — in this branch there is no schedule below, only the "pricing not imported
-    // yet" notice, and printing both would have the page contradict itself in one line. The old
-    // intro was a self-contained recommendation paragraph, so it read fine ahead of the notice;
-    // this one does not, and the notice already says everything this branch has to say.
+    // schedule below" - in this branch there is no schedule below, only the "pricing not imported
+    // yet" notice, and printing both would have the page contradict itself in one line.
     return { fallbackOnly: true, intro: '', fallbackHTML: fallback };
   }
+  var tl = plan.tl;
 
-  // monthLabels: one label per calendar month of the current term (e.g. "Aug 2026" .. "Dec 2026")
-  // — see _pricingProposalTermMonthLabels' header comment for the derivation + the timeline-
-  // anchoring tension it flags. Falls back to the phase's own label (e.g. "Phase 1") if month
-  // labels can't be derived (defensive — should not happen when pricing-estimator.js is present).
-  var monthLabels = _pricingProposalTermMonthLabels(termPhases);
-  var headCols = monthLabels.length
-    ? monthLabels
-    : termPhases.map(function (p) {
-        return p.label;
-      });
-  // termRows: every row across the term's phase(s) — feeds the single Included Improvements /
-  // Expected Results cell below (colspan across all month columns, since the underlying data has
-  // no finer-than-phase month assignment for individual rows — see this change's dashboardlogic.md
-  // entry for why the term is rendered as ONE merged content block under real month headers rather
-  // than fabricating a false per-month split of the same rows).
-  var termRows = [];
-  termPhases.forEach(function (p) {
-    if (p && p.rows) termRows = termRows.concat(p.rows);
-  });
+  // Steps, not calendar months (no dates in client text, Manager 2026-11-14): one column per step.
+  var stepCount = plan.stepCount;
+  var headCols = [];
+  for (var _si = 1; _si <= stepCount; _si++) headCols.push('Step ' + _si);
+  // termRows: every priced Recommended row, across all steps.
+  var termRows = plan.allRows;
 
   // Phase copy rewrite (2026-07-29, Matt, verbatim: "can we not expand more on the 3 phases in
   // the phases table and add more to the improvements and expected results, like phase 1 is
@@ -22797,12 +22866,6 @@ function _rptA36PhaseTableDerive(d, opts) {
     'line-height:1.35;border:1px solid var(--rpt-border)';
 
   var monthCount = headCols.length;
-  var monthAlloc =
-    typeof _pricingComputeTermMonthlyAllocation === 'function'
-      ? _pricingComputeTermMonthlyAllocation(d.project.id, termRows, monthCount, tl.monthlyAllowance)
-      : { months: [], envelope: 0 };
-  var monthBuckets = monthAlloc.months || [];
-
   // bd: the real monthly labor breakdown (Alarm Configuration / Report Setup / Trend Setup &
   // Configuration / Audit Report finishing work / recurring EM labor —
   // _pricingComputeMonthlyLaborBreakdown, pricing-estimator.js ~L1018) — the SAME data
@@ -22818,7 +22881,7 @@ function _rptA36PhaseTableDerive(d, opts) {
   // Fallback copy — used only if a month somehow has neither labor-breakdown rows nor any
   // allocated sequence-programming unit (should not occur for a real, budget-configured project;
   // guards against a fully blank row rather than assuming it can never happen).
-  var MONTH_EMPTY_TEXT = 'Ongoing Energy Management Services for this period.';
+  var MONTH_EMPTY_TEXT = 'Review and adjust the work from the earlier steps.';
 
   // monthEntries: ONE ENTRY PER CALENDAR MONTH of the term (2026-08-03 rebuild, replacing the old
   // one-entry-per-term-unit check-mark matrix). Each entry's text JOINS two real data sources on
@@ -22849,7 +22912,7 @@ function _rptA36PhaseTableDerive(d, opts) {
   var _SETUP_SHORT = {
     'Alarm Configuration': 'alarms',
     'Report Setup': 'automated reports',
-    'Trend Setup & Configuration': 'trending',
+    'Trend Setup & Configuration': 'trend records',
   };
   var _cellLineStyle = 'margin:0 0 5px';
   var _cellSeqLineStyle = 'margin:0 0 3px;padding-left:7px;text-indent:-7px';
@@ -22870,11 +22933,6 @@ function _rptA36PhaseTableDerive(d, opts) {
         else if (_SETUP_SHORT[r.category] && setupNames.indexOf(_SETUP_SHORT[r.category]) === -1)
           setupNames.push(_SETUP_SHORT[r.category]);
       });
-      if (hasAudit) {
-        var auditLine = 'Finish the ASHRAE 36 Audit Report.';
-        lines.push('<div style="' + _cellLineStyle + '">' + auditLine + '</div>');
-        charLens.push(auditLine.length);
-      }
       if (setupNames.length) {
         var setupLine =
           bucketIdx === 1
@@ -22892,7 +22950,7 @@ function _rptA36PhaseTableDerive(d, opts) {
     // units and the seqGroups loop below renders nothing for it — programming lines begin in
     // month 2. This line states the reserved verification work that month 1's room is spent on.
     if (mi === 0) {
-      var verifyLine = 'Identify and verify the sequences.';
+      var verifyLine = 'Check the equipment and confirm what to program.';
       lines.push('<div style="' + _cellLineStyle + '">' + verifyLine + '</div>');
       charLens.push(verifyLine.length);
     }
@@ -22905,10 +22963,9 @@ function _rptA36PhaseTableDerive(d, opts) {
     // monitoring/tuning is stated once in the intro sentence above the table, not per column.
     // _seqSeenTypes persists across the map() over months, in calendar order, so first-appearance
     // detection follows the real allocation.
-    var seqGroups = _rptA36MonthSequenceGroups((monthBuckets[mi] && monthBuckets[mi].items) || []);
+    var seqGroups = (plan.steps[mi] && plan.steps[mi].groups) || [];
     seqGroups.forEach(function (g) {
-      var isNew = !_seqSeenTypes[g.label];
-      _seqSeenTypes[g.label] = true;
+      var isNew = g.isNew;
       // Per-month scope counts (2026-08-03, deploy/months-counts): each type line carries THIS
       // MONTH'S OWN portion of sequences programmed / sensors installed (g.seqCount/g.sensorCount
       // from _rptA36MonthSequenceGroups — exact per-month unit sums, never the type's full total
@@ -22916,11 +22973,10 @@ function _rptA36PhaseTableDerive(d, opts) {
       // cover's canonical counting rules — see the counting comment in that function.
       var cParts = [];
       if (g.seqCount) cParts.push(rptCount(g.seqCount) + (g.seqCount === 1 ? ' sequence' : ' sequences'));
-      if (g.sensorCount) cParts.push(rptCount(g.sensorCount) + (g.sensorCount === 1 ? ' sensor' : ' sensors'));
+      if (g.sensorCount) cParts.push(rptCount(g.sensorCount) + (g.sensorCount === 1 ? ' device' : ' devices'));
+      if (g.checkCount) cParts.push(rptCount(g.checkCount) + (g.checkCount === 1 ? ' check' : ' checks'));
       var cTxt = cParts.join(', ');
-      var seqLine = isNew
-        ? 'Begin ' + g.label + ' programming' + (cTxt ? ' (' + cTxt + ')' : '') + '.'
-        : g.label + ' programming (continues' + (cTxt ? ' — ' + cTxt : '') + ').';
+      var seqLine = (g.checkCount ? (isNew ? '' : 'Continue: ') : isNew ? 'Start ' : 'Continue ') + g.label + (cTxt ? ' (' + cTxt + ')' : '') + '.';
       lines.push('<div style="' + _cellSeqLineStyle + '">' + _escHtml(seqLine) + '</div>');
       charLens.push(seqLine.length);
     });
@@ -22964,7 +23020,10 @@ function _rptA36PhaseTableDerive(d, opts) {
       allTermCatNames.length === 1
         ? allTermCatNames[0]
         : allTermCatNames.slice(0, -1).join(', ') + ' and ' + allTermCatNames[allTermCatNames.length - 1];
-    expectedResultsText = 'Reporting, alarms, and efficiency/comfort gains from ' + _escHtml(namesText2) + '.';
+    expectedResultsText =
+      'Alarms and reports that show how equipment is running, and better comfort and efficiency from ' +
+      _escHtml(namesText2) +
+      '.';
   }
 
   // futureRowHTML (the "Future Work" inline table row) DELETED along with the whole Future Work
@@ -23044,25 +23103,24 @@ function _rptA36PhaseTableDerive(d, opts) {
   // new font size introduced).
   var _termNoteBody = 'font-size:14px;color:var(--rpt-page-text);line-height:1.38;margin-top:6px';
   var expectedResultsHTML = expectedResultsText
-    ? '<div style="' +
-      _termNoteBody +
-      // Docx item 14 (2026-08-03): lead-in label no longer bold (page-2+ body text).
-      '"><span>Expected Results: </span>' +
-      expectedResultsText +
-      '</div>'
+    ? '<div style="' + _termNoteBody + '"><span>What you get: </span>' + expectedResultsText + '</div>'
     : '';
-  // Docx item 15 (Matt, 2026-08-03): rewritten from a four-clause compound sentence into ONE
-  // plain sentence a non-technical reader understands. Meaning preserved: the monthly fee covers
-  // ongoing service every month — systems stay monitored, tuned, and performing even in months
-  // with no new item.
-  var ongoingServicesHTML =
-    '<div style="' +
-    _termNoteBody +
-    '">' +
-    'The monthly fee also covers ongoing service in every month of the term — even when no new item ' +
-    'begins, Control Service Company keeps the systems monitored, tuned, and performing as designed.' +
-    '</div>';
-  var termNotesHTML = expectedResultsHTML + ongoingServicesHTML;
+  // What each name means (plain words, from the vetted ASHRAE36_SEQUENCE_PLAIN copy). Occupancy-Based
+  // Ventilation is listed once, as everywhere else in this proposal.
+  var _meaning = [];
+  var _meaningSeen = {};
+  _rptA36PhaseSeqCategoryDetails(termRows).forEach(function (dt) {
+    var lbl = /^Occupancy-Based Ventilation/.test(dt.label) ? 'Occupancy-Based Ventilation' : dt.label;
+    if (_meaningSeen[lbl] || !dt.plain) return;
+    _meaningSeen[lbl] = true;
+    _meaning.push('<li><span style="font-weight:700">' + _escHtml(lbl) + ':</span> ' + _escHtml(dt.plain) + '</li>');
+  });
+  var meaningHTML = _meaning.length
+    ? '<div style="' + _termNoteBody + '">What the names mean:</div>' +
+      '<ul style="margin:2px 0 0;padding-left:16px;font-size:14px;color:var(--rpt-page-text);line-height:1.38">' +
+      _meaning.join('') + '</ul>'
+    : '';
+  var termNotesHTML = expectedResultsHTML + meaningHTML;
 
   // standaloneFutureWorkHTML DELETED (Matt, 2026-08-03: no Future Work shown in the Client D Service
   // Proposal) — the schedule page now ends on termNotesHTML (Expected Results + the
@@ -23077,6 +23135,8 @@ function _rptA36PhaseTableDerive(d, opts) {
     tableHTML: table,
     tableEstH: tableEstH,
     termNotesHTML: termNotesHTML,
+    expectedResultsHTML: expectedResultsHTML,
+    meaningHTML: meaningHTML,
     // singlePageHTML: pre-joined single-string form -- consumed only by the thin
     // _rptA36PhaseTableInnerHTML wrapper below for the legacy (unused) merged Phase+Vision page.
     singlePageHTML: intro + table + termNotesHTML,
@@ -23155,7 +23215,7 @@ function rptPageASHRAE36ProposalPhaseTable(startN, d, opts) {
   }
 
   if (der.fallbackOnly) {
-    return [wrapPage(startN, recSvcsHTML + whyHTML + der.intro + der.fallbackHTML, '')];
+    return [wrapPage(startN, recSvcsHTML + whyHTML + der.intro + der.fallbackHTML + ((opts && opts.trailBlocks) || []).join(''), '')];
   }
 
   // Pixel budgets, all derived from _rptContentBudget() per this file's "never a standalone
@@ -23181,17 +23241,21 @@ function rptPageASHRAE36ProposalPhaseTable(startN, d, opts) {
   var _chromeMeasured = _rptA36MeasureContentH(recSvcsHTML + whyHTML + der.intro);
   var HEAD_CHROME_FIRST = _chromeMeasured > 0 ? _chromeMeasured : 251 + REC_SVCS_H;
   var PHASE_SAFETY_H = 40; // explicit page-level margin, same convention as the Audit pages
-  // TAIL_H: term notes only (Expected Results + ongoing-service paragraph) — the Future Work
-  // section that used to ride here was removed (Matt, 2026-08-03).
-  var _tailMeasured = _rptA36MeasureContentH(der.termNotesHTML);
-  var TAIL_H = _tailMeasured > 0 ? _tailMeasured : 150;
 
-  var tokens = [
-    { type: 'block', estH: der.tableEstH, html: der.tableHTML },
-    // Trailing block: term notes. Appended LAST so _rptPaginateTokens naturally pushes it onto a
-    // fresh page if it does not fit after the table, instead of overflowing the page.
-    { type: 'block', estH: TAIL_H, html: der.termNotesHTML },
-  ];
+  // Two note blocks (what you get; what the names mean) so the short sentence stays under the table when the
+  // longer list of names needs the next page. Each is MEASURED.
+  var _expH = _rptA36MeasureContentH(der.expectedResultsHTML);
+  var _meanH = _rptA36MeasureContentH(der.meaningHTML);
+  var tokens = [{ type: 'block', estH: der.tableEstH, html: der.tableHTML }];
+  if (der.expectedResultsHTML) tokens.push({ type: 'block', estH: _expH > 0 ? _expH : 90, html: der.expectedResultsHTML });
+  if (der.meaningHTML) tokens.push({ type: 'block', estH: _meanH > 0 ? _meanH : 300, html: der.meaningHTML });
+  // Closing sections the caller hands over (opts.trailBlocks: Implementation Plan, Long-Term Vision): each is a
+  // block with its MEASURED height, so it shares the last steps page when it fits and starts a new page when not.
+  ((opts && opts.trailBlocks) || []).forEach(function (html) {
+    var spaced = '<div style="height:14px"></div>' + html;
+    var hh = _rptA36MeasureContentH(spaced);
+    tokens.push({ type: 'block', estH: hh > 0 ? hh : 300, html: spaced });
+  });
 
   var firstBudget = g - HEAD_CHROME_FIRST - PHASE_SAFETY_H;
   var contBudget = g - PHASE_SAFETY_H;
@@ -23250,9 +23314,6 @@ function rptPageASHRAE36ProposalPhaseTable(startN, d, opts) {
  * the entire Expected Outcomes page. No questions.").
  */
 function _rptA36VisionInnerHTML(d, opts) {
-  // Prose-only display name — see _rptProposalDisplayClientName above rptPageASHRAE36ProposalCover.
-  var displayClient = _rptProposalDisplayClientName(d.project.name);
-
   // Density pass (2026-07-27, page-2/3 merge — see rptPageASHRAE36ProposalPhaseAndVision's header
   // comment): tightened from 10px/5px heading margins and 1.55 line-height to the SAME 1.38
   // line-height page 1 (rptPageASHRAE36ProposalCover's BODY var) already established as this
@@ -23273,7 +23334,6 @@ function _rptA36VisionInnerHTML(d, opts) {
   var td = _pricingProposalTermAndFuture(d.project.id);
   var tl = td.tl;
   var termPhases = td.termPhases;
-  var monthLabels = _pricingProposalTermMonthLabels(termPhases);
 
   // phaseTableOn: whether the Phase Table (schedule) page rendered ahead of this one — two
   // INDEPENDENT toggles a user can check/uncheck separately. Only steers the Implementation
@@ -23283,48 +23343,10 @@ function _rptA36VisionInnerHTML(d, opts) {
 
   var implTable = '';
   if (tl && termPhases.length) {
-    // 2026-07-29 (months rebuild): the old per-phase "Phase | Sequence" mini-table (one row per
-    // Phase 1/2/3 with an ordinal First/Second/Third priority column) is REMOVED — with only ONE
-    // term phase now shown (see PRICING_PROPOSAL_TERM_PHASE_COUNT), that table would render a
-    // single content-free row duplicating what the Recommended Energy Management Services table above
-    // already shows under real month headers. Replaced with one sentence naming the term's actual
-    // months (derived, never hardcoded — see _pricingProposalTermMonthLabels) and the same
-    // no-fixed-end-date funding language the table used to carry.
-    var termRangeLabel = monthLabels.length
-      ? monthLabels.length > 1
-        ? monthLabels[0] + ' – ' + monthLabels[monthLabels.length - 1]
-        : monthLabels[0]
-      : termPhases[0].label;
-    // "the schedule earlier in this proposal" only makes sense when the Phase Table page actually
-    // ran ahead of this one — when it's off, say what the term is without pointing at a table that
-    // isn't in the document.
-    //
-    // R7 (2026-08-03, V-21): the cross-reference used to read "...is detailed in the Recommended
-    // Energy Management Services table above." Two things were wrong with it. The table is not
-    // captioned "Recommended Energy Management Services" — its caption/first column header reads
-    // "Included Improvements" — so a reader hunting for that name finds nothing. And it is not
-    // "above": it sits one to two pages BACK, because the schedule paginates across pages
-    // (rptPageASHRAE36ProposalPhaseTable). The reference now names the real caption and points the
-    // right direction.
+    // Steps, not dates (Manager 2026-11-14): the plan points at the steps table and states the ordering rule.
     var termRangeIntro = phaseTableOn
-      ? 'The current term (' +
-        _escHtml(termRangeLabel) +
-        ') is set out in the Included Improvements schedule earlier in this proposal.'
-      : 'The current term runs ' + _escHtml(termRangeLabel) + '.';
-    // R7 (2026-08-03, V-22): the second sentence used to assert "Phases are sequenced by expected
-    // return on investment: the highest-return measures come first." Ranking by what the work
-    // returns to the client IS the real rule and is NOT being dropped — but the schedule this
-    // sentence points at carries no return, savings, cost, or priority column, so nothing the
-    // client can see demonstrates the ranking, and stating it as a demonstrated property of the
-    // table invites "then show me the numbers". Reworded to state it as the rule Control Service
-    // Company applies when it builds the schedule (which the visible month ordering is the OUTPUT
-    // of), rather than as something the table proves.
-    //
-    // R7 (2026-08-03, V-23): heading was "Implementation Plan &amp; Long-Term Vision" — the only
-    // heading in the document using an ampersand where every other spells out "and", AND it named
-    // "Long-Term Vision", which appears again as its own heading one paragraph below. Both are
-    // fixed by naming this section for what it actually contains ("Implementation Plan"); the
-    // Long-Term Vision heading below now owns that subject outright instead of sharing it.
+      ? 'The work is done in the steps set out earlier in this proposal.'
+      : 'The work is done in steps.';
     implTable =
       '<div style="' +
       HEAD +
@@ -23333,24 +23355,16 @@ function _rptA36VisionInnerHTML(d, opts) {
       BODY +
       '">' +
       termRangeIntro +
-      ' Control Service Company orders the work by the return each ' +
-      'improvement is expected to deliver to ' +
-      _escHtml(displayClient) +
-      ', so the improvements expected to return the most are carried out first. Each stage of the ' +
-      'work is funded through the monthly service allowance as it is completed, with no fixed end ' +
-      'date; the service continues for as long as improvement opportunities remain.</div>';
+      ' Control Service Company orders the work by the return each improvement is expected to give, so the ' +
+      'improvements expected to return the most come first.</div>';
   } else {
-    // R7 (2026-08-03, V-23): same heading fix as the priced branch above — this
-    // no-pricing-data fallback carried its own copy of the ampersand heading and would have
-    // reintroduced it for any project that has not been priced yet.
     implTable =
       '<div style="' +
       HEAD +
       '">Implementation Plan</div>' +
       '<div style="' +
       BODY +
-      '">A calendar-phase schedule will populate here once pricing data has been imported and ' +
-      'priced for this project.</div>';
+      '">The steps of the work will be listed here when the pricing for this project is complete.</div>';
   }
 
   // futureWorkFallbackHTML DELETED (Matt, 2026-08-03: no Future Work shown in the Client D Service
@@ -23362,30 +23376,23 @@ function _rptA36VisionInnerHTML(d, opts) {
     '">Long-Term Vision</div>' +
     '<div style="' +
     BODY +
-    '">The objective of the Recommended Energy Management Services is not simply to complete a one-time ' +
-    'project. The objective is to continuously improve heating and cooling system performance, increase energy ' +
-    'efficiency, improve occupant comfort, and progressively increase ASHRAE 36 alignments across ' +
-    'the ' +
-    _escHtml(displayClient) +
-    ' portfolio.</div>' +
+    '">The aim is not only to finish one project. The aim is to improve how heating and cooling equipment ' +
+    'runs, use less energy, improve comfort, and move the buildings closer to ASHRAE 36 over time.</div>' +
     '<div style="' +
     BODY +
-    ';margin-top:4px">As buildings and systems are optimized, future opportunities may include:</div>' +
+    ';margin-top:4px">Later work could include:</div>' +
     '<ul style="' +
     UL +
     '">' +
-    '<li>Additional ASHRAE 36 sequence implementation</li>' +
-    '<li>Enhanced fault detection and diagnostics</li>' +
-    '<li>Advanced energy optimization strategies</li>' +
-    '<li>Additional sensor deployments</li>' +
-    '<li>Extended analytics and performance reporting</li>' +
-    '<li>Ongoing programming refinements</li>' +
+    '<li>More ASHRAE 36 control sequences</li>' +
+    '<li>Reports that flag equipment faults</li>' +
+    '<li>More sensors where they help</li>' +
+    '<li>Fuller reports on how the equipment performs</li>' +
     '</ul>' +
     '<div style="' +
     BODY +
-    ';margin-top:4px">These future improvements can be prioritized and implemented as part of the ' +
-    'ongoing Energy Management Services based on operational needs, budget priorities, and observed ' +
-    'building performance.</div>';
+    ';margin-top:4px">Later work can be planned when needs and budget allow. It is not in the costs ' +
+    'in this proposal.</div>';
 
   // Expected Outcomes section REMOVED 2026-07-27 (client review, verbatim: "Just get rid of the
   // entire Expected Outcomes page. No questions."). Was previously a bullet-list section inside
@@ -23518,34 +23525,15 @@ function rptPageASHRAE36ProposalPhaseAndVision(n, d, opts) {
  * the same raw portfolio totals the cover falls back to.
  */
 function _rptA36ComplianceScopeInnerHTML(d) {
-  var displayClient = _rptProposalDisplayClientName(d.project.name);
   // D-12 (2026-08-03): 12px -> the 13pt section tier (same reason as the margin:5px variant).
   var HEAD = 'font-size:' + RPT_SECTION_HEAD_PX + 'px;font-weight:700;color:var(--rpt-page-text);margin:4px 0 3px';
   var BODY = 'font-size:14px;color:var(--rpt-page-text);line-height:1.38';
   var UL = 'margin:2px 0 0;padding-left:16px;font-size:14px;color:var(--rpt-page-text);line-height:1.38';
 
-  var budgetFmt = _rptMonthlyAllowanceFmt(d.project.id);
-
-  // Same consolidated counts as the Audit cover (rptPageASHRAE36Cover) — derived, never typed.
-  var p = d.portfolio || {};
-  var sensorCount = p.totalMissingHardwarePoints || 0;
-  var seqCount = p.totalNotReadySequences || 0;
-  try {
-    var _a36ScopedRows = _a36ScopedCatalogRows(d);
-    var _csSensorSum = 0;
-    var _csSeqSum = 0;
-    _a36ScopedRows.forEach(function (r) {
-      if (!r) return;
-      if (r.phase === 1 && !r.ioOnly) _csSensorSum += r.qty || 0;
-      else if (r.phase === 2 && r.seqKey) _csSeqSum += r.qty || 0;
-    });
-    if (_a36ScopedRows.length) {
-      sensorCount = _csSensorSum;
-      seqCount = _csSeqSum;
-    }
-  } catch (e) {
-    /* fall back to raw portfolio totals above */
-  }
+  // Same consolidated counts as the Audit cover (rptPageASHRAE36Cover): one shared function.
+  var _cnt = _rptA36ScopeCounts(d);
+  var sensorCount = _cnt.sensors;
+  var seqCount = _cnt.sequences;
 
   return (
     '<div style="' +
@@ -23557,8 +23545,8 @@ function _rptA36ComplianceScopeInnerHTML(d) {
     'carry the sensors and actuators its control sequences depend on, its safety programming must ' +
     'be in place, and the sequences themselves must be programmed and verified on that equipment. ' +
     'Across the ' +
-    _escHtml(displayClient) +
-    ' portfolio, the audit identified <strong>' +
+    rptCount((d.portfolio || {}).totalBuildings) +
+    ' buildings, the audit identified <strong>' +
     rptCount(sensorCount) +
     ' sensor' +
     (sensorCount !== 1 ? 's' : '') +
@@ -23583,15 +23571,7 @@ function _rptA36ComplianceScopeInnerHTML(d) {
     '<li>Programming and verifying the ' +
     rptCount(seqCount) +
     ' control sequences on the equipment they run on</li>' +
-    '</ul>' +
-    (budgetFmt
-      ? '<div style="' +
-        BODY +
-        ';margin-top:6px">This work is funded through the same monthly service allowance of ' +
-        budgetFmt +
-        ' per month described earlier in this proposal. It is not billed as a separate project.' +
-        '</div>'
-      : '')
+    '</ul>'
   );
 }
 
@@ -23612,13 +23592,10 @@ function rptPageASHRAE36ProposalComplianceScope(n, d) {
  * _rptA36ComplianceScopeInnerHTML above). Content unchanged.
  */
 function _rptA36FullScopeInnerHTML(d) {
-  var displayClient = _rptProposalDisplayClientName(d.project.name);
   // D-12 (2026-08-03): 12px -> the 13pt section tier (same reason as the margin:5px variant).
   var HEAD = 'font-size:' + RPT_SECTION_HEAD_PX + 'px;font-weight:700;color:var(--rpt-page-text);margin:4px 0 3px';
   var BODY = 'font-size:14px;color:var(--rpt-page-text);line-height:1.38';
   var UL = 'margin:2px 0 0;padding-left:16px;font-size:14px;color:var(--rpt-page-text);line-height:1.38';
-
-  var budgetFmt = _rptMonthlyAllowanceFmt(d.project.id);
 
   return (
     '<div style="' +
@@ -23627,8 +23604,8 @@ function _rptA36FullScopeInnerHTML(d) {
     '<div style="' +
     BODY +
     '">Completing full ASHRAE 36 compliance across the ' +
-    _escHtml(displayClient) +
-    ' portfolio means programming every applicable ASHRAE 36 optimization sequence on top of ' +
+    rptCount((d.portfolio || {}).totalBuildings) +
+    ' buildings means programming every applicable ASHRAE 36 optimization sequence on top of ' +
     'the instrumentation and safety programming above, and adding portfolio-wide reporting that ' +
     'continuously checks that every sequence keeps performing as intended.</div>' +
     '<ul style="' +
@@ -23639,15 +23616,7 @@ function _rptA36FullScopeInnerHTML(d) {
     'to each piece of equipment</li>' +
     '<li>Portfolio-wide automatic fault detection and diagnostics reporting</li>' +
     '<li>Ongoing verification and tuning as sequences are commissioned</li>' +
-    '</ul>' +
-    (budgetFmt
-      ? '<div style="' +
-        BODY +
-        ';margin-top:6px">This work is funded through the same monthly service allowance of ' +
-        budgetFmt +
-        ' per month described earlier in this proposal, phased in alongside the instrumentation ' +
-        'work rather than billed as a separate project.</div>'
-      : '')
+    '</ul>'
   );
 }
 
@@ -24029,9 +23998,9 @@ function _rptA36TierDetailAggByPhase(rows, phaseNum, toggles) {
   var byItem = {};
   var order = [];
   included.forEach(function (r) {
-    var key = r.item || '(unnamed)';
+    var key = _rptA36PlainRowLabel(r) || '(unnamed)';
     if (!byItem[key]) {
-      byItem[key] = { item: r.item, qty: 0, lineTotal: 0 };
+      byItem[key] = { item: key, qty: 0, lineTotal: 0 };
       order.push(key);
     }
     byItem[key].qty += r.qty || 0;
@@ -24047,17 +24016,16 @@ function _rptA36TierDetailAggByPhase(rows, phaseNum, toggles) {
  * device-class taxonomy already defined in pricing-estimator.js (POINT_KEY_INSTALL_CLASS /
  * INSTALL_HOURS_BY_DEVICE_CLASS_DEFAULT — Deliverable E, 2026-07-19). Reused here (not a new
  * taxonomy) purely to LABEL each existing class for a client reader; no new categorization logic,
- * no pricing math. Any pointKey not present in POINT_KEY_INSTALL_CLASS falls back to "Other
- * Hardware" in _rptA36HardwareCategoryAgg below (forward-compatible with future catalog entries).
+ * no pricing math. Any pointKey not present in POINT_KEY_INSTALL_CLASS falls back to its own point name in _rptA36HardwareCategoryAgg below (forward-compatible with future catalog entries).
  */
 var _RPT_A36_DEVICE_CLASS_LABEL = {
-  spaceZoneSensor: 'Zone Sensors (Temperature/Humidity/Carbon Dioxide)',
+  spaceZoneSensor: 'Room Temperature Sensors',
   ductTempRhSensor: 'Duct Temperature Sensors',
   ductStaticPressureSensor: 'Duct Static Pressure Sensors',
   immersionWellTempSensor: 'Hydronic Temperature Sensors',
   damperActuator: 'Outdoor/Return Air Damper Actuators',
-  valveActuator: 'Valve Actuators',
-  controlValveActuator: 'Control Valve Actuators',
+  valveActuator: 'Isolation and Makeup Valve Actuators',
+  controlValveActuator: 'Coil Valve Actuators (Heating, Cooling and Reheat)',
   currentSwitchStatusRelay: 'Status Sensing Relays',
   diffPressureSwitch: 'Differential Pressure Sensors',
   unitaryDdcController: 'Zone Controllers',
@@ -24066,6 +24034,17 @@ var _RPT_A36_DEVICE_CLASS_LABEL = {
   vfdIntegration: 'Variable Frequency Drive Integration',
   networkRouterGateway: 'Network Gateways',
   thermostat: 'Thermostats',
+};
+
+/**
+ * _RPT_A36_POINT_CATEGORY_LABEL - a point whose device class name would hide what the device is gets its own line
+ * (Service Proposal detail lists only): the air handler duct carbon dioxide sensor shares the duct sensor class
+ * with the temperature sensors, and the outdoor air flow station shares the flow meter class. A line is never
+ * named "Other".
+ */
+var _RPT_A36_POINT_CATEGORY_LABEL = {
+  co2_ahu: 'Carbon Dioxide Sensors in Air Handler Ducts',
+  oaFlow: 'Outdoor Air Flow Stations',
 };
 
 /**
@@ -24097,7 +24076,13 @@ function _rptA36HardwareCategoryAgg(rows, toggles) {
       return;
     }
     var cls = (typeof POINT_KEY_INSTALL_CLASS !== 'undefined' && POINT_KEY_INSTALL_CLASS[r._pointKey]) || null;
-    var label = (cls && _RPT_A36_DEVICE_CLASS_LABEL[cls]) || 'Other Hardware';
+    var label =
+      _RPT_A36_POINT_CATEGORY_LABEL[r._pointKey] ||
+      (cls && _RPT_A36_DEVICE_CLASS_LABEL[cls]) ||
+      (r.isFddAddon ? 'Equipment Fault Reports' : '') ||
+      (r._pointKey && typeof _pricingPointLabel === 'function' ? _pricingPointLabel(r._pointKey) : '') ||
+      _rptA36PlainName(r.item) ||
+      'Devices';
     if (!byCat[label]) {
       byCat[label] = { label: label, qty: 0, lineTotal: 0 };
       order.push(label);
@@ -24134,15 +24119,11 @@ function _rptA36TierDetailPanelHTML(key, tt, summaryData, estimateState, wantIte
   var toggles = (estimateState && estimateState.rowToggles) || {};
   var hwAgg = _rptA36HardwareCategoryAgg(rows, toggles);
   var lb = _rptA36TierDetailAggByPhase(rows, 2, toggles);
-  // Recommended (2026-07-27, Matt's correction): never show a Hardware/Programming dollar
-  // subtotal or per-item price for this tier — those numbers are subtotals of the same one-time
-  // lump total the amount row above no longer prints for Recommended. Category/item names still
-  // list (so a reader still sees WHAT is included), just never priced individually here.
-  var noDollarTier = key === 'recommended';
-  var noCat = !noDollarTier && !!(tt && tt[key] && tt[key].noCatalog);
+  // Every option, Recommended included, is a one-time cost with its own priced parts (Matt, 2026-11-02:
+  // "There is no monthly allowance. Make it a 1 time cost.").
+  var noCat = !!(tt && tt[key] && tt[key].noCatalog);
   var wbTier = !!(tt && tt[key] && tt[key].method === 'workbook');
-  var foot =
-    !noDollarTier && tt && tt[key] ? _rptFootTier(tt[key].grand, tt[key].phase1, tt[key].phase2, wbTier) : null;
+  var foot = tt && tt[key] ? _rptFootTier(tt[key].grand, tt[key].phase1, tt[key].phase2, wbTier) : null;
   if (wbTier && foot) {
     // Workbook mode: rows show their share of the workbook subtotal (lines add up exactly).
     hwAgg = {
@@ -24154,7 +24135,6 @@ function _rptA36TierDetailPanelHTML(key, tt, summaryData, estimateState, wantIte
   }
   var p1 = foot ? fmtUSD(foot.p1r) : null;
   var p2 = foot ? fmtUSD(foot.p2r) : null;
-  if (noDollarTier) wantItemized = false;
 
   function _sectionHTMLCategories(subtotalStr, subtotalR, noCatFlag, agg) {
     var subtotalHTML = noCatFlag
@@ -24169,12 +24149,12 @@ function _rptA36TierDetailPanelHTML(key, tt, summaryData, estimateState, wantIte
       // a category whose only members are ioOnly/unpriced (null coerced to 0 when summed) must
       // read as "no additional cost", never a literal "$0".
       if (wantItemized && c.lineTotal === 0) {
-        priceStr = ': ' + c.qty + ' units, no additional cost';
+        priceStr = ': ' + c.qty + (c.qty === 1 ? ' unit' : ' units') + ', no hardware cost';
       } else if (wantItemized && c.lineTotal != null && fmtUSD(c.lineTotal)) {
         priceStr = ': ' + c.qty + ' units, ' + fmtUSD(c.lineTotal);
         printed.push(Math.round(c.lineTotal));
-      } else if (c.qty > 1) {
-        priceStr = ' (qty ' + c.qty + ')';
+      } else {
+        priceStr = ' (qty ' + c.qty + ')'; // every line shows its quantity
       }
       return '<li>' + _escHtml(c.label) + priceStr + '</li>';
     });
@@ -24184,7 +24164,7 @@ function _rptA36TierDetailPanelHTML(key, tt, summaryData, estimateState, wantIte
     // hardware — see buildCatalogRows) instead of enumerating each one separately.
     if (agg.ioOnlyCount > 0) {
       catLines.push(
-        '<li>Existing control points requiring programming only: ' + agg.ioOnlyQty + ' points, no additional cost</li>',
+        '<li>' + _rptA36ExistingPointsLine(agg.ioOnlyQty) + '</li>',
       );
     }
     var listHTML = catLines.length
@@ -24195,7 +24175,7 @@ function _rptA36TierDetailPanelHTML(key, tt, summaryData, estimateState, wantIte
     return (
       '<div style="margin-bottom:6px">' +
       '<div style="font-size:9px;font-weight:700;color:var(--rpt-page-text)">' +
-      'Hardware &amp; Installation' +
+      'Devices and Installation' +
       subtotalHTML +
       '</div>' +
       listHTML +
@@ -24222,13 +24202,13 @@ function _rptA36TierDetailPanelHTML(key, tt, summaryData, estimateState, wantIte
       // silently drop scope"), so the row/item stays; only the misleading $0 math is
       // replaced with a plain-English "no additional cost" label.
       if (wantItemized && it.lineTotal === 0) {
-        priceStr = it.qty > 1 ? ': ' + it.qty + ' units, no additional cost' : ': no additional cost';
+        priceStr = ': ' + it.qty + (it.qty === 1 ? ' unit' : ' units') + ', no hardware cost';
       } else if (wantItemized && it.lineTotal != null && fmtUSD(it.lineTotal)) {
         var ln = _rptItemizedLineText(it.qty, it.lineTotal, fmtUSD, wbTier);
         priceStr = ln.text;
         printedTotals.push(ln.total);
-      } else if (it.qty > 1) {
-        priceStr = ' (qty ' + it.qty + ')';
+      } else {
+        priceStr = ' (qty ' + it.qty + ')'; // every line shows its quantity
       }
       return '<li>' + _escHtml(it.item || '') + priceStr + '</li>';
     });
@@ -24255,18 +24235,12 @@ function _rptA36TierDetailPanelHTML(key, tt, summaryData, estimateState, wantIte
   // white-fill card treatment (box styling banned in client reports, rule 4.3) — plain spacing
   // with a single thin top divider, same "whitespace + thin border only" convention as
   // .rpt-a36-callout and the disclaimer block below this table.
-  var recNote = noDollarTier
-    ? '<div style="font-size:8.5px;color:var(--rpt-page-text);font-style:italic;margin-bottom:4px">' +
-      'Delivered as part of the monthly service allowance shown above, not billed separately.' +
-      '</div>'
-    : '';
 
   return (
     '<div id="rpt-tier-detail-' +
     key +
     '" style="display:none;margin-top:6px;padding-top:6px;' +
     'border-top:1px solid var(--rpt-rule);text-align:left">' +
-    recNote +
     _sectionHTMLCategories(p1, foot ? foot.p1r : null, noCat, hwAgg) +
     _sectionHTML('Programming', p2, foot ? foot.p2r : null, false, lb) +
     '</div>'
@@ -24284,7 +24258,6 @@ function _rptA36TierDetailPanelHTML(key, tt, summaryData, estimateState, wantIte
 function _rptA36OptionalZoneCo2HTML(summaryData, tierCols) {
   if (!summaryData || !summaryData.optional) return '';
   var lines = [];
-  var heading = '';
   tierCols.forEach(function (c) {
     var o = summaryData.optional[c.key];
     if (!o || !o.rows || !o.rows.length || !(o.sensorQty > 0)) return;
@@ -24293,7 +24266,6 @@ function _rptA36OptionalZoneCo2HTML(summaryData, tierCols) {
       t && t.grand !== null && t.grand !== undefined && !isNaN(t.grand)
         ? _rptFootTier(t.grand, t.phase1, t.phase2, t.method === 'workbook')
         : null;
-    heading = o.label;
     lines.push({ label: c.label, qty: o.sensorQty, foot: f });
   });
   if (!lines.length) return '';
@@ -24302,8 +24274,8 @@ function _rptA36OptionalZoneCo2HTML(summaryData, tierCols) {
     'border:1px solid var(--rpt-border)';
   var td = 'padding:8px 10px;font-size:10px;color:var(--rpt-page-text);border:1px solid var(--rpt-border)';
   var money = function (v) {
-    // No bare $0 in client output: a tier with no optional programming prints a dash.
-    return v === null || v === undefined ? 'Available upon request' : v === 0 ? '—' : _fmtUSD(v);
+    // No bare $0 in client output: a part with no cost prints "None". A missing value never prints a note.
+    return v === null || v === undefined || v === 0 ? 'None' : _fmtUSD(v);
   };
   var body = lines
     .map(function (l) {
@@ -24316,16 +24288,28 @@ function _rptA36OptionalZoneCo2HTML(summaryData, tierCols) {
       );
     })
     .join('');
+  // One line that says how the optional cost reads across the options (from the same rows the table prints).
+  var allTotalsSame = lines.every(function (l) {
+    return l.foot && lines[0].foot && l.foot.totalR === lines[0].foot.totalR;
+  });
+  var devicesSame = lines.every(function (l) {
+    return l.qty === lines[0].qty && l.foot && lines[0].foot && l.foot.p1r === lines[0].foot.p1r;
+  });
+  var sameLine = allTotalsSame
+    ? 'The optional carbon dioxide sensors cost the same with any option.'
+    : devicesSame
+      ? 'The sensors and their installation cost the same with any option. Programming the sensors is included only with the options that show a programming cost.'
+      : '';
   return (
-    '<div style="font-size:11px;font-weight:700;color:var(--rpt-blue);margin:4px 0 6px">' +
-    _escHtml(heading) + '</div>' +
+    '<div style="' + _RPT_A36_HEAD_STYLE + '">Optional: Carbon Dioxide (CO2) Sensors in Rooms</div>' +
     '<div style="font-size:10px;color:var(--rpt-page-text);line-height:1.6;margin-bottom:12px">' +
-    'The assessment found zones with no carbon dioxide sensor. This work is optional. It is not in any total ' +
-    'on the previous page. To add it, add the cost below to the option you choose.</div>' +
+    'The assessment found rooms with no carbon dioxide (CO2) sensor. A CO2 sensor lets ventilation follow ' +
+    'how many people are in a room. This work is optional. It is not in the cost of any option above. To add it, ' +
+    'add the cost below to the option you choose. ' + sameLine + '</div>' +
     '<table style="width:684px;max-width:684px;border-collapse:collapse;table-layout:fixed;margin-bottom:12px">' +
     '<colgroup><col style="width:144px"><col style="width:120px"><col style="width:140px"><col style="width:140px"><col style="width:140px"></colgroup>' +
-    '<thead><tr><th style="' + th + '">Option</th><th style="' + th + '">Zone CO2 sensors</th>' +
-    '<th style="' + th + '">Hardware &amp; Installation</th><th style="' + th + '">Programming</th>' +
+    '<thead><tr><th style="' + th + '">Option</th><th style="' + th + '">CO2 sensors</th>' +
+    '<th style="' + th + '">Devices and Installation</th><th style="' + th + '">Programming</th>' +
     '<th style="' + th + '">Optional cost</th></tr></thead><tbody>' + body + '</tbody></table>'
   );
 }
@@ -24373,143 +24357,52 @@ function _rptA36OptionalZoneCo2HTML(summaryData, tierCols) {
  * which is unpaginated and keeps its "Facilities Included" column.
  */
 function _rptA36RecommendedTimelineHTML(d) {
-  if (typeof _pricingComputeRecommendedTimeline !== 'function') return '';
-  // 2026-07-29 (months + Future Work rebuild): SAME single derivation the Phase table page and the
-  // Vision page use — see PRICING_PROPOSAL_TERM_PHASE_COUNT / _pricingProposalTermAndFuture header
-  // comments. This is the third of the three sites that used to independently
-  // `tl.phases.slice(0, PRICING_PROPOSAL_MAX_PHASES)`.
-  var td = _pricingProposalTermAndFuture(d.project.id);
-  var tl = td.tl;
-  var termPhases = td.termPhases;
-  var futurePhases = td.futurePhases;
-  if (!tl || !termPhases.length) return '';
+  // Round 3 (Manager 2026-11-14): this table reads the SAME plan as the steps table on the Recommended Work page
+  // (_rptA36RecommendedStepPlan). Every priced Recommended sequence is in exactly one step, so it is listed here
+  // exactly once, at the step where it first appears. No "Later" row: nothing priced is left out of the steps.
+  var plan = _rptA36RecommendedStepPlan(d);
+  if (!plan) return '';
 
-  var colgroup = '<colgroup><col style="width:70px"><col style="width:110px"><col style="width:504px">' + '</colgroup>';
-  // Design-language pass (2026-07-26, fix/proposal-clientname-and-legacy-styling): dropped the
-  // filled dark-blue header (color:#fff on background:var(--rpt-blue)) to match pages 1-3's
-  // plain/thin-bordered table convention — see the matching comment above rptPageASHRAE36ProposalScope's
-  // thStyle. Styling only; no content/values changed.
+  var colgroup = '<colgroup><col style="width:110px"><col style="width:574px"></colgroup>';
   var thStyle =
     'padding:6px 8px;font-size:9px;font-weight:700;color:var(--rpt-page-text);text-align:center;border:1px solid var(--rpt-border)';
   var tdStyle =
     'padding:6px 8px;font-size:9px;color:var(--rpt-page-text);border:1px solid var(--rpt-border);vertical-align:top';
 
-  // 2026-07-29 (fix/proposal-remove-fixed-anchors): "Date Range" column (p.dateRange — a fixed
-  // Aug 2026 – Dec 2028-style calendar range) DELETED per Matt's approved spec, same treatment
-  // applied to the identical column in _rptA36VisionInnerHTML's implTable above. Replaced with a
-  // "Sequence" column stating ordinal priority only (first/second/third) — order is preserved,
-  // the fixed-date anchor is not. p.dateRange itself is untouched in pricing-estimator.js.
-  var _RPT_A36_TIMELINE_ORDINALS = ['First priority', 'Second priority', 'Third priority'];
-  // Included Improvements wording fix (2026-08-02, fix/costest-wording-and-rounding): this cell
-  // used to call _rptA36PhaseImprovementsText, which buckets a phase's rows into 5 fixed generic
-  // phrases (e.g. "fan energy optimization", "building automation system programming") that never
-  // name a specific sequence -- "Duct Static Pressure Reset" and "Reheat Valve Control" were never
-  // literally named here even though they are the term's real priced work, and page 2's months
-  // table (_rptA36PhaseTableDerive's unitRows, same file) names those exact sequences per unit.
-  // Matt (investigation finding, verbatim): "it feels like what is in there does not match the
-  // Cost Estimate at all." Fixed by reusing _rptA36PhaseSeqCategoryNames(p.rows) -- the SAME
-  // literal-sequence-name derivation the Future Work row directly below already uses on this same
-  // table (see futureCatNames a few lines down) -- instead of the bucketed-verb helper, so the
-  // term row and the Future Work row on this table, AND page 2's months table, all draw their
-  // sequence names from one shared source and can never independently drift into different
-  // vocabularies again. _rptA36PhaseImprovementsText itself is left intact/unchanged (still used
-  // nowhere else after this change -- kept in case a future caller needs the generic phrasing) and
-  // is used here only as the defensive fallback for a phase with rows but no phase===2 seqKey rows
-  // (should not occur for real term data -- see PRICING_PROPOSAL_TERM_PHASE_COUNT's header comment
-  // on why Phase 1 is 100% programming on already-sensored equipment by construction -- but kept so
-  // an edge case never renders an empty cell).
-  var rowsHTML = termPhases
-    .map(function (p, idx) {
-      var catNames = typeof _rptA36PhaseSeqCategoryNames === 'function' ? _rptA36PhaseSeqCategoryNames(p.rows) : [];
-      var improvements = catNames.length
-        ? catNames.join(', ') + '.'
-        : typeof _rptA36PhaseImprovementsText === 'function'
-          ? _rptA36PhaseImprovementsText(p.rows, idx)
-          : '';
-      return (
-        '<tr>' +
-        '<td style="' +
-        tdStyle +
-        ';font-weight:700">' +
-        _escHtml(p.label) +
-        '</td>' +
-        '<td style="' +
-        tdStyle +
-        '">' +
-        (_RPT_A36_TIMELINE_ORDINALS[idx] || 'Additional priority') +
-        '</td>' +
-        '<td style="' +
-        tdStyle +
-        '">' +
-        _escHtml(improvements) +
-        '</td>' +
-        '</tr>'
-      );
-    })
-    .join('');
-
-  // Future Work row (2026-07-29): names every sequence category priced beyond the term (zero
-  // dollars) so this internal Cost Estimate page's own timeline table can never independently
-  // truncate the schedule again — same category-name source (_rptA36PhaseSeqCategoryNames) the
-  // Phase table page and the Vision page's standalone Future Work section use.
-  var futureAllRows = [];
-  futurePhases.forEach(function (p) {
-    if (p && p.rows) futureAllRows = futureAllRows.concat(p.rows);
-  });
-  var futureCatNames = _rptA36PhaseSeqCategoryNames(futureAllRows);
-  if (futureCatNames.length) {
+  var rowsHTML = '';
+  plan.steps.forEach(function (st, idx) {
+    var text;
+    if (idx === 0) {
+      text = 'Check the equipment and confirm what to program.';
+    } else {
+      var names = st.groups
+        .filter(function (g) {
+          return g.isNew;
+        })
+        .map(function (g) {
+          return g.label;
+        });
+      if (!names.length) return;
+      text = names.join(', ') + '.';
+    }
     rowsHTML +=
-      '<tr>' +
-      '<td style="' +
-      tdStyle +
-      ';font-weight:700">Future Work</td>' +
-      '<td style="' +
-      tdStyle +
-      '">—</td>' +
-      '<td style="' +
-      tdStyle +
-      '">Beyond the initial term: ' +
-      _escHtml(futureCatNames.join(', ')) +
-      '.</td>' +
-      '</tr>';
-  }
-
-  // Client-safe transparency note — no dollar figures (2026-07-27 reframe). Ongoing Energy
-  // Management Services labor is delivered throughout the engagement in addition to the improvements
-  // listed above; the monthly cost of the whole engagement is already stated once in the Recommended
-  // Energy Management Services section above, so it is intentionally not repeated here.
-  var laborNote =
-    '<div style="font-size:8.5px;color:var(--rpt-page-text);margin-top:4px;font-style:italic">' +
-    'Continuous Energy Management Services (alarm configuration, report setup, trend ' +
-    'configuration, utility bill data entry, and ongoing monitoring) are provided throughout the ' +
-    'term in addition to the improvements listed above.' +
-    '</div>';
+      '<tr><td style="' + tdStyle + ';font-weight:700">Step ' + (idx + 1) + '</td>' +
+      '<td style="' + tdStyle + '">' + _escHtml(text) + '</td></tr>';
+  });
 
   return (
     '<div style="margin-top:12px">' +
-    // D-12 (2026-08-03): 11px -> the 13pt section tier.
     '<div style="font-size:' +
     RPT_SECTION_HEAD_PX +
-    // Title case (Matt, 2026-08-03, item 8): uppercase transform removed from section headings.
-    'px;font-weight:700;color:var(--rpt-blue);margin-bottom:6px">Recommended Energy Management Services: Phased Implementation Sequence</div>' +
+    'px;font-weight:700;color:var(--rpt-page-text);margin-bottom:6px">Recommended: Order of Work</div>' +
     '<table style="width:684px;max-width:684px;border-collapse:collapse;font-size:9px;table-layout:fixed">' +
     colgroup +
     '<thead><tr>' +
-    '<th style="' +
-    thStyle +
-    '">Phase</th>' +
-    '<th style="' +
-    thStyle +
-    '">Sequence</th>' +
-    '<th style="' +
-    thStyle +
-    '">Included Improvements</th>' +
+    '<th style="' + thStyle + '">Order</th>' +
+    '<th style="' + thStyle + '">Work included</th>' +
     '</tr></thead>' +
-    '<tbody>' +
-    rowsHTML +
-    '</tbody>' +
+    '<tbody>' + rowsHTML + '</tbody>' +
     '</table>' +
-    laborNote +
     '</div>'
   );
 }
@@ -24549,52 +24442,26 @@ function rptPageASHRAE36ProposalPricing(n, d, opts) {
     estimateState = null;
   }
 
-  // Monthly service allowance (Matt's correction, 2026-07-27: "stop thinking of the recommended
-  // as a 1 time cost. This is our monthly ongoing cost"). Same _pricingGetBudget(projId) call the
-  // Proposal cover page and svcBlock below already use — no new math, just read earlier so amtRow
-  // can use it.
-  var budgetFmt = _rptMonthlyAllowanceFmt(d.project.id);
-
   // Column order Recommended | Compliance | Full Scope is a readability choice, NOT an assertion
   // that the dollar totals ascend/descend in that order. DRAFT tier descriptions (pending Matt's
   // review) — worded to be accurate regardless of whether a recurring budget is configured.
   //
-  // NO_DOLLAR_TIER (2026-07-27, Matt's correction): Compliance and Full Scope are one-time capital
-  // options — a single project total is the correct way to show them. Recommended is NOT a capital
-  // option; it is the ongoing monthly service allowance program (matches Matt's hand-built target
-  // doc, spec: AI/_context/specs/joco-service-proposal-target-2026-07-23.md, which states the
-  // recommendation as "$6,250 per Month", never as a lump project total). Every place below that
-  // would otherwise print a one-time dollar figure for the 'recommended' key is gated on this
-  // constant instead, so the monthly framing can never drift out of sync across the amount row,
-  // phase-split row, and detail panels.
-  var NO_DOLLAR_TIER = 'recommended';
+  // Every option is a one-time cost (Matt, 2026-11-02: "There is no monthly allowance. Make it a 1 time
+  // cost."), Recommended included: all three tiers print their tier total from the shared tier totals.
   var tierCols = [
-    {
-      key: 'recommended',
-      label: 'Recommended',
-      desc: 'An ongoing monthly service funding the highest-impact opportunities first, not a one-time project cost.',
-    },
-    { key: 'compliance', label: 'Compliance', desc: 'Scope required to meet ASHRAE 36.' },
-    { key: 'full-scope', label: 'Full Scope', desc: 'All identified upgrades across the portfolio.' },
+    { key: 'recommended', label: 'Recommended', desc: _RPT_A36_TIER_PLAIN.recommended },
+    { key: 'compliance', label: 'Compliance', desc: _RPT_A36_TIER_PLAIN.compliance },
+    { key: 'full-scope', label: 'Full Scope', desc: _RPT_A36_TIER_PLAIN['full-scope'] },
   ];
 
   var titleBlock =
     // Title case (Matt, 2026-08-03, item 8): uppercase transform removed from section headings.
-    '<div style="font-size:11px;font-weight:700;color:var(--rpt-blue);margin-bottom:6px">Cost Estimate</div>';
+    '<div style="' + _RPT_A36_HEAD_STYLE + '">Cost Estimate</div>';
 
-  // Rewritten 2026-07-27 (coordinator review of the monthly-framing fix): the prior copy said
-  // "Each figure is an independent estimate of the total cost for that scope... totals should be
-  // compared on their own terms" — accurate when all three columns were one-time totals, but the
-  // amount row above no longer prints a total for Recommended, so that language directly
-  // contradicted what the table now shows. Rewritten to state the real distinction up front:
-  // Compliance/Full Scope are one-time capital projects with a total cost; Recommended is an
-  // ongoing monthly program with no total, delivered over the phased schedule below.
   var intro =
     '<div style="font-size:10px;color:var(--rpt-page-text);line-height:1.6;margin-bottom:12px">' +
-    'The options below present three ways to address the assessment findings. Compliance and Full ' +
-    'Scope are one-time capital projects, and each shows a total project cost. Recommended is ' +
-    'different: it is an ongoing monthly service, not a project with a total cost. Its scope is ' +
-    'delivered over time. See the phased schedule below for what is included and when.' +
+    'The options below are three ways to do the work. Each cost is a one-time cost. There is no monthly ' +
+    'fee. Pick one option.' +
     '</div>';
 
   // Table: 3 fixed columns, total width 684px (3 x 228). table-layout:fixed, black text, no colored
@@ -24645,7 +24512,7 @@ function rptPageASHRAE36ProposalPricing(n, d, opts) {
           '<td style="' +
           lblStyle +
           '">' +
-          (c.key === NO_DOLLAR_TIER ? 'Monthly Allowance' : 'Estimated Cost') +
+          'One-Time Cost' +
           '</td>'
         );
       })
@@ -24670,15 +24537,6 @@ function rptPageASHRAE36ProposalPricing(n, d, opts) {
     '<tr>' +
     tierCols
       .map(function (c) {
-        // Recommended (2026-07-27, Matt's correction): never print the tier's grand total as a
-        // one-time figure — show the monthly service allowance instead, same budgetFmt the
-        // Proposal cover page's "$6,250 per Month" line and svcBlock below both read from
-        // _pricingGetBudget. Compliance/Full Scope are unaffected — still their one-time grand
-        // totals, unchanged math.
-        if (c.key === NO_DOLLAR_TIER) {
-          var recDisplay = budgetFmt ? budgetFmt + ' per Month' : 'Available upon request';
-          return '<td style="' + amtStyle + '">' + recDisplay + '</td>';
-        }
         // Estimated Cost = the SAME rounded Hardware + Programming parts phaseSplitRow prints
         // below (_tierPartsRounded) — not an independent rounding of tt[c.key].grand (see that
         // helper's comment; fix/tier-hardware-programming-rounding, 2026-07-30).
@@ -24689,7 +24547,7 @@ function rptPageASHRAE36ProposalPricing(n, d, opts) {
         // .grand is labor-only (Phase 2 only, hardware unpriced) — prefix "Labor: " so the total
         // is never shown as an unqualified full-scope dollar figure.
         var noCat = parts && parts.noCatalog;
-        var display = g ? (noCat ? 'Labor: ' + g : g) : 'Available upon request';
+        var display = g ? (noCat ? 'Labor: ' + g : g) : '—'; // every tier is priced (covering estimates); never prints a note to staff
         return '<td style="' + amtStyle + '">' + display + '</td>';
       })
       .join('') +
@@ -24709,20 +24567,6 @@ function rptPageASHRAE36ProposalPricing(n, d, opts) {
       '<tr>' +
       tierCols
         .map(function (c) {
-          // Recommended (2026-07-27, Matt's correction): a Hardware/Programming dollar split is
-          // just the same one-time total broken into two numbers — printing it here would recreate
-          // the exact lump-sum framing the amount row above was just fixed to avoid. Point the
-          // reader at the phased schedule instead of any dollar figure.
-          if (c.key === NO_DOLLAR_TIER) {
-            return (
-              '<td style="' +
-              phaseCellStyle +
-              '">' +
-              '<div style="font-weight:400">Funded from the monthly service allowance above. See ' +
-              'the phased implementation schedule below for what is delivered and when.</div>' +
-              '</td>'
-            );
-          }
           // noCatalog guard mirrors the interactive Cost Estimate tab's own footer
           // (app/pricing-estimator.js:6301-6306 / 6263-6267): phase1 is unpriced (not legitimately
           // $0) whenever no pricing catalog is imported, so _fmtUSD(0) must never print here.
@@ -24738,7 +24582,7 @@ function rptPageASHRAE36ProposalPricing(n, d, opts) {
             '<td style="' +
             phaseCellStyle +
             '">' +
-            '<div><span style="font-weight:700">Hardware &amp; Installation:</span> ' +
+            '<div><span style="font-weight:700">Devices and installation:</span> ' +
             p1 +
             '</div>' +
             '<div><span style="font-weight:700">Programming:</span> ' +
@@ -24843,9 +24687,8 @@ function rptPageASHRAE36ProposalPricing(n, d, opts) {
     return (
       '<tr><td colspan="3" style="' +
       detailNoteStyle +
-      '">Full Install &amp; Programming Detail for each scope is provided on the following pages. ' +
-      'Compliance and Full Scope detail includes pricing; Recommended detail lists scope and ' +
-      'quantities only, funded through the monthly service allowance.</td></tr>'
+      '">The devices to install and the programming for each option, with quantities, are listed on the ' +
+      'following pages.</td></tr>'
     );
   }
   function _buildTable(detailRowHtml) {
@@ -24891,55 +24734,8 @@ function rptPageASHRAE36ProposalPricing(n, d, opts) {
 
   var table = _buildTable(detailRow);
 
-  // M&V / savings disclaimer — attached wherever estimates appear (verbatim SAVINGS_DISCLAIMER_TEXT).
-  var disc =
-    typeof SAVINGS_DISCLAIMER_TEXT !== 'undefined'
-      ? SAVINGS_DISCLAIMER_TEXT
-      : 'Estimates are not guarantees of performance. Post-installation measurement and verification (M&V) is required to confirm realized savings.';
-  var discBlock =
-    '<div style="font-size:9px;color:var(--rpt-page-text);line-height:1.5;margin-top:8px;padding-top:8px;' +
-    'border-top:1px solid var(--rpt-rule)">' +
-    '<span style="font-weight:700">Estimate &amp; Savings Disclaimer: </span>' +
-    _escHtml(disc) +
-    '</div>';
-
-  // Monthly Energy Management Service Agreement (2026-07-20) — client-facing not-to-exceed line.
-  // Sourced from the existing en_pricing_budget_{projId}.amount and the existing global
-  // en_pricing_config.hourlyRate (never hardcoded here) — same collector-reads-everything
-  // discipline as the tier totals above, just against the budget/config stores instead of the
-  // row-toggle estimate. Deliberately NAMES the $/hr rate to the client: this is a monthly
-  // allowance product, not a scoped tier total, so the tier-total-only convention (rate hidden,
-  // see the savingsRationale/clientSummary split elsewhere in this file) does not apply here.
-  // Guarded: renders nothing when no budget amount is configured for this project, so a project
-  // that has never used the Monthly Service Agreement feature sees zero change to this page.
-  var svcBlock = '';
-  try {
-    if (typeof _pricingGetBudget === 'function' && typeof _pricingGetConfig === 'function') {
-      var _svcMonthly = _rptMonthlyAllowance(d.project.id);
-      var _svcCfg = _pricingGetConfig();
-      if (_svcMonthly) {
-        var _svcAllowanceStr = _fmtUSD(_svcMonthly);
-        var _svcRate =
-          _svcCfg.hourlyRate || (typeof COST_LABOR_RATE_DEFAULT !== 'undefined' ? COST_LABOR_RATE_DEFAULT : 170);
-        // Design-language pass (report-export-fixes, 2026-07-22): dropped the full bordered-
-        // rectangle treatment (reads as a box/card, banned in client reports) — uses the same
-        // .rpt-a36-callout "just spacing, no border" convention as every other explanatory
-        // text block on this and the Audit Report's pages.
-        svcBlock =
-          '<div class="rpt-a36-callout" style="font-size:14px;color:var(--rpt-page-text);line-height:1.6;margin-top:12px">' +
-          '<div style="font-size:10px;font-weight:700;' +
-          'margin-bottom:4px">Monthly Energy Management Service Agreement</div>' +
-          '<div>' +
-          _svcAllowanceStr +
-          '/month allowance at $' +
-          _svcRate +
-          '/hr (not-to-exceed)</div>' +
-          '</div>';
-      }
-    }
-  } catch (e) {
-    svcBlock = ''; // non-fatal — page renders without this block, same as the tt fallback above
-  }
+  // The old Estimate & Savings Disclaimer and the Monthly Energy Management Service Agreement block are
+  // gone (Manager, 2026-11-14): this proposal shows no savings, and there is no monthly allowance.
 
   // Recommended-tier phased implementation timeline (Task 2, 2026-07-22) — Aug-Dec 2026 / CY2027 /
   // CY2028, allocated from (never added on top of) the Recommended tier's existing grand total.
@@ -24957,40 +24753,52 @@ function rptPageASHRAE36ProposalPricing(n, d, opts) {
   // one-line budget callout), same "move the most severable block" approach used on
   // rptPageASHRAE36ProposalCover (see that function's comment). Content unchanged, not shrunk.
   var bodyHTML = titleBlock + intro + table + timelineBlock;
-  var trailerHTML = discBlock + svcBlock;
 
   // Optional: Zone CO2 Sensors (Matt, 2026-11-13). Same _pricingComputeSummaryData chain as the tier
   // table above (summaryData.optional, built by _pricingOptionalZoneCo2Summary); not in any tier total.
   var optionalHTML = _rptA36OptionalZoneCo2HTML(summaryData, tierCols);
 
-  // PACKING (2026-11-13, proposal overflow + near-empty pages): the table page, the optional zone CO2
-  // block and the disclaimer / service agreement block share one page while the measured height fits the
-  // page body (_pageBudget); a block that does not fit starts the next page with the section title.
-  // Measurement unavailable (no DOM): every block keeps its own page, as before.
-  var costBlocks = [bodyHTML, optionalHTML, trailerHTML].filter(Boolean);
-  var costPageBodies = [];
-  costBlocks.forEach(function (blk, i) {
-    if (i === 0) {
-      costPageBodies.push(blk);
-      return;
+  // PACKING (2026-11-14, round 3): ONE packer for every block after the cost table, in document order: the optional
+  // zone CO2 block, the install and programming detail blocks (when they do not fit in the table) and the closing
+  // sections the caller passes (opts.trailBlocks: Implementation Plan, Long-Term Vision). A block joins the current
+  // page while the measured height (_rptMeasureHtmlH) fits the page body (_pageBudget); otherwise it starts a new page.
+  // A closing block that does not fit is left to the caller (the page list reports how many were placed in
+  // _trailConsumed). A short block never splits. Measurement unavailable (no DOM): every block keeps its own page.
+  var costPages = [{ body: bodyHTML, label: 'Cost Estimate' }];
+  function _placeBlock(html, label, spacer, titled) {
+    var cur = costPages[costPages.length - 1];
+    var h = _rptMeasureHtmlH(cur.body + spacer + html);
+    if (h !== null && h <= _pageBudget) {
+      cur.body = cur.body + spacer + html;
+      return true;
     }
-    var cur = costPageBodies[costPageBodies.length - 1];
-    var h = _rptMeasureHtmlH(cur + blk);
-    if (h !== null && h <= _pageBudget) costPageBodies[costPageBodies.length - 1] = cur + blk;
-    else costPageBodies.push(titleBlock + blk);
+    if (titled !== null) costPages.push({ body: (titled ? titleBlock : '') + html, label: label });
+    return false;
+  }
+  if (optionalHTML) _placeBlock(optionalHTML, 'Cost Estimate (continued)', '', true);
+  var detailBlocks = detailFitsInline ? [] : _buildTierDetailBodies();
+  detailBlocks.forEach(function (b) {
+    _placeBlock(b.body, 'Install & Programming Detail (' + b.label + ')', '<div style="margin-top:16px"></div>', false);
   });
+  var trailPlaced = 0;
+  var trailIn = (o.trailBlocks || []).filter(Boolean);
+  for (var ti = 0; ti < trailIn.length; ti++) {
+    if (!_placeBlock(trailIn[ti], '', '<div style="height:14px"></div>', null)) break;
+    trailPlaced++;
+  }
   var resultPages = [];
   var nextPageNum = n;
-  costPageBodies.forEach(function (body, i) {
+  costPages.forEach(function (pg) {
     resultPages.push(
-      rptPage(nextPageNum, 'ASHRAE 36 Service Proposal: Cost Estimate', body, {
+      rptPage(nextPageNum, 'ASHRAE 36 Service Proposal: Cost Estimate', pg.body, {
         hideIntHdr: true,
         data: fakeData,
-        label: 'Page ' + nextPageNum + ' — Cost Estimate' + (i ? ' (continued)' : ''),
+        label: 'Page ' + nextPageNum + ' — ' + pg.label,
       }),
     );
     nextPageNum++;
   });
+  resultPages._trailConsumed = trailPlaced;
 
   // ── "Per-building pricing breakdown" (costEstimatePerBuilding) REMOVED 2026-07-22 ─────────────
   // Matt's explicit request: "The Cost Estimate per building I do not like and it honestly gives
@@ -25037,7 +24845,7 @@ function rptPageASHRAE36ProposalPricing(n, d, opts) {
       });
       if (hwAgg.ioOnlyCount > 0) {
         hwCategoryRows.push({
-          item: 'Existing control points requiring programming only',
+          item: _rptA36ExistingPointsLine(hwAgg.ioOnlyQty),
           qty: hwAgg.ioOnlyQty,
           lineTotal: 0,
           clientSummary: null,
@@ -25052,9 +24860,9 @@ function rptPageASHRAE36ProposalPricing(n, d, opts) {
           return r.phase === 2;
         })
         .forEach(function (r) {
-          var key = r.item || '(unnamed)';
+          var key = _rptA36PlainRowLabel(r) || '(unnamed)';
           if (!byItem[key]) {
-            byItem[key] = { item: r.item, qty: 0, lineTotal: 0, clientSummary: r.clientSummary || null };
+            byItem[key] = { item: key, qty: 0, lineTotal: 0, clientSummary: r.clientSummary || null };
             order.push(key);
           }
           byItem[key].qty += r.qty || 0;
@@ -25064,7 +24872,7 @@ function rptPageASHRAE36ProposalPricing(n, d, opts) {
         return byItem[k];
       });
 
-      var wbItem = tt && tt[c.key] && tt[c.key].method === 'workbook' && c.key !== NO_DOLLAR_TIER;
+      var wbItem = tt && tt[c.key] && tt[c.key].method === 'workbook';
       if (wbItem) {
         // Workbook mode: row prices are shares of the tier's workbook Hardware / Programming
         // subtotals, so the table adds up to the tier total exactly.
@@ -25074,14 +24882,7 @@ function rptPageASHRAE36ProposalPricing(n, d, opts) {
       var agg = hwCategoryRows.concat(programmingRows);
       if (!agg.length) return;
 
-      // Recommended (2026-07-27, Matt's correction): a per-item "Price" column here is just the
-      // same one-time lump total broken into rows — the amount row on the summary table above no
-      // longer prints that total for Recommended, so this itemized page must not silently rebuild
-      // it. Item + Qty still list what is included; no dollar column/col for this tier.
-      var _isNoDollarCol = c.key === NO_DOLLAR_TIER;
-      var itColgroup = _isNoDollarCol
-        ? '<colgroup><col style="width:534px"><col style="width:150px"></colgroup>'
-        : '<colgroup><col style="width:474px"><col style="width:100px"><col style="width:110px"></colgroup>';
+      var itColgroup = '<colgroup><col style="width:474px"><col style="width:100px"><col style="width:110px"></colgroup>';
       var itThStyle =
         'padding:6px 8px;font-size:9px;font-weight:700;color:var(--rpt-page-text);text-align:center;' +
         'border:1px solid var(--rpt-border)';
@@ -25098,7 +24899,7 @@ function rptPageASHRAE36ProposalPricing(n, d, opts) {
         '<th style="' +
         itThRight +
         '">Total Quantity</th>' +
-        (_isNoDollarCol ? '' : '<th style="' + itThRight + '">Price</th>') +
+        '<th style="' + itThRight + '">Price</th>' +
         '</tr></thead>';
 
       function _itemRowHTML(row) {
@@ -25130,13 +24931,11 @@ function rptPageASHRAE36ProposalPricing(n, d, opts) {
           // I/O points needing no new hardware) must not print as a bare "$0" (banned per the
           // no-$0-in-client-output rule). Row stays (real scope the client should see); only the
           // price cell's text changes to a plain-English label.
-          (_isNoDollarCol
-            ? ''
-            : '<td style="' +
-              tdR +
-              '">' +
-              (row.lineTotal === 0 ? 'No additional cost' : _fmtUSD(row.lineTotal) || '—') +
-              '</td>') +
+          '<td style="' +
+          tdR +
+          '">' +
+          (row.lineTotal === 0 ? 'No hardware cost' : _fmtUSD(row.lineTotal) || '—') +
+          '</td>' +
           '</tr>'
         );
       }
@@ -25187,18 +24986,13 @@ function rptPageASHRAE36ProposalPricing(n, d, opts) {
       // budget from them, and reserve the closing disclaimer on the last page. The constants stay as
       // the no-DOM fallback.
       var _itTitleSample =
-        '<div style="font-size:11px;font-weight:700;color:var(--rpt-blue);margin-bottom:6px">Cost Estimate: Itemized Measures, ' +
+        '<div style="' + _RPT_A36_HEAD_STYLE + '">Cost Estimate: Itemized Measures, ' +
         _escHtml(c.label) +
         ' (1 of 9)</div>';
       var _itTheadM = _rptMeasureTableTokens(itTableHead, tokens);
       var _itTitleM = _itTheadM === null ? null : _rptMeasureHtmlH(_itTitleSample);
       if (_itTheadM !== null && _itTitleM !== null) {
         _itemizedBudget = _rptContentBudget('flush') - _itTitleM - _itTheadM - 12 - 4;
-      }
-      if (c === tierCols[tierCols.length - 1] && discBlock) {
-        // The disclaimer prints under the final tier's last table; reserve its height so it cannot
-        // be pushed into the footer (empty-html token: occupies budget only, adds no markup).
-        tokens.push({ type: 'row', estH: _rptMeasureHtmlH(discBlock) || 120, html: '' });
       }
       var chunks = _rptPaginateTokensBalanced(tokens, _itemizedBudget);
       var numChunks = chunks.length;
@@ -25216,11 +25010,11 @@ function rptPageASHRAE36ProposalPricing(n, d, opts) {
         var itTitle =
           // Items 6b/8 (2026-08-03): title case (uppercase transform removed) and no
           // "continued" in continuation headings — "(2 of 3)".
-          '<div style="font-size:11px;font-weight:700;color:var(--rpt-blue);margin-bottom:6px">Cost Estimate: Itemized Measures, ' +
+          '<div style="' + _RPT_A36_HEAD_STYLE + '">Cost Estimate: Itemized Measures, ' +
           _escHtml(c.label) +
           (numChunks > 1 ? ' (' + (idx + 1) + ' of ' + numChunks + ')' : '') +
           '</div>';
-        var body = itTitle + itTable + (idx === numChunks - 1 && c === tierCols[tierCols.length - 1] ? discBlock : '');
+        var body = itTitle + itTable;
         pages.push(
           rptPage(pageN, 'ASHRAE 36 Service Proposal: Cost Estimate', body, {
             hideIntHdr: true,
@@ -25243,16 +25037,14 @@ function rptPageASHRAE36ProposalPricing(n, d, opts) {
   // reasoning (Matt: "too much detail" / "Compliance and Full Scope is huge"). Programming still
   // lists one row per sequence (already category-level). wantItemized still controls whether each
   // hardware category shows its qty + dollar subtotal (same rule the inline panel uses).
-  function _buildTierDetailPages(startN) {
+  function _buildTierDetailBodies() {
     if (!summaryData || !summaryData.perTier) return [];
     var toggles = (estimateState && estimateState.rowToggles) || {};
-    var pages = [];
     var detailBodies = [];
-    var pageN = startN;
 
     function roundingBulletHTML(delta) {
       return (
-        '<div style="font-size:9px;color:var(--rpt-page-text);line-height:1.7;padding-left:14px;position:relative">' +
+        '<div style="font-size:9px;color:var(--rpt-page-text);line-height:1.45;padding-left:14px;position:relative">' +
         '<span style="position:absolute;left:0">&#8226;</span>' +
         'Rounding: ' +
         _fmtUSD(delta) +
@@ -25264,15 +25056,15 @@ function rptPageASHRAE36ProposalPricing(n, d, opts) {
       var priceStr = '';
       // Same no-bare-$0 rule as _sectionHTMLCategories above.
       if (showPrice && wantItemized && c.lineTotal === 0) {
-        priceStr = ': ' + c.qty + ' units, no additional cost';
+        priceStr = ': ' + c.qty + (c.qty === 1 ? ' unit' : ' units') + ', no hardware cost';
       } else if (showPrice && wantItemized && c.lineTotal != null && _fmtUSD(c.lineTotal)) {
         priceStr = ': ' + c.qty + ' units, ' + _fmtUSD(c.lineTotal);
         printed.push(Math.round(c.lineTotal));
-      } else if (c.qty > 1) {
+      } else {
         priceStr = ' (qty ' + c.qty + ')';
       }
       return (
-        '<div style="font-size:9px;color:var(--rpt-page-text);line-height:1.7;padding-left:14px;position:relative">' +
+        '<div style="font-size:9px;color:var(--rpt-page-text);line-height:1.45;padding-left:14px;position:relative">' +
         '<span style="position:absolute;left:0">&#8226;</span>' +
         _escHtml(c.label) +
         priceStr +
@@ -25282,11 +25074,9 @@ function rptPageASHRAE36ProposalPricing(n, d, opts) {
 
     function ioOnlySummaryHTML(agg) {
       return (
-        '<div style="font-size:9px;color:var(--rpt-page-text);line-height:1.7;padding-left:14px;position:relative">' +
+        '<div style="font-size:9px;color:var(--rpt-page-text);line-height:1.45;padding-left:14px;position:relative">' +
         '<span style="position:absolute;left:0">&#8226;</span>' +
-        'Existing control points requiring programming only: ' +
-        agg.ioOnlyQty +
-        ' points, no additional cost' +
+        _rptA36ExistingPointsLine(agg.ioOnlyQty) +
         '</div>'
       );
     }
@@ -25297,12 +25087,12 @@ function rptPageASHRAE36ProposalPricing(n, d, opts) {
       // _sectionHTML above -- a real, computed $0 (ioOnly rows) must not render as "N × $0 = $0"
       // / a bare "$0". Row stays (real scope the client should see); only the price text changes.
       if (showPrice && wantItemized && it.lineTotal === 0) {
-        priceStr = it.qty > 1 ? ': ' + it.qty + ' units, no additional cost' : ': no additional cost';
+        priceStr = ': ' + it.qty + (it.qty === 1 ? ' unit' : ' units') + ', no hardware cost';
       } else if (showPrice && wantItemized && it.lineTotal != null && _fmtUSD(it.lineTotal)) {
         var ln = _rptItemizedLineText(it.qty, it.lineTotal, _fmtUSD, wb);
         priceStr = ln.text;
         printed.push(ln.total);
-      } else if (it.qty > 1) {
+      } else {
         priceStr = ' (qty ' + it.qty + ')';
       }
       // Self-contained fragment (no wrapping <ul>/<table> required) so _rptPaginateTokens can
@@ -25310,7 +25100,7 @@ function rptPageASHRAE36ProposalPricing(n, d, opts) {
       // same "each token is one complete, independently valid HTML fragment" rule
       // _buildItemizedPages() above follows with its <tr>...</tr> rows.
       return (
-        '<div style="font-size:9px;color:var(--rpt-page-text);line-height:1.7;padding-left:14px;position:relative">' +
+        '<div style="font-size:9px;color:var(--rpt-page-text);line-height:1.45;padding-left:14px;position:relative">' +
         '<span style="position:absolute;left:0">&#8226;</span>' +
         _escHtml(it.item || '') +
         priceStr +
@@ -25341,14 +25131,10 @@ function rptPageASHRAE36ProposalPricing(n, d, opts) {
       var hasHw = hwAgg.categories.length > 0 || hwAgg.ioOnlyCount > 0;
       if (!hasHw && !lb.length) return;
 
-      // Recommended (2026-07-27, Matt's correction): same no-lump-sum rule as the inline panel
-      // (_rptA36TierDetailPanelHTML) and the itemized pages above — never print a Hardware/
-      // Programming subtotal or a per-item price for this tier.
-      var noDollar = c.key === NO_DOLLAR_TIER;
       // D-12 (WP-21): the Hardware / Programming subtotals come from the same _rptFootTier call
       // page 7 uses, so the two pages agree. The bullet lines below print whole-dollar qty x unit
       // = total; a visible "Rounding" line closes the gap to the subtotal.
-      var tt_ = !noDollar && tt && tt[c.key] ? tt[c.key] : null;
+      var tt_ = tt && tt[c.key] ? tt[c.key] : null;
       var noCat = !!(tt_ && tt_.noCatalog);
       var wb_ = !!(tt_ && tt_.method === 'workbook');
       var foot_ = tt_ ? _rptFootTier(tt_.grand, tt_.phase1, tt_.phase2, wb_) : null;
@@ -25366,16 +25152,6 @@ function rptPageASHRAE36ProposalPricing(n, d, opts) {
       var pgPrinted = [];
 
       var tokens = [];
-      if (noDollar) {
-        tokens.push({
-          type: 'row',
-          estH: 20,
-          html:
-            '<div style="font-size:8.5px;color:var(--rpt-page-text);font-style:italic;margin:6px 0 4px">' +
-            'Delivered as part of the monthly service allowance shown above, not billed separately.' +
-            '</div>',
-        });
-      }
       // 2026-08-02 (fix/docx-proposal-pagination-orphans): bullet/section-title estH bumped
       // 15 -> 30 and 24 -> 30. A real Word round-trip render of the live Client D "Full Scope" tier
       // found this WHOLE 28-token list (2 section titles + 26 bullets) estimated at only 438px
@@ -25391,24 +25167,24 @@ function rptPageASHRAE36ProposalPricing(n, d, opts) {
       // own plain-row value) covers the measured real heights with genuine margin instead of an
       // estimate that was never validated against Word. See docs/dashboardlogic.md 2026-08-02.
       if (hasHw) {
-        tokens.push({ type: 'row', estH: 30, html: sectionTitleHTML('Hardware & Installation', p1, noCat) });
+        tokens.push({ type: 'row', estH: 30, html: sectionTitleHTML('Devices and Installation', p1, noCat) });
         hwAgg.categories.forEach(function (c2) {
-          tokens.push({ type: 'row', estH: 30, html: categoryBulletHTML(c2, !noDollar, hwPrinted) });
+          tokens.push({ type: 'row', estH: 30, html: categoryBulletHTML(c2, true, hwPrinted) });
         });
         if (hwAgg.ioOnlyCount > 0) {
           tokens.push({ type: 'row', estH: 30, html: ioOnlySummaryHTML(hwAgg) });
         }
         var hwDelta =
-          wantItemized && !noDollar && hwPrinted.length && foot_ ? _rptRoundingDelta(foot_.p1r, hwPrinted) : null;
+          wantItemized && hwPrinted.length && foot_ ? _rptRoundingDelta(foot_.p1r, hwPrinted) : null;
         if (hwDelta !== null) tokens.push({ type: 'row', estH: 30, html: roundingBulletHTML(hwDelta) });
       }
       if (lb.length) {
         tokens.push({ type: 'row', estH: 30, html: sectionTitleHTML('Programming', p2, false) });
         lb.forEach(function (it) {
-          tokens.push({ type: 'row', estH: 30, html: bulletHTML(it, !noDollar, pgPrinted, wb_) });
+          tokens.push({ type: 'row', estH: 30, html: bulletHTML(it, true, pgPrinted, wb_) });
         });
         var pgDelta =
-          wantItemized && !noDollar && pgPrinted.length && foot_ ? _rptRoundingDelta(foot_.p2r, pgPrinted) : null;
+          wantItemized && pgPrinted.length && foot_ ? _rptRoundingDelta(foot_.p2r, pgPrinted) : null;
         if (pgDelta !== null) tokens.push({ type: 'row', estH: 30, html: roundingBulletHTML(pgDelta) });
       }
 
@@ -25451,7 +25227,7 @@ function rptPageASHRAE36ProposalPricing(n, d, opts) {
         var pageTitle =
           // Items 6b/8 (2026-08-03): title case (uppercase transform removed) and no
           // "continued" in continuation headings — "(2 of 3)".
-          '<div style="font-size:11px;font-weight:700;color:var(--rpt-blue);margin-bottom:6px">Install &amp; Programming Detail, ' +
+          '<div style="' + _RPT_A36_HEAD_STYLE + '">Install &amp; Programming Detail, ' +
           _escHtml(c.label) +
           (numChunks > 1 ? ' (' + (idx + 1) + ' of ' + numChunks + ')' : '') +
           '</div>';
@@ -25459,39 +25235,9 @@ function rptPageASHRAE36ProposalPricing(n, d, opts) {
       });
     });
 
-    // PACKING (2026-11-13): a tier's detail that is shorter than a page shares the page with the next tier's
-    // detail while the measured height fits (_rptMeasureHtmlH, same measurer as the cost page above); no
-    // measurement (no DOM) keeps one block per page.
-    var packed = [];
-    detailBodies.forEach(function (b) {
-      var cur = packed[packed.length - 1];
-      var joined = cur ? cur.body + '<div style="margin-top:16px">' + b.body + '</div>' : null;
-      var h = cur ? _rptMeasureHtmlH(joined) : null;
-      if (cur && h !== null && h <= _pageBudget) {
-        cur.body = joined;
-        cur.label += ', ' + b.label;
-      } else packed.push({ body: b.body, label: b.label });
-    });
-    packed.forEach(function (b) {
-      pages.push(
-        rptPage(pageN, 'ASHRAE 36 Service Proposal: Cost Estimate', b.body, {
-          hideIntHdr: true,
-          data: fakeData,
-          label: 'Page ' + pageN + ' — Install & Programming Detail (' + b.label + ')',
-        }),
-      );
-      pageN++;
-    });
-
-    return pages;
-  }
-
-  if (!detailFitsInline) {
-    var tierDetailPages = _buildTierDetailPages(nextPageNum);
-    tierDetailPages.forEach(function (pg) {
-      resultPages.push(pg);
-      nextPageNum++;
-    });
+    // The detail bodies are packed onto pages by the one packer below (with the optional block and the closing
+    // sections), by measured height.
+    return detailBodies;
   }
 
   if (wantItemized) {
@@ -28603,6 +28349,23 @@ function generateASHRAE36ProposalHTML(data, selectedSections) {
     // when the standalone page used to).
     recServicesHTML: s.proposalCover !== false && _phaseTableOn ? _rptA36RecommendedServicesInnerHTML(data) : '',
   };
+  // Closing sections (Implementation Plan, Long-Term Vision), built once. They join the last page of the section
+  // before them when they fit (Manager 2026-11-14): the steps pages when nothing else sits between, else the last
+  // cost page. Whatever does not fit there flows through the trailing-section pages below, as before.
+  var _visionBlocks = s.proposalVision !== false ? _rptA36VisionBlocks(data, phaseOpts) : [];
+  var _visionPlaced = 0;
+  if (
+    _phaseTableOn &&
+    s.costEstimate !== true &&
+    s.proposalScope !== true &&
+    s.complianceScope !== true &&
+    s.fullScope !== true
+  ) {
+    phaseOpts.trailBlocks = _visionBlocks.map(function (b) {
+      return b.html;
+    });
+    _visionPlaced = _visionBlocks.length;
+  }
   if (_phaseTableOn) {
     // rptPageASHRAE36ProposalPhaseTable now returns an Array (2026-08-02, months-table
     // page-height fix) -- same spread-and-advance-pageNum pattern the costEstimate branch below
@@ -28700,8 +28463,16 @@ function generateASHRAE36ProposalHTML(data, selectedSections) {
     var pricingOpts = {
       phaseSplit: s.costEstimatePhaseSplit === true,
       itemized: s.costEstimateItemized === true,
+      // The Itemized pages (when chosen) come after the cost pages, so the closing sections wait for them.
+      trailBlocks:
+        s.costEstimateItemized === true
+          ? []
+          : _visionBlocks.map(function (b) {
+              return b.html;
+            }),
     };
     var pricingPages = rptPageASHRAE36ProposalPricing(pageNum, data, pricingOpts);
+    _visionPlaced = pricingPages._trailConsumed || 0;
     pricingPages.forEach(function (pg) {
       pages.push(_tagA36Section(pg, 'costEstimate'));
       pageNum++;
@@ -28713,7 +28484,7 @@ function generateASHRAE36ProposalHTML(data, selectedSections) {
   // trailing-section flow (item 14) so it shares a page with Compliance/Full Scope when they fit,
   // instead of always opening a fresh page while the prior one sits mostly blank.
   if (s.proposalVision !== false) {
-    _rptA36VisionBlocks(data, phaseOpts).forEach(function (blk) {
+    _visionBlocks.slice(_visionPlaced).forEach(function (blk) {
       _trailTokens.push({
         type: 'block',
         key: blk.key,
@@ -29005,7 +28776,14 @@ function generateASHRAE36Preview() {
   }
   var styleChosen = modal.querySelector('input[name="a36Style"]:checked');
   var detailedStyle = type !== 'proposal' && !!styleChosen && styleChosen.value === 'detailed';
-  var data = collectASHRAE36Data(projId, reportDate, buildingNames, detailedStyle ? { plantsByName: true } : undefined);
+  // The Service Proposal builds its data the same way as the Detailed Audit Report (plant names read as plants), so the
+  // equipment, device and control sequence counts printed on page 1 are the same numbers the Audit Report prints.
+  var data = collectASHRAE36Data(
+    projId,
+    reportDate,
+    buildingNames,
+    detailedStyle || type === 'proposal' ? { plantsByName: true } : undefined,
+  );
   if (!data) {
     showToast('No equipment matrix data found. Import a BAS point list on the Equipment tab first.', 'error');
     return;

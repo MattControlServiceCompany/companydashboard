@@ -140,6 +140,7 @@ const POINT_KEY_INSTALL_CLASS = {
   primaryFlow: 'unitaryDdcController',
   freezeStat: 'currentSwitchStatusRelay',
   oaFlow: 'flowBtuMeter',
+  enable: 'currentSwitchStatusRelay', // heater enable relay, 1.0 h (covering estimate, Manager 2026-11-14)
 };
 
 /* Computed default install-hours per point key — resolved once so buildCatalogRows/every caller
@@ -2126,11 +2127,15 @@ const PRICE_POINT_MAP = {
   ctFanEnable: { defaultSku: null, qtyRule: 'perUnit', flags: ['ioOnly'], note: 'Controller I/O' },
   cwPumpEnable: { defaultSku: null, qtyRule: 'perUnit', flags: ['ioOnly'], note: 'Controller I/O' },
   /* ── NO-SKU (manual price) ── */
+  // Covering estimates (coverPrice = material $ per unit; install labor is added by the install-hours
+  // map below): covering estimate, Manager 2026-11-14, Matt: estimated guess that will cover us.
+  // A typed manual price still wins. No NO-SKU hardware row may ever be left without a price.
   freezeStat: {
     defaultSku: null,
     qtyRule: 'perUnit',
     flags: ['noSku'],
-    note: 'Mechanical freeze stat — enter price (~$150 typical)',
+    coverPrice: 250, // covering estimate, Manager 2026-11-14 (low-limit freezestat; typical $90-$200, high side)
+    note: 'Mechanical freeze stat — covering estimate $250 (typical $90-$200); a typed price replaces it',
     whyNeeded:
       'Triggers air handler shutdown when coil temperatures approach freezing, preventing costly water coil damage.',
     g36Section: '§5.16.12',
@@ -2139,10 +2144,21 @@ const PRICE_POINT_MAP = {
     defaultSku: null,
     qtyRule: 'perUnit',
     flags: ['noSku'],
-    note: 'OA flow station — enter price (~$1,200 typical)',
+    coverPrice: 2500, // covering estimate, Manager 2026-11-14 (airflow measuring station; typical $1,200-$2,500, high side)
+    note: 'OA flow station — covering estimate $2,500 (typical $1,200-$2,500); a typed price replaces it',
     whyNeeded:
       'Measures actual outdoor air volume; without it, code-required minimum ventilation rates cannot be confirmed.',
     g36Section: '§5.16.3 to 5.16.5',
+  },
+  // Heater enable relay (heater units, point key 'enable'): covering estimate, Manager 2026-11-14.
+  enable: {
+    defaultSku: null,
+    qtyRule: 'perUnit',
+    flags: ['noSku'],
+    coverPrice: 75, // covering estimate, Manager 2026-11-14 (enable relay)
+    note: 'Heater enable relay — covering estimate $75; a typed price replaces it',
+    whyNeeded: 'Lets the control system turn the heater on and off, so the heater follows the control sequence.',
+    g36Section: '',
   },
 };
 
@@ -2859,6 +2875,10 @@ function buildCatalogRows(projId, buildingNames, opts) {
         if (unitPrice !== null) {
           lineTotal = parseFloat((unitPrice * gap.count).toFixed(2));
         }
+      } else if (noSku && mapEntry.coverPrice != null) {
+        // covering estimate, Manager 2026-11-14, Matt: estimated guess that will cover us
+        unitPrice = mapEntry.coverPrice;
+        lineTotal = parseFloat((unitPrice * gap.count).toFixed(2));
       }
 
       var _inst = _pricingWithInstallLabor(gap.pointKey, ioOnly, unitPrice, lineTotal, gap.count, installHoursMap, installLaborRate);
@@ -3351,6 +3371,7 @@ function _pricingPointLabel(pointKey) {
     cwPumpEnable: 'Condenser Water Pump Enable',
     freezeStat: 'Freeze Status',
     oaFlow: 'Outdoor Air Flow Station',
+    enable: 'Heater Enable Relay',
     co2: 'Carbon Dioxide Sensor',
   };
   return labels[pointKey] || pointKey;
@@ -3746,7 +3767,11 @@ function _pricingComputeTotals(rows, estimate, projId) {
       // Deliverable E: install labor is already known at build time (device count doesn't change
       // just because the parts price was typed in manually) — fold it in once a real manual price
       // makes this row priced at all. Stays null/pending exactly as before when no manual price yet.
-      price = isNaN(manual) || manual === 0 ? null : manual * row.qty + (row.installLaborTotal || 0);
+      if (!isNaN(manual) && manual !== 0) price = manual * row.qty + (row.installLaborTotal || 0);
+      // No typed price: a NO-SKU row carries a covering estimate (PRICE_POINT_MAP coverPrice, built into
+      // row.lineTotal with install labor) and is never dropped from the total. A SKU row missing from the
+      // catalog still waits for a price (pending, excluded).
+      else price = row.noSku && row.lineTotal != null ? row.lineTotal : null;
     }
     // Workbook mode: a typed unit price for this part line wins over the manual price and the catalog.
     if (wbSet && row.phase === 1 && wbSet.partPrices[toggleKey] != null) {
@@ -4088,6 +4113,7 @@ function initCostEstimateTab(projId) {
     } else if (row.noSku) {
       var mv = parseFloat(estimate.manualPrices[row.id] || 0);
       var lt = isNaN(mv) ? null : mv * row.qty;
+      if (!(lt > 0) && row.lineTotal != null) lt = row.lineTotal; // covering estimate (PRICE_POINT_MAP coverPrice)
       lineTotalCell =
         lt !== null && lt > 0 ? _pricingFmt(lt) : '<span style="color:var(--warn);font-size:10px">⚠ Enter price</span>';
     } else {
@@ -4387,7 +4413,8 @@ function _pricingManualPrice(event, projId, rowId) {
       var row = _pricingFindRow(projId, rowId);
       if (row) {
         // same formula as _pricingComputeTotals: manual parts price x qty + install labor
-        var lt = isNaN(val) || val <= 0 ? null : val * row.qty + (row.installLaborTotal || 0);
+        var lt = isNaN(val) || val <= 0 ? row.lineTotal : val * row.qty + (row.installLaborTotal || 0);
+        if (lt === undefined) lt = null;
         tds[8].innerHTML =
           lt !== null ? _pricingFmt(lt) : '<span style="color:var(--warn);font-size:10px">⚠ Enter price</span>';
       }
@@ -5038,6 +5065,10 @@ function buildOptionalPointRows(projId) {
       } else if (!noSku && sku) {
         unitPrice = getUnitPrice(sku);
         if (unitPrice !== null) lineTotal = parseFloat((unitPrice * gap.count).toFixed(2));
+      } else if (noSku && mapEntry.coverPrice != null) {
+        // covering estimate, Manager 2026-11-14, Matt: estimated guess that will cover us
+        unitPrice = mapEntry.coverPrice;
+        lineTotal = parseFloat((unitPrice * gap.count).toFixed(2));
       }
       // Same install labor as a required row (one price path for one device).
       var _inst = _pricingWithInstallLabor(gap.pointKey, ioOnly, unitPrice, lineTotal, gap.count, installHoursMap, installLaborRate);
@@ -9601,7 +9632,8 @@ initCostEstimateTab = function initCostEstimateTab(projId) {
       // Deliverable E: fold install labor in once a real manual parts price has been entered —
       // mirrors _pricingComputeTotals's manual-price branch exactly so this cell can never disagree
       // with the totals footer/report.
-      var lt = isNaN(mv) || mv <= 0 ? null : mv * row.qty + (row.installLaborTotal || 0);
+      var lt = isNaN(mv) || mv <= 0 ? row.lineTotal : mv * row.qty + (row.installLaborTotal || 0);
+      if (lt === undefined) lt = null;
       lineTotalContent =
         lt !== null && lt > 0 ? _pricingFmt(lt) : '<span style="color:var(--warn);font-size:10px">⚠ Enter price</span>';
     } else {

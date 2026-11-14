@@ -2507,6 +2507,14 @@ async function siteResetAllMeterTableSettings() {
    site-ui.js delegates to this array and should NOT maintain its own copy.
 */
 var RELEASE_NOTES = [
+  { v: 'v2026.11.14.293', date: '2026-11-14', title: 'Service Proposal: plain words and one-time costs',
+    items: [
+      { type: 'fix', text: 'The Service Proposal has no monthly allowance. Every option is a one-time cost. Page 1 now says what we did, what we found and what it costs, with a table of the three options and the optional CO2 sensors.' },
+      { type: 'fix', text: 'The implementation plan shows Step 1, Step 2 and so on, not calendar months. Each technical name is explained in plain words, every device line has a quantity, and the savings disclaimer is removed.' },
+      { type: 'fix', text: 'Three devices that had no price now have a covering estimate: freeze status ($250), outdoor air flow station ($2,500) and heater enable relay ($75). A typed price still replaces it. No priced option can leave a row out of its total.' },
+      { type: 'fix', text: 'Service Proposal numbers now tie. Page 1 counts equipment, devices and control sequences the same way as the Audit Report. The optional CO2 sensors show one count everywhere and are marked optional. The step table lists every priced Recommended sequence once, with quantities that match the detail pages, and no priced work is left under Later.' },
+      { type: 'fix', text: 'Service Proposal wording: Outdoor Air, plain names for sensor checks and devices (no Other Hardware or Flow Meters), one name for each valve actuator, a one-sentence reason why Recommended costs less than Compliance, and a clear Optional row. The one-time cost sentence appears only on page 1 and on the Cost Estimate page. Detail blocks, the Implementation Plan and the Long-Term Vision are packed onto fewer pages.' }
+    ] },
   { v: 'v2026.11.14.292', date: '2026-11-14', title: 'ASHRAE 36 Detailed audit: round 3 fixes',
     items: [
       { type: 'feature', text: 'The Detailed audit report opens with a plain Summary: what we did, what we found and what it takes. The cover says in one sentence what each percentage means.' },

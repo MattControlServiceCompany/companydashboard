@@ -68,6 +68,8 @@ const reFns = [
   '_rptRoundingDelta',
   '_rptMonthlyAllowance',
   '_rptMonthlyAllowanceFmt',
+  '_rptA36PlainName',
+  '_rptA36PlainRowLabel',
   '_rptA36TierDetailAggByPhase',
   '_rptA36HardwareCategoryAgg',
   '_rptA36TierDetailPanelHTML',

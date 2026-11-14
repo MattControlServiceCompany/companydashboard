@@ -260,6 +260,7 @@ const plain = (x) => JSON.parse(JSON.stringify(x));
   vm.runInContext(
     [
       'function _escHtml(s){ return String(s == null ? "" : s); }',
+      'var _RPT_A36_POINT_CATEGORY_LABEL = {};',
       fnSrc(read('app/audit-estimate.js'), '_auditEstAllocate'),
       fnSrc(read('app/audit-estimate.js'), '_auditEstShareLines'),
     ]
@@ -271,6 +272,8 @@ const plain = (x) => JSON.parse(JSON.stringify(x));
           '_rptItemizedLine',
           '_rptItemizedLineText',
           '_rptRoundingDelta',
+          '_rptA36PlainName',
+          '_rptA36PlainRowLabel',
           '_rptA36TierDetailAggByPhase',
           '_rptA36HardwareCategoryAgg',
           '_rptA36TierDetailPanelHTML',
