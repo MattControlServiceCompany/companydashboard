@@ -119,7 +119,7 @@ assert(!/Other Hardware|Flow Meters/.test(proposalSrc), 'no Other Hardware / Flo
 assert(/_rptA36OptionalCo2Qty/.test(fnSrc(RE, '_rptA36TopGaps')), 'top gaps read the optional CO2 count from the shared tier data');
 assert(/_rptA36RecommendedStepPlan/.test(fnSrc(RE, '_rptA36PhaseTableDerive')) && /_rptA36RecommendedStepPlan/.test(fnSrc(RE, '_rptA36RecommendedTimelineHTML')), 'step table and order table read one step plan');
 assert(!/Later/.test(noCmt(fnSrc(RE, '_rptA36RecommendedTimelineHTML'))), 'order table has no Later row');
-assert(/plantsByName: true/.test(fnSrc(RE, 'generateASHRAE36Preview')), 'proposal data is built with plantsByName like the Audit Report');
+assert(!/plantsByName/.test(RE) && !/plantsByName/.test(fnSrc(RE, 'generateASHRAE36Preview')), 'one plant classification for every report: no plantsByName option (was: proposal data built with plantsByName)');
 const oneTime = noCmt(['rptPageASHRAE36ProposalCover', '_rptA36CostSummaryHTML', 'rptPageASHRAE36ProposalPricing', '_rptA36RecommendedServicesInnerHTML', '_rptA36VisionInnerHTML'].map((f) => fnSrc(RE, f)).join('\n')).match(/Each cost is a one-time cost/g) || [];
 assert(oneTime.length === 2, 'one-time cost sentence appears twice (page 1 and Cost Estimate page): ' + oneTime.length);
 

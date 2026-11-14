@@ -784,14 +784,20 @@ const ok = (c, m) => {
       ['Hot Water System -  EAST', 'plumbing'], ['Hot Water - West CCL', 'other'], ['Chilled Water System - Central', 'controls'], ['Heating Water System - Central', 'plumbing'],
       ['Domestic Hot Water System - ADC', 'plumbing'], ['Domestic Hot Water', 'plumbing'], ['Hot Water Loop Bypass Valve', 'plumbing'], ['Hot Water System Differential Pressure', 'plumbing'],
       ['Hot Water System BTU Meter', 'plumbing'], ['Hot Water Makeup Water Meter', 'meter'], ['Chiller Integration', 'controls'], ['Hot Water System - HS', 'ahu'],
-    ].map((x) => _a36PlantCategoryByName(x[0], x[1])));
+    ].map((x) => emPlantCategoryByName(x[0], x[1])));
     ok(rule.join(',') === 'hwp,hwp,chwp,hwp,plumbing,plumbing,plumbing,plumbing,plumbing,meter,controls,ahu', 'D4: the plant rule: "Hot Water System - X", "Hot Water - X", "Chilled Water System - X" are plants; domestic, bypass valve, pressure, BTU meter, makeup meter and integration stub are not (' + rule.join(',') + ')');
     const simplePlants = await page.evaluate((PID) => {
       const d = collectASHRAE36Data(PID, '2026-11-10', null);
       const html = generateASHRAE36AuditHTML(d, { cover: true, executive: true, costEstimate: true, building: true, setpointReview: true, pointInventory: true });
       return { cats: d.buildings[0].equipResults.map((e) => e.category).sort().join(','), flag: d.plantsByName, plantText: /Hot Water Plant|Chilled Water Plant/.test(html) };
     }, PID2);
-    ok(simplePlants.cats === 'ahu' && simplePlants.flag === false && !simplePlants.plantText, 'D4: Simple and every other caller keep the stored categories: only the air handler is audited (' + simplePlants.cats + ')');
+    ok(simplePlants.cats === 'ahu,chwp,hwp' && simplePlants.flag === undefined, 'D4: one classification for every caller (was: Simple kept the stored categories, only the air handler): the Simple data also audits the two plants (' + simplePlants.cats + ')');
+    // One plant classification: the priced catalog (Cost Estimate, tiers) treats a plant stored as plumbing / controls as a plant, same as the reports.
+    const priced = await page.evaluate((PID) => {
+      const rows = buildCatalogRows(PID) || [];
+      return { n: rows.length, labels: rows.map((r) => (r.equipLabel || '') + '|' + (r.label || '') + '|' + (r.seqKey || '') + '|' + (r.phase || '')), keys: rows.map((r) => r.seqKey || r._pointKey).filter(Boolean) };
+    }, PID2);
+    ok(priced.keys.indexOf('hwdp') > -1 && priced.keys.some((k) => /^hwp_/.test(k)), 'D4: buildCatalogRows prices the hot water plant stored as plumbing (no option): the differential pressure device and a hot water plant sequence are rows (' + priced.keys.join(',') + ')');
     await page.evaluate(() => { document.getElementById('reportOverlay').style.display = 'none'; document.getElementById('reportPages').innerHTML = ''; });
     const plants = await page.evaluate(async (PID) => {
       openASHRAE36ReportModal(PID, 'audit');
@@ -971,7 +977,7 @@ const ok = (c, m) => {
       };
     }, PID4);
     ok(eps.merged.length === 1 && !eps.keys.includes('demandCtrl') && !eps.keys.includes('ahu_min_oa') && eps.keys.includes('ahu_min_oa+demandCtrl'), 'report length: Minimum Outside Air and Occupancy-Based Ventilation of the same units are ONE finding (' + eps.keys.join(' / ') + ')');
-    ok(eps.merged[0] && /Minimum Outside Air and Occupancy-Based Ventilation \(Air Handling Units\)/.test(eps.merged[0].label) && /sequences \(ASHRAE 36, Sections 5\.16\.3 to 5\.16\.6\) are not fully in place on both units/.test(eps.merged[0].observed) && /Carbon Dioxide Sensor/.test(eps.merged[0].observed) && /Outdoor Air Damper Actuator/.test(eps.merged[0].observed) && eps.merged[0].affected.length === 2, 'report length: the merged finding names both sequences, both sections, the points of both and the 2 units: ' + (eps.merged[0] && eps.merged[0].observed));
+    ok(eps.merged[0] && /Minimum Outdoor Air and Occupancy-Based Ventilation \(Air Handling Units\)/.test(eps.merged[0].label) && /sequences \(ASHRAE 36, Sections 5\.16\.3 to 5\.16\.6\) are not fully in place on both units/.test(eps.merged[0].observed) && /Carbon Dioxide Sensor/.test(eps.merged[0].observed) && /Outdoor Air Damper Actuator/.test(eps.merged[0].observed) && eps.merged[0].affected.length === 2, 'report length: the merged finding names both sequences, both sections, the points of both and the 2 units: ' + (eps.merged[0] && eps.merged[0].observed));
     ok((eps.summary.match(/Minimum Outdoor Air and Occupancy-Based Ventilation \(Air Handling Units\) sequences not fully in place/g) || []).length === 1 && !/Minimum Outdoor Air sequence not fully in place/.test(eps.summary), 'report length: the Findings Summary has one row for the two sequences');
     ok(eps.seqNo && eps.seqNo === eps.noteNo, 'report length: the note names the real section number of Control Sequences (' + eps.seqNo + ' / ' + eps.noteNo + ')');
     ok(/Epsilon Library\s*AHU-A and AHU-B\s*66\.0°F heating \/ 71\.0°F cooling\s*60\.0°F heating \/ 79\.0°F cooling[\s\S]*Single-zone unit: current setpoints shown, no zone review/.test(eps.sp), 'report length: Appendix B lists the single-zone-only library with its current setpoints (AHU-A and AHU-B: 66/71 occupied, 60/79 unoccupied): ' + eps.sp.slice(0, 700));

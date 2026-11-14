@@ -4,6 +4,8 @@
 //   3. Dual-duct terminal: a cold deck air source and a hot deck air source (zone temperature, no supply fan) classify as dual-duct; an air handler with both does not.
 //   4. Occupancy-based ventilation of a dual-duct box needs the two deck damper commands, not one damper command.
 //   5. A numbered secondary pump drive status or speed is the hot water pump status or speed.
+//   5b. Plant point mapping (2026-11-14): a present plant point is not missing (HWP drive status/enable/speed, hot water setpoint, chiller status on a chwp row);
+//      alarms, amperage, setpoint limits and resets do not match. A plant stored as plumbing is priced like any other equipment (buildCatalogRows).
 //   6. Reading format: CFM and ppm whole numbers with a thousands separator, degrees F one decimal, static pressure "in. w.c.".
 //   7. Credible readings: a static pressure of 0 with the fan at speed, an outdoor airflow of 1 CFM with the damper open, a CO2 reading of exactly 400 ppm are dropped.
 //   8. Client text: abbreviations spelled out (Temp, OA, CHW), "in H2O" becomes "in. w.c.", nested brackets flattened.
@@ -94,6 +96,33 @@ const pidOut = sandbox.emNormalizePointWithCustom('Secondary Pump Speed PID', 'h
 check(hwpStatus && hwpStatus.categoryKey === 'hwPumpStatus', '5. Secondary Pump 1 VFD Status is the hot water pump status');
 check(hwpSpeed && hwpSpeed.categoryKey === 'hwPumpSpeed', '5b. Secondary Pump 2 VFD Speed is the hot water pump speed');
 check(!(pidOut && pidOut.categoryKey === 'hwPumpSpeed'), '5c. the pump speed PID loop is not counted as the speed point');
+
+// 5d. Round 3 plant mapping, 2026-11-14: present plant points are not missing. Synthetic names, one category per call (category-scoped).
+const keyOf = (name, cat) => {
+  const r = sandbox.emNormalizePointWithCustom(name, cat, []);
+  return r && r.categoryKey;
+};
+[
+  ['HWP-1 VFD Status', 'hwp', 'hwPumpStatus'], ['HWP-2 VFD Status', 'hwp', 'hwPumpStatus'], ['HWP-1/2 VFD Status', 'hwp', 'hwPumpStatus'],
+  ['HWP-1 Enable', 'hwp', 'hwPumpEnable'], ['HWP-1/2 Enable', 'hwp', 'hwPumpEnable'], ['Secondary Pump 1 VFD Enable', 'hwp', 'hwPumpEnable'], ['Secondary Pump 2 Enable', 'hwp', 'hwPumpEnable'],
+  ['HWP-1 VFD Speed', 'hwp', 'hwPumpSpeed'], ['Secondary Pump 1 VFD Speed', 'hwp', 'hwPumpSpeed'],
+  ['Hot Water Set Point', 'hwp', 'hwSetpoint'], ['System Setpoint', 'hwp', 'hwSetpoint'], ['Active System Setpoint', 'hwp', 'hwSetpoint'],
+  ['Chiller 1 Status BNI', 'chwp', 'chillerStatus'], ['Chiller Status BNI', 'chwp', 'chillerStatus'], ['Chiller Status', 'chwp', 'chillerStatus'],
+].forEach((t) => check(keyOf(t[0], t[1]) === t[2], '5d. "' + t[0] + '" on a ' + t[1] + ' row is ' + t[2] + ' (' + keyOf(t[0], t[1]) + ')'));
+[
+  ['HWP-1 Enabled, Status Is Off', 'hwp'], ['HWP-1 Disabled, Status Is On', 'hwp'], ['Latched HWP-1 Run Status Failure', 'hwp'], ['Latched HWP-1 Failure', 'hwp'], ['HWP-1 Runtime Hours Exceeded', 'hwp'],
+  ['Hot Water Pump 1 Amperage', 'hwp'], ['HWP-1 VFD Amps', 'hwp'], ['HWP-1 VFD Fault', 'hwp'], ['Hot Water Set Point Reset Signal', 'hwp'], ['Hot Water Set Point High Limit', 'hwp'],
+  ['System Setpoint Low Limit', 'hwp'], ['Active System Setpoint Alarm', 'hwp'], ['Secondary Pump 1 VFD Fault', 'hwp'], ['Secondary Pump 1 Enabled, Status Is Off', 'hwp'],
+].forEach((t) => {
+  const k = keyOf(t[0], t[1]);
+  check(!['hwPumpStatus', 'hwPumpEnable', 'hwPumpSpeed', 'hwSetpoint'].includes(k), '5e. "' + t[0] + '" does not map to a plant pump or setpoint point (' + k + ')');
+});
+check(keyOf('Chiller 1 Status BNI', 'ahu') !== 'chillerStatus' && keyOf('Chiller 1 Status BNI', 'hwp') !== 'chillerStatus', '5f. the BNI exception is scoped to a chwp row: on an ahu or hwp row the global BNI rule still holds (' + keyOf('Chiller 1 Status BNI', 'ahu') + ')');
+check(keyOf('Chiller 1 Alarm BNI', 'chwp') !== 'chillerStatus' && keyOf('Chiller 1 Disabled, Status Is On', 'chwp') !== 'chillerStatus', '5g. a chiller alarm BNI or alarm text on a chwp row is not the chiller status');
+const plantRow = mkRow('p1', 'Hot Water System - X', 'hwp', { 'HWP-1 VFD Status': 'On', 'HWP-1 Enable': 'On', 'Secondary Pump 1 VFD Speed': '50 %', 'Hot Water Set Point': '160 F' }, 'hwp');
+check(['hwPumpStatus', 'hwPumpEnable', 'hwPumpSpeed', 'hwSetpoint'].every((k) => status(plantRow, k) === 'covered'), '5h. a plant row with these points has pump status, enable, speed and setpoint covered, none missing (' + ['hwPumpStatus', 'hwPumpEnable', 'hwPumpSpeed', 'hwSetpoint'].map((k) => status(plantRow, k)).join(',') + ')');
+const chwRow = mkRow('p2', 'Chilled Water System - X', 'chwp', { 'Chiller 1 Status BNI': 'On' }, 'chwp');
+check(status(chwRow, 'chillerStatus') === 'covered', '5i. a chilled water plant row with "Chiller 1 Status BNI" has the chiller status covered (' + status(chwRow, 'chillerStatus') + ')');
 
 // 6-8. report engine text functions (pure; sliced out of the source)
 const RE = read('app/report-engine.js');

@@ -16882,23 +16882,10 @@ function _a36DisplayName(b) {
  * @param {number|string} projId
  * @returns {object|null}
  */
-// _a36PlantCategoryByName -- the ONE rule that says a row is a heating hot water or chilled water PLANT although the Equipment
-// Matrix files it under plumbing / other / controls. Used only by the Detailed Audit Report (collectASHRAE36Data option
-// plantsByName); the Simple report, Cost Estimate and Equipment Matrix keep the stored category. A plant name has the shape
-// "Hot Water System - X", "Hot Water - X", "Heating Water System - X" or "Chilled Water System - X". Domestic hot water is
-// never a plant. Returns 'hwp', 'chwp', or the stored category unchanged.
-function _a36PlantCategoryByName(nameStr, storedCat) {
-  if (storedCat !== 'plumbing' && storedCat !== 'other' && storedCat !== 'controls') return storedCat;
-  var n = String(nameStr || '').trim();
-  if (/\b(?:domestic|dhw)\b/i.test(n)) return storedCat;
-  if (!/^(?:hot|heating|chilled)\s+water(?:\s+(?:system|plant))?\s+-\s*\S/i.test(n)) return storedCat;
-  return /^chilled/i.test(n) ? 'chwp' : 'hwp';
-}
-
 // buildingNames (optional): the ASHRAE 36 modal's building selection. Equipment rows carry a
 // building NAME (row.building), not an id, so the filter keys on the exact string the grouping
 // below uses. null/empty = every building (all non-modal callers: agreement, pricing estimator).
-function collectASHRAE36Data(projId, reportDate, buildingNames, opts) {
+function collectASHRAE36Data(projId, reportDate, buildingNames) {
   if (typeof emLoadMatrix !== 'function') return null;
   var matData = emLoadMatrix(projId);
   if (!matData || !matData.rows || !matData.rows.length) return null;
@@ -17137,11 +17124,10 @@ function collectASHRAE36Data(projId, reportDate, buildingNames, opts) {
       if (r.category === 'hwp' && _UH_ABBREV_RE.test((r.equipName || '').trim())) {
         return Object.assign({}, r, { category: 'heater' });
       }
-      // Detailed Audit Report only (opts.plantsByName): a heating or chilled water plant stored as plumbing / other / controls.
-      if (opts && opts.plantsByName) {
-        var _plantCat = _a36PlantCategoryByName(r.equipName, r.category);
-        if (_plantCat !== r.category) return Object.assign({}, r, { category: _plantCat });
-      }
+      // A heating or chilled water plant stored as plumbing / other / controls is a plant (emPlantCategoryByName, the one rule),
+      // for every report, the Equipment Matrix and the cost estimate.
+      var _plantCat = emPlantCategoryByName(r.equipName, r.category);
+      if (_plantCat !== r.category) return Object.assign({}, r, { category: _plantCat });
       return r;
     }
     var reclassifiedRows = rows.map(_emReclassifyRow);
@@ -17703,7 +17689,6 @@ function collectASHRAE36Data(projId, reportDate, buildingNames, opts) {
     project: { name: projName, id: projId },
     date: dateStr,
     rawDate: rawDate,
-    plantsByName: !!(opts && opts.plantsByName), // Detailed Audit Report: _a36ScopedCatalogRows scopes the priced rows the same way
     buildings: buildingsData,
     portfolio: {
       composite: portfolioComposite,
@@ -18006,7 +17991,7 @@ function _a36ScopedCatalogRows(d) {
     });
     d._a36CatalogRowsCache =
       typeof buildCatalogRows === 'function'
-        ? buildCatalogRows(d.project.id, _scopeNames, d.plantsByName ? { plantsByName: true } : undefined) || []
+        ? buildCatalogRows(d.project.id, _scopeNames) || []
         : [];
   }
   return d._a36CatalogRowsCache;
@@ -21433,35 +21418,6 @@ var _RPT_A36_TIER_PLAIN = {
 };
 
 /**
- * _rptA36ScopeCounts - the ONE count of devices to install and control sequences to program that the
- * Service Proposal prints. Same rule as the Audit Report cover (rptPageASHRAE36Cover): sums of the priced
- * scope rows from _a36ScopedCatalogRows (devices = phase-1 rows that are not I/O only; sequences = phase-2
- * rows with a sequence key). Falls back to the raw portfolio totals when no priced rows exist.
- * Single-source note: the Audit cover still holds an inline copy of this loop (report as a defect).
- */
-function _rptA36ScopeCounts(d) {
-  var p = d.portfolio || {};
-  var out = { sensors: p.totalMissingHardwarePoints || 0, sequences: p.totalNotReadySequences || 0 };
-  try {
-    var rows = _a36ScopedCatalogRows(d);
-    var sen = 0,
-      seq = 0;
-    rows.forEach(function (r) {
-      if (!r) return;
-      if (r.phase === 1 && !r.ioOnly) sen += r.qty || 0;
-      else if (r.phase === 2 && r.seqKey) seq += r.qty || 0;
-    });
-    if (rows.length) {
-      out.sensors = sen;
-      out.sequences = seq;
-    }
-  } catch (e) {
-    /* keep the raw portfolio totals */
-  }
-  return out;
-}
-
-/**
  * _rptA36PlainName - the plain client name for a sequence or device label in the Service Proposal:
  * "Outside Air" reads "Outdoor Air" (one word for one thing, proposal text only). The labels in the
  * Equipment Matrix and the Audit Report keep their own names.
@@ -21486,7 +21442,7 @@ function _rptA36PlainRowLabel(r) {
 }
 
 /**
- * _rptA36TopGaps - the largest gaps in plain words, from the same priced scope rows as _rptA36ScopeCounts:
+ * _rptA36TopGaps - the largest gaps in plain words, from the same priced scope rows as _a36ConsolidatedCounts:
  * the one device kind with the most units, then the two control sequences with the most units.
  * Optional work is never counted as a control sequence the client buys: the optional carbon dioxide sensors
  * come from _rptA36TierCostData (the number the Cost Summary prints) and say they are optional; the
@@ -21968,7 +21924,7 @@ function rptPageASHRAE36ProposalCover(n, d) {
   // ── Executive Summary: what we did (plain words, Manager 2026-11-14) ──────────────────
   // The reader is a facilities manager, not a controls engineer: every technical term is explained the
   // first time it appears. Counts come from the shared values: building and equipment totals from
-  // d.portfolio (same as the Audit Report cover), devices and sequences from _rptA36ScopeCounts.
+  // d.portfolio (same as the Audit Report cover), devices and sequences from _a36ConsolidatedCounts.
   var nBld = p.totalBuildings;
   var execSummary =
     '<div style="' +
@@ -21985,7 +21941,7 @@ function rptPageASHRAE36ProposalCover(n, d) {
     'gives the cost of that work.</div>';
 
   // ── Assessment Findings: what we found ────────────────────────────────────────────────
-  var counts = _rptA36ScopeCounts(d);
+  var counts = _a36ConsolidatedCounts(d);
   var gaps = _rptA36TopGaps(d);
   var findingsPara =
     'The buildings now meet <strong>' +
@@ -23251,11 +23207,16 @@ function rptPageASHRAE36ProposalPhaseTable(startN, d, opts) {
   if (der.meaningHTML) tokens.push({ type: 'block', estH: _meanH > 0 ? _meanH : 300, html: der.meaningHTML });
   // Closing sections the caller hands over (opts.trailBlocks: Implementation Plan, Long-Term Vision): each is a
   // block with its MEASURED height, so it shares the last steps page when it fits and starts a new page when not.
-  ((opts && opts.trailBlocks) || []).forEach(function (html) {
+  // opts.trailFitOnly (the cost pages follow): a block that does not fit on the last steps page is NOT placed here;
+  // it stays with the caller (pages._trailConsumed counts the placed blocks, in order) and flows after the cost pages.
+  var _trailFitOnly = !!(opts && opts.trailFitOnly);
+  var _trailBlocks = (opts && opts.trailBlocks) || [];
+  var _trailSpaced = _trailBlocks.map(function (html) {
     var spaced = '<div style="height:14px"></div>' + html;
     var hh = _rptA36MeasureContentH(spaced);
-    tokens.push({ type: 'block', estH: hh > 0 ? hh : 300, html: spaced });
+    return { type: 'block', estH: hh > 0 ? hh : 300, html: spaced };
   });
+  if (!_trailFitOnly) _trailSpaced.forEach(function (t) { tokens.push(t); });
 
   var firstBudget = g - HEAD_CHROME_FIRST - PHASE_SAFETY_H;
   var contBudget = g - PHASE_SAFETY_H;
@@ -23282,6 +23243,20 @@ function rptPageASHRAE36ProposalPhaseTable(startN, d, opts) {
   } else {
     chunks = _rptPaginateTokens(tokens, firstBudget, contBudget);
   }
+  var trailPlaced = _trailFitOnly ? 0 : _trailSpaced.length;
+  if (_trailFitOnly && _trailSpaced.length) {
+    var _lastIdx = chunks.length - 1;
+    var _lastBudget = _lastIdx === 0 ? firstBudget : contBudget;
+    var _usedLast = chunks[_lastIdx].reduce(function (sum, t) {
+      return sum + (t && t.estH ? t.estH : 20);
+    }, 0);
+    for (var _ti = 0; _ti < _trailSpaced.length; _ti++) {
+      if (_usedLast + _trailSpaced[_ti].estH > _lastBudget) break;
+      chunks[_lastIdx].push(_trailSpaced[_ti]);
+      _usedLast += _trailSpaced[_ti].estH;
+      trailPlaced++;
+    }
+  }
   var numChunks = chunks.length;
 
   var pages = [];
@@ -23297,6 +23272,7 @@ function rptPageASHRAE36ProposalPhaseTable(startN, d, opts) {
     pages.push(wrapPage(startN + idx, bodyInner, labelSuffix));
   });
 
+  pages._trailConsumed = trailPlaced;
   return pages;
 }
 
@@ -23531,7 +23507,7 @@ function _rptA36ComplianceScopeInnerHTML(d) {
   var UL = 'margin:2px 0 0;padding-left:16px;font-size:14px;color:var(--rpt-page-text);line-height:1.38';
 
   // Same consolidated counts as the Audit cover (rptPageASHRAE36Cover): one shared function.
-  var _cnt = _rptA36ScopeCounts(d);
+  var _cnt = _a36ConsolidatedCounts(d);
   var sensorCount = _cnt.sensors;
   var seqCount = _cnt.sequences;
 
@@ -28354,23 +28330,22 @@ function generateASHRAE36ProposalHTML(data, selectedSections) {
   // cost page. Whatever does not fit there flows through the trailing-section pages below, as before.
   var _visionBlocks = s.proposalVision !== false ? _rptA36VisionBlocks(data, phaseOpts) : [];
   var _visionPlaced = 0;
-  if (
-    _phaseTableOn &&
-    s.costEstimate !== true &&
-    s.proposalScope !== true &&
-    s.complianceScope !== true &&
-    s.fullScope !== true
-  ) {
+  // With the cost pages on (Cost Estimate), the closing sections go right after the names list when they fit
+  // (trailFitOnly); what does not fit follows the cost pages.
+  var _visionInPhase = _phaseTableOn && s.proposalScope !== true && s.complianceScope !== true && s.fullScope !== true;
+  if (_visionInPhase) {
     phaseOpts.trailBlocks = _visionBlocks.map(function (b) {
       return b.html;
     });
-    _visionPlaced = _visionBlocks.length;
+    phaseOpts.trailFitOnly = s.costEstimate === true;
+    _visionPlaced = s.costEstimate === true ? 0 : _visionBlocks.length;
   }
   if (_phaseTableOn) {
     // rptPageASHRAE36ProposalPhaseTable now returns an Array (2026-08-02, months-table
     // page-height fix) -- same spread-and-advance-pageNum pattern the costEstimate branch below
     // already uses for rptPageASHRAE36ProposalPricing.
     var phaseTablePages = rptPageASHRAE36ProposalPhaseTable(pageNum, data, phaseOpts);
+    if (_visionInPhase && s.costEstimate === true) _visionPlaced = phaseTablePages._trailConsumed || 0;
     phaseTablePages.forEach(function (pg) {
       pages.push(_tagA36Section(pg, 'proposalPhaseTable'));
       pageNum++;
@@ -28467,12 +28442,12 @@ function generateASHRAE36ProposalHTML(data, selectedSections) {
       trailBlocks:
         s.costEstimateItemized === true
           ? []
-          : _visionBlocks.map(function (b) {
+          : _visionBlocks.slice(_visionPlaced).map(function (b) {
               return b.html;
             }),
     };
     var pricingPages = rptPageASHRAE36ProposalPricing(pageNum, data, pricingOpts);
-    _visionPlaced = pricingPages._trailConsumed || 0;
+    _visionPlaced += pricingPages._trailConsumed || 0;
     pricingPages.forEach(function (pg) {
       pages.push(_tagA36Section(pg, 'costEstimate'));
       pageNum++;
@@ -28778,12 +28753,7 @@ function generateASHRAE36Preview() {
   var detailedStyle = type !== 'proposal' && !!styleChosen && styleChosen.value === 'detailed';
   // The Service Proposal builds its data the same way as the Detailed Audit Report (plant names read as plants), so the
   // equipment, device and control sequence counts printed on page 1 are the same numbers the Audit Report prints.
-  var data = collectASHRAE36Data(
-    projId,
-    reportDate,
-    buildingNames,
-    detailedStyle || type === 'proposal' ? { plantsByName: true } : undefined,
-  );
+  var data = collectASHRAE36Data(projId, reportDate, buildingNames);
   if (!data) {
     showToast('No equipment matrix data found. Import a BAS point list on the Equipment tab first.', 'error');
     return;

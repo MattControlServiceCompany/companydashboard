@@ -2539,8 +2539,8 @@ function _pricingSelectZoneSensorSku(needCO2, features) {
    building-name list here rather than filtering buildCatalogRows' OUTPUT a second way —
    see _a36ScopedCatalogRows in report-engine.js, the one place that does this.
 
-   opts (optional): passed straight through to collectASHRAE36Data. Only the Detailed Audit Report passes it
-   ({ plantsByName: true }); every other caller omits it and gets the stored categories.
+   A heating or chilled water plant stored as plumbing / other / controls is classified by name (emPlantCategoryByName,
+   inside collectASHRAE36Data) for every caller, so the priced tiers and the reports count the same plants.
    ─────────────────────────────────────────────────────────────────────────── */
 // Deliverable E: physical install labor. The one price path for a hardware gap row (required rows in
 // buildCatalogRows and beyond-compliance rows in buildOptionalPointRows). Applies to every real
@@ -2566,9 +2566,9 @@ function _pricingWithInstallLabor(pointKey, ioOnly, unitPrice, lineTotal, count,
   return out;
 }
 
-function buildCatalogRows(projId, buildingNames, opts) {
+function buildCatalogRows(projId, buildingNames) {
   if (typeof collectASHRAE36Data !== 'function') return [];
-  var ashData = collectASHRAE36Data(projId, null, buildingNames, opts);
+  var ashData = collectASHRAE36Data(projId, null, buildingNames);
   if (!ashData || !ashData.buildings) return [];
 
   var catalog = sget('en_pricing_catalog', null);

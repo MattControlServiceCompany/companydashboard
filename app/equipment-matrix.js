@@ -14420,7 +14420,12 @@ var EM_NAMED_EXCLUSIONS = [
 /* ── emMatchNamedExclusion ──────────────────────────────────────────────────
    Finds the first EM_NAMED_EXCLUSIONS group whose patterns[] match rawName.
    Returns the group object { key, label } or null if no match.            */
+// Round 3 plant mapping, 2026-11-14: on a chilled water plant row "Chiller 1 Status BNI" is the chiller status (the BNI suffix only names the
+// BACnet object type). The global BNI rule of the group bacnetComm stays; this one name shape is read as the chiller status on a chwp row only.
+var EM_CHWP_CHILLER_STATUS_BNI = /^chiller\s*\d*\s+status\s+BNI$/i;
+
 function emMatchNamedExclusion(rawName, equipCategory) {
+  if (equipCategory === 'chwp' && EM_CHWP_CHILLER_STATUS_BNI.test(rawName)) return null;
   for (var _ni = 0; _ni < EM_NAMED_EXCLUSIONS.length; _ni++) {
     var _ng = EM_NAMED_EXCLUSIONS[_ni];
     if (_ng.exceptCats && equipCategory && _ng.exceptCats.indexOf(equipCategory) !== -1) continue;
@@ -17718,6 +17723,9 @@ var EM_POINT_CATEGORIES = {
         /pump.?p.?\d.?status/i,
         // Round 3 B2: a numbered secondary pump drive status is the hot water pump status.
         /secondary.?pump.?\d+.?vfd.?status/i,
+        // Round 3 plant mapping, 2026-11-14: "HWP-1 VFD Status", "HWP-1/2 VFD Status". Only a name with a drive status; "HWP-1 Enabled, Status Is Off"
+        // (an alarm) and "Latched HWP-1 Run Status Failure" do not match.
+        /\bhwp.?\d+(?:\/\d+)?.?vfd.?status\b/i,
       ],
       aliases: [
         'phwp status',
@@ -17812,6 +17820,9 @@ var EM_POINT_CATEGORIES = {
         /hw.?temp.?setpoint/i,
         /boiler.?outlet.?setpoint/i,
         /hw.?reset/i,
+        // Round 3 plant mapping, 2026-11-14: the whole name must be the setpoint ("Hot Water Set Point Reset Signal" is a reset signal, not matched).
+        /^hot.?water.?set.?point$/i,
+        /^(?:active\s+)?system\s+set.?point(?:\s+ani)?$/i,
       ],
       aliases: [
         'boiler lwt setpoint',
@@ -17847,6 +17858,10 @@ var EM_POINT_CATEGORIES = {
         /hot.?water.?pump.?\d+.?enable/i,
         /hhwp.?\d.?vfd.?enable/i,
         /pump.?p.?\d.?enable/i,
+        // Round 3 plant mapping, 2026-11-14: "HWP-1 Enable", "HWP-1/2 Enable", "Secondary Pump 1 Enable", "Secondary Pump 1 VFD Enable".
+        // \benable\b: "HWP-1 Enabled, Status Is Off" (an alarm) does not match.
+        /\bhwp.?\d+(?:\/\d+)?.?(?:vfd.?)?enable\b/i,
+        /secondary.?pump.?\d+.?(?:vfd.?)?enable\b/i,
       ],
       aliases: [
         'primary hw pump start/stop',
@@ -17879,6 +17894,8 @@ var EM_POINT_CATEGORIES = {
         /pump.?p.?\d.?speed/i,
         // Round 3 B2: a numbered secondary pump drive speed is the hot water pump speed.
         /secondary.?pump.?\d+.?vfd.?speed/i,
+        // Round 3 plant mapping, 2026-11-14: "HWP-1 VFD Speed", "HWP-1/2 VFD Speed".
+        /\bhwp.?\d+(?:\/\d+)?.?vfd.?speed\b/i,
       ],
       aliases: [
         'primary hw pump vfd speed',
@@ -22111,7 +22128,7 @@ function emCoilEvidence(pointNames) {
 }
 
 // The one rule that says a row is a heating hot water or chilled water PLANT although the Equipment Matrix files it under plumbing / other /
-// controls (moved here from report-engine.js _a36PlantCategoryByName, which calls it). A plant name has the shape "Hot Water System - X",
+// controls (the one rule for every report, the cost estimate and the Equipment Matrix; it replaces report-engine.js _a36PlantCategoryByName). A plant name has the shape "Hot Water System - X",
 // "Hot Water - X", "Heating Water System - X" or "Chilled Water System - X". Domestic hot water is never a plant. Returns 'hwp', 'chwp', or
 // the stored category unchanged.
 function emPlantCategoryByName(nameStr, storedCat) {
@@ -23323,7 +23340,7 @@ var EM_SEQUENCE_DEFS = [
   },
   {
     key: 'ahu_min_oa',
-    label: 'Minimum Outside Air',
+    label: 'Minimum Outdoor Air',
     ashrae36: '§5.16.3 to 5.16.6',
     equipTypes: ['ahu', 'rtu'],
     requiredCats: ['oaDampCmd', 'sfSpeedCmd'],

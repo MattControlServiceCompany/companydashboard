@@ -2507,6 +2507,12 @@ async function siteResetAllMeterTableSettings() {
    site-ui.js delegates to this array and should NOT maintain its own copy.
 */
 var RELEASE_NOTES = [
+  { v: 'v2026.11.14.294', date: '2026-11-14', title: 'Heating and chilled water plants counted and priced the same everywhere',
+    items: [
+      { type: 'fix', text: 'A hot water or chilled water plant that is filed under plumbing, other or controls is now a plant in the cost estimate, the proposal, the audit reports and the Equipment Matrix. Before, the Detailed audit counted its missing points and sequences, but the cost estimate left them out.' },
+      { type: 'fix', text: 'Plant points that are present are no longer called missing: pump drive status, speed and enable named by pump number, the hot water system setpoint, and the chiller status point.' },
+      { type: 'fix', text: 'Service Proposal with costs: the Implementation Plan and Long-Term Vision follow the list of names when they fit, so page 3 is not left half empty. Minimum Outdoor Air is the one name for that sequence.' }
+    ] },
   { v: 'v2026.11.14.293', date: '2026-11-14', title: 'Service Proposal: plain words and one-time costs',
     items: [
       { type: 'fix', text: 'The Service Proposal has no monthly allowance. Every option is a one-time cost. Page 1 now says what we did, what we found and what it costs, with a table of the three options and the optional CO2 sensors.' },
