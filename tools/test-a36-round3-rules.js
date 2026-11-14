@@ -157,7 +157,7 @@ check(nt('(FPB-101 (Electrical))') === '<p>FPB-101 (Electrical)</p>', '8d. neste
 // 9. section allow-list: headings of the 2021 standard (full.txt, verified 2026-11-14). x.y.z level at most.
 const ALLOW = new Set([
   '3.1.1.1', '3.1.1.2', '3.1.1.3', '5.1', '5.1.17', '5.2.1', '5.3', '5.3.2', '5.3.4', '5.6', '5.6.5', '5.7', '5.8', '5.8.5', '5.9', '5.10', '5.11', '5.12', '5.13', '5.14',
-  '5.16', '5.16.1', '5.16.2', '5.16.3', '5.16.4', '5.16.5', '5.16.6', '5.16.10', '5.16.11', '5.16.12', '5.18', '5.18.4', '5.19', '5.20', '5.20.4', '5.20.5', '5.20.6', '5.20.7',
+  '5.16', '5.16.1', '5.16.2', '5.16.3', '5.16.4', '5.16.5', '5.16.6', '5.16.10', '5.16.11', '5.16.12', '5.18', '5.18.4', '5.18.5', '5.18.6', '5.18.7', '5.18.10', '5.18.11', '5.19', '5.20', '5.20.4', '5.20.5', '5.20.6', '5.20.7',
   '5.20.9', '5.20.12', '5.20.13', '5.21', '5.21.3', '5.21.4', '5.21.6', '5.21.7', '5.22',
 ]);
 function cited(str) {
@@ -173,6 +173,7 @@ function audit(where, str) {
   });
 }
 sandbox.EM_SEQUENCE_DEFS.forEach((s) => audit('sequence ' + s.key, s.ashrae36));
+Object.keys(sandbox.EM_SZ_AIR_UNIT_SECTIONS).forEach((k) => audit('single-zone section ' + k, sandbox.EM_SZ_AIR_UNIT_SECTIONS[k]));
 (SRC.match(/ashrae36Section: '[^']*'/g) || []).forEach((m) => audit('point category', m));
 const PE = read('app/pricing-estimator.js');
 (PE.match(/g36Section: '[^']*'/g) || []).forEach((m) => audit('price map', m));

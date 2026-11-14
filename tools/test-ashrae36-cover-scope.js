@@ -53,9 +53,12 @@ const fs = require('fs');
 const CTX_DIR = process.env.CH_CONTEXT_DIR || path.join(require('os').homedir(), 'AI', '_context');
 const rn = require(path.join(CTX_DIR, 'tools', 'restore-and-navigate.js'));
 
-const DEFAULT_BACKUP = path.join(require('os').homedir(), 'Downloads', 'CompanyHub-localdatafile-20260922.json');
+// The regression gate's controlled seed (outside the repo; never a Downloads backup). CH_COVER_SCOPE_DATA overrides.
+const DEFAULT_BACKUP =
+  process.env.CH_COVER_SCOPE_DATA ||
+  path.join(CTX_DIR, 'reference', 'known-good-values', 'regression-gate-seeds', '2026-11-04-companyhub-localdatafile.json');
 if (!fs.existsSync(DEFAULT_BACKUP)) {
-  console.log('SKIP: local backup not found (' + DEFAULT_BACKUP + ') -- this test needs real JOCO data.');
+  console.log('SKIP: local backup not found (' + DEFAULT_BACKUP + ') -- this test needs the gate seed.');
   process.exit(0);
 }
 
@@ -74,7 +77,7 @@ const RUN_DIR =
 // was 1127 before the 2026-11-13 space type fix: one "Electrical <id>" room is now an electrical room, so its demand ventilation sequence is N/A (-1)
 // was 1126/1112 before A36-4 (2026-11-14): fpb and ddvav zone CO2 are required, so missing zone CO2 on those boxes is called out (+86 devices; one demand ventilation sequence fewer)
 const EXPECTED_FULL_SEQUENCES = 1006; // was 1009 before the one plant classification and plant point mapping (2026-11-14). was 1125 before round 3 (2026-11-14): a damper, reheat valve, cooling valve or freeze stat the unit does not need is N/A (-116 sequences)
-const EXPECTED_FULL_SENSORS = 1177; // was 1146 before the one plant classification (plants stored as plumbing are priced, 2026-11-14). was 1181 before round 3 (2026-11-14): freeze stat N/A where the unit has no water coil (-35). was 1198 before round 1 item 12 (2026-11-14); old note: was 1198 before round 1 item 12 (2026-11-14): DX / gas-electric stage units have no water valve to install
+const EXPECTED_FULL_SENSORS = 1187; // was 1177 before round 5 (2026-11-14): a constant-speed single-zone unit gets a priced fan drive, a present heater fan enable is not a missing relay. was 1146 before the one plant classification (plants stored as plumbing are priced, 2026-11-14). was 1181 before round 3 (2026-11-14): freeze stat N/A where the unit has no water coil (-35). was 1198 before round 1 item 12 (2026-11-14); old note: was 1198 before round 1 item 12 (2026-11-14): DX / gas-electric stage units have no water valve to install
 // The one-building case uses the first building of the restored data (set after the full-selection run); no building name is kept in this file.
 let oneBuildingName = null;
 

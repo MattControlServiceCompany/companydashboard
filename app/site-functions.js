@@ -2507,6 +2507,13 @@ async function siteResetAllMeterTableSettings() {
    site-ui.js delegates to this array and should NOT maintain its own copy.
 */
 var RELEASE_NOTES = [
+  { v: 'v2026.11.14.295', date: '2026-11-14', title: 'ASHRAE 36 cost estimate: no cost for what is already there, a price for every fix',
+    items: [
+      { type: 'fix', text: 'Full Scope no longer prices a hot water reheat valve on a terminal with electric reheat, an outdoor air flow station on a unit that already measures outdoor airflow, or a heater enable relay on a heater that already has a fan enable point.' },
+      { type: 'fix', text: 'A single-zone air handler with a constant-speed fan now gets a priced supply fan variable speed drive (covering estimate), in every option that programs its speed control. A unit that already reads its fan speed is not charged.' },
+      { type: 'fix', text: 'Room names written with "|" and no space are now read, so restrooms and mechanical rooms on fan coils get no optional carbon dioxide sensor.' },
+      { type: 'fix', text: 'Detailed audit: single-zone air handler findings cite ASHRAE 36 Section 5.18. Plain words: "Terminal Airflow Sensor", "zones" with a Glossary entry, and heating coil text that fits every type of coil.' }
+    ] },
   { v: 'v2026.11.14.294', date: '2026-11-14', title: 'Heating and chilled water plants counted and priced the same everywhere',
     items: [
       { type: 'fix', text: 'A hot water or chilled water plant that is filed under plumbing, other or controls is now a plant in the cost estimate, the proposal, the audit reports and the Equipment Matrix. Before, the Detailed audit counted its missing points and sequences, but the cost estimate left them out.' },

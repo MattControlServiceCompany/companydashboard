@@ -1,0 +1,81 @@
+// tools/test-a36-round4-wording.js - round 4 wording fixes (2026-11-14). SYNTHETIC data only.
+//   A1 Summary sentence has a subject. A2 "zones" (one word) in the Summary gaps and a Glossary row for Zone.
+//   A3 airflow point labels are plain words (one label map). A4 "Affects N of M units: names". A5 heating coil text is true for any coil.
+//   A6 "(On for 1 of 3 fans)". P1 Recommended "What you get" makes no alarm/report claim. P2 Order of Work joins with "and", lower-case "check".
+// Run: node tools/test-a36-round4-wording.js   (exit 0 = all pass)
+'use strict';
+const fs = require('fs');
+const path = require('path');
+const vm = require('vm');
+const REPO = path.join(__dirname, '..');
+const rd = (f) => fs.readFileSync(path.join(REPO, f), 'utf8');
+const PE = rd('app/pricing-estimator.js');
+const RE = rd('app/report-engine.js');
+let failed = 0;
+function check(cond, msg) {
+  console.log((cond ? 'PASS ' : 'FAIL ') + msg);
+  if (!cond) failed++;
+}
+function fnSrc(src, name) {
+  const idx = src.search(new RegExp('function ' + name + '[ ]*[(]'));
+  if (idx < 0) throw new Error('not found: ' + name);
+  let i = src.indexOf('{', src.indexOf(')', idx)), d = 0, j = i;
+  for (; j < src.length; j++) {
+    if (src[j] === '{') d++;
+    else if (src[j] === '}' && --d === 0) break;
+  }
+  return src.slice(idx, j + 1);
+}
+const sb = { console };
+vm.createContext(sb);
+vm.runInContext(
+  [
+    'var EM_POINT_CATEGORIES = [];',
+    fnSrc(PE, '_pricingPointLabel'),
+    fnSrc(RE, '_a36DetJoin'),
+    fnSrc(RE, '_a36DetEquipName'),
+    fnSrc(RE, '_a36DetFraction'),
+    fnSrc(RE, '_a36DetSectionRef'),
+    'function _escHtml(s){ return String(s); }',
+    fnSrc(RE, '_a36DetSummaryIssueHtml'),
+  ].join('\n'),
+  sb,
+);
+
+// A3
+const dl = sb._pricingPointLabel('discFlow');
+const pl = sb._pricingPointLabel('primaryFlow');
+check(!/Controller|\(Flow\)/.test(dl + pl) && /Airflow Sensor/.test(dl) && /Airflow Sensor/.test(pl), 'A3. airflow point labels are plain: "' + dl + '" / "' + pl + '"');
+
+// A3b: a label that ends in "Sensor" does not print "sensor sensor"
+check(RE.includes("(/ sensor$/i.test(label) ? '' : ' sensor')"), 'A3. "Install the X Sensor" has no doubled word');
+
+// A4
+const f = { kind: 'seq', issueShort: 'Reheat Valve Control sequence not fully in place', total: 35, units: 1, affected: ['Electrical | FPB-101'], missing: ['x'], missingText: ['Reheat Valve'], section: '5.6.5' };
+const html = sb._a36DetSummaryIssueHtml(f);
+check(/Affects 1 of 35 units: FPB-101 \(Electrical\)\./.test(html), 'A4. "Affects N of M units: names" (' + (/Affects[^<]*/.exec(html) || [''])[0] + ')');
+
+// A5
+const coilText = 'Controls the heat output of the heating coil; required for morning warm-up, freeze protection and supply air control.';
+check(RE.includes(coilText) && PE.includes(coilText) && !/hot water flow through the heating coil/.test(RE + PE), 'A5. heating coil text names no hot water and is the same in both text sources');
+
+// A1
+check(/'The work needed is ' \+ rptCount\(_sumCounts\.sensors\)/.test(RE), 'A1. Summary work sentence starts with "The work needed is"');
+
+// A2
+check(/' zones have no carbon dioxide sensor, so ventilation/.test(RE) && !/ rooms have no carbon dioxide sensor/.test(RE), 'A2. Summary gaps say "zones", not "rooms"');
+check(/\['Zone', 'A room or area that one terminal unit controls\.'\]/.test(RE), 'A2. Glossary has a Zone row');
+
+// A6
+check(/bits\[0\] \+ ' for ' \+ where\.replace/.test(RE), 'A6. a reading and a share join with "for": "(On for 1 of 3 fans)"');
+
+// P1
+check(!/Alarms and reports that show/.test(RE) && /'Better comfort and efficiency from '/.test(RE), 'P1. Recommended "What you get" makes no alarm or report claim');
+
+// P2
+check(/_a36DetJoin\(names\) \+ '\.'/.test(RE) && /replace\(\/\^Check \/, 'check '\)/.test(RE), 'P2. Order of Work joins with "and" and lower-cases a later "Check"');
+const names = ['Duct Static Pressure Reset', 'Check a zone air temperature sensor that reads wrong', 'Check a discharge airflow sensor that reads wrong'].map((l, gi) => (gi > 0 ? l.replace(/^Check /, 'check ') : l));
+check(sb._a36DetJoin(names) === 'Duct Static Pressure Reset, check a zone air temperature sensor that reads wrong and check a discharge airflow sensor that reads wrong', 'P2. joined text reads as one sentence');
+
+console.log(failed ? failed + ' FAILED' : 'ALL PASS');
+process.exit(failed ? 1 : 0);

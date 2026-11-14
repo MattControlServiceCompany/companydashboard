@@ -14758,7 +14758,7 @@ var EM_SPACE_TYPE_EXEMPT_CATS = {
 function _emSpaceTypeExtractLabel(equipName) {
   var name = String(equipName || '');
   var iDash = name.indexOf(' - ');
-  var iPipe = name.indexOf(' | ');
+  var iPipe = name.indexOf('|'); // "Restroom 011| VRF-03" and "Restroom 011 | VRF-03" both separate the room from the tag
   var idx = -1;
   if (iDash !== -1 && (iPipe === -1 || iDash < iPipe)) idx = iDash;
   else if (iPipe !== -1) idx = iPipe;
@@ -19304,8 +19304,10 @@ var EM_POINT_CATEGORIES = {
         /uh.?enable/i,
         /tube heater.?enable/i,
         /heater.?on.?off/i,
+        /supply fan.?enable/i, // unit heater with a fan: "Supply Fan Enable" (with "Fan Status") is the unit enable
       ],
       aliases: [
+        'supply fan enable',
         'heater enable',
         'heater status',
         'unit heater enable',
@@ -19708,8 +19710,8 @@ var EM_POINT_CATEGORIES = {
       required: false,
       ashrae36Name: 'Outdoor Air Flow',
       ashrae36Section: 'DOAS',
-      patterns: [/oa.?flow/i, /outdoor air.?cfm/i, /outside air flow/i, /oa cfm/i],
-      aliases: ['oa flow', 'outdoor air cfm', 'oa airflow', 'outside air flow', 'oa cfm'],
+      patterns: [/oa.?flow/i, /outdoor air.?cfm/i, /outdoor air.?flow/i, /outside air flow/i, /oa cfm/i],
+      aliases: ['oa flow', 'outdoor air cfm', 'outdoor airflow', 'oa airflow', 'outside air flow', 'oa cfm'],
     },
     {
       key: 'ervWheel',
@@ -22082,6 +22084,36 @@ function emIsSingleZoneAirUnit(equipRow) {
   return !!(equipRow && (equipRow.category === 'ahu' || equipRow.category === 'rtu') && equipRow.subtype === 'sz');
 }
 
+// ASHRAE 36 section of a sequence or point on a SINGLE-ZONE air handler (round 5 C6, 2026-11-14). Section 5.16 is the
+// multiple-zone VAV air handler; the single-zone VAV air handler is Section 5.18. Numbers from the ASHRAE 36-2021 text:
+//   5.18.4 Supply Fan Speed Control and Supply Air Temperature Set-Point Reset
+//   5.18.5 Supply Air Temperature Control (sequences the heating coil and the economizer dampers)
+//   5.18.6 Minimum Outdoor Air Control (5.18.6.3 with an outdoor airflow station, with demand control ventilation)
+//   5.18.7 Economizer Lockout        5.18.10 Return-Fan Control        5.18.11 Freeze Protection
+// Duct static pressure reset (5.16.1) has no 5.18 counterpart (a single-zone unit has no duct static control); it is
+// N/A for these units and is not listed. The key is a sequence key (EM_SEQUENCE_DEFS) or a point key (pricing rows).
+var EM_SZ_AIR_UNIT_SECTIONS = {
+  ahu_sat_reset: '5.18.4',
+  ahu_economizer: '5.18.5 to 5.18.7',
+  ahu_min_oa: '5.18.6',
+  ahu_freeze_prot: '5.18.11',
+  ahu_rf_control: '5.18.10',
+  demandCtrl: '5.18.6',
+  sat: '5.18.5',
+  htgValve: '5.18.5',
+  clgValve: '5.18.5',
+  oaDampCmd: '5.18.5 to 5.18.7',
+  raDampCmd: '5.18.5 to 5.18.7',
+  damperPositionControl: '5.18.5 to 5.18.7',
+  co2_ahu: '5.18.6',
+  oaFlow: '5.18.6',
+  freezeStat: '5.18.11',
+};
+// The section for a single-zone unit, or '' when the key has no 5.18 counterpart (the caller keeps its 5.16 text).
+function emSingleZoneSection(key) {
+  return EM_SZ_AIR_UNIT_SECTIONS[key] || '';
+}
+
 // Why a required point category is not applicable on this single-zone unit, or '' when it applies.
 // coveredKeys: map of point category key -> truthy for the unit's matched points.
 // stages: { cool: bool, heat: bool } from the unit's point names.
@@ -22510,6 +22542,7 @@ function emComputeCompliance(equipRow, configFlags, customMappings) {
     missingPoints: missingPoints,
     naPoints: naPoints,
     naEvidence: naEv,
+    singleZone: _szUnit, // single-zone air handler or rooftop unit (emIsSingleZoneAirUnit); pricing reads it for the fan drive
     spaceTypeExemptCovered: spaceTypeExemptCovered,
     coveragePct: coveragePct,
     totalRequired: totalRequired,

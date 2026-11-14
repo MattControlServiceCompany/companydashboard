@@ -497,7 +497,7 @@ const ok = (c, m) => {
         if (!inText || f.units < 1 || (f.total && f.units > f.total)) bad.push(f.n + ': ' + f.observed + ' units ' + f.units + ' of ' + f.total);
       });
       // m: the recommendation of a point finding says sensor only for a sensor
-      const mbad = all.filter((f) => f.kind === 'sensor' && (_a36DetIsSensorLabel(f.label) ? !/^Install the .* sensor/.test(f.recommendation) : !/^Add the .* point/.test(f.recommendation))).map((f) => f.n);
+      const mbad = all.filter((f) => f.kind === 'sensor' && (_a36DetIsSensorLabel(f.label) ? !/^Install the .* sensor/i.test(f.recommendation) : !/^Add the .* point/.test(f.recommendation))).map((f) => f.n);
       // a sequence listed twice for one group (two catalog rows) is one finding with the summed units
       const real = _a36ScopedCatalogRows;
       let split = null;

@@ -141,6 +141,7 @@ const POINT_KEY_INSTALL_CLASS = {
   freezeStat: 'currentSwitchStatusRelay',
   oaFlow: 'flowBtuMeter',
   enable: 'currentSwitchStatusRelay', // heater enable relay, 1.0 h (covering estimate, Manager 2026-11-14)
+  sfSpeedCmd: 'vfdIntegration', // supply fan variable speed drive, 5.0 h (round 5 C5, Manager 2026-11-14)
 };
 
 /* Computed default install-hours per point key — resolved once so buildCatalogRows/every caller
@@ -507,7 +508,9 @@ const SEQUENCE_SAVINGS_IMPACT = {
    ─────────────────────────────────────────────────────────────────────────── */
 const SEQUENCE_BLOCKING_SENSORS = {
   ahu_dsp_reset: ['dsp'],
-  ahu_sat_reset: ['sat'],
+  // sfSpeedCmd (round 5, Manager 2026-11-14): a constant-speed fan needs a drive before speed control and supply air
+  // temperature reset can run; the drive row is $0 I/O where the unit already reads its fan speed.
+  ahu_sat_reset: ['sat', 'sfSpeedCmd'],
   ahu_economizer: ['mat', 'oat'],
   demandCtrl: ['co2_ahu'],
   vav_dcv: ['co2_zone'],
@@ -518,7 +521,7 @@ const SEQUENCE_BLOCKING_SENSORS = {
   ahu_rf_control: [],
   vav_zone_temp: ['coolSP', 'htgSP'],
   vav_reheat: [],
-  ahu_min_oa: ['oaDampCmd'],
+  ahu_min_oa: ['oaDampCmd', 'sfSpeedCmd'],
   vav_damper_writeback: [],
   hwp_staging: [],
   chwp_staging: [],
@@ -2066,7 +2069,7 @@ const PRICE_POINT_MAP = {
     flags: ['engReview'],
     note: '0.75" 2-way Cv7.4 spring-return — ENG-REVIEW: verify Cv and pipe size',
     whyNeeded:
-      'Controls hot water flow through the heating coil; required for morning warm-up, freeze protection, and supply air control.',
+      'Controls the heat output of the heating coil; required for morning warm-up, freeze protection and supply air control.',
     g36Section: '§5.16.2',
   },
   reheatValve: {
@@ -2101,7 +2104,6 @@ const PRICE_POINT_MAP = {
   sfStatus: { defaultSku: null, qtyRule: 'perUnit', flags: ['ioOnly'], note: 'Controller I/O' },
   sfSpeed: { defaultSku: null, qtyRule: 'perUnit', flags: ['ioOnly'], note: 'Controller I/O' },
   sfEnable: { defaultSku: null, qtyRule: 'perUnit', flags: ['ioOnly'], note: 'Controller I/O' },
-  sfSpeedCmd: { defaultSku: null, qtyRule: 'perUnit', flags: ['ioOnly'], note: 'Controller I/O' },
   coolSP: { defaultSku: null, qtyRule: 'perUnit', flags: ['ioOnly'], note: 'Controller I/O' },
   htgSP: { defaultSku: null, qtyRule: 'perUnit', flags: ['ioOnly'], note: 'Controller I/O' },
   fanStatus: { defaultSku: null, qtyRule: 'perUnit', flags: ['ioOnly'], note: 'Controller I/O' },
@@ -2150,6 +2152,21 @@ const PRICE_POINT_MAP = {
       'Measures actual outdoor air volume; without it, code-required minimum ventilation rates cannot be confirmed.',
     g36Section: '§5.16.3 to 5.16.5',
   },
+  // Supply fan drive (round 5 C5, 2026-11-14): a unit with no fan speed reading and no speed command has a
+  // constant-speed fan. ASHRAE 36 speed control needs a variable speed drive (VFD or ECM motor controller).
+  // One drive gives both the command and the speed reading, so only sfSpeedCmd carries the price; sfSpeed stays
+  // $0 (one drive = one priced line). A unit that already reads its fan speed has the drive: its gap is I/O only
+  // (PRICE_POINT_MAP_SF_SPEED_CMD_IO below), never priced.
+  sfSpeedCmd: {
+    defaultSku: null,
+    qtyRule: 'perUnit',
+    flags: ['noSku'],
+    coverPrice: 3000, // covering estimate, Manager 2026-11-14 (VFD or ECM motor controller for a 1-5 hp supply fan; typical $1,200-$2,800, high side)
+    note: 'Supply fan variable speed drive — covering estimate $3,000 (typical $1,200-$2,800); a typed price replaces it',
+    whyNeeded:
+      'Lets the control system command and read the supply fan speed, so the fan can follow the ASHRAE 36 speed control sequences.',
+    g36Section: '',
+  },
   // Heater enable relay (heater units, point key 'enable'): covering estimate, Manager 2026-11-14.
   enable: {
     defaultSku: null,
@@ -2161,6 +2178,10 @@ const PRICE_POINT_MAP = {
     g36Section: '',
   },
 };
+
+// A unit whose supply fan speed is already read (sfSpeed covered) has a drive: its sfSpeedCmd gap is a controller
+// point only, $0 (round 5 C5). Used by buildCatalogRows (general case, key sfSpeedCmd).
+const PRICE_POINT_MAP_SF_SPEED_CMD_IO = { defaultSku: null, qtyRule: 'perUnit', flags: ['ioOnly'], note: 'Controller I/O' };
 
 /* ── CSV parser (spec §7)
    Handles: SKU, List Price, Net, Contract, Category, Short Description, Note
@@ -2809,6 +2830,24 @@ function buildCatalogRows(projId, buildingNames) {
           }
         }
 
+        // Round 5 C5: the supply fan drive is priced only on a single-zone unit with no fan speed reading (a
+        // constant-speed fan). A unit that reads its fan speed has the drive; a multiple-zone VAV unit cannot run
+        // without one, so a missing speed point there is a controller point only. Both: $0 (own bucket).
+        if (effectiveKey === 'sfSpeedCmd' && (_pricingUnitCoversPoint(eq, 'sfSpeed') || !(eq.compliance && eq.compliance.singleZone))) {
+          var sfIoKey = 'sfSpeedCmd__io__' + cat;
+          if (!hardwareGaps[sfIoKey]) {
+            hardwareGaps[sfIoKey] = {
+              pointKey: effectiveKey,
+              equipType: cat,
+              catLabel: catLabel,
+              count: 0,
+              mapEntry: PRICE_POINT_MAP_SF_SPEED_CMD_IO,
+            };
+          }
+          hardwareGaps[sfIoKey].count++;
+          return;
+        }
+
         // General case: group by (pointKey + equipType)
         var gKey = effectiveKey + '__' + cat;
         if (!hardwareGaps[gKey]) {
@@ -3008,6 +3047,9 @@ function buildCatalogRows(projId, buildingNames) {
             if ((sk === 'co2_zone') !== isZoneCat) return false; // wrong category for this blocking key
             return !!eqMissing.co2;
           }
+          // The fan drive blocks only where it is a priced device (single-zone unit, no fan speed reading); elsewhere
+          // the missing speed command is a $0 controller point and the sequence is programming only (round 5 C5).
+          if (sk === 'sfSpeedCmd' && (_pricingUnitCoversPoint(eq, 'sfSpeed') || !(eq.compliance && eq.compliance.singleZone))) return false;
           return !!eqMissing[sk];
         });
         var group = needsHw ? 'gap' : 'ready';
@@ -3337,8 +3379,8 @@ function _pricingPointLabel(pointKey) {
     clgValve: 'Cooling Coil Valve',
     htgValve: 'Heating Coil Valve',
     reheatValve: 'Reheat Valve',
-    discFlow: 'Variable Air Volume Zone Controller (Flow)',
-    primaryFlow: 'Fan-Powered Box Zone Controller (Flow)',
+    discFlow: 'Terminal Airflow Sensor',
+    primaryFlow: 'Fan-Powered Box Primary Airflow Sensor',
     sfStatus: 'Supply Fan Status',
     sfSpeed: 'Supply Fan Speed',
     sfEnable: 'Supply Fan Enable',
@@ -4885,6 +4927,12 @@ function _pricingRecommendedRowsAll(projId) {
    ('Beyond-Compliance'), grouped under the REAL building (never WebCTRL
    System campus-wide).
    ─────────────────────────────────────────────────────────────────────────── */
+// True when the unit's matched points include the point category (the same coveredPoints list every row builder reads).
+function _pricingUnitCoversPoint(eq, categoryKey) {
+  var cps = eq && eq.compliance && eq.compliance.coveredPoints ? eq.compliance.coveredPoints : [];
+  for (var i = 0; i < cps.length; i++) if (cps[i].categoryKey === categoryKey) return true;
+  return false;
+}
 function buildOptionalPointRows(projId) {
   if (typeof collectASHRAE36Data !== 'function') return [];
   var ashData = collectASHRAE36Data(projId);
@@ -4932,6 +4980,11 @@ function buildOptionalPointRows(projId) {
       catDefs.forEach(function (def) {
         if (def.required) return; // only optional (required:false) categories
         if (coveredKeys[def.key]) return; // already present on this equipment
+        // Round 5 C1 (2026-11-14): a point that is not applicable on positive evidence (emNaEvidence: electric
+        // reheat, no hot water plant, no chilled water plant, ...) is never a gap. The required rows already skip
+        // it; this uses the same map (eq.compliance.naEvidence), so Full Scope does not price a valve the unit
+        // does not have.
+        if (eq.compliance && eq.compliance.naEvidence && eq.compliance.naEvidence[def.key]) return;
 
         // Replicate emComputeCompliance's configFlag N/A handling
         // (equipment-matrix.js ~17771-17788) for optional categories too.
