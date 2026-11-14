@@ -2526,6 +2526,30 @@ function _pricingSelectZoneSensorSku(needCO2, features) {
    opts (optional): passed straight through to collectASHRAE36Data. Only the Detailed Audit Report passes it
    ({ plantsByName: true }); every other caller omits it and gets the stored categories.
    ─────────────────────────────────────────────────────────────────────────── */
+// Deliverable E: physical install labor. The one price path for a hardware gap row (required rows in
+// buildCatalogRows and beyond-compliance rows in buildOptionalPointRows). Applies to every real
+// (non-ioOnly) hardware gap, including noSku/SKU-missing rows, which have no parts price yet but still
+// need a device installed once the user enters one (see _pricingComputeTotals's manual-price branch,
+// which adds installLaborTotal back in at that point). ioOnly rows are existing controller I/O points,
+// not new hardware, so they get 0 install hours/labor.
+function _pricingWithInstallLabor(pointKey, ioOnly, unitPrice, lineTotal, count, installHoursMap, installLaborRate) {
+  var hrs = ioOnly ? 0 : installHoursMap[pointKey] != null ? installHoursMap[pointKey] : INSTALL_HOURS_FALLBACK_DEFAULT;
+  var laborTotal = ioOnly ? 0 : parseFloat((hrs * count * installLaborRate).toFixed(2));
+  var out = {
+    installHours: hrs,
+    installLaborTotal: laborTotal,
+    partsUnitPrice: unitPrice, // raw parts-only unit price, pre-install (kept for the
+    partsLineTotal: lineTotal, // optimizer substitution path and for transparency/debug)
+    unitPrice: unitPrice,
+    lineTotal: lineTotal,
+  };
+  if (!ioOnly) {
+    out.unitPrice = unitPrice != null ? parseFloat((unitPrice + hrs * installLaborRate).toFixed(2)) : null;
+    out.lineTotal = lineTotal != null ? parseFloat((lineTotal + laborTotal).toFixed(2)) : null;
+  }
+  return out;
+}
+
 function buildCatalogRows(projId, buildingNames, opts) {
   if (typeof collectASHRAE36Data !== 'function') return [];
   var ashData = collectASHRAE36Data(projId, null, buildingNames, opts);
@@ -2837,24 +2861,13 @@ function buildCatalogRows(projId, buildingNames, opts) {
         }
       }
 
-      // Deliverable E: physical install labor. Applies to every real (non-ioOnly) hardware gap —
-      // including noSku/SKU-missing rows, which don't have a resolvable parts price yet but still
-      // need a device physically installed once the user enters one (see _pricingComputeTotals's
-      // manual-price branch, which adds installLaborTotal back in at that point). ioOnly rows are
-      // existing controller I/O points, not new hardware, so they get 0 install hours/labor.
-      var _installHrsPerUnit = ioOnly
-        ? 0
-        : installHoursMap[gap.pointKey] != null
-          ? installHoursMap[gap.pointKey]
-          : INSTALL_HOURS_FALLBACK_DEFAULT;
-      var _installLaborTotal = ioOnly ? 0 : parseFloat((_installHrsPerUnit * gap.count * installLaborRate).toFixed(2));
-      var _partsUnitPrice = unitPrice; // raw parts-only unit price, pre-install (kept for the
-      var _partsLineTotal = lineTotal; // optimizer substitution path and for transparency/debug)
-      if (!ioOnly) {
-        unitPrice =
-          unitPrice != null ? parseFloat((unitPrice + _installHrsPerUnit * installLaborRate).toFixed(2)) : null;
-        lineTotal = lineTotal != null ? parseFloat((lineTotal + _installLaborTotal).toFixed(2)) : null;
-      }
+      var _inst = _pricingWithInstallLabor(gap.pointKey, ioOnly, unitPrice, lineTotal, gap.count, installHoursMap, installLaborRate);
+      var _installHrsPerUnit = _inst.installHours;
+      var _installLaborTotal = _inst.installLaborTotal;
+      var _partsUnitPrice = _inst.partsUnitPrice;
+      var _partsLineTotal = _inst.partsLineTotal;
+      unitPrice = _inst.unitPrice;
+      lineTotal = _inst.lineTotal;
 
       // Stamp list/net/contractPrice for the three-column display (FIX 2)
       var _catEntry = catalog && sku ? catalog[sku] : null;
@@ -4853,6 +4866,8 @@ function buildOptionalPointRows(projId) {
 
   var catalog = sget('en_pricing_catalog', null);
   var cfg = _pricingGetConfig();
+  var installHoursMap = cfg.installHoursByPoint || INSTALL_HOURS_BY_POINT_DEFAULT;
+  var installLaborRate = cfg.hourlyRate || COST_LABOR_RATE_DEFAULT;
   var rows = [];
   var rowIdx = 0;
 
@@ -5024,6 +5039,10 @@ function buildOptionalPointRows(projId) {
         unitPrice = getUnitPrice(sku);
         if (unitPrice !== null) lineTotal = parseFloat((unitPrice * gap.count).toFixed(2));
       }
+      // Same install labor as a required row (one price path for one device).
+      var _inst = _pricingWithInstallLabor(gap.pointKey, ioOnly, unitPrice, lineTotal, gap.count, installHoursMap, installLaborRate);
+      unitPrice = _inst.unitPrice;
+      lineTotal = _inst.lineTotal;
 
       var _catEntry = catalog && sku ? catalog[sku] : null;
       var _listPrice = _catEntry && _catEntry.list != null ? _catEntry.list : null;
@@ -5045,7 +5064,12 @@ function buildOptionalPointRows(projId) {
         engReview: engReview,
         noSku: noSku,
         ioOnly: ioOnly,
-        unitPrice: unitPrice,
+        unitPrice: unitPrice, // parts + install
+        partsUnitPrice: _inst.partsUnitPrice,
+        partsLineTotal: _inst.partsLineTotal,
+        installHours: _inst.installHours,
+        installLaborRate: installLaborRate,
+        installLaborTotal: _inst.installLaborTotal,
         listPrice: _listPrice,
         netPrice: _netPrice,
         contractPrice: _contractPrice,
