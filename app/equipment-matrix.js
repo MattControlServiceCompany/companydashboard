@@ -16960,7 +16960,7 @@ var EM_POINT_CATEGORIES = {
       key: 'co2',
       negativeGuards: [_EM_CO2_NOT_SENSOR],
       label: 'Zone CO2 Sensor',
-      required: false,
+      required: true, // A36-4: Matt 2026-11-13, missing zone CO2 is called out; the proposal prices it as optional scope
       ashrae36Name: 'Zone CO2 Concentration',
       ashrae36Section: '5.7 / DCV',
       configFlag: 'hasCO2',
@@ -17256,7 +17256,7 @@ var EM_POINT_CATEGORIES = {
       key: 'co2',
       negativeGuards: [_EM_CO2_NOT_SENSOR],
       label: 'Zone CO2 Sensor',
-      required: false,
+      required: true, // A36-4: Matt 2026-11-13, missing zone CO2 is called out; the proposal prices it as optional scope
       ashrae36Name: 'Zone CO2 Concentration',
       ashrae36Section: '5.13 / DCV',
       configFlag: 'hasCO2',

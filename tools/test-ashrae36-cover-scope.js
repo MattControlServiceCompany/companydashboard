@@ -72,8 +72,9 @@ const RUN_DIR =
 // (3970ed1a, Matt 2026-11-12: "A36-3 can use that sequence set.")
 // was 1120/1101 before the 2026-11-13 point-mapping fixes (alarm, limit and adjust names no longer count as sensors; a CO2 limit is not a CO2 sensor; air handler SAT/RAT/MAT/DSP alarm limits are not sensors)
 // was 1127 before the 2026-11-13 space type fix: one "Electrical <id>" room is now an electrical room, so its demand ventilation sequence is N/A (-1)
-const EXPECTED_FULL_SEQUENCES = 1126;
-const EXPECTED_FULL_SENSORS = 1112;
+// was 1126/1112 before A36-4 (2026-11-14): fpb and ddvav zone CO2 are required, so missing zone CO2 on those boxes is called out (+86 devices; one demand ventilation sequence fewer)
+const EXPECTED_FULL_SEQUENCES = 1125;
+const EXPECTED_FULL_SENSORS = 1198;
 // The one-building case uses the first building of the restored data (set after the full-selection run); no building name is kept in this file.
 let oneBuildingName = null;
 

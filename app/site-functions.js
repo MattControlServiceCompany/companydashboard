@@ -2507,6 +2507,10 @@ async function siteResetAllMeterTableSettings() {
    site-ui.js delegates to this array and should NOT maintain its own copy.
 */
 var RELEASE_NOTES = [
+  { v: 'v2026.11.14.288', date: '2026-11-14', title: 'Zone CO2: the same rule for all zone boxes',
+    items: [
+      { type: 'change', text: 'Fan-powered boxes and dual-duct boxes now follow the same zone CO2 rule as VAV boxes. The ASHRAE 36 audit calls out each zone that has no CO2 sensor, and the estimate shows those sensors in the "Optional: Zone CO2 Sensors" section, not in the base total. The sensor price on these boxes now includes install labor, the same as on VAV boxes.' }
+    ] },
   { v: 'v2026.11.13.287', date: '2026-11-13', title: 'Equipment Matrix: dual-duct boxes found by their airflow points',
     items: [
       { type: 'fix', text: 'A box that has a cold deck airflow point and a hot deck airflow point is now a Dual Duct Variable Air Volume box, also when its name says VAV. In one client building 19 boxes change type. A dual-duct box has no reheat valve, so the estimate no longer prices reheat valve work for these boxes, and their zone CO2 follows the dual-duct rule.' }
