@@ -1,6 +1,6 @@
-// tools/test-appendix-b-setpoint-price.js - the Service Proposal prices the Appendix B setpoint and schedule reprogramming (2026-11-15).
+// tools/test-appendix-b-setpoint-price.js - the Service Proposal prices the Appendix A setpoint and schedule reprogramming (2026-11-15).
 // SYNTHETIC data only, headless bundled Chromium.
-//   1. The line quantity is the Appendix B zone count: the sum of N over the buildings that print "Change the setpoints of N of M zones".
+//   1. The line quantity is the Appendix A zone count: the sum of N over the buildings that print "Change the setpoints of N of M zones".
 //   2. Hours = 0.15 x zones + 2 x buildings with N > 0; price = hours x the project hourly rate.
 //   3. The line is in the Programming part (phase 2) of Compliance, Recommended and Full Scope, and in each option total. It is not in the optional CO2 section.
 //   4. A project with N = 0 (and a building of single-zone units only) has no line and the totals do not change.
@@ -132,7 +132,7 @@ const ok = (c, m) => {
     const printedSum = mx.printed.reduce((a, p) => a + p[0], 0);
     ok(mx.printed.length === 2 && printedSum === 5, 'mixed. the Audit Report prints 2 buildings to reprogram, 5 zones in all: ' + JSON.stringify(mx.printed));
     ok(mx.plan.zones === 5 && mx.plan.buildings === 2, 'mixed. the plan (_a36SetpointReprogramPlan): 5 zones, 2 buildings: ' + JSON.stringify(mx.plan));
-    ok(mx.intro, 'mixed. the Appendix B intro says the cost of this work is in the Service Proposal');
+    ok(mx.intro, 'mixed. the Appendix A intro says the cost of this work is in the Service Proposal');
     const hours = 0.15 * 5 + 2 * 2;
     const price = Math.round(hours * mx.rate * 100) / 100;
     TIERS.forEach((t) => {
@@ -140,7 +140,7 @@ const ok = (c, m) => {
       ok(T.lines.length === 1, 'mixed. ' + t + ': one setpoint line: ' + JSON.stringify(T.lines));
       const L = T.lines[0] || {};
       ok(L.item === 'Setpoint and Schedule Reprogramming' && L.label === 'Setpoint and Schedule Reprogramming', 'mixed. ' + t + ': the label is "Setpoint and Schedule Reprogramming"');
-      ok(L.qty === printedSum, 'mixed. ' + t + ': quantity ' + L.qty + ' = the Appendix B N sum ' + printedSum);
+      ok(L.qty === printedSum, 'mixed. ' + t + ': quantity ' + L.qty + ' = the Appendix A N sum ' + printedSum);
       ok(L.phase === 2, 'mixed. ' + t + ': the line is in the Programming part (phase 2)');
       ok(near(L.hrsPerUnit * L.qty, hours), 'mixed. ' + t + ': hours ' + (L.hrsPerUnit * L.qty) + ' = 0.15 x 5 + 2 x 2 = ' + hours);
       ok(near(L.total, price), 'mixed. ' + t + ': price ' + L.total + ' = ' + hours + ' h x $' + mx.rate + ' = ' + price);
@@ -155,14 +155,14 @@ const ok = (c, m) => {
     const nn = out.none;
     ok(nn.plan.zones === 0 && nn.plan.buildings === 0, 'none. the plan has 0 zones: ' + JSON.stringify(nn.plan));
     ok(nn.printed.length === 0, 'none. the Audit Report prints no "Change the setpoints" line');
-    ok(!nn.intro, 'none. the Appendix B intro does not mention the Service Proposal');
+    ok(!nn.intro, 'none. the Appendix A intro does not mention the Service Proposal');
     TIERS.forEach((t) => ok(nn.tiers[t].lines.length === 0 && near(nn.tiers[t].grand, nn.tiers[t].grandWithout), 'none. ' + t + ': no setpoint line, total unchanged'));
-    ok(nn.rows.some((r) => r.single), 'none. a building of single-zone units is in Appendix B and adds nothing');
+    ok(nn.rows.some((r) => r.single), 'none. a building of single-zone units is in Appendix A and adds nothing');
 
     // ---- 6. one Step 1 text for the step table and the Order of Work; it names the Audit Report ----
     const s1 = await page.evaluate(() => [_rptA36Step1Text(273), _rptA36Step1Text(1), _rptA36Step1Text(0)]);
-    ok(s1[0] === 'Check the equipment and confirm what to program. Reset zone setpoints and schedules (273 zones, Audit Report Appendix B).', 'Step 1 text: ' + s1[0]);
-    ok(/\(1 zone, Audit Report Appendix B\)\.$/.test(s1[1]), 'Step 1 text, 1 zone: ' + s1[1]);
+    ok(s1[0] === 'Check the equipment and confirm what to program. Reset zone setpoints and schedules (273 zones, Audit Report Appendix A).', 'Step 1 text: ' + s1[0]);
+    ok(/\(1 zone, Audit Report Appendix A\)\.$/.test(s1[1]), 'Step 1 text, 1 zone: ' + s1[1]);
     ok(s1[2] === 'Check the equipment and confirm what to program.', 'Step 1 text, 0 zones: no setpoint sentence');
     const src = require('fs').readFileSync(path.join(ROOT, 'app', 'report-engine.js'), 'utf8');
     ok((src.match(/_rptA36Step1Text\(plan\.setpointZones\)/g) || []).length === 2, 'the step table and the Order of Work both use _rptA36Step1Text');

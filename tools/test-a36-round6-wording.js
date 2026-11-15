@@ -99,14 +99,14 @@ const RE = fs.readFileSync(path.join(ROOT, 'app', 'report-engine.js'), 'utf8');
     // ---- F2 and F3: findings ----
     const sz = scen.sz.findings;
     const cmd = sz.find((f) => f.kind === 'sensor' && f.key === 'sfSpeedCmd');
-    ok(cmd && /^Install a variable speed drive on the supply fan of both units, so the building automation system can set and read the fan speed\.$/.test(cmd.rec), 'F2. single-zone point finding: drive recommendation: ' + (cmd && cmd.rec));
+    ok(cmd && /^Install a variable speed drive on the supply fan of both units\.$/.test(cmd.rec), 'F2. single-zone point finding: drive recommendation: ' + (cmd && cmd.rec));
     ok(cmd && cmd.impact === 'Lets the system change the fan speed. Without a variable speed drive the fan runs at full speed all the time.', 'F2. single-zone point finding: plain Impact line: ' + (cmd && cmd.impact));
     ok(cmd && cmd.section === '5.18.4' && /ASHRAE 36, Section 5\.18\.4/.test(cmd.observed), 'F3. the single-zone supply fan speed command finding cites Section 5.18.4: ' + (cmd && cmd.section + ' | ' + cmd.observed));
     const sat = sz.find((f) => f.kind === 'seq' && f.key === 'ahu_sat_reset');
-    ok(sat && /^Install a variable speed drive on the supply fan of both units and add the Outdoor Air Temp point, then program the Supply Air Temperature Reset sequence on both units\.$/.test(sat.rec), 'F2. single-zone sequence finding: drive first, other missing points kept: ' + (sat && sat.rec));
+    ok(sat && /^Install a variable speed drive on the supply fan of both units and add the Outdoor Air Temp point\. Program the Supply Air Temperature Reset sequence\.$/.test(sat.rec), 'F2. single-zone sequence finding: drive first, other missing points kept: ' + (sat && sat.rec));
     ok(sz.every((f) => f.kind !== 'seq' || !/Supply Fan Speed( Command)? point/.test(f.rec)), 'F2. no single-zone sequence finding asks to add the Supply Fan Speed point');
     const mzSeq = scen.mixed.findings.find((f) => f.kind === 'seq' && f.key === 'ahu_sat_reset' && f.section === '5.16.2');
-    ok(mzSeq && /^Add the Outdoor Air Temp and Supply Fan Speed points, then program the Supply Air Temperature Reset sequence on the unit\.$/.test(mzSeq.rec), 'F2. a multi-zone unit keeps the old text: ' + (mzSeq && mzSeq.rec));
+    ok(mzSeq && /^Add the Outdoor Air Temp and Supply Fan Speed points on the unit\. Program the Supply Air Temperature Reset sequence\.$/.test(mzSeq.rec), 'F2. a multi-zone unit keeps the old text: ' + (mzSeq && mzSeq.rec));
     ok(scen.mixed.findings.some((f) => f.key === 'sfSpeedCmd') === scen.mixed.findings.some((f) => f.key === 'sfSpeedCmd' && f.section === '5.18.4'), 'F3. every single-zone sfSpeedCmd finding has a section');
 
     // ---- F2 (drive wording follows the price): units that cover sfSpeed but miss sfSpeedCmd ----
