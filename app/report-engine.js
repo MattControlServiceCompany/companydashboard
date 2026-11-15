@@ -19416,10 +19416,26 @@ function rptPageASHRAE36CostEstimate(n, d, detailedSectionNo) {
       var _nameH = Math.ceil((seqName || '').length / SEQ_NAME_CPL) * _seqLineH;
       var _reqH = _reqText ? SEQ_REQ_GAP + Math.ceil(_reqText.length / SEQ_REQ_CPL) * _seqLineH : 0;
       var _descH = Math.ceil(plainDesc.length / SEQ_DESC_CPL) * _seqLineH;
+      // Section column (16%, about 13 dense / 10 normal characters a line, scaled from the 27% name column).
+      // A long range ("Sections 5.16.4 to 5.16.6 and 5.18.5 to 5.18.7") wraps to 5 lines, taller than the
+      // other columns; without this term the estimate was too low and the total row printed alone on the next page.
+      // Count lines word by word (a range word never breaks), so the estimate never falls below the real wrap.
+      var SEQ_SEC_CPL = RPT_MP_DENSE_ACTIVE ? 13 : 10;
+      var _secLines = 0;
+      var _secCur = 0;
+      sectionText.split(' ').forEach(function (w) {
+        if (!w) return;
+        if (_secCur && _secCur + 1 + w.length <= SEQ_SEC_CPL) _secCur += 1 + w.length;
+        else {
+          _secLines++;
+          _secCur = w.length;
+        }
+      });
+      var _secH = _secLines * _seqLineH;
       rationaleTokens.push({
         type: 'row',
         html: rowHTML,
-        estH: SEQ_ROW_PAD_H + Math.max(_nameH + _reqH, _descH),
+        estH: SEQ_ROW_PAD_H + Math.max(_nameH + _reqH, _descH, _secH),
       });
     });
 
@@ -21456,7 +21472,8 @@ var _RPT_A36_TIER_PLAIN = {
   compliance: 'The devices and safety programming that ASHRAE 36 needs first, such as freeze protection.',
   'full-scope':
     // Full Scope also prices optional devices that ASHRAE 36 does not require (fan coil units, heaters); the Audit Report lists only the required gaps.
-    'Every ASHRAE 36 device and control sequence on all of the equipment, plus extra devices that are not in the Audit Report findings (such as on fan coil units) and reports that flag equipment faults.',
+    // Keep it short (about 120 characters): a longer line pushes the page 1 cost table into the footer.
+    'Every ASHRAE 36 device and sequence on all equipment, plus extra devices beyond the audit findings and fault reports.',
 };
 
 /**
