@@ -53,6 +53,10 @@ const COST_PER_SEQ_HOURS_DEFAULT = {
   vav_dcv: 0.5,
 };
 
+// Covering estimate, Manager 2026-11-15: setpoint and schedule changes per zone plus a schedule set-up and check per building; editable.
+const SETPOINT_REPROGRAM_HOURS_PER_ZONE = 0.15;
+const SETPOINT_REPROGRAM_HOURS_PER_BUILDING = 2;
+
 /* ── Physical install labor — Deliverable E (2026-07-19), unified rate (2026-07-28) ─────────
    COST_LABOR_RATE_DEFAULT above + COST_PER_SEQ_HOURS_DEFAULT price BAS sequence PROGRAMMING
    labor (Phase 2). Neither had ever priced the physical labor to mount/wire a sensor, actuator,
@@ -3204,6 +3208,50 @@ function buildCatalogRows(projId, buildingNames) {
    folds each one in as its own single-row unit (scored via the same _pricingEquipRowScore every
    other unclaimed row uses) so it still gets scheduled into a phase like any other line item.
    ─────────────────────────────────────────────────────────────────────────── */
+/* ── buildSetpointReprogramRows(projId, buildingNames) ────────────────────────────────────────
+   The Audit Report's Appendix B (Setpoint Programming Review) recommends resetting zone setpoints and
+   schedules. This is the ONE priced line for that work (one-time cost), in the Programming part of every
+   option (Recommended, Compliance, Full Scope); it is not part of the optional room CO2 scope.
+   Zones = the Appendix B count (report-engine.js _a36SetpointReprogramPlan, the same per-building
+   "Change the setpoints of N of M zones" count; no second count here).
+   Hours = SETPOINT_REPROGRAM_HOURS_PER_ZONE x zones + SETPOINT_REPROGRAM_HOURS_PER_BUILDING x buildings with
+   zones to reprogram. Price = hours x the project hourly rate (cfg.hourlyRate || COST_LABOR_RATE_DEFAULT).
+   Returns [] when there are no zones to reprogram. */
+function buildSetpointReprogramRows(projId, buildingNames) {
+  if (typeof collectASHRAE36Data !== 'function' || typeof _a36SetpointReprogramPlan !== 'function') return [];
+  var ashData = collectASHRAE36Data(projId, null, buildingNames);
+  if (!ashData || !ashData.buildings) return [];
+  var plan = _a36SetpointReprogramPlan(ashData);
+  if (!plan || !(plan.zones > 0)) return [];
+  var hourlyRate = _pricingGetConfig().hourlyRate || COST_LABOR_RATE_DEFAULT;
+  var hours = SETPOINT_REPROGRAM_HOURS_PER_ZONE * plan.zones + SETPOINT_REPROGRAM_HOURS_PER_BUILDING * plan.buildings;
+  var hrsPerUnit = hours / plan.zones;
+  return [
+    {
+      id: 'sprg_setpoint_reprogram',
+      building: 'All Buildings',
+      item: 'Setpoint and Schedule Reprogramming',
+      type: 'Programming',
+      equipment: plan.zones + ' zone' + (plan.zones !== 1 ? 's' : '') + ' in ' + plan.buildings + ' building' + (plan.buildings !== 1 ? 's' : ''),
+      qty: plan.zones,
+      sku: null,
+      engReview: false,
+      noSku: false,
+      ioOnly: false,
+      unitPrice: hrsPerUnit * hourlyRate,
+      listPrice: null,
+      netPrice: null,
+      contractPrice: null,
+      lineTotal: parseFloat((hours * hourlyRate).toFixed(2)),
+      note: 'Appendix B: reset zone setpoints and schedules to the recommended values.',
+      phase: 2,
+      hrsPerUnit: hrsPerUnit,
+      isSetpointReprogram: true,
+      setpointBuildings: plan.buildings,
+    },
+  ];
+}
+
 function buildSensorInvestigationRows(projId) {
   if (typeof emLoadMatrix !== 'function' || typeof emComputeSensorDeficiencyInventory !== 'function') return [];
   var matData = emLoadMatrix(projId);
@@ -3297,11 +3345,13 @@ function buildSensorInvestigationRows(projId) {
    items — they live in Recommended (budget-fit) and Full Scope (all).
    ─────────────────────────────────────────────────────────────────────────── */
 function _pricingComplianceRowsAll(projId) {
-  return buildCatalogRows(projId).filter(function (row) {
-    if (row.phase === 1) return true;
-    var def = SEQUENCE_SAVINGS_IMPACT[row.seqKey];
-    return !!(def && def.type === 'safety');
-  });
+  return buildCatalogRows(projId)
+    .filter(function (row) {
+      if (row.phase === 1) return true;
+      var def = SEQUENCE_SAVINGS_IMPACT[row.seqKey];
+      return !!(def && def.type === 'safety');
+    })
+    .concat(buildSetpointReprogramRows(projId)); // Appendix B work is recommended in every option
 }
 
 /* ── Optional zone CO2 scope (Matt, 2026-11-13) ──────────────────────────────────────────────
@@ -4743,7 +4793,7 @@ function _pricingRecommendedRowsAll(projId) {
   // sequence), not the Compliance-restricted subset — Recommended candidates
   // include savings sequences Compliance no longer carries.
   var catRows = buildCatalogRows(projId);
-  if (!catRows.length) return [];
+  if (!catRows.length) return buildSetpointReprogramRows(projId); // no device or sequence gap: only the Appendix B line can remain
 
   var catalog = sget('en_pricing_catalog', null);
   var cfg = _pricingGetConfig();
@@ -4902,7 +4952,7 @@ function _pricingRecommendedRowsAll(projId) {
   // trying to rescue the discarded clone. _pricingComputeRecommendedTimeline's existing "unclaimed
   // row" safety net (see that function's header comment) picks these up as their own single-row
   // units for phase scheduling, same as any other unbundled row.
-  recRows = recRows.concat(buildSensorInvestigationRows(projId));
+  recRows = recRows.concat(buildSensorInvestigationRows(projId)).concat(buildSetpointReprogramRows(projId));
 
   // ── Phase 5: Two-key sort for phase-2 rows within each building group (correction #3)
   // Apply sort within building groups, preserve building order and phase-1/phase-2 structure.
@@ -5260,7 +5310,7 @@ function buildOptionalPointRows(projId) {
    ─────────────────────────────────────────────────────────────────────────── */
 function _pricingFullScopeRowsAll(projId) {
   var catRows = buildCatalogRows(projId);
-  if (!catRows.length) return [];
+  if (!catRows.length) return buildSetpointReprogramRows(projId); // no device or sequence gap: only the Appendix B line can remain
 
   var catalog = sget('en_pricing_catalog', null);
   var cfg = _pricingGetConfig();
@@ -5275,6 +5325,11 @@ function _pricingFullScopeRowsAll(projId) {
     // Re-key the row ID with full-scope prefix
     fs.id = fs.id.replace(/^hw_/, 'fsc_').replace(/^seq_/, 'fsl_');
     fsRows.push(fs);
+  });
+
+  // Appendix B setpoint and schedule reprogramming: recommended work in every option.
+  buildSetpointReprogramRows(projId).forEach(function (row) {
+    fsRows.push(row);
   });
 
   // c82cc354 REV 2 (Step 4): optional (beyond-compliance) point rows

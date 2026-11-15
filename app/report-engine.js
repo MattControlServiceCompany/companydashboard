@@ -20694,23 +20694,15 @@ function rptPageASHRAE36Recommendations(n, d) {
   });
 }
 
-// ─── rptPageASHRAE36SetpointReview ───────────────────────────────────────────
-/**
- * Setpoint Programming Review page: compares actual zone setpoints against GL36
- * §3.1.1.1 defaults. Framed as a zero-hardware "quick win" for decision-makers.
- * Uses table-layout:fixed + colgroup so the table never clips on 8.5×11 print.
- * @param {number} n - Page number
- * @param {object} d - Data from collectASHRAE36Data (equipResults must have spCompliance)
- */
-function rptPageASHRAE36SetpointReview(n, d, detailedTitle) {
-  // detailedTitle (Detailed style only): { html: function (pageIndex, pageCount) -> html, h: px } = the large numbered title printed at the top of
-  // every page of the review (the Detailed report prints this review as Appendix B). Simple (undefined) keeps its own continuation heading.
-  // ISSUE 7 (2026-06-16): Rebuilt to show ONE row per building with AVERAGE setpoints.
-  // ISSUE 6 (2026-06-16): Added _rptPaginateTokens pagination; returns Array of page strings.
-  var fakeData = { project: { client: d.project.name }, period: { label: '', reportDate: d.rawDate } };
-
+// ─── _a36SetpointBuildingRows ────────────────────────────────────────────────
+// The ONE place that decides, for each building, how many zones to reprogram for Appendix B (Setpoint Programming Review): deviatorCount,
+// out of totalZones. The Audit Report page (rptPageASHRAE36SetpointReview) prints it; the cost estimate (_a36SetpointReprogramPlan, read by
+// pricing-estimator.js buildSetpointReprogramRows) prices it. Returns { buildingRows, anyCO2InExport, leftOut, zoneTotals }; buildingRows is
+// empty when no zone setpoint data exists.
+var _A36_SETPOINT_ZONE_CATS = { vav: true, fpb: true, ddvav: true, zone: true, fcu: true };
+function _a36SetpointBuildingRows(d) {
+  var ZONE_CATS = _A36_SETPOINT_ZONE_CATS;
   // ── Collect all zone equipment setpoint entries grouped by building ────────
-  var ZONE_CATS = { vav: true, fpb: true, ddvav: true, zone: true, fcu: true };
   var anyCO2InExport = false;
   // Map: buildingName → { name, zones: [{occHeat, occCool, deadband, co2, displayStatus}] }
   var bldgMap = {};
@@ -20839,21 +20831,7 @@ function rptPageASHRAE36SetpointReview(n, d, detailedTitle) {
       bldgMap[key] = g;
     });
   });
-
-  // ── Empty-state guard ─────────────────────────────────────────────────────
-  if (bldgOrder.length === 0) {
-    var emptyBody =
-      '<div class="rpt-a36-callout" style="font-size:14px;color:var(--rpt-page-text);line-height:1.6">' +
-      'This project has no zone-level equipment with occupied heating and cooling setpoints to review under ASHRAE 36 Section 3.1.1.1.' +
-      '</div>';
-    return [
-      rptPage(n, 'ASHRAE 36 Audit Report: Setpoint Programming Review', emptyBody, {
-        hideIntHdr: true,
-        data: fakeData,
-        label: 'Page ' + n + ' — Setpoint Programming Review',
-      }),
-    ];
-  }
+  if (bldgOrder.length === 0) return { buildingRows: [], anyCO2InExport: anyCO2InExport, leftOut: _leftOut, zoneTotals: _zoneTotals };
 
   // ── Compute per-building averages ─────────────────────────────────────────
   // For each building, average actualValue across zones that have the field.
@@ -21030,6 +21008,60 @@ function rptPageASHRAE36SetpointReview(n, d, detailedTitle) {
     // table, so no building files under an internal identifier's first letter.
     return rptBuildingNameSort(a.name, b2.name);
   });
+
+  return { buildingRows: buildingRows, anyCO2InExport: anyCO2InExport, leftOut: _leftOut, zoneTotals: _zoneTotals };
+}
+
+// _a36SetpointReprogramPlan(d) - the zones the Service Proposal prices for Appendix B: the sum of deviatorCount over the buildings of
+// _a36SetpointBuildingRows. Single-zone-unit rows (no zone review) and buildings with 0 zones to reprogram add nothing.
+// Returns { zones, buildings } (buildings = number of buildings with at least one zone to reprogram). buildingRows is optional: a caller that
+// already has the rows of _a36SetpointBuildingRows passes them, so they are not built twice.
+function _a36SetpointReprogramPlan(d, buildingRows) {
+  var zones = 0;
+  var buildings = 0;
+  (buildingRows || _a36SetpointBuildingRows(d).buildingRows).forEach(function (r) {
+    if (r.singleZone || !(r.deviatorCount > 0)) return;
+    zones += r.deviatorCount;
+    buildings++;
+  });
+  return { zones: zones, buildings: buildings };
+}
+
+// ─── rptPageASHRAE36SetpointReview ───────────────────────────────────────────
+/**
+ * Setpoint Programming Review page: compares actual zone setpoints against GL36
+ * §3.1.1.1 defaults. Framed as a zero-hardware "quick win" for decision-makers.
+ * Uses table-layout:fixed + colgroup so the table never clips on 8.5×11 print.
+ * @param {number} n - Page number
+ * @param {object} d - Data from collectASHRAE36Data (equipResults must have spCompliance)
+ */
+function rptPageASHRAE36SetpointReview(n, d, detailedTitle) {
+  // detailedTitle (Detailed style only): { html: function (pageIndex, pageCount) -> html, h: px } = the large numbered title printed at the top of
+  // every page of the review (the Detailed report prints this review as Appendix B). Simple (undefined) keeps its own continuation heading.
+  // ISSUE 7 (2026-06-16): Rebuilt to show ONE row per building with AVERAGE setpoints.
+  // ISSUE 6 (2026-06-16): Added _rptPaginateTokens pagination; returns Array of page strings.
+  var fakeData = { project: { client: d.project.name }, period: { label: '', reportDate: d.rawDate } };
+  var _sb = _a36SetpointBuildingRows(d);
+  var buildingRows = _sb.buildingRows;
+  var anyCO2InExport = _sb.anyCO2InExport;
+  var _leftOut = _sb.leftOut;
+  var _zoneTotals = _sb.zoneTotals;
+  var ZONE_CATS = _A36_SETPOINT_ZONE_CATS;
+
+  // ── Empty-state guard ─────────────────────────────────────────────────────
+  if (buildingRows.length === 0) {
+    var emptyBody =
+      '<div class="rpt-a36-callout" style="font-size:14px;color:var(--rpt-page-text);line-height:1.6">' +
+      'This project has no zone-level equipment with occupied heating and cooling setpoints to review under ASHRAE 36 Section 3.1.1.1.' +
+      '</div>';
+    return [
+      rptPage(n, 'ASHRAE 36 Audit Report: Setpoint Programming Review', emptyBody, {
+        hideIntHdr: true,
+        data: fakeData,
+        label: 'Page ' + n + ' — Setpoint Programming Review',
+      }),
+    ];
+  }
 
   // ── Helpers ───────────────────────────────────────────────────────────────
   function _fmtAvg(v) {
@@ -21299,6 +21331,7 @@ function rptPageASHRAE36SetpointReview(n, d, detailedTitle) {
     'Occupied setpoints are the temperatures held while the building is in use. Unoccupied setpoints are the temperatures held while it is empty. The deadband is the gap between the heating and cooling setpoints. ' +
     'Buildings with a change listed in the Status column have zones that operate outside the ASHRAE 36 default setpoints. Control Service Company recommends resetting them to the recommended setpoints and schedule. ' +
     'Existing values shown are building averages across all zone equipment in the building automation system.' +
+    (_a36SetpointReprogramPlan(d, buildingRows).zones > 0 ? ' The cost of this work is in the Service Proposal.' : '') +
     '</div>';
 
   // ── Pagination (Issue 6 + Fix B correction 2026-06-18) ───────────────────
@@ -22653,14 +22686,19 @@ function _rptA36RecommendedStepPlan(d) {
       var rows = [];
       for (var i = lo; i < hi; i++) rows = rows.concat(tl.phases[i].rows || []);
       allRows = allRows.concat(rows);
-      var groups = _rptA36MonthSequenceGroups(_rptA36PhaseUnits(rows));
+      // The setpoint and schedule reprogramming (Appendix B) is done in Step 1, so it is not a group of a later step.
+      var groups = _rptA36MonthSequenceGroups(_rptA36PhaseUnits(rows.filter(function (r) { return !r.isSetpointReprogram; })));
       groups.forEach(function (g) {
         g.isNew = !seen[g.label];
         seen[g.label] = true;
       });
       steps.push({ groups: groups, rows: rows });
     }
-    plan = { tl: tl, steps: steps, allRows: allRows, stepCount: 1 + W };
+    var _spZones = 0;
+    allRows.forEach(function (r) {
+      if (r.isSetpointReprogram) _spZones += r.qty || 0;
+    });
+    plan = { tl: tl, steps: steps, allRows: allRows, stepCount: 1 + W, setpointZones: _spZones };
   }
   d._a36StepPlan = plan;
   return plan;
@@ -22958,6 +22996,7 @@ function _rptA36PhaseTableDerive(d, opts) {
     // month 2. This line states the reserved verification work that month 1's room is spent on.
     if (mi === 0) {
       var verifyLine = 'Check the equipment and confirm what to program.';
+      if (plan.setpointZones > 0) verifyLine += ' Reset setpoints and schedules (' + rptCount(plan.setpointZones) + (plan.setpointZones === 1 ? ' zone' : ' zones') + ').';
       lines.push('<div style="' + _cellLineStyle + '">' + verifyLine + '</div>');
       charLens.push(verifyLine.length);
     }
@@ -24416,7 +24455,7 @@ function _rptA36RecommendedTimelineHTML(d) {
   plan.steps.forEach(function (st, idx) {
     var text;
     if (idx === 0) {
-      text = 'Check the equipment and confirm what to program.';
+      text = 'Check the equipment and confirm what to program.' + (plan.setpointZones > 0 ? ' Reset zone setpoints and schedules (Appendix B).' : '');
     } else {
       // The row names every group of the step, as the step table does: the work it starts, the work that began earlier and
       // ends here ("finish"), and the work that began earlier and goes on in a later step ("continue").

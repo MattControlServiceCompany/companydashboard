@@ -2507,14 +2507,15 @@ async function siteResetAllMeterTableSettings() {
    site-ui.js delegates to this array and should NOT maintain its own copy.
 */
 var RELEASE_NOTES = [
-  { v: 'v2026.11.14.296', date: '2026-11-14', title: 'ASHRAE 36 audit and cost estimate: heating, pumps and offline units counted correctly',
+  { v: 'v2026.11.15.296', date: '2026-11-15', title: 'ASHRAE 36 audit and cost estimate: heating, pumps and offline units counted correctly',
     items: [
       { type: 'fix', text: 'A zone terminal with no heating device is now cooling-only: no reheat valve, discharge air sensor or reheat sequence is priced or called missing. A terminal that hot deck air heats needs no reheat valve.' },
       { type: 'fix', text: 'A hot water plant with constant-speed pumps now gets a priced pump variable speed drive (covering estimate), one per pump, so the pump differential pressure reset can run. A plant that already shows a pump drive is not charged.' },
       { type: 'fix', text: 'An offline unit now gets one line, "Check an offline unit (power and network)", in place of one sensor check line for each of its points.' },
       { type: 'fix', text: 'Plant points named "Chilled Water Loop Return Temperature" and "Chilled Water Loop Supply Temperature", and a hot water plant "Heating Set Point", are now found, so they are no longer called missing or priced.' },
       { type: 'fix', text: 'Service Proposal: the Order of Work names every group of each step (new, finish or continue), the Full Scope line says it adds devices that are not in the Audit Report findings, fan coil carbon dioxide sensors have their own line, and the report date is the local date.' },
-      { type: 'fix', text: 'Detailed audit: the timeline keeps every step, single-zone findings cite Section 5.18, the variable speed drive text matches the price, and a note explains why the portfolio scores weight each building by its equipment.' }
+      { type: 'fix', text: 'Detailed audit: the timeline keeps every step, single-zone findings cite Section 5.18, the variable speed drive text matches the price, and a note explains why the portfolio scores weight each building by its equipment.' },
+      { type: 'fix', text: 'Service Proposal: the setpoint and schedule changes of the Audit Report Appendix B now have a price (covering estimate, one line in each option, done in Step 1). The Appendix B text says the cost is in the Service Proposal.' }
     ] },
   { v: 'v2026.11.14.295', date: '2026-11-14', title: 'ASHRAE 36 cost estimate: no cost for what is already there, a price for every fix',
     items: [
