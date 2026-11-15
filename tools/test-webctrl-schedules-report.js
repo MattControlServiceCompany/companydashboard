@@ -93,7 +93,7 @@ t('card: an event named like a WebCTRL schedule shows the schedule and the time 
   assert.strictEqual(pn[0].named.length, 1);
   assert.strictEqual(
     pn[0].named[0].text,
-    'In WebCTRL: Spring Practice, Mon,Tue,Wed,Thu,Fri, 3:00 PM-7:30 PM (WebCTRL ends 7:30 PM, event ends 8:30 PM: 1 hour short)',
+    'In WebCTRL (Group Test Gyms): Spring Practice, Mon,Tue,Wed,Thu,Fri, 3:00 PM-7:30 PM (WebCTRL ends 7:30 PM, event ends 8:30 PM: 1 hour short)',
   );
 });
 

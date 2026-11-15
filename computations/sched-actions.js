@@ -304,7 +304,7 @@
       .join('; ');
   }
   // For each event of an action line that is named like a WebCTRL schedule: the words the card shows.
-  // -> [{ title, text }]  text = 'In WebCTRL: <name>, <days>, <hours>' + ' (<difference>)'. A schedule that does not run on the event date says so.
+  // -> [{ title, text }]  text = 'In WebCTRL (Group <group>): <name>, <days>, <hours>' + ' (<difference>)'. A schedule that does not run on the event date says so.
   function namedMatches(o, a, from, to) {
     var ctx = { tz: o.tz, map: o.map, snaps: o.snaps, groups: o.groups, locations: o.locations };
     var seen = {};
@@ -317,7 +317,7 @@
       var c = BC.eventCoverage(row, ctx);
       var m = BC.webctrlMatch(o.groups, o.locations, row[0], date, c.program ? BD.keyBuilding(c.program) : '');
       if (!m) return;
-      var text = 'In WebCTRL: ' + m.name + ', ' + m.when + ', ' + m.hours;
+      var text = 'In WebCTRL' + (m.where ? ' (' + m.where + ')' : '') + ': ' + m.name + ', ' + m.when + ', ' + m.hours; // where = 'Group <name>' or the location path
       if (!m.applies) text += ' (not active on ' + BD.dateText(date) + ')';
       else {
         var d = shortText(m.blocks, c.fromMin, c.toMin);
