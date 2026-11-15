@@ -2507,6 +2507,11 @@ async function siteResetAllMeterTableSettings() {
    site-ui.js delegates to this array and should NOT maintain its own copy.
 */
 var RELEASE_NOTES = [
+  { v: 'v2026.11.15.297', date: '2026-11-15', title: 'Louisburg Calendar: events not covered by a BAS schedule at the top; Word per-building pages match the PDF',
+    items: [
+      { type: 'fix', text: 'Calendar tab: a list "Not covered by a BAS schedule" now sits at the top, with every open event from today on (all dates, in any view) and the change to make in WebCTRL. Events that are already in a WebCTRL schedule of another group are listed apart and are not counted.' },
+      { type: 'fix', text: 'Audit Report Word file: the per-building page keeps the PDF layout (the three rings on the left, the text block on the right), and the equipment counts no longer run together.' },
+    ] },
   { v: 'v2026.11.15.296', date: '2026-11-15', title: 'ASHRAE 36 audit and cost estimate: heating, pumps and offline units counted correctly',
     items: [
       { type: 'fix', text: 'A zone terminal with no heating device is now cooling-only: no reheat valve, discharge air sensor or reheat sequence is priced or called missing. A terminal that hot deck air heats needs no reheat valve.' },
