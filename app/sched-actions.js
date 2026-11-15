@@ -17,6 +17,7 @@
   'use strict';
 
   var _ids = {}; // per project: the action ids of the buttons on screen, by position
+  var _top = {}; // the same for the Not covered section at the top
 
   function whoName() {
     try {
@@ -104,7 +105,7 @@
     });
     var nOpen = needs.filter(function (n) {
       var s = v.stored.actions[n.id];
-      return (!s || s.status === 'open') && !n.webctrl;
+      return (!s || s.status === 'open') && !n.webctrl && !SchedActions.allNamed(inp, n);
     }).length;
     var st = pv.status;
     var reasons = st.reasons.length
@@ -130,7 +131,7 @@
     var trows = needs.map(function (n, i) {
       var s = v.stored.actions[n.id];
       var done = s && s.status === 'done';
-      var who = done ? 'Done by ' + (s.doneBy || 'someone') + ', ' + CalendarDiff.calendarDay(s.doneAt, inp.tz) : n.webctrl ? n.webctrl.text : 'To do';
+      var who = done ? 'Done by ' + (s.doneBy || 'someone') + ', ' + CalendarDiff.calendarDay(s.doneAt, inp.tz) : n.webctrl ? n.webctrl.text : SchedActions.allNamed(inp, n) ? 'In WebCTRL under another group: check the group' : 'To do';
       var b = done
         ? '<button class="btn btn-ghost btn-sm" onclick="sactSet(' + pid + ',' + i + ",'open')\">Open again</button>"
         : '<button class="btn btn-em btn-sm" onclick="sactSet(' + pid + ',' + i + ",'done')\">Done</button>";
@@ -142,7 +143,7 @@
         })
         .join('');
       return [
-        '<b>' + esc(n.forText) + '</b>' + rep + named + '<div class="pcal-chg">' + esc(n.change) + '</div><div class="pcal-chg">Where: ' + esc(n.where) + '</div>' + n.rooms.map(function (r) { return '<div class="pcal-chg">' + esc(r) + '</div>'; }).join('') + note,
+        '<b>' + esc(n.forText) + '</b>' + rep + named + '<div class="pcal-chg">' + esc(n.change) + '</div>' + (n.activate ? '<div class="pcal-chg">Or: activate ' + esc(n.activate.name) + ' in ' + esc(n.activate.group) + ' (select ' + esc(n.activate.days) + ')</div>' : '') + '<div class="pcal-chg">Where: ' + esc(n.where) + '</div>' + n.rooms.map(function (r) { return '<div class="pcal-chg">' + esc(r) + '</div>'; }).join('') + note,
         esc(n.dates),
         esc(n.inBas || 'No BAS copy for this day') + (n.groupNow ? '<div class="pcal-chg">Group schedules now: ' + esc(n.groupNow) + '</div>' : ''),
         esc(who) + '<div style="margin-top:4px">' + b + '</div>',
@@ -190,11 +191,64 @@
         ) +
         '<div style="font-size:12px;margin-top:8px">Check that the building needs these on when it is closed. Air handlers that serve boxes and hot and chilled water plants are not listed.</div>'
       : '';
+    renderNotCovered(pid, inp);
     host.innerHTML =
       '<div class="card pcal" style="margin-bottom:16px"><div class="card-hdr"><span class="card-title" title="Events in the shown period that the BAS schedule does not cover. After the next BAS import or calendar sync, a fixed line closes by itself and a Done line that is still not covered opens again.">What needs to change: ' + esc(per.label) + '</span></div>' +
       '<div style="padding:16px"><div class="pcal-sum" style="margin-top:0">' + esc(headline(st, needs.length, nOpen, per)) + '</div>' +
       '<div class="pcal-chg">' + esc(SchedActions.copyNote({ snapFetchedAt: inp.snapFetchedAt, snaps: inp.snaps, tz: inp.tz, today: inp.today, auditLastDay: inp.auditLastDay, scheduleEdits: inp.scheduleEdits })) + '</div>' +
       reasons + places + tbl + closedHtml + wasteHtml + '</div></div>';
+  }
+
+
+  // "Not covered by a BAS schedule": every open need from today forward, at the top of the tab, whatever view is shown.
+  function renderNotCovered(pid, inp) {
+    var top = document.getElementById('pcal-top-' + pid);
+    if (!top) return;
+    var host = document.getElementById('sact-nc-' + pid);
+    if (!host) {
+      host = document.createElement('div');
+      host.id = 'sact-nc-' + pid;
+      top.parentNode.insertBefore(host, top);
+    }
+    var T = window.pcalUi.table;
+    var L = SchedActions.notCoveredLists(inp);
+    _top[pid] = L.open.map(function (n) { return n.id; });
+    var minutes = function (n) {
+      return n.action.short + ' min';
+    };
+    var openHtml = L.open.length
+      ? T(
+          [['Date', '13%'], ['Time not covered', '10%'], ['Event', '19%'], ['Place', '16%'], ['BAS group or unit', '13%'], ['Minutes', '6%'], ['Change to make in WebCTRL', '15%'], ['', '8%']],
+          L.open.map(function (n, i) {
+            var rep = n.repeats ? ' <span class="pcal-badge" title="The same change repeats every week. Add one repeating schedule to the scheduling group instead of one line for each date.">Repeats weekly</span>' : '';
+            return [
+              esc(n.dates) + rep,
+              esc(n.action.spanText),
+              '<b>' + esc(n.forText) + '</b>',
+              esc(n.where),
+              esc(n.unit),
+              esc(minutes(n)),
+              esc(n.change) + (n.activate ? '<div class="pcal-chg">Or: activate ' + esc(n.activate.name) + ' in ' + esc(n.activate.group) + ' (select ' + esc(n.activate.days) + ')</div>' : ''),
+              '<button class="btn btn-em btn-sm" onclick="sactSet(' + pid + ',' + i + ",'done','top')\">Done</button>",
+            ];
+          }),
+        )
+      : '<div class="pcal-sum" style="margin-top:0">Every checked event from today forward is covered by a BAS schedule.</div>';
+    var otherHtml = L.other.length
+      ? '<h4 style="margin-top:16px">In WebCTRL under another group: check the group (' + L.other.length + ')</h4>' +
+        T(
+          [['Date', '16%'], ['Event', '24%'], ['Place', '18%'], ['BAS group or unit', '14%'], ['In WebCTRL', '28%']],
+          L.other.map(function (n) {
+            var w = n.webctrl ? [n.webctrl.text] : n.named.map(function (m) { return m.text; });
+            return [esc(n.dates), '<b>' + esc(n.forText) + '</b>', esc(n.where), esc(n.unit), w.map(function (x) { return '<div class="pcal-chg">' + esc(x) + '</div>'; }).join('')];
+          }),
+        )
+      : '';
+    var doneHtml = L.done.length ? '<div class="pcal-chg" style="margin-top:8px">' + L.done.length + (L.done.length === 1 ? ' line is' : ' lines are') + ' marked Done and still not covered. They are listed in "What needs to change" below and reopen after the next BAS import.</div>' : '';
+    window.pcalUi.ensureStyle();
+    host.innerHTML =
+      '<div class="card pcal" style="margin-bottom:16px"><div class="card-hdr"><span class="card-title">Not covered by a BAS schedule: ' + L.open.length + ' to do</span></div>' +
+      '<div style="padding:16px">' + openHtml + otherHtml + doneHtml + '</div></div>';
   }
 
   // Saves what the check found now: new actions, closed actions, reopened actions. Called after a calendar sync and a BAS import.
@@ -207,8 +261,8 @@
   }
   window.sactRender = render;
   window.sactPersist = persist;
-  window.sactSet = async function (pid, i, status) {
-    var id = (_ids[pid] || [])[i];
+  window.sactSet = async function (pid, i, status, which) {
+    var id = ((which === 'top' ? _top : _ids)[pid] || [])[i];
     if (id == null) return;
     var inp = input(pid);
     var v = SchedActions.reconcile(inp);

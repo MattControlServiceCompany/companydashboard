@@ -254,7 +254,9 @@
         var names = uniq(programs.map(programName));
         var spans = ds[0].spans;
         var webctrl = ds.reduce(function (best, d) { return d.webctrl && (!best || d.webctrl.ymd > best.ymd) ? d.webctrl : best; }, null);
+        var change = 'add ' + spansText(spans) + (u.group ? ' to group ' + u.group : '');
         out.push({
+          change: change,
           webctrl: webctrl ? Object.assign({ text: webctrlText(webctrl) }, webctrl) : null,
           id: uk + '|' + sig,
           date: dates[dates.length - 1],
@@ -274,7 +276,7 @@
           text:
             whenText(dates) + ' ' + titlesText(events.map(function (e) { return e.title; })) + ': ' +
             names.join(', ') + ' unoccupied ' + spansText(spans) +
-            ' -> add ' + spansText(spans) + (u.group ? ' to group ' + u.group : ''),
+            ' -> ' + change,
         });
       });
     });
@@ -323,7 +325,7 @@
       }
       if (!seen[row[0] + '|' + text]) {
         seen[row[0] + '|' + text] = 1;
-        out.push({ title: row[0], text: text });
+        out.push({ title: row[0], text: text, applies: !!m.applies });
       }
     });
     return out;
@@ -410,7 +412,7 @@
       out.push({
         id: a.id,
         activate: act,
-        change: act ? 'Activate ' + act.name + ' in ' + act.group + ' (select ' + act.days + ')' : 'Add ' + a.spanText + (a.group ? ' to group ' + a.group : ' to ' + a.unit),
+        change: a.change, // the one text of the change: the same words as the end of the stored action text (computeActions)
         dates: parts.join('. '),
         repeats: repIn,
         webctrl: a.webctrl,
@@ -425,6 +427,33 @@
       });
     });
     return out.sort(function (a, b) { return a.action.start < b.action.start ? -1 : a.action.start > b.action.start ? 1 : a.id < b.id ? -1 : 1; });
+  }
+  // "Not covered by a BAS schedule": every open need from today forward, whatever view is shown (all stored dates).
+  // o = computeActions input + { stored, now } (buildInput gives both). -> { open, other, done }, each a list of periodNeeds lines:
+  //   open  = no WebCTRL schedule of that name: the real to-dos. This is the count.
+  //   other = the event is already in a WebCTRL schedule (of another group, n.named) or was added in WebCTRL after the BAS copy (n.webctrl): check the group.
+  //   done  = marked Done by a person, waiting for the next BAS import.
+  // True when EVERY event of the line (from today on) is named like a WebCTRL schedule. A line that also holds a plain uncovered event stays a to-do.
+  function allNamed(o, n) {
+    var named = {};
+    n.named.forEach(function (m) { if (m.applies) named[m.title] = 1; }); // a schedule that does not run on the event date does not cover it
+    var titles = n.action.eventIds
+      .map(function (id) { return (o.events || {})[id]; })
+      .filter(function (row) { return row && CD.calendarDay(row[1], o.tz) >= o.today; })
+      .map(function (row) { return row[0]; });
+    return titles.length > 0 && titles.every(function (t) { return named[t]; });
+  }
+  function notCoveredLists(o) {
+    var v = reconcile(o);
+    var needs = periodNeeds(Object.assign({}, o, { from: o.today, to: '9999-12-31' }));
+    var out = { open: [], other: [], done: [] };
+    needs.forEach(function (n) {
+      var s = v.stored.actions[n.id];
+      if (s && s.status === 'done') out.done.push(n);
+      else if (n.webctrl || allNamed(o, n)) out.other.push(n);
+      else out.open.push(n);
+    });
+    return out;
   }
   // --- opportunities: covered events whose own schedule is longer than the event -------------------
   // Matt 2026-11-12: tell the user when a new schedule could fit better, but do not force it when the event is already covered.
@@ -816,6 +845,8 @@
     computeActions: computeActions,
     periodNeeds: periodNeeds,
     periodView: periodView,
+    notCoveredLists: notCoveredLists,
+    allNamed: allNamed,
     periodOpportunities: periodOpportunities,
     periodUnknown: periodUnknown,
     roomLines: roomLines,

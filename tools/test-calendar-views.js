@@ -57,7 +57,7 @@ const n1 = inWeek('2026-11-02', '2026-11-08');
 eq(n1.length, 1, 'week with the first Thursday: one line for the whole weekly pattern');
 eq(n1[0].repeats, true, 'the line is marked as repeating');
 eq(/^Every Thu, Nov 5 - Dec 17 \(6 dates\)\. Add once as a repeating schedule/.test(n1[0].dates), true, 'the line says every Thu and the count: ' + n1[0].dates);
-eq(n1[0].change, 'Add 5:00 PM - 8:30 PM to group Evening', 'the change names the group and the span');
+eq(n1[0].change, 'add 5:00 PM - 8:30 PM to group Evening', 'the change names the group and the span');
 eq(/^Occupied 6:00 AM - 5:00 PM\. Source: /.test(n1[0].inBas), true, 'the line shows what the BAS has now: ' + n1[0].inBas);
 eq(inWeek('2026-11-09', '2026-11-15').length, 1, 'the next week still lists the pattern');
 eq(inWeek('2026-11-23', '2026-11-29').length, 0, 'a week with none of the dates: no line');

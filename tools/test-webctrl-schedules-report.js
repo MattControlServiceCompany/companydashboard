@@ -114,9 +114,9 @@ t('card: an uncovered event whose group has an inactive schedule that spans it i
   const events = ev('Book Club', '2026-11-11', 18, 20);
   const pn = SA.periodNeeds(input(events, only(['Late Club'])));
   assert.strictEqual(pn.length, 1);
-  assert.strictEqual(pn[0].change, 'Activate Late Club in Test Gyms (select Wed)');
+  assert.deepStrictEqual([pn[0].activate.name, pn[0].activate.group, pn[0].activate.days], ['Late Club', 'Test Gyms', 'Wed']); // the activate option is its own field; change stays the stored action text
   const add = SA.periodNeeds(input(events, only([])));
-  assert(/^Add /.test(add[0].change), add[0].change);
+  assert(/^add /.test(add[0].change) && !add[0].activate, add[0].change);
 });
 
 t('card: location schedules are found by name too', () => {
