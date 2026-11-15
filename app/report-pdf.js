@@ -232,6 +232,45 @@ function _rptPdfSetButtonsBusy(isBusy) {
 }
 
 /**
+ * _rptPdfPipeline - runs render(i) for i = 0..count-1 one after the other. render(i) returns a
+ * promise of { encoded } (the slow encode is started; encoded is a promise of the job). consume(job)
+ * is called in page order. While job n encodes, render(n+1) runs. Pure control flow: no DOM (tools/test-report-pdf-pipeline.js).
+ */
+async function _rptPdfPipeline(count, render, consume) {
+  var prev = null;
+  for (var i = 0; i < count; i++) {
+    var started = await render(i); // { encoded: Promise<job> }; the encode runs on
+    started.encoded.catch(function () {});
+    if (prev) consume(await prev.encoded);
+    prev = started;
+  }
+  if (prev) consume(await prev.encoded);
+}
+
+/**
+ * _rptPdfEncodeJpeg - encodes a canvas to JPEG bytes (Uint8Array) with toBlob, then releases
+ * the optional slice canvas. Same quality as before (RPT_PDF_JPEG_QUALITY).
+ */
+function _rptPdfEncodeJpeg(canvas, sliceToRelease) {
+  return new Promise(function (resolve, reject) {
+    canvas.toBlob(
+      function (blob) {
+        if (!blob) {
+          reject(new Error('The page picture could not be encoded.'));
+          return;
+        }
+        blob.arrayBuffer().then(function (buf) {
+          if (sliceToRelease) sliceToRelease.width = sliceToRelease.height = 0;
+          resolve(new Uint8Array(buf));
+        }, reject);
+      },
+      'image/jpeg',
+      RPT_PDF_JPEG_QUALITY
+    );
+  });
+}
+
+/**
  * downloadReportPdf - saves the open report as a PDF file with one click. See the file header.
  */
 async function downloadReportPdf() {
@@ -266,92 +305,102 @@ async function downloadReportPdf() {
     doc.setProperties({ title: filename.replace(/\.pdf$/, '') });
     var first = true;
     var sheet = 0;
-    for (var pi = 0; pi < pages.length; pi++) {
-      var page = pages[pi];
-      showToast('Building PDF: page ' + (pi + 1) + ' of ' + pages.length, '', 4000);
-      // let the toast paint before the heavy work
-      await new Promise(function (r) {
-        setTimeout(r, 30);
-      });
-      var words = _rptPdfCollectWords(page);
-      var cssW = page.offsetWidth || RPT_PDF_PAGE_W_PX;
-      var cssH = page.offsetHeight;
-      page.setAttribute('data-rpt-pdf-cur', '1');
-      var keepPath = new Set();
-      for (var anc = page; anc; anc = anc.parentNode) keepPath.add(anc);
-      var canvas;
-      try {
-        canvas = await html2canvas(page, {
-        scale: RPT_PDF_RASTER_SCALE,
-        backgroundColor: '#ffffff',
-        logging: false,
-        useCORS: true,
-        scrollX: 0,
-        scrollY: 0,
-        // html2canvas copies the whole document for every call, which is slow here (the app and
-        // every other page are in it). Skip the copy of every element that is neither this page,
-        // nor inside it, nor a parent of it: only the parents that carry its styles are kept.
-        ignoreElements: function (el) {
-          var par = el.parentNode;
-          return !!par && par !== page && keepPath.has(par) && !keepPath.has(el) && el !== document.head;
-        },
-        onclone: function (clonedDoc) {
-          var mine = clonedDoc.querySelector('[data-rpt-pdf-cur]');
-          if (mine) _rptPdfFlattenTables(mine, clonedDoc.defaultView);
-        },
+    // Page n+1 is drawn while page n is encoded to JPEG (toBlob runs off the main thread).
+    // Pages are added to the file in page order. At most two canvases are alive at once.
+    await _rptPdfPipeline(
+      pages.length,
+      async function (pi) {
+        var page = pages[pi];
+        showToast('Building PDF: page ' + (pi + 1) + ' of ' + pages.length, '', 4000);
+        // let the toast paint before the heavy work
+        await new Promise(function (r) {
+          setTimeout(r, 0);
         });
-      } finally {
-        page.removeAttribute('data-rpt-pdf-cur');
-      }
-      var cuts = _rptPdfPageCuts(cssH, words);
-      var k = canvas.height / cssH; // canvas px per CSS px
-      for (var ci = 0; ci < cuts.length; ci++) {
-        var c0 = cuts[ci][0];
-        var c1 = cuts[ci][1];
-        var jpeg;
-        if (cuts.length === 1) {
-          jpeg = canvas.toDataURL('image/jpeg', RPT_PDF_JPEG_QUALITY);
-        } else {
-          var slice = document.createElement('canvas');
-          slice.width = canvas.width;
-          slice.height = Math.max(1, Math.round((c1 - c0) * k));
-          var sctx = slice.getContext('2d');
-          sctx.fillStyle = '#ffffff';
-          sctx.fillRect(0, 0, slice.width, slice.height);
-          sctx.drawImage(canvas, 0, Math.round(c0 * k), canvas.width, slice.height, 0, 0, slice.width, slice.height);
-          jpeg = slice.toDataURL('image/jpeg', RPT_PDF_JPEG_QUALITY);
-          slice.width = slice.height = 0;
-        }
-        if (!first) doc.addPage('letter', 'portrait');
-        first = false;
-        sheet++;
-        var wPt = cssW * RPT_PDF_PT_PER_PX;
-        var hPt = (c1 - c0) * RPT_PDF_PT_PER_PX;
-        // A page about one sheet high fills the sheet exactly; a short last slice keeps its height.
-        if (cuts.length === 1 && Math.abs(hPt - 792) < 2) hPt = 792;
-        doc.addImage(jpeg, 'JPEG', 0, 0, wPt, hPt, undefined, 'FAST');
-        // Invisible real text on top of the picture: selectable, copyable, searchable.
-        for (var wi = 0; wi < words.length; wi++) {
-          var wd = words[wi];
-          var cy = wd.y + wd.h / 2;
-          if (cy < c0 || cy >= c1) continue;
-          var sizePt = Math.max(2, (wd.h / 1.15) * RPT_PDF_PT_PER_PX);
-          doc.setFontSize(sizePt);
-          var natural = doc.getTextWidth(wd.t);
-          var space = wd.t.length ? (wd.w * RPT_PDF_PT_PER_PX - natural) / wd.t.length : 0;
-          doc.text(wd.t, wd.x * RPT_PDF_PT_PER_PX, (wd.y - c0 + wd.h * 0.8) * RPT_PDF_PT_PER_PX, {
-            renderingMode: 'invisible',
-            charSpace: space,
+        var words = _rptPdfCollectWords(page);
+        var cssW = page.offsetWidth || RPT_PDF_PAGE_W_PX;
+        var cssH = page.offsetHeight;
+        page.setAttribute('data-rpt-pdf-cur', '1');
+        var keepPath = new Set();
+        for (var anc = page; anc; anc = anc.parentNode) keepPath.add(anc);
+        var canvas;
+        try {
+          canvas = await html2canvas(page, {
+            scale: RPT_PDF_RASTER_SCALE,
+            backgroundColor: '#ffffff',
+            logging: false,
+            useCORS: true,
+            scrollX: 0,
+            scrollY: 0,
+            // html2canvas copies the whole document for every call, which is slow here (the app and
+            // every other page are in it). Skip the copy of every element that is neither this page,
+            // nor inside it, nor a parent of it: only the parents that carry its styles are kept.
+            ignoreElements: function (el) {
+              var par = el.parentNode;
+              return !!par && par !== page && keepPath.has(par) && !keepPath.has(el) && el !== document.head;
+            },
+            onclone: function (clonedDoc) {
+              var mine = clonedDoc.querySelector('[data-rpt-pdf-cur]');
+              if (mine) _rptPdfFlattenTables(mine, clonedDoc.defaultView);
+            },
           });
+        } finally {
+          page.removeAttribute('data-rpt-pdf-cur');
+        }
+        var cuts = _rptPdfPageCuts(cssH, words);
+        var k = canvas.height / cssH; // canvas px per CSS px
+        // Start every encode now; the page canvas is released when the last one is done.
+        var encodes = [];
+        for (var ci = 0; ci < cuts.length; ci++) {
+          var src = canvas;
+          var slice = null;
+          if (cuts.length > 1) {
+            slice = document.createElement('canvas');
+            slice.width = canvas.width;
+            slice.height = Math.max(1, Math.round((cuts[ci][1] - cuts[ci][0]) * k));
+            var sctx = slice.getContext('2d');
+            sctx.fillStyle = '#ffffff';
+            sctx.fillRect(0, 0, slice.width, slice.height);
+            sctx.drawImage(canvas, 0, Math.round(cuts[ci][0] * k), canvas.width, slice.height, 0, 0, slice.width, slice.height);
+            src = slice;
+          }
+          encodes.push(_rptPdfEncodeJpeg(src, slice));
+        }
+        var done = Promise.all(encodes).then(function (jpegs) {
+          canvas.width = canvas.height = 0;
+          return { jpegs: jpegs, words: words, cuts: cuts, cssW: cssW };
+        });
+        return { encoded: done };
+      },
+      function (job) {
+        for (var ci = 0; ci < job.cuts.length; ci++) {
+          var c0 = job.cuts[ci][0];
+          var c1 = job.cuts[ci][1];
+          var words = job.words;
+          if (!first) doc.addPage('letter', 'portrait');
+          first = false;
+          sheet++;
+          var wPt = job.cssW * RPT_PDF_PT_PER_PX;
+          var hPt = (c1 - c0) * RPT_PDF_PT_PER_PX;
+          // A page about one sheet high fills the sheet exactly; a short last slice keeps its height.
+          if (job.cuts.length === 1 && Math.abs(hPt - 792) < 2) hPt = 792;
+          doc.addImage(job.jpegs[ci], 'JPEG', 0, 0, wPt, hPt, undefined, 'FAST');
+          // Invisible real text on top of the picture: selectable, copyable, searchable.
+          for (var wi = 0; wi < words.length; wi++) {
+            var wd = words[wi];
+            var cy = wd.y + wd.h / 2;
+            if (cy < c0 || cy >= c1) continue;
+            var sizePt = Math.max(2, (wd.h / 1.15) * RPT_PDF_PT_PER_PX);
+            doc.setFontSize(sizePt);
+            var natural = doc.getTextWidth(wd.t);
+            var space = wd.t.length ? (wd.w * RPT_PDF_PT_PER_PX - natural) / wd.t.length : 0;
+            doc.text(wd.t, wd.x * RPT_PDF_PT_PER_PX, (wd.y - c0 + wd.h * 0.8) * RPT_PDF_PT_PER_PX, {
+              renderingMode: 'invisible',
+              charSpace: space,
+            });
+          }
         }
       }
-      canvas.width = canvas.height = 0;
-      canvas = null;
-      // give the browser a turn so the page stays responsive
-      await new Promise(function (r) {
-        setTimeout(r, 0);
-      });
-    }
+    );
     var blob = doc.output('blob');
     var url = URL.createObjectURL(blob);
     var a = document.createElement('a');
