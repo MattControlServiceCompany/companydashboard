@@ -1482,11 +1482,14 @@ function _docxTranslateImage(el, ctx) {
   var runXml = _docxRegisterImage(el, ctx);
   if (!runXml) return null;
   var isVisual = el.getAttribute('data-dx-visual') === '1'; // a picture of a layout block: centered, tight spacing
+  // A picture in a centered block (a report figure) is centered as on the PDF page.
+  var par = el.parentNode;
+  var parAlign = par && par.nodeType === 1 ? (par.style && par.style.textAlign) || par.getAttribute('data-dx-align') || '' : '';
   return {
     xml: _docxParagraph({
       runs: [runXml],
       spacingAfter: isVisual ? 120 : 240,
-      align: (ctx && ctx._flexCellAlign) || (isVisual ? 'center' : undefined),
+      align: (ctx && ctx._flexCellAlign) || (isVisual || parAlign === 'center' ? 'center' : undefined),
     }),
   };
 }
@@ -1656,7 +1659,8 @@ function _docxStyleFmtFromEl(el, baseFmt, ctx) {
   if (el.style.textTransform === 'none') fmt.caps = false; // a unit (kWh, kW) keeps its case inside a capitalised header
   var fs = el.style.fontSize;
   if (fs) {
-    var hp = _docxPxToHalfPt(fs);
+    // A percent size ("85%": the part label of a section title) is a share of the size it inherits.
+    var hp = /%$/.test(fs) ? (baseFmt && baseFmt.sizeHalfPt ? Math.round((baseFmt.sizeHalfPt * parseFloat(fs)) / 100) : null) : _docxPxToHalfPt(fs);
     if (hp) fmt.sizeHalfPt = hp;
   }
   var col = el.style.color;

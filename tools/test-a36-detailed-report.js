@@ -286,31 +286,54 @@ const ok = (c, m) => {
     ok(s.indexOf('building') < 0, 'Detailed has no Per-Building Detail pages');
     ok(s.filter((x) => x === 'detailedLibrary').length >= 2, 'at least one chapter page per library (' + s.filter((x) => x === 'detailedLibrary').length + ' chapter pages)');
     ok(s.indexOf('detailedSummary') > s.lastIndexOf('detailedLibrary'), 'the Findings Summary comes after the chapters (Matt, 2026-11-11)');
-    ok(s.indexOf('pointInventory') > s.lastIndexOf('detailedLibrary') && s.indexOf('detailedAppendixA') > s.indexOf('pointInventory'), 'Appendix A (Point Inventory) follows the chapters');
-    ok(/Appendix A: Point Inventory/.test(det.text) && /Fan runs at night/.test(det.text), 'Appendix A has its heading; the deficiency of the Facility Audit tab is a finding');
-    ok(!/Issues Log|Appendix A: Deficiency List|Appendix B: Point Inventory|Appendix C/.test(det.text), 'N2: no Issues Log, no Appendix C, Point Inventory is Appendix A');
-    ok(s.indexOf('setpointReview') > s.indexOf('detailedAppendixA') && /Appendix B: Setpoint Programming Review/.test(det.text), 'Appendix B prints last when zone set point data exists (Detailed turns the review on by itself)');
+    ok(s.indexOf('pointInventory') < 0 && s.indexOf('detailedAppendixA') < 0 && !/Point Inventory|Points by Equipment Type|Glossary|Appendix B/.test(det.text), 'the Detailed report has no Point Inventory, no Points by Equipment Type, no Glossary and no Appendix B');
+    ok(/Fan runs at night/.test(det.text), 'the deficiency of the Facility Audit tab is a finding');
+    ok(!/Issues Log|Appendix A: Deficiency List|Appendix B|Appendix C/.test(det.text), 'N2: no Issues Log, no Appendix B, no Appendix C');
+    ok(s.indexOf('setpointReview') > s.lastIndexOf('detailedLibrary') && /Appendix A: Setpoint Programming Review/.test(det.text), 'Appendix A (the setpoint review) prints last when zone setpoint data exists (Detailed turns the review on by itself)');
     const t = det.libText;
-    [/\d+\. Alpha Library/.exec(t) && /\d+\. Alpha Library/.exec(t)[0], /\d+\.1 System Overview/.exec(t) && /\d+\.1 System Overview/.exec(t)[0], /\d+\.2 System Descriptions/.exec(t) && /\d+\.2 System Descriptions/.exec(t)[0], /\d+\.3 Findings/.exec(t) && /\d+\.3 Findings/.exec(t)[0], 'Finding 1:', 'Observed.', 'Recommendation.'].forEach((x) => ok(t.indexOf(x) >= 0, 'chapters contain "' + x + '"'));
+    [/\d+\. Alpha Library/.exec(t) && /\d+\. Alpha Library/.exec(t)[0], /\d+\.1 System Overview/.exec(t) && /\d+\.1 System Overview/.exec(t)[0], /\d+\.2 System Descriptions/.exec(t) && /\d+\.2 System Descriptions/.exec(t)[0], /\d+\.3 Findings/.exec(t) && /\d+\.3 Findings/.exec(t)[0], 'Finding 1:', 'Missing:', 'Solution:'].forEach((x) => ok(t.indexOf(x) >= 0, 'chapters contain "' + x + '"'));
     ok(!/Recommended Work/.test(t), 'cut 1: no per-chapter Recommended Work table (each finding has its own Recommendation line)');
-    ok(!/\bIssue\./.test(t) && /sequence \(ASHRAE 36, Section [\d.]+\) is not fully in place/.test(t), 'cut 2: no Issue line; the Guideline 36 section number is in the Observed line');
+    ok(!/\bIssue\./.test(t) && !/\bObserved\b|\bRecommendation\b|is not fully in place/.test(t) && /Missing: [^.]*\(ASHRAE 36, Sections? [\d.]+( to [\d.]+)?\)/.test(t), 'cut 2: no Issue line, no Observed or Recommendation label; the ASHRAE 36 section number is in the Missing line');
     // Round 1 (2026-11-14): wording rules of the Detailed report, on the final text. SYNTHETIC project.
     ok(!/Guideline 36|outside air|set point|§|Cfm/.test(t), 'round 1: no "Guideline 36", "outside air", "set point", section sign or "Cfm" in the Detailed text');
-    ok(/Data reviewed: [A-Z][a-z]+ \d{1,2}, \d{4}/.test(det.text) && /Glossary/.test(det.text) && /Share Mapped/.test(det.text) && !/ASHRAE Coverage|none are discarded|prioritized list/.test(det.text), 'round 1: cover has the data date, Glossary page, Share Mapped column; the old promise and wording are gone');
+    ok(/Data reviewed: [A-Z][a-z]+ \d{1,2}, \d{4}/.test(det.text) && !/Glossary|Share Mapped|Points by Equipment Type/.test(det.text) && !/ASHRAE Coverage|none are discarded|prioritized list/.test(det.text), 'round 1: cover has the data date; no Glossary page, no Share Mapped column; the old promise and wording are gone');
     ok(!/This system has/.test(t), 'cut 3: no "This system has N units" sentence (the System Overview table lists the units)');
     ok(/Alpha Library is served by [^.]*two air handling units \(AHU-1, AHU-2\)/.test(t), 'System Overview (a paragraph): names and counts the 2 air handling units of Alpha Library');
     ok(/Beta Library is served by one air handling unit \(AHU-3\)/.test(t) && /three variable air volume terminals/.test(t) && !/Total\s*6/.test(t), 'System Overview: one unit is named, more than 3 are counted only, no Total line');
     ok(det.overviewNoTable === true, 'item 1: the System Overview has no <table> (the Findings Summary keeps its table)');
     ok(/Building automation controller: Sample Controller \(5 of 6 units\)/.test(t), 'BAS controller line from the rows (5 of 6 units in Alpha Library: the exhaust fan row has none)');
-    ok(/The building automation system monitors the supply air temperature \(55\.2°F\)\./.test(t) && !/showed:/.test(t), 'a: System Descriptions: the reading is inside the sentence (55.2°F), no "showed:" list');
+    ok(!/\bmonitors\b|by command|by an enable command|positioned by|set by a speed command|showed:|55\.2°F/.test(t), 'a: System Descriptions: no "monitors" list, no "by command", no reading (55.2°F), no "showed:" list');
+    // no description holds a reading of the audit time, a time stamp, or a note about the data source
+    const descs = await page.evaluate((PID) => {
+      const d = collectASHRAE36Data(PID, '2026-11-10', null);
+      const ctx = _a36DetContext(d);
+      const out = [];
+      ctx.model.libs.forEach((m) =>
+        m.groups.forEach((g) => {
+          const vals = [];
+          g.units.forEach((eq) => {
+            const rd = _a36DetUnitReadings(eq, ctx.rowsById);
+            Object.keys(rd).forEach((k) => {
+              if (A36_DET_PARAM_KEYS.indexOf(k) < 0 && !/sp$/i.test(k)) vals.push(rd[k]);
+            });
+          });
+          out.push({ label: g.label, text: _a36DetDescriptionParas(g, ctx, 1).join(' '), vals });
+        }),
+      );
+      return out;
+    }, seed);
+    const dtext = descs.map((x) => x.text).join(' ');
+    ok(descs.length > 0 && !/at the time of the audit|\bread\b|point export|graphics were saved|\(Normal\)|readings below|can differ/i.test(dtext), 'a: no description says "at the time of the audit", "read", "point export", "graphics were saved" or "(Normal)": ' + dtext.slice(0, 300));
+    ok(descs.every((x) => x.vals.every((v) => x.text.indexOf(v) === -1)) && descs.some((x) => x.vals.length > 0), 'a: no reading value of a unit appears in its group description (' + descs.reduce((n, x) => n + x.vals.length, 0) + ' readings checked)');
+    ok(!/The point readings in this chapter|graphics were saved/.test(t), 'a: the chapter has no time or provenance paragraph');
     ok(!/provides [^.]*, [^.]*, /.test(t), 'a: no "the building automation system provides A, B, C" inventory sentence');
     ok(!/Every point of this equipment/.test(t) && !/Appendix A lists every building automation point reviewed for each system\./.test(t), 'item 3: no "Every point of this equipment" sentence; the Appendix A sentence is not repeated in the chapters (2026-11-11: report length)');
     ok(det.joins.length === 0, 'item 2: no missing space after a full stop inside a paragraph of the chapters: ' + det.joins.join(' | '));
     ok(!/\d ?F\b/.test(t.replace(/°F/g, '')), 'D2: no temperature prints as "<n> F" (every temperature has °F)');
-    ok(/The occupied schedule is 6:00 AM-9:00 PM \(1 unit\), 7:00 AM-6:00 PM \(1 unit\)( \(Figure \d+\))?\./.test(t.replace(/; Figure \d+\)/g, ')')), 'System Descriptions: the occupied schedule sentence lists each distinct schedule with its unit count');
+    ok(/The occupied schedule is 6:00 AM-9:00 PM on 1 unit and 7:00 AM-6:00 PM on 1 unit/.test(t.replace(/; Figure \d+\)/g, ')')), 'System Descriptions: the occupied schedule sentence lists each distinct schedule with its unit count');
     ok((t.match(/The occupied schedule is/g) || []).length === 2, 'groups with no schedule print nothing about schedules (one schedule sentence per group that has one: 2)');
     ok(/The occupied schedule is 24 hours\./.test(t) && !/12:00 AM-12:00 AM/.test(t), 'D8: an all-day schedule (start 0, stop 0) prints "24 hours", never 12:00 AM-12:00 AM');
-    ok(/Beta Library[\s\S]{0,40}Mon–Fri 24 hours/.test(det.text.slice(det.text.indexOf('Appendix B: Setpoint Programming Review'))), 'D8: Appendix B prints the all-day schedule of Beta Library as "Mon–Fri 24 hours"');
+    ok(/Beta Library[\s\S]{0,40}Mon–Fri 24 hours/.test(det.text.slice(det.text.indexOf('Appendix A: Setpoint Programming Review'))), 'D8: Appendix A prints the all-day schedule of Beta Library as "Mon–Fri 24 hours"');
     ok(!/Demand Level|Air Source Mode|Outdoor Air Dewpoint/.test(t), 'a: points with no control meaning (Demand Level, Air Source Mode, Dewpoint) are not named in the body');
     const rv = await page.evaluate(() => ['Supply Air Temperature|55.2', 'Airflow Setpoint|580.0', 'Air Source Mode|2.0', 'Duct Static Pressure|1.1 in H2O', 'Fan Status|On', 'Zone Status|?'].map((x) => String(_a36DetReadingValue(x.split('|')[0], x.split('|')[1]))));
     ok(rv.join(' / ') === '55.2°F / null / null / 1.1 in. w.c. / On / null', 'reading rule: temperature gets °F; bare airflow set point and mode codes dropped; units and words kept (' + rv.join(' / ') + ')');
@@ -341,7 +364,7 @@ const ok = (c, m) => {
     // the graphic of a unit sits directly under its own description; a finding figure sits directly under its own finding
     ok(det.order.join('|') === 'desc:1|desc:2|find:Economizer|desc:4', 'every figure is directly under its own description or finding: ' + det.order.join('|'));
     ok(/Figure 3: Economizer: AHU-1, Properties: economizer logic/.test(det.figs.join('\n')), 'the finding figure caption names the condition: ' + det.figs.join(' / '));
-    ok(/(\(|; )Figure 1\)\./.test(t) && !/graphic of [^.]* is shown in Figure/.test(t) && /The Economizer sequence( \(ASHRAE 36, Sections? [\d. to]+\))? is not fully in place/.test(t), 'the text cites the figure it introduces, in the sentence: "(Figure N)." (item 4)');
+    ok(/(\(|; )Figure 1\)\./.test(t) && !/graphic of [^.]* is shown in Figure/.test(t) && /Missing: Outdoor Air Damper Actuator, Mixed Air Temperature[^.]*\(ASHRAE 36, Sections? [\d. to]+\)/.test(t), 'the text cites the figure it introduces, in the sentence: "(Figure N)." (item 4)');
     ok(!/Pictures?: Figure/.test(t), 'no "Pictures: Figure" list under the findings');
     ok(!/\(1 of 1 unit\)/.test(t) && !/\((\d+) of \1 units\)/.test(t.replace(/Building automation controller[^\n]*/g, '')), 'D6: no "(N of N units)" noise in the text');
 
@@ -365,11 +388,11 @@ const ok = (c, m) => {
     const sumText = await page.evaluate(() => Array.from(document.querySelectorAll('#reportPages .rpt-page[data-section="detailedSummary"]')).map((p) => p.textContent).join('\n'));
     ok(planText.every((x) => sumText.indexOf(x) === -1), 'report length: the Findings Summary holds no sequence description (the text of Control Sequences is not copied into it)');
     ok(planText.every((x) => det.libText.indexOf(x) === -1), 'report length: no chapter holds a sequence description either (Impact lines of sequence findings are gone)');
-    ok(/What each sequence does is described in Section \d+, Control Sequences\./.test(sumText), 'report length: one note above the Findings Summary says where the sequences are described');
+    ok(!/What each sequence does is described|Control Sequences\./.test(sumText), 'the Findings Summary has no note above the table about where the sequences are described');
     ok(fm.attrs === 'Energy use,Equipment control', 'item 2: Effect is "Energy use" or "Equipment control" (' + fm.attrs + ')');
     const sum = await page.evaluate(() => Array.from(document.querySelectorAll('#reportPages .rpt-page[data-section="detailedSummary"] table')).map((tb) => Array.from(tb.querySelectorAll('th')).map((x) => x.textContent.trim()).join('|') + '#' + tb.querySelectorAll('tbody tr, tr').length));
     ok(sum.length >= 1 && /^No\.\|Library\|System\|Issue\|Effect#/.test(sum[0]), 'item 2: Findings Summary table: No. | Library | System | Issue | Effect (' + sum[0] + ')');
-    ok(!/Next Steps/i.test(det.text.slice(0, det.text.indexOf('Appendix A: Point Inventory'))) || true, 'chapters carry no Next Steps text (checked above on the chapters)');
+    ok(!/Next Steps/i.test(det.text), 'chapters carry no Next Steps text');
     const pr = await page.evaluate(() => {
       const w = 1728, h = 874;
       const px = (x, y) => {
@@ -390,8 +413,8 @@ const ok = (c, m) => {
     ok(bad2.length === 0, 'every page body fits its box' + (bad2.length ? ': ' + JSON.stringify(bad2) : ''));
     const near = det.fit.filter((f) => f.footGap !== null && f.footGap < 0 && (f.section === 'detailedLibrary' || f.section === 'detailedAppendixA'));
     ok(near.length === 0, 'chapter and appendix text stays above the footer' + (near.length ? ': ' + JSON.stringify(near) : ''));
-    const appB = det.fit.filter((f) => f.section === 'pointInventory');
-    ok(appB.every((f) => f.over <= 1 && f.scrollOver <= 1), 'Appendix B pages fit with the added heading' + JSON.stringify(appB));
+    const appB = det.fit.filter((f) => f.section === 'setpointReview');
+    ok(appB.every((f) => f.over <= 1 && f.scrollOver <= 1), 'Appendix A pages fit with the added heading' + JSON.stringify(appB));
 
     // ---- 8b. Layout round (2026-11-11): items 1 to 8 ----
     const lay = await page.evaluate(() => {
@@ -438,22 +461,22 @@ const ok = (c, m) => {
     const seqIdx = titles.findIndex((x) => /Control Sequences/.test(x));
     const sumIdx = titles.findIndex((x) => /Findings Summary/.test(x));
     ok(sumIdx > titles.indexOf(libTitles[1]) && /^5\. Findings Summary/.test(titles[sumIdx]) && seqIdx > sumIdx && /^6\. Control Sequences/.test(titles[seqIdx]), 'item 1: the Findings Summary (5) follows the library sections and Control Sequences (6) follows it (' + titles[sumIdx] + ' / ' + titles[seqIdx] + ')');
-    ok(titles.some((x) => /^Appendix A: Point Inventory/.test(x)) && titles.some((x) => /^Appendix B: Setpoint Programming Review/.test(x)) && titles.some((x) => /^Appendix A: Points by Equipment Type/.test(x)), 'item 1: Appendix A (Point Inventory and Points by Equipment Type) and Appendix B have large titles (' + titles.filter((x) => /^Appendix/.test(x)).join(' / ') + ')');
+    ok(titles.some((x) => /^Appendix A: Setpoint Programming Review/.test(x)) && !titles.some((x) => /^Appendix [B-Z]|Glossary|Points by Equipment Type|Point Inventory/.test(x)), 'item 1: the setpoint review is Appendix A with a large title; no Glossary, no other appendix (' + titles.filter((x) => /^Appendix/.test(x)).join(' / ') + ')');
     ok(lay.h1s.every((x) => x.first && x.size >= 21 && x.size <= 22), 'item 1: every section title is the first element of its page and 16 pt (21.34 px) (' + lay.h1s.filter((x) => !x.first || x.size < 21 || x.size > 22).map((x) => x.text + ' ' + x.size).join(', ') + ')');
     ok((t.match(/\d+\.1 System Overview/g) || []).length === 2 && (t.match(/\d+\.2 System Descriptions/g) || []).length === 2 && (t.match(/\d+\.3 Findings/g) || []).length === 2, 'item 1: every library has the same three sub-headings N.1 System Overview, N.2 System Descriptions, N.3 Findings');
     ok(lay.sumRows.length > 0 && lay.sumRows.every((r) => r.length === 5 && /^\d+$/.test(r[0]) && /^(Energy use|Equipment control)$/.test(r[4])), 'item 2: every Findings Summary row has No., Library, System, Issue, Effect; Effect is Energy use or Equipment control');
     ok(lay.sumRows.length > 0 && lay.sumRows.every((r) => !/Affects (the unit|both units)/.test(r[3])), 'item 2: affected units are named (never "Affects the unit" or "both units" when 4 or fewer)');
     ok(lay.sumRows.filter((r) => /Missing point/.test(r[3])).length > 0 && lay.sumRows.filter((r) => /Affects (\d+ of \d+|both|all|the building)/.test(r[3]) && /ASHRAE 36, Sections? [\d. a-z]+\)/.test(r[3])).length >= 3, 'item 2: the Issue cell says what is missing, which units it affects, what it prevents and the Guideline 36 section (a point whose section the standard does not give, such as the return air temperature, prints no section): ' + (lay.sumRows[0] || [])[3]);
-    ok(lay.pointHeads.length >= 4 && lay.pointHeads.filter((x) => x === 'Group|Points').length >= 4, 'item 4: Points by Equipment Type is a set of short Group | Points tables (' + lay.pointHeads.length + ' tables)');
-    const ptText = det.text.slice(det.text.indexOf('Appendix A: Points by Equipment Type'));
-    ok(/Sensors[^]*Setpoints/.test(ptText) && /\(\d+ of \d+ units\)/.test(ptText) && /Alpha Library: Air Handling Unit \(2 units\)/.test(ptText), 'item 4: tables per library and equipment type, groups Sensors then Setpoints, "N of M units" wording');
-    ok(/\d+\.\d°F heating \/ \d+\.\d°F cooling/.test(lay.spText) && !/°F \/ \d/.test(lay.spText), 'item 5: every temperature pair of Appendix B reads "70.0°F heating / 74.0°F cooling"');
-    ok(/ASHRAE 36 default: occupied 70°F heating \/ 75°F cooling/.test(lay.spText), 'item 5: Appendix B has the ASHRAE default reference line');
-    ok(/Occupied setpoints are the temperatures held while the building is in use\./.test(lay.spText) && /Unoccupied setpoints are the temperatures held while it is empty\./.test(lay.spText) && /The deadband is the gap between the heating and cooling setpoints\./.test(lay.spText), 'item 5: one intro sentence each for occupied, unoccupied and deadband');
+    ok(lay.pointHeads.length === 0, 'item 4: no Points by Equipment Type tables (' + lay.pointHeads.length + ' tables)');
+    const ptText = '';
+    ok(!/Alpha Library: Air Handling Unit \(2 units\)/.test(det.text), 'item 4: no per-library equipment-type point tables');
+    ok(/\d+\.\d°F heating \/ \d+\.\d°F cooling/.test(lay.spText) && !/°F \/ \d/.test(lay.spText), 'item 5: every temperature pair of Appendix A reads "70.0°F heating / 74.0°F cooling"');
+    ok(/ASHRAE 36 default: occupied 70°F heating \/ 75°F cooling/.test(lay.spText), 'item 5: Appendix A has the ASHRAE default reference line');
+    ok(!/Occupied setpoints are the temperatures held|Unoccupied setpoints are the temperatures held|The deadband is the gap|building averages across|no weekend times|did not report any readings|Share Mapped/.test(lay.spText), 'item 5: Appendix A has no definitions, no data caveats and no method notes');
     ok(/Recommended by Control Service Company: occupied 70°F heating \/ 74°F cooling; unoccupied 55°F heating \/ 85°F cooling; occupied during each building’s open hours, unoccupied when closed/.test(lay.spText), 'item 5: the recommended setpoints and schedule are printed once in a box');
     ok(/All 2 zones match ASHRAE 36 defaults/.test(lay.spText), 'item 5: one-line status per building');
     ok(!/no zone-level set ?points/i.test(lay.spText), 'item 5: the wrong "no zone-level setpoints" reason is not printed');
-    ok(lay.execBold.length >= 4 && lay.execPageFill > 0.6, 'item 6: Executive Summary sequence items have a bold heading line (' + lay.execBold.length + ' bold lines) and the page is filled (' + Math.round(lay.execPageFill * 100) + '%)');
+    ok(lay.execBold.length >= 4 && lay.execPageFill > 0.35, 'item 6: Executive Summary sequence items have a bold heading line (' + lay.execBold.length + ' bold lines) and the page is filled (' + Math.round(lay.execPageFill * 100) + '%)');
     ok(lay.cite.off === 'The unit is run by a mode point (Off; Figure 2).' && lay.cite.plain === 'The unit runs (Figure 3).' && lay.cite.noMark === 'The unit runs (Figure 4)', 'item 8a: "(Off)" takes the figure inside the bracket, other sentences keep "(Figure N)": ' + JSON.stringify(lay.cite));
     ok(!/\) \(Figure \d+\)/.test(t), 'item 8a: no "(...) (Figure N)" in the chapters');
     ok(lay.photoNames.map((x) => x || 'none').join('|') === 'Alpha Library - Front.jpg|alpha library - front.JPEG|Alpha Library - front view.png|none|none|none|none|Alpha Library - Front.jpg|none|Alpha Library East - Front.jpg', 'item 7: the photo file name match (' + lay.photoNames.join(' | ') + ')');
@@ -630,15 +653,29 @@ const ok = (c, m) => {
       };
       const out = {};
       // 1. a DOAS whose set point points and outdoor air temperature have no reading
-      out.doas = run('doas', 'Dedicated Outdoor Air System', ['sat', 'satCoolSp', 'satHtgSp', 'oat', 'rat', 'co2'], { sat: '58.5°F', rat: '70.1°F' }, null, 1).map((s) => s.text);
+      out.doas = run('doas', 'Dedicated Outdoor Air System', ['sat', 'satCoolSp', 'satHtgSp', 'oat', 'rat', 'co2'], { satCoolSp: '55°F' }, null, 1).map((s) => s.text);
       out.hw = run('hwp', 'Hot Water Plant', ['hwst', 'hwrt'], {}, null, 1).map((s) => s.text);
-      // a status word in a temperature point is not a temperature (live: a chilled water supply point read "Normal")
-      out.chwStatusWord = run('chwp', 'Chilled Water Plant', ['chwst', 'chwSetpoint'], { chwst: 'Normal', chwSetpoint: '44.0°F' }, null, 1).map((s) => s.text);
-      out.hwStatusWord = run('hwp', 'Hot Water Plant', ['hwst', 'hwrt'], { hwst: 'Normal', hwrt: '130.0°F' }, null, 1).map((s) => s.text);
+      // a plant description holds set points and limits, never a status word or a temperature read at the audit time
+      out.chwSp = run('chwp', 'Chilled Water Plant', ['chwst', 'chwSetpoint'], { chwSetpoint: '44°F' }, null, 1).map((s) => s.text);
+      // a hot water plant with an outdoor air lockout set point (enable limit) gives an enable sentence with that set point
+      out.hwLockout = run('hwp', 'Hot Water Plant', ['boilerEnable', 'hwst', 'hwSetpoint', 'oaEnable'], { oaEnable: '55°F', hwSetpoint: '120°F' }, null, 1).map((s) => s.text);
+      out.hwLockoutStatus = run('hwp', 'Hot Water Plant', ['boilerEnable', 'hwst'], {}, { plantLockout: 'outdoor air temperature lockout' }, 1).map((s) => s.text);
+      // zone set points: the "70°F heating / 75°F cooling" form
+      out.vavSp = run('vav', 'Variable Air Volume Terminal', ['discFlow', 'dampCmd', 'zoneTemp', 'htgSP', 'coolSP'], { zone: { n: 4, unit: false, occHeat: [70, 70, 70, 70], occCool: [75, 75, 75, 75], unoccHeat: [], unoccCool: [] } }, null, 4).map((s) => s.text);
+      // most zones agree: the common value is printed, the odd zone is never the end of a range
+      out.vavMost = run('vav', 'Variable Air Volume Terminal', ['discFlow', 'dampCmd', 'zoneTemp', 'htgSP', 'coolSP'], { zone: { n: 5, unit: false, occHeat: [70, 70, 70, 70, 66], occCool: [74, 74, 74, 74, 80], unoccHeat: [60, 60], unoccCool: [84, 84] } }, { appendixRef: ' (Appendix A)' }, 5).map((s) => s.text);
+      // no value reaches half of the zones: no value is printed
+      out.vavVary = run('vav', 'Variable Air Volume Terminal', ['discFlow', 'dampCmd', 'zoneTemp', 'htgSP', 'coolSP'], { zone: { n: 4, unit: false, occHeat: [66, 68, 70, 72], occCool: [74, 74, 74, 74], unoccHeat: [], unoccCool: [] } }, { appendixRef: ' (Appendix A)' }, 4).map((s) => s.text);
+      out.vavNoAppendix = run('vav', 'Variable Air Volume Terminal', ['discFlow', 'dampCmd', 'zoneTemp', 'htgSP', 'coolSP'], { zone: { n: 5, unit: false, occHeat: [70, 70, 70, 70, 66], occCool: [74, 74, 74, 74, 80], unoccHeat: [], unoccCool: [] } }, null, 5).map((s) => s.text);
+      out.vavSched = run('vav', 'Variable Air Volume Terminal', ['discFlow', 'dampCmd'], {}, { sched: '6:00 AM-9:00 PM on 2 units and 7:00 AM-6:00 PM on 1 unit' }, 3).map((s) => s.text);
+      out.ahuSched = run('ahu', 'Variable Air Volume Air Handling Unit', ['sfEnable', 'rfEnable', 'htgValve', 'clgValve', 'sat', 'sfSpeedCmd', 'dsp', 'oaDampCmd', 'oaFlow', 'freezeStat'], { satCoolSp: '55°F', dspSp: '1.1 in. w.c.' }, { sched: '5:00 AM-9:00 PM' }, 1);
+      // the type count line: singular for one unit
+      out.counts = [['ahu', 1], ['ahu', 2], ['heater', 1], ['ef', 1], ['doas', 1], ['vav', 21], ['hwp', 1]].map((x) => _a36CatCountLabel(x[0], x[1]));
       // 2. adjustment 0.0 is not printed
       const termKeys = ['discFlow', 'dampCmd', 'zoneTemp', 'htgSP', 'coolSP', 'htgAdj', 'coolAdj'];
       out.adjZero = run('vav', 'Variable Air Volume Terminal', termKeys, { zoneTemp: '71.0°F', htgSP: '68.0°F', coolSP: '73.0°F', htgAdj: '0.0°F', coolAdj: '0.0°F' }, null, 4).map((s) => s.text);
       out.adjSome = run('vav', 'Variable Air Volume Terminal', termKeys, { htgAdj: '1.5°F', coolAdj: '0.0°F' }, null, 4).map((s) => s.text);
+      out.vavNoSp = run('vav', 'Variable Air Volume Terminal', termKeys, {}, null, 4).map((s) => s.text);
       // 7. the airflow reset sentence needs the stored minimum and maximum airflow set points
       out.noProof = run('vav', 'Variable Air Volume Terminal', termKeys, { zoneTemp: '71.0°F' }, { flowReset: false }, 4).map((s) => s.text);
       out.proof = run('vav', 'Variable Air Volume Terminal', termKeys, { zoneTemp: '71.0°F' }, { flowReset: true }, 4).map((s) => s.text);
@@ -650,8 +687,8 @@ const ok = (c, m) => {
       out.proofRows = ['a', 'b', 'c'].map((k) => _a36DetAirflowResetProof({ units: [{ id: k }] }, rows));
       // A. fan speed: a speed reading alone is not a variable speed command
       const ahuKeys = ['sfEnable', 'sfStatus', 'sfSpeed', 'dsp', 'htgValve', 'sat', 'oaDampCmd', 'mat', 'oat', 'oaFlow', 'freezeStat'];
-      out.fanReading = run('ahu', 'Variable Air Volume Air Handling Unit', ahuKeys, { sfSpeed: '76.2%', dsp: '1.1 in H2O', sat: '59.3°F' }, null, 1);
-      out.fanCmd = run('ahu', 'Variable Air Volume Air Handling Unit', ahuKeys.concat(['sfSpeedCmd']), { sfSpeedCmd: '60.0%', dsp: '1.1 in H2O' }, null, 1);
+      out.fanReading = run('ahu', 'Variable Air Volume Air Handling Unit', ahuKeys, {}, null, 1);
+      out.fanCmd = run('ahu', 'Variable Air Volume Air Handling Unit', ahuKeys.concat(['sfSpeedCmd']), { dspSp: '1.1 in. w.c.' }, null, 1);
       // 3. header fit: every header cell of the Findings Summary holds its text
       const th = Array.from(document.querySelectorAll('#reportPages .rpt-page[data-section="detailedSummary"] thead th'));
       out.th = th.map((x) => ({ t: x.textContent.trim(), over: x.scrollWidth - x.clientWidth, inside: x.getBoundingClientRect().right <= x.closest('table').getBoundingClientRect().right + 0.5 }));
@@ -681,18 +718,29 @@ const ok = (c, m) => {
       return out;
     });
     const allText = (a) => a.join(' ');
-    ok(!/ \./.test(allText(r3.doas)) && !/(are|is) \./.test(allText(r3.doas)) && !/outdoor air\./.test(allText(r3.doas)) && /return air 70\.1°F/.test(allText(r3.doas)) && !/set points are/.test(allText(r3.doas)),
-      '1: a clause whose value is empty is never printed (DOAS: no "set points are .", no "outdoor air."): ' + allText(r3.doas));
-    ok(!/Normal/.test(allText(r3.chwStatusWord)) && !/Normal/.test(allText(r3.hwStatusWord)) && /return was 130\.0°F/.test(allText(r3.hwStatusWord)), 'a status word in a temperature point is never printed as a temperature (' + allText(r3.chwStatusWord) + ' | ' + allText(r3.hwStatusWord) + ')');
-    ok(r3.hw.length === 0, '1: the hot water temperature sentence is not printed when neither reading exists (' + allText(r3.hw) + ')');
-    ok(r3.adjZero.some((x) => x === 'The zone sensor can adjust the set points.') && !/0\.0/.test(allText(r3.adjZero).replace(/68\.0|73\.0|71\.0/g, '')), '2: a 0.0 adjustment is omitted: ' + r3.adjZero.filter((x) => /adjust/.test(x)).join(''));
-    ok(r3.adjSome.some((x) => x === 'The zone sensor can adjust the set points (heating 1.5°F).'), '2: a non-zero adjustment is printed, the 0.0 one is not: ' + r3.adjSome.filter((x) => /adjust/.test(x)).join(''));
-    ok(!/resets between/.test(allText(r3.noProof)) && /resets between its minimum and maximum/.test(allText(r3.proof)), '7: "airflow set point resets between minimum and maximum" only with the stored minimum and maximum airflow set points');
+    ok(!/ \./.test(allText(r3.doas)) && /The unit holds the supply air temperature at 55°F for cooling\./.test(allText(r3.doas)) && !/58\.5|70\.1|monitors/.test(allText(r3.doas)),
+      '1: a DOAS gives its set point and no empty clause and no reading: ' + allText(r3.doas));
+    ok(!/Normal|monitors/.test(allText(r3.chwSp)) && /holds the chilled water supply temperature at its setpoint\./.test(allText(r3.chwSp)) && !/44°F/.test(allText(r3.chwSp)), 'a chilled water plant names its setpoint without the stored (often reset) value, no status word (' + allText(r3.chwSp) + ')');
+    ok(!/\d|monitors/.test(allText(r3.hw)) && allText(r3.hw) === '', '1: a plant with no setpoint and no enable prints no sentence and no "monitors" list (' + allText(r3.hw) + ')');
+    ok(/The plant runs when the outdoor air temperature is below 55°F\./.test(allText(r3.hwLockout)) && /hot water supply temperature at its setpoint\./.test(allText(r3.hwLockout)) && !/120°F/.test(allText(r3.hwLockout)), 'b: a hot water plant with an outdoor air lockout setpoint gives the enable sentence with that setpoint, no stored water setpoint value (' + allText(r3.hwLockout) + ')');
+    ok(/The plant locks out on outdoor air temperature\./.test(allText(r3.hwLockoutStatus)) && !/Lockout|was off|At the time/.test(allText(r3.hwLockoutStatus)), 'b: a plant with a lockout status point says it has the lockout, not that it was off (' + allText(r3.hwLockoutStatus) + ')');
+    ok(allText(r3.vavSp).indexOf('Zones hold 70°F heating / 75°F cooling when occupied.') >= 0 && !/ons an?d|monitors|by command/.test(allText(r3.vavSp)), 'c: a VAV group whose zones agree gives "70°F heating / 75°F cooling" (' + allText(r3.vavSp) + ')');
+    ok(/Most zones hold 70°F heating \/ 74°F cooling when occupied; some zones use other setpoints \(Appendix A\)\./.test(allText(r3.vavMost)) && !/66|80/.test(allText(r3.vavMost)) && /Zones hold 60°F heating \/ 84°F cooling when unoccupied\./.test(allText(r3.vavMost)), 'c: when most zones agree the common value is printed and an odd value is never a range end (' + allText(r3.vavMost) + ')');
+    ok(/Heating setpoints differ from zone to zone \(Appendix A\)\./.test(allText(r3.vavVary)) && !/66|68°F|72/.test(allText(r3.vavVary)) && /Zones hold 74°F cooling when occupied\./.test(allText(r3.vavVary)), 'c: when no value reaches half of the zones no value is printed (' + allText(r3.vavVary) + ')');
+    ok(!/Appendix A/.test(allText(r3.vavNoAppendix)) && /some zones use other setpoints\./.test(allText(r3.vavNoAppendix)), 'c: the Appendix A reference prints only when Appendix A is in the report (' + allText(r3.vavNoAppendix) + ')');
+    ok(allText(r3.vavSched).indexOf('6:00 AM-9:00 PM on 2 units and 7:00 AM-6:00 PM on 1 unit') >= 0, 'c: the schedule is part of the start sentence (' + allText(r3.vavSched) + ')');
+    ok(/start and stop on the occupied schedule \(5:00 AM-9:00 PM\)/.test(allText(r3.ahuSched.map((s) => s.text))) && /heating coil valve and cooling coil valve modulate in sequence to hold the supply air temperature at 55°F for cooling/.test(allText(r3.ahuSched.map((s) => s.text))) && /fan speed modulates to hold the duct static pressure at 1\.1 in\. w\.c\./.test(allText(r3.ahuSched.map((s) => s.text))) && !/monitors|by command|positioned/.test(allText(r3.ahuSched.map((s) => s.text))), 'c: an air handler gives start and stop, each loop with its setpoint, no "monitors" list and no "by command" (' + allText(r3.ahuSched.map((s) => s.text)) + ')');
+    ok(!/\d°F/.test(allText(r3.vavNoSp)) && /held between the heating setpoint and the cooling setpoint/.test(allText(r3.vavNoSp)), 'c: no setpoint value, no number printed (' + allText(r3.vavNoSp) + ')');
+    ok(r3.counts.join(' / ') === 'Air Handler / Air Handlers / Heater / Exhaust Fan / Dedicated Outdoor Air System Unit / Variable Air Volume Terminals / Hot Water Plant', 'd: the type count line is singular for one unit (' + r3.counts.join(' / ') + ')');
+    ok(!/adjust|0\.0/.test(allText(r3.adjZero)), '2: no adjustment sentence and no adjustment value is printed: ' + allText(r3.adjZero));
+    ok(!/adjust|1\.5/.test(allText(r3.adjSome)), '2: a stored adjustment is a reading, not printed: ' + allText(r3.adjSome));
+    ok(!/resets between/.test(allText(r3.noProof)) && /resets between its minimum and maximum/.test(allText(r3.proof)), '7: "airflow setpoint resets between minimum and maximum" only with the stored minimum and maximum airflow setpoints');
     ok(r3.proofRows.join(',') === 'true,false,true', '7: proof = a minimum and a maximum airflow point of the unit; the Air Source Minimum point does not count (' + r3.proofRows.join(',') + ')');
-    ok(/monitors its speed \(76\.2%\)/.test(allText(r3.fanReading.map((s) => s.text))) && !/variable speed|speed is varied|varies/.test(allText(r3.fanReading.map((s) => s.text))), 'A: a supply fan speed reading alone is "monitors its speed", not variable speed under control: ' + r3.fanReading.map((s) => s.text).filter((x) => /fan/.test(x)).join(' '));
-    ok(/varies its speed by a speed command \(60\.0%\)/.test(allText(r3.fanCmd.map((s) => s.text))) && /varies the supply fan speed to hold the duct static pressure \(1\.1 in H2O\)/.test(allText(r3.fanCmd.map((s) => s.text))), 'A: with a speed command point the fan is run at variable speed and the speed holds the duct static pressure');
+    ok(!/monitors|speed command|by command|duct static pressure/.test(allText(r3.fanReading.map((s) => s.text))) && /enables the supply fan/.test(allText(r3.fanReading.map((s) => s.text))), 'A: a supply fan with no speed command point has no speed sentence and no "monitors" list: ' + r3.fanReading.map((s) => s.text).filter((x) => /fan/.test(x)).join(' '));
+    ok(/The supply fan speed modulates to hold the duct static pressure at 1\.1 in\. w\.c\./.test(allText(r3.fanCmd.map((s) => s.text))), 'A: with a speed command point the supply fan speed modulates to hold the duct static pressure at its setpoint');
     const fns = r3.fanReading.map((s) => s.fn);
-    ok(fns.join(',') === fns.slice().sort((a, b) => ['temp', 'air', 'oa', 'other'].indexOf(a) - ['temp', 'air', 'oa', 'other'].indexOf(b)).join(',') && new Set(fns).size === 4, '6: air handler sentences are grouped by function (temperature, airflow and static, outside air, other): ' + fns.join(','));
+    const FN_ORDER = ['start', 'temp', 'air', 'oa', 'zone', 'safety'];
+    ok(fns.join(',') === fns.slice().sort((a, b) => FN_ORDER.indexOf(a) - FN_ORDER.indexOf(b)).join(',') && new Set(fns).size >= 4, '6: air handler sentences are in operating order (start and stop, temperature, airflow and static pressure, outdoor air, zone, safety): ' + fns.join(','));
     ok(r3.th.length >= 5 && r3.th.length % 5 === 0 && r3.th.every((x) => x.over <= 1 && x.inside), '3: every Findings Summary header cell holds its text (ATTRIBUTE inside the table): ' + JSON.stringify(r3.th));
     ok(r3.heater === 'sparse' && r3.light === 'light page' && r3.busy === '', '4: figure rule: a sparse graphic (a heater tile) and a light property page are not printed, a graphic with many readouts is: ' + [r3.heater, r3.light, r3.busy].join(' / '));
     ok(r3.trimHalf.w < 700 && r3.trimHalf.w > 500 && r3.trimHalf.h === 660 && r3.trimFull.w === 1200 && r3.trimFull.h === 660 && r3.trimLight.w === 300 && r3.trimLight.h === 200, '4: a dark crop with a wide empty black margin is cut to its content; others are not: ' + JSON.stringify([r3.trimHalf, r3.trimFull, r3.trimLight]));
@@ -733,26 +781,32 @@ const ok = (c, m) => {
       });
       const sp = pages.filter((p) => p.getAttribute('data-section') === 'setpointReview');
       const multi = {};
-      ['detailedSummary', 'costEstimate', 'setpointReview', 'pointInventory'].forEach((sec) => {
+      ['detailedSummary', 'costEstimate', 'setpointReview'].forEach((sec) => {
         multi[sec] = pages.filter((p) => p.getAttribute('data-section') === sec).map((p) => {
           const h = p.querySelector('.rpt-body h1');
-          return { title: h ? h.textContent.trim().replace(/\u00a0/g, ' ') : '', th: p.querySelectorAll('.rpt-body table th').length };
+          return { title: h ? h.textContent.trim().replace(/\u00a0/g, ' ') : '', th: p.querySelectorAll('.rpt-body table th').length, rows: p.querySelectorAll('.rpt-body table tbody tr').length, span: !!(h && h.querySelector('span[style*="85%"]')) };
         });
       });
-      return { multi: multi, fit: fit, count: pages.length, sections: pages.map((p) => p.getAttribute('data-section')), spPages: sp.length, spHead: sp.length ? sp[0].textContent.indexOf('Appendix B: Setpoint Programming Review') >= 0 : null };
+      return { multi: multi, fit: fit, count: pages.length, sections: pages.map((p) => p.getAttribute('data-section')), spPages: sp.length, spHead: sp.length ? sp[0].textContent.indexOf('Appendix A: Setpoint Programming Review') >= 0 : null };
     });
     const bigBad = big.fit.filter((f) => f.gap < 0 || f.scrollOver > 1);
     ok(big.count > 40 && bigBad.length === 0, 'large project (' + big.count + ' pages): every page fits above the footer' + (bigBad.length ? ': ' + JSON.stringify(bigBad) : ''));
-    console.log('INFO Appendix B pages in the large project: ' + big.spPages);
+    console.log('INFO Appendix A pages in the large project: ' + big.spPages);
     ['detailedSummary', 'costEstimate', 'setpointReview'].forEach((sec) => {
       const list = big.multi[sec];
       ok(list.length >= 1 && list.every((x, i) => (list.length === 1 || x.title.indexOf('(' + (i + 1) + ' of ' + list.length + ')') > 0) && x.title.length > 5 && x.th >= 3), 'item 3: the table of ' + sec + ' repeats its title with "(N of M)" and its column headers on every one of its ' + list.length + ' pages (one page: no suffix) (' + list.map((x) => x.title + ' th=' + x.th).join(' / ') + ')');
+    });
+    ['detailedSummary', 'costEstimate'].forEach((sec) => {
+      const list = big.multi[sec];
+      if (list.length < 2) return;
+      ok(list.every((x) => x.span), 'the "(N of M)" suffix of ' + sec + ' is in a span at 85% size on every part (' + list.map((x) => x.span).join(',') + ')');
+      ok(list[list.length - 1].rows >= 3, 'orphan rows: the last part of ' + sec + ' holds at least 3 rows (' + list.map((x) => x.rows).join(',') + ')');
     });
     const bigLib = big.fit.filter((f) => f.section === 'detailedLibrary');
     ok(bigLib.length > 10 && bigLib.every((f) => !f.lastHead), 'D7: no chapter page ends with a heading (' + bigLib.length + ' chapter pages)' + JSON.stringify(bigLib.filter((f) => f.lastHead)));
     const sparse = bigLib.filter((f, i) => i < bigLib.length - 1 && !bigLib[i + 1].libStart && f.fill < 0.35);
     ok(sparse.length === 0, 'D7: no chapter page except the last of each library is less than 35 percent full: ' + bigLib.map((f) => Math.round(f.fill * 100)).join(','));
-    ok(big.spPages === 0 || big.spHead === true, 'Appendix B, when printed, starts with its heading');
+    ok(big.spPages === 0 || big.spHead === true, 'Appendix A, when printed, starts with its heading');
     ok(big.sections.filter((x) => x === 'detailedSummary').length >= 2, 'a long Findings Summary runs over more than one page');
 
     // ---- 10. Simple through the modal ----
@@ -811,9 +865,8 @@ const ok = (c, m) => {
     }, PID2);
     const pt = plants.text;
     ok(plants.cats === 'ahu,chwp,hwp', 'D4: Detailed audits the air handler and the two plants: ' + plants.cats);
-    ok(/one chilled water plant \(Chilled Water System - Gamma\)/.test(pt) && /one hot water plant \(Hot Water System - Gamma\)/.test(pt) && /one air handling unit/.test(pt), 'D4: System Overview counts one hot water plant and one chilled water plant and names them');
-    ok(/Hot Water System - Gamma/.test(pt) && /Chilled Water System - Gamma/.test(pt) && /Hot Water Plant/.test(pt) && /Chilled Water Plant/.test(pt), 'D4: the System Overview names the heating hot water plant and the chilled water plant');
-    console.log('DBG ' + pt.slice(pt.indexOf('Gamma Library: System Descriptions'), pt.indexOf('Gamma Library: System Descriptions') + 1200));
+    ok(/one chilled water plant/.test(pt) && /one hot water plant/.test(pt) && /one air handling unit \(AHU-1\)/.test(pt) && !/Water System - Gamma|Water System/.test(pt.slice(0, pt.indexOf('System Descriptions'))), 'D4: System Overview counts one hot water plant and one chilled water plant, without the BAS name of the plant');
+    ok(!/ - Gamma/.test(pt) && /Hot Water Plant/.test(pt) && /Chilled Water Plant/.test(pt), 'D4: the plants print with their type name, never with the library tag of the BAS name ("- Gamma")');
     ok(!/Domestic Hot Water/.test(pt) && !/Loop Bypass/.test(pt) && !/Plumbing/.test(pt), 'D4: domestic hot water and the bypass valve do not print');
     const fStart = pt.indexOf('Findings');
     const fEnd = pt.length;
@@ -822,8 +875,8 @@ const ok = (c, m) => {
     ok(fStart > 0 && fEnd > fStart && /Chilled Water Plant/.test(findPlants) && /Hot Water Plant/.test(findPlants), 'D4: Findings has a Chilled Water Plant block and a Hot Water Plant block');
     ok(!/schedul/i.test(findPlants) && !/Occupied schedule/.test(pt), 'D4: plants get no schedule finding and no schedule line');
     ok(/Chilled Water Supply Temperature Reset/.test(findPlants) && /Hot Water Supply Temperature Reset/.test(findPlants), 'D4: plant findings include the supply temperature reset sequence of each plant (same treatment as the plants Detailed already printed)');
-    ok(/The hot water plant serves the building heating system\. The building automation system monitors the boiler run status, and enables the primary hot water pump\. At the time of the audit the plant supplied hot water at 150\.2°F with a 130\.0°F return( \(Figure \d+\))?\./.test(pt), 'item 2: a plant description is connected sentences in an engineering voice (what it serves, what the system enables and monitors, the readings)');
-    ok(!/primary hot water pump (has|has a)|status point/.test(pt), 'item 2: no "has an enable command" or "status point" wording');
+    ok(/The hot water plant serves the building heating system\. The building automation system enables the primary hot water pump\. The plant holds the hot water supply temperature at its setpoint./.test(pt) && !/At the time of the audit|150\.2|130\.0|by an enable command|160°F/.test(pt), 'item 2: a plant description is the sequence of operation (what it serves, how it starts, what it holds), no reading');
+    ok(!/primary hot water pump (has|has a)|status point|monitors/.test(pt), 'item 2: no "has an enable command", "status point" or "monitors" wording');
 
     // ---- 12. Round 4 (2026-11-11): figure crop, picture rank, carbon dioxide counts, power meter wording ----
     const round4 = await page.evaluate(async () => {
@@ -977,13 +1030,13 @@ const ok = (c, m) => {
       };
     }, PID4);
     ok(eps.merged.length === 1 && !eps.keys.includes('demandCtrl') && !eps.keys.includes('ahu_min_oa') && eps.keys.includes('ahu_min_oa+demandCtrl'), 'report length: Minimum Outside Air and Occupancy-Based Ventilation of the same units are ONE finding (' + eps.keys.join(' / ') + ')');
-    ok(eps.merged[0] && /Minimum Outdoor Air and Occupancy-Based Ventilation \(Air Handling Units\)/.test(eps.merged[0].label) && /sequences \(ASHRAE 36, Sections 5\.16\.3 to 5\.16\.6\) are not fully in place on both units/.test(eps.merged[0].observed) && /Carbon Dioxide Sensor/.test(eps.merged[0].observed) && /Outdoor Air Damper Actuator/.test(eps.merged[0].observed) && eps.merged[0].affected.length === 2, 'report length: the merged finding names both sequences, both sections, the points of both and the 2 units: ' + (eps.merged[0] && eps.merged[0].observed));
+    ok(eps.merged[0] && /Minimum Outdoor Air and Occupancy-Based Ventilation \(Air Handling Units\)/.test(eps.merged[0].label) && /\(ASHRAE 36, Sections 5\.16\.3 to 5\.16\.6\) on both units/.test(eps.merged[0].observed) && /Carbon Dioxide Sensor/.test(eps.merged[0].observed) && /Outdoor Air Damper Actuator/.test(eps.merged[0].observed) && eps.merged[0].affected.length === 2, 'report length: the merged finding names both sections, the points of both and the 2 units: ' + (eps.merged[0] && eps.merged[0].observed));
     ok((eps.summary.match(/Minimum Outdoor Air and Occupancy-Based Ventilation \(Air Handling Units\) sequences not fully in place/g) || []).length === 1 && !/Minimum Outdoor Air sequence not fully in place/.test(eps.summary), 'report length: the Findings Summary has one row for the two sequences');
-    ok(eps.seqNo && eps.seqNo === eps.noteNo, 'report length: the note names the real section number of Control Sequences (' + eps.seqNo + ' / ' + eps.noteNo + ')');
-    ok(/Epsilon Library\s*AHU-A and AHU-B\s*66\.0°F heating \/ 71\.0°F cooling\s*60\.0°F heating \/ 79\.0°F cooling[\s\S]*Single-zone unit: current setpoints shown, no zone review/.test(eps.sp), 'report length: Appendix B lists the single-zone-only library with its current setpoints (AHU-A and AHU-B: 66/71 occupied, 60/79 unoccupied): ' + eps.sp.slice(0, 700));
-    ok(/Epsilon Library\s*CUH-1\s*60\.0°F heating\s*60\.0°F heating(?! \/)/.test(eps.sp) && (eps.sp.match(/Single-zone unit: current setpoints shown, no zone review/g) || []).length === 2, 'report length: a second set of setpoints in the same library is a second row (CUH-1 60/78, 60/84; a heater prints heating only)');
+    ok(eps.seqNo && !eps.noteNo, 'report length: Control Sequences has its section number and the Findings Summary has no note about it (' + eps.seqNo + ' / ' + eps.noteNo + ')');
+    ok(/Epsilon Library\s*AHU-A and AHU-B\s*66\.0°F heating \/ 71\.0°F cooling\s*60\.0°F heating \/ 79\.0°F cooling[\s\S]*Single-zone unit/.test(eps.sp) && !/Single-zone unit:/.test(eps.sp), 'report length: Appendix A lists the single-zone-only library with its current setpoints (AHU-A and AHU-B: 66/71 occupied, 60/79 unoccupied) and the status "Single-zone unit": ' + eps.sp.slice(0, 700));
+    ok(/Epsilon Library\s*CUH-1\s*60\.0°F heating \/ None cooling\s*60\.0°F heating \/ None cooling\s*(—\s*)?None/.test(eps.sp) && (eps.sp.match(/Single-zone unit/g) || []).length === 2, 'report length: a second set of setpoints in the same library is a second row (CUH-1 60/78, 60/84; a heater prints "None cooling" and Deadband "None")');
     const epsRows = eps.sp.slice(eps.sp.indexOf('Epsilon Library'), eps.sp.indexOf('Carbon Dioxide Setpoints'));
-    ok(epsRows.length > 100 && !/Reprogram|Recommended|undefined|null|NaN/.test(epsRows) && /1 with single-zone units only \(current setpoints shown\)/.test(eps.sp) && /All 1 zone match ASHRAE 36 defaults/.test(eps.sp), 'report length: single-zone rows carry no recommendation and no Reprogram status (the zone library keeps its own); the count line names them: ' + JSON.stringify([epsRows.length, /1 with single-zone units only \(current setpoints shown\)/.test(eps.sp), /All 1 zone match ASHRAE 36 defaults/.test(eps.sp), eps.sp.slice(eps.sp.indexOf('buildings') - 20, eps.sp.indexOf('buildings') + 160)]));
+    ok(epsRows.length > 100 && !/Reprogram|Recommended|undefined|null|NaN/.test(epsRows) && /1 has single-zone units only/.test(eps.sp) && /All 1 zone match ASHRAE 36 defaults/.test(eps.sp), 'report length: single-zone rows carry no recommendation and no Reprogram status (the zone library keeps its own); the count line names them: ' + JSON.stringify([epsRows.length, /1 has single-zone units only/.test(eps.sp), /All 1 zone match ASHRAE 36 defaults/.test(eps.sp), eps.sp.slice(eps.sp.indexOf('buildings') - 20, eps.sp.indexOf('buildings') + 160)]));
     ok(/Single-zone unit: current setpoints shown, no zone review/.test(eps.simpleSp), 'report length: the Simple style prints the same rows in its Setpoint Programming Review');
 
     // emComputeSetpointCompliance: opts.anyCategory reads a single-zone unit as a zone row; the default is unchanged (no result for an air handler)
@@ -998,17 +1051,6 @@ const ok = (c, m) => {
       return { ahus: ahus.length, withOpt: withOpt.length, without: without.length, zoneSame: a === b };
     }, PID4);
     ok(anyCat.ahus > 0 && anyCat.withOpt > 0 && anyCat.without === 0 && anyCat.zoneSame, 'emComputeSetpointCompliance: opts.anyCategory reads an air handler as a zone row, the default does not, a zone row is unchanged: ' + JSON.stringify(anyCat));
-    // Appendix A: equipment types with exactly the same points share one table, named with every library; a different list keeps its own table
-    const share = await page.evaluate(() => {
-      const unit = (n, pts) => ({ name: n, compliance: { coveredPoints: pts.map((k) => ({ categoryKey: k, ashrae36PointName: k + ' point' })) } });
-      const grp = (label, pts) => ({ label: label, category: 'ef', units: [unit('EF-1', pts)] });
-      const lib = (name, groups) => ({ b: { name: name, displayName: name }, groups: groups });
-      const ctx = { model: { libs: [lib('Lib One', [grp('Exhaust Fan', ['schedule', 'fanStatus'])]), lib('Lib Two', [grp('Exhaust Fan', ['schedule', 'fanStatus'])]), lib('Lib Three', [grp('Exhaust Fan', ['schedule'])])] } };
-      const toks = _a36DetPointTokens(ctx);
-      const titles = toks.filter((x) => x.tbl && x.tbl.first === x).map((x) => x.tbl.title.html(0, 1).replace(/<[^>]+>/g, ''));
-      return titles;
-    });
-    ok(share.length === 2 && share[0] === 'Lib One and Lib Two: Exhaust Fan (1 unit each)' && share[1] === 'Lib Three: Exhaust Fan (1 unit)', 'Appendix A: libraries with the same points of an equipment type share one table: ' + JSON.stringify(share));
     ok(errs.length === 0, 'no page errors' + (errs.length ? ': ' + errs[0] : ''));
   } finally {
     await ctx.close();

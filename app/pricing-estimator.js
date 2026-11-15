@@ -3209,10 +3209,10 @@ function buildCatalogRows(projId, buildingNames) {
    other unclaimed row uses) so it still gets scheduled into a phase like any other line item.
    ─────────────────────────────────────────────────────────────────────────── */
 /* ── buildSetpointReprogramRows(projId, buildingNames) ────────────────────────────────────────
-   The Audit Report's Appendix B (Setpoint Programming Review) recommends resetting zone setpoints and
+   The Audit Report's Appendix A (Setpoint Programming Review) recommends resetting zone setpoints and
    schedules. This is the ONE priced line for that work (one-time cost), in the Programming part of every
    option (Recommended, Compliance, Full Scope); it is not part of the optional room CO2 scope.
-   Zones = the Appendix B count (report-engine.js _a36SetpointReprogramPlan, the same per-building
+   Zones = the Appendix A count (report-engine.js _a36SetpointReprogramPlan, the same per-building
    "Change the setpoints of N of M zones" count; no second count here).
    Hours = SETPOINT_REPROGRAM_HOURS_PER_ZONE x zones + SETPOINT_REPROGRAM_HOURS_PER_BUILDING x buildings with
    zones to reprogram. Price = hours x the project hourly rate (cfg.hourlyRate || COST_LABOR_RATE_DEFAULT).
@@ -3243,7 +3243,7 @@ function buildSetpointReprogramRows(projId, buildingNames) {
       netPrice: null,
       contractPrice: null,
       lineTotal: parseFloat((hours * hourlyRate).toFixed(2)),
-      note: 'Appendix B: reset zone setpoints and schedules to the recommended values.',
+      note: 'Appendix A: reset zone setpoints and schedules to the recommended values.',
       phase: 2,
       hrsPerUnit: hrsPerUnit,
       isSetpointReprogram: true,
@@ -3351,7 +3351,7 @@ function _pricingComplianceRowsAll(projId) {
       var def = SEQUENCE_SAVINGS_IMPACT[row.seqKey];
       return !!(def && def.type === 'safety');
     })
-    .concat(buildSetpointReprogramRows(projId)); // Appendix B work is recommended in every option
+    .concat(buildSetpointReprogramRows(projId)); // Appendix A work is recommended in every option
 }
 
 /* ── Optional zone CO2 scope (Matt, 2026-11-13) ──────────────────────────────────────────────
@@ -4793,7 +4793,7 @@ function _pricingRecommendedRowsAll(projId) {
   // sequence), not the Compliance-restricted subset — Recommended candidates
   // include savings sequences Compliance no longer carries.
   var catRows = buildCatalogRows(projId);
-  if (!catRows.length) return buildSetpointReprogramRows(projId); // no device or sequence gap: only the Appendix B line can remain
+  if (!catRows.length) return buildSetpointReprogramRows(projId); // no device or sequence gap: only the Appendix A line can remain
 
   var catalog = sget('en_pricing_catalog', null);
   var cfg = _pricingGetConfig();
@@ -5310,7 +5310,7 @@ function buildOptionalPointRows(projId) {
    ─────────────────────────────────────────────────────────────────────────── */
 function _pricingFullScopeRowsAll(projId) {
   var catRows = buildCatalogRows(projId);
-  if (!catRows.length) return buildSetpointReprogramRows(projId); // no device or sequence gap: only the Appendix B line can remain
+  if (!catRows.length) return buildSetpointReprogramRows(projId); // no device or sequence gap: only the Appendix A line can remain
 
   var catalog = sget('en_pricing_catalog', null);
   var cfg = _pricingGetConfig();
@@ -5327,7 +5327,7 @@ function _pricingFullScopeRowsAll(projId) {
     fsRows.push(fs);
   });
 
-  // Appendix B setpoint and schedule reprogramming: recommended work in every option.
+  // Appendix A setpoint and schedule reprogramming: recommended work in every option.
   buildSetpointReprogramRows(projId).forEach(function (row) {
     fsRows.push(row);
   });

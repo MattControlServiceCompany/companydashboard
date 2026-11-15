@@ -12,7 +12,7 @@ if (start < 0 || end < 0) throw new Error('_rptPaginateTokens not found');
 const sb = {};
 vm.createContext(sb);
 vm.runInContext(src.slice(start, end), sb);
-const pag = (tokens, a, b) => vm.runInContext('_rptPaginateTokens', sb)(tokens, a, b);
+const pag = (tokens, a, b, c) => vm.runInContext('_rptPaginateTokens', sb)(tokens, a, b, c);
 
 let failed = 0;
 const ok = (c, m) => {
@@ -37,6 +37,23 @@ ok(ids(r) === 'a,b,c | T', 'no flag: plain greedy split (' + ids(r) + ')');
 // 4. A page with one row only keeps that row (no empty page, no endless loop).
 r = pag([row('a', 300), Object.assign(row('T', 30), { keepWithPrev: true })], 300, 300);
 ok(ids(r) === 'a | T', 'single-row page is not emptied (' + ids(r) + ')');
+
+// 6. minLastRows: the last page never holds fewer rows than asked (when the page before can spare them); rows move down.
+r = pag([row('a', 100), row('b', 100), row('c', 100), row('d', 100), row('e', 100), row('f', 100)], 400, 400, 3);
+ok(ids(r) === 'a,b,c | d,e,f', 'minLastRows 3: the last page gets 3 rows (' + ids(r) + ')');
+
+// 7. Without minLastRows the old split leaves 2 rows on the last page.
+r = pag([row('a', 100), row('b', 100), row('c', 100), row('d', 100), row('e', 100), row('f', 100)], 400, 400);
+ok(ids(r) === 'a,b,c,d | e,f', 'no minLastRows: plain greedy split (' + ids(r) + ')');
+
+// 8. minLastRows with a keepWithPrev total row: the total counts as a row and stays last.
+r = pag([row('a', 100), row('b', 100), row('c', 100), row('d', 100), row('e', 100), Object.assign(row('T', 30), { keepWithPrev: true })], 400, 400, 3);
+ok(ids(r) === 'a,b,c | d,e,T', 'minLastRows 3 with a total row (' + ids(r) + ')');
+
+// 9. The previous page keeps its own minimum: no row moves when it would leave that page short.
+r = pag([row('a', 100), row('b', 100), row('c', 100), row('d', 100)], 300, 300, 3);
+ok(ids(r) === 'a,b,c | d', 'minLastRows 3: a page of 3 rows is not emptied below 3 (' + ids(r) + ')');
+ok(/_a36DetMoveRowsToLastPart\(chunks, budget\)/.test(src) && /A36_DET_MIN_LAST_ROWS = 3/.test(src) && /_rptPaginateTokens\([^)]*A36_DET_MIN_LAST_ROWS/.test(src), 'the Findings Summary and Control Sequences use the minimum of 3 rows');
 
 // 5. The Control Sequences total row carries the flag.
 ok(/Total control sequences to program[\s\S]{0,1200}keepWithPrev: true/.test(src), 'Control Sequences total row has keepWithPrev');
