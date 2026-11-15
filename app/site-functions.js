@@ -2507,6 +2507,14 @@ async function siteResetAllMeterTableSettings() {
    site-ui.js delegates to this array and should NOT maintain its own copy.
 */
 var RELEASE_NOTES = [
+  { v: 'v2026.11.15.298', date: '2026-11-15', title: 'ASHRAE 36 Audit Report: sequence-of-operation descriptions, tighter pages; faster PDF download',
+    items: [
+      { type: 'fix', text: 'Detailed Audit Report: each System Description now states the current sequence of operation (how the equipment starts, what it holds, unoccupied operation), with no readings or audit-time notes. Each description is one paragraph and stays on the page with its graphic.' },
+      { type: 'fix', text: 'Detailed Audit Report: the Glossary and the point lists (Point Inventory, Points by Equipment Type) are removed; the setpoint review is now Appendix A. The "(2 of 7)" part labels are smaller.' },
+      { type: 'fix', text: 'Detailed Audit Report: fewer half-empty pages. A chapter no longer ends on a page that holds one finding alone, and the Executive Summary fits on its page. In the Word file the graphics are centered as in the PDF.' },
+      { type: 'feature', text: 'Download PDF is faster: a large report now builds in about 40% less time. The pages look the same.' },
+      { type: 'fix', text: 'Calendar: when an event is already covered by a WebCTRL schedule found by its name, the note now names the WebCTRL group of that schedule.' },
+    ] },
   { v: 'v2026.11.15.297', date: '2026-11-15', title: 'Calendar: events not covered by a BAS schedule at the top; Word per-building pages match the PDF',
     items: [
       { type: 'fix', text: 'Calendar tab: a list "Not covered by a BAS schedule" now sits at the top, with every open event from today on (all dates, in any view) and the change to make in WebCTRL. Events that are already in a WebCTRL schedule of another group are listed apart and are not counted.' },
