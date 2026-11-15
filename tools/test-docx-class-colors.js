@@ -38,6 +38,20 @@ const { launchBrowser } = require(path.join(ROOT, 'tools', 'launch-browser.js'))
     ok(r.beta === r.rr, 'red div has the red run colour: ' + r.beta);
     ok(r.delta === r.g, 'green table cell has the green run colour: ' + r.delta);
     ok(r.zeta === r.rr, 'red table cell has the red run colour: ' + r.zeta);
+    // A report figure (picture in a centered block, as _a36DetFigureHtml writes it) is centered in Word as on the PDF page.
+    const fig = await page.evaluate(() => {
+      const png = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==';
+      const host = document.createElement('div');
+      host.innerHTML = '<div class="rpt-page"><div class="rpt-body"><div style="margin:6px 0 10px 0;text-align:center"><img src="' + png +
+        '" width="200" height="100" style="width:200px;height:100px"><div>Figure 1: Test</div></div></div></div>';
+      document.body.appendChild(host);
+      const clone = host.firstChild.cloneNode(true);
+      _docxStampLiveStyles(host.firstChild, clone);
+      const xml = _docxTranslatePages([clone]).xml;
+      const p = xml.split('<w:p>').concat(xml.split('<w:p ')).find((x) => x.indexOf('<w:drawing') > -1) || '';
+      return { centered: p.indexOf('<w:jc w:val="center"/>') > -1 && p.indexOf('<w:jc w:val="center"/>') < p.indexOf('<w:drawing'), found: !!p };
+    });
+    ok(fig.found && fig.centered, 'a figure picture is centered in Word (found ' + fig.found + ')');
   } finally { await ctx.close(); }
   console.log(fails ? fails + ' FAILED' : 'ALL PASS');
   process.exit(fails ? 1 : 0);

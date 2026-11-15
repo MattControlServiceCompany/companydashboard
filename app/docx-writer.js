@@ -1482,11 +1482,14 @@ function _docxTranslateImage(el, ctx) {
   var runXml = _docxRegisterImage(el, ctx);
   if (!runXml) return null;
   var isVisual = el.getAttribute('data-dx-visual') === '1'; // a picture of a layout block: centered, tight spacing
+  // A picture in a centered block (a report figure) is centered as on the PDF page.
+  var par = el.parentNode;
+  var parAlign = par && par.nodeType === 1 ? (par.style && par.style.textAlign) || par.getAttribute('data-dx-align') || '' : '';
   return {
     xml: _docxParagraph({
       runs: [runXml],
       spacingAfter: isVisual ? 120 : 240,
-      align: (ctx && ctx._flexCellAlign) || (isVisual ? 'center' : undefined),
+      align: (ctx && ctx._flexCellAlign) || (isVisual || parAlign === 'center' ? 'center' : undefined),
     }),
   };
 }

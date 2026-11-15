@@ -18283,7 +18283,7 @@ function rptPageASHRAE36Executive(n, d, detailedTitles) {
     : '<div style="font-size:' + RPT_SECTION_HEAD_PX + 'px;font-weight:700;color:var(--rpt-blue);margin-bottom:8px">Executive Summary</div>';
   // Detailed: the sequence items fill the page: a bold heading line with its text below, more space between items, larger body text.
   var A36_DET_EXEC_BODY_PX = 16;
-  var A36_DET_EXEC_ITEM_GAP_PX = 22;
+  var A36_DET_EXEC_ITEM_GAP_PX = 12;
   function _execItem(headingText, bodyText) {
     if (!detailed) return null;
     return (
@@ -18303,7 +18303,7 @@ function rptPageASHRAE36Executive(n, d, detailedTitles) {
   // NO numbers — the paragraphs and table below carry the real, derived figures.
   var execIntro =
     execHeader +
-    '<div style="font-size:' + (detailed ? 16 : 14) + 'px;color:var(--rpt-page-text);line-height:1.6;margin-bottom:' + (detailed ? 24 : 14) + 'px">' +
+    '<div style="font-size:' + (detailed ? 16 : 14) + 'px;color:var(--rpt-page-text);line-height:1.6;margin-bottom:' + (detailed ? 16 : 14) + 'px">' +
     'ASHRAE 36 is the industry standard for how a building automation system should run heating, ' +
     'cooling, and ventilation equipment. It is built from proven control sequences — programmed ' +
     'instructions that tell equipment how to respond to conditions such as occupancy, temperature, ' +
@@ -26604,31 +26604,99 @@ function _a36DetCost(t, prev) {
   return (t.estH || 20) + (t.tbl && !(prev && prev.tbl === t.tbl) ? t.tbl.theadH + A36_DET_TABLE_GAP_H + titleH : 0);
 }
 
+// Space of a keepNext run that starts at token i: the tokens i..j (j = the last token of the run; a run of System Descriptions text and
+// its figure ends at the figure). limited = true cuts the run after the first text token (a block taller than a page).
+function _a36DetChainEnd(tokens, i, limited) {
+  var j = i;
+  while (tokens[j].keepNext && tokens[j + 1] && !(limited && tokens[j].blockPart)) j++;
+  return j;
+}
+
+// The block-fit rule (item "System Descriptions stay with their figure"): a group is heading + text + figure + caption, one keepNext run.
+// 1. The run fits the space left on the page: it stays.
+// 2. It does not fit: its figure is made smaller to fit (aspect ratio kept, not below the minimum scale of the figure).
+// 3. It still does not fit: the whole run moves to the next page and 1 and 2 apply again on the empty page.
+// 4. It does not fit an empty page either (a run taller than a page): the text flows on, and the figure takes the space left on its page
+//    (scaled down to fit), or moves to the next page when it cannot fit there at its minimum scale. The figure never comes before its text.
+// A finding figure (no fig.block) keeps its old rule: scaled to fit when that keeps 85 %, else the run moves.
 function _a36DetPaginate(tokens, budget) {
   var cost = _a36DetCost;
   var chunks = [];
   var cur = [];
   var used = 0;
+  var splitUntil = -1; // index of a block figure whose run is taller than a page: its text flows token by token
+  function runNeed(i, j) {
+    var sum = cost(tokens[i], cur[cur.length - 1]);
+    for (var k = i; k < j; k++) sum += cost(tokens[k + 1], tokens[k]);
+    return sum;
+  }
+  function flush() {
+    chunks.push(cur);
+    cur = [];
+    used = 0;
+  }
+  // True when the run i..j fits the space left; its figure is made smaller to fit when that keeps the minimum scale.
+  function fitRun(i, j) {
+    var need = runNeed(i, j);
+    if (used + need <= budget) return true;
+    var ft = tokens[j];
+    var figCost = cost(ft, j > i ? tokens[j - 1] : cur[cur.length - 1]);
+    return _a36DetShrinkFig(ft, budget - used - (need - figCost));
+  }
   tokens.forEach(function (t, i) {
-    var c = cost(t, cur[cur.length - 1]);
-    var need = c;
-    for (var j = i; tokens[j].keepNext && tokens[j + 1]; j++) need += cost(tokens[j + 1], tokens[j]);
-    if (cur.length && used + need > budget && tokens[j].fig && j > i) {
-      var figCost = cost(tokens[j], tokens[j - 1]);
-      if (_a36DetShrinkFig(tokens[j], budget - used - (need - figCost))) need = need - figCost + cost(tokens[j], tokens[j - 1]);
+    var j = _a36DetChainEnd(tokens, i, i < splitUntil);
+    var ft = tokens[j];
+    if (ft.fig && ft.fig.block) {
+      var fits = fitRun(i, j);
+      if (!fits && cur.length) {
+        flush();
+        fits = fitRun(i, j);
+      }
+      if (!fits && j > i) {
+        splitUntil = j; // taller than a page: the text flows on, the figure is placed alone
+        j = _a36DetChainEnd(tokens, i, true);
+      }
+    } else if (ft.fig && j > i && cur.length && used + runNeed(i, j) > budget) {
+      var need0 = runNeed(i, j);
+      _a36DetShrinkFig(ft, budget - used - (need0 - cost(ft, tokens[j - 1])));
     }
-    if (cur.length && used + need > budget) {
-      chunks.push(cur);
-      cur = [];
-      used = 0;
-      c = cost(t, null);
-    }
+    var need = runNeed(i, j);
+    if (cur.length && used + need > budget) flush();
     cur.push(t);
-    used += c;
+    used += cost(t, cur[cur.length - 2]);
   });
   if (cur.length) chunks.push(cur);
   _a36DetMoveRowsToLastPart(chunks, budget);
+  _a36DetPullBackTail(chunks, budget);
   return chunks;
+}
+
+// The last page of a token list (a library chapter) that holds only a short tail (for example the last finding) is pulled back onto the
+// page before it when the last figure on that page can be made smaller to make the room (not below the minimum scale of the figure).
+// No page then holds one finding alone. A tail with table rows stays (the table rules above apply).
+function _a36DetPullBackTail(chunks, budget) {
+  if (chunks.length < 2) return;
+  var tail = chunks[chunks.length - 1];
+  var prev = chunks[chunks.length - 2];
+  if (tail.some(function (t) {
+    return t.tbl;
+  })) return;
+  function sum(list, before) {
+    return list.reduce(function (a, t, i) {
+      return a + _a36DetCost(t, i ? list[i - 1] : before);
+    }, 0);
+  }
+  var extra = sum(prev, null) + sum(tail, prev[prev.length - 1]) - budget;
+  for (var k = prev.length - 1; k >= 0 && extra > 0; k--) {
+    if (!prev[k].fig) continue;
+    if (!_a36DetShrinkFig(prev[k], prev[k].estH - extra)) return;
+    break;
+  }
+  if (sum(prev, null) + sum(tail, prev[prev.length - 1]) > budget) return;
+  chunks.pop();
+  tail.forEach(function (t) {
+    prev.push(t);
+  });
 }
 
 // A table part that ends a table and holds fewer than A36_DET_MIN_LAST_ROWS rows takes the missing rows from the end of the part before it,
@@ -26857,16 +26925,26 @@ function _a36DetFigureTok(ctx, p, caption, num) {
 // A figure that does not fit the space left on its page is made smaller to fit when that takes it to at least this share of its size
 // (the page would otherwise stay half empty); a figure is never made much smaller than the readable print size; below it the figure moves to the next page.
 var A36_DET_FIG_MIN_SCALE = 0.85;
+// A figure of a System Descriptions group (it stays under its own text) is made smaller to fit the page when that keeps this share of its width.
+var A36_DET_DESC_FIG_MIN_SCALE = 0.6;
 
-function _a36DetShrinkFig(t, availH) {
+// The scale a figure needs to fit availH (px for the whole figure block), or null when it needs no change or would fall below its minimum.
+function _a36DetFigFitScale(t, availH) {
   var f = t.fig;
   var fixed = t.estH - f.h; // caption and margins
   var sc = (availH - fixed) / f.h;
-  if (!(sc >= A36_DET_FIG_MIN_SCALE) || sc >= 1) return false;
+  if (sc >= 1 || !(sc >= (f.minScale || A36_DET_FIG_MIN_SCALE))) return null;
+  return sc;
+}
+
+function _a36DetShrinkFig(t, availH) {
+  var f = t.fig;
+  var sc = _a36DetFigFitScale(t, availH);
+  if (sc === null) return false;
   var n = _a36DetTok(_a36DetFigureHtml(f, sc));
   t.html = n.html;
   t.estH = n.estH;
-  t.fig = { url: f.url, w: Math.round(f.w * sc), h: Math.round(f.h * sc), num: f.num, caption: f.caption };
+  t.fig = { url: f.url, w: Math.round(f.w * sc), h: Math.round(f.h * sc), num: f.num, caption: f.caption, minScale: f.minScale, block: f.block };
   return true;
 }
 
@@ -27803,14 +27881,14 @@ function _a36DetDescriptionParas(g, ctx, figureNum) {
   });
   if (!body.length) body.push({ fn: '', text: f.covered.keys.length ? 'This equipment has monitoring points only.' : 'The building automation system shows no sensors or control points for this equipment.' });
   if (figureNum && body.length) body[body.length - 1].text = _a36DetCiteFigure(body[body.length - 1].text, figureNum);
-  var paras = [];
-  var lastFn = null;
-  body.forEach(function (s) {
-    if (paras.length && s.fn === lastFn) paras[paras.length - 1] += ' ' + s.text;
-    else paras.push(s.text);
-    lastFn = s.fn;
-  });
-  return paras;
+  // One paragraph: the sequence reads in operating order as one text (one-sentence paragraphs read like a point list).
+  return [
+    body
+      .map(function (s) {
+        return s.text;
+      })
+      .join(' '),
+  ];
 }
 
 /**
@@ -27850,14 +27928,19 @@ function _a36DetLibraryTokens(d, b, ctx, sectionNo) {
     var num = pic ? ++ctx.figure.n : 0;
     var paras = _a36DetDescriptionParas(g, ctx, num);
     paras.forEach(function (p) {
-      // The text does not wait for its figure: a figure that does not fit moves to the next page and the text cites it ("Figure N"),
-      // so no page is left half empty (Matt, 2026-11-11: wasted space; each library starts with its photo and overview).
-      tokens.push(_a36DetTok('<p style="' + A36_DET_P + '">' + _escHtml(p) + '</p>'));
+      // A group is one block: heading, text and figure stay on one page (_a36DetPaginate, the block-fit rule). The text of a group with a
+      // figure is kept with the figure after it (keepNext, blockPart).
+      var pt = _a36DetTok('<p style="' + A36_DET_P + '">' + _escHtml(p) + '</p>', !!pic);
+      pt.blockPart = !!pic;
+      tokens.push(pt);
     });
     if (pic) {
       var at = g.names.map(_a36DetNorm).indexOf(_a36DetNorm(pic.equipName));
       var unit = at >= 0 ? g.shown[at] : _a36DetEquipName(pic.equipName, _a36DisplayName(b));
-      tokens.push(_a36DetFigureTok(ctx, pic, unit + ', ' + (_a36DetCaptionPage(pic.page) || 'Graphic'), num));
+      var dft = _a36DetFigureTok(ctx, pic, unit + ', ' + (_a36DetCaptionPage(pic.page) || 'Graphic'), num);
+      dft.fig.block = true;
+      dft.fig.minScale = A36_DET_DESC_FIG_MIN_SCALE;
+      tokens.push(dft);
     }
   });
 
