@@ -1581,6 +1581,11 @@ function _docxWalkInline(node, fmt, entries, ctx) {
     if (hasPriorContent) entries.push({ text: '\n', fmt: fmt, isBreak: true });
   }
 
+  // An inline element with a margin between it and its neighbour (the type-count spans, margin-right:8px) keeps
+  // that gap in Word as spaces. Without it the neighbours run together ("1 Air Handlers19 Dual-Duct Terminals").
+  var _marginLeftPx = _docxInlineMarginPx(node, 'Left');
+  if (_marginLeftPx > 0) entries.push({ text: _docxMarginSpaces(_marginLeftPx, fmt), fmt: fmt });
+
   var childFmt = Object.assign({}, fmt);
   if (tag === 'STRONG' || tag === 'B') childFmt.bold = true;
   if (tag === 'EM' || tag === 'I') childFmt.italic = true;
@@ -1588,6 +1593,27 @@ function _docxWalkInline(node, fmt, entries, ctx) {
   if (tag === 'SUP') childFmt.superscript = true;
   childFmt = _docxStyleFmtFromEl(node, childFmt, ctx);
   for (var i = 0; i < node.childNodes.length; i++) _docxWalkInline(node.childNodes[i], childFmt, entries, ctx);
+  var _marginRightPx = _docxInlineMarginPx(node, 'Right');
+  if (_marginRightPx > 0) entries.push({ text: _docxMarginSpaces(_marginRightPx, fmt), fmt: fmt });
+}
+
+/** Side margin (px) of an inline element: the value stamped from the live page (data-dx-ml / data-dx-mr, class-driven
+ * margins included), else the element's own inline style. side is 'Left' or 'Right'. 0 when there is none. */
+function _docxInlineMarginPx(el, side) {
+  if (!el || !el.getAttribute) return 0;
+  var stamped = parseFloat(el.getAttribute(side === 'Left' ? 'data-dx-ml' : 'data-dx-mr'));
+  if (stamped > 0) return stamped;
+  var inl = el.style && el.style['margin' + side];
+  var v = inl ? parseFloat(inl) : 0;
+  if (v > 0 && /px\s*$/.test(inl)) return v;
+  return 0;
+}
+
+/** Spaces that stand for a CSS inline margin of px: the margin in points over the width of one space (0.278 em). */
+function _docxMarginSpaces(px, fmt) {
+  var sizePt = ((fmt && fmt.sizeHalfPt) || 21) / 2;
+  var n = Math.round((px * 0.75) / (0.278 * sizePt));
+  return new Array(Math.max(1, Math.min(8, n)) + 1).join(' ');
 }
 
 /**
@@ -1697,6 +1723,7 @@ function _docxCollectRuns(el, inheritedFmt, ctx) {
 function _docxStampLiveStyles(liveRoot, cloneRoot) {
   if (!liveRoot || !cloneRoot || typeof getComputedStyle !== 'function') return;
   _docxStampTextBlocks(liveRoot, cloneRoot);
+  _docxStampInlineMargins(liveRoot, cloneRoot);
   var sel = 'table,td,th,.rpt-pg-title,.rpt-info,h1,h2,h3,h4,.rpt-g,.rpt-r,.rpt-o,.rpt-finding-icon';
   var live = liveRoot.querySelectorAll(sel);
   var clone = cloneRoot.querySelectorAll(sel);
@@ -1744,14 +1771,51 @@ function _docxStampLiveStyles(liveRoot, cloneRoot) {
  */
 function _docxStampTextBlocks(liveRoot, cloneRoot) {
   if (!liveRoot || !cloneRoot || typeof getComputedStyle !== 'function') return;
-  var live = liveRoot.querySelectorAll('div,p');
-  var clone = cloneRoot.querySelectorAll('div,p');
+  var live = liveRoot.querySelectorAll('div,p,h1,h2,h3,h4');
+  var clone = cloneRoot.querySelectorAll('div,p,h1,h2,h3,h4');
   if (live.length !== clone.length) return;
   for (var i = 0; i < live.length; i++) {
     var cs = getComputedStyle(live[i]);
     var ta = cs.textAlign;
     if (ta === 'center' || ta === 'right' || ta === 'end') clone[i].setAttribute('data-dx-align', ta === 'end' ? 'right' : ta);
     if (cs.textTransform === 'uppercase') clone[i].setAttribute('data-dx-caps', '1');
+    var mb = parseFloat(cs.marginBottom);
+    if (mb >= 0) clone[i].setAttribute('data-dx-mb', String(Math.round(mb * 10) / 10));
+    // A flex row: the width, grow factor and text alignment of each child, and the gap between them.
+    if (/flex/.test(cs.display) && cs.flexDirection.indexOf('column') !== 0) {
+      var kids = live[i].children;
+      var cloneKids = clone[i].children;
+      if (kids.length === cloneKids.length) {
+        var gap = parseFloat(cs.columnGap);
+        clone[i].setAttribute('data-dx-gap', String(gap > 0 ? Math.round(gap * 10) / 10 : 0));
+        clone[i].setAttribute('data-dx-w', String(Math.round(live[i].getBoundingClientRect().width * 10) / 10));
+        clone[i].setAttribute('data-dx-justify', cs.justifyContent);
+        for (var k = 0; k < kids.length; k++) {
+          var kcs = getComputedStyle(kids[k]);
+          cloneKids[k].setAttribute('data-dx-w', String(Math.round(kids[k].getBoundingClientRect().width * 10) / 10));
+          cloneKids[k].setAttribute('data-dx-grow', String(parseFloat(kcs.flexGrow) || 0));
+          var kta = kcs.textAlign;
+          cloneKids[k].setAttribute('data-dx-align', kta === 'right' || kta === 'end' ? 'right' : kta === 'center' ? 'center' : 'left');
+        }
+      }
+    }
+  }
+}
+
+/** Side margins of inline elements (the gap between the type counts under a building's name), from the live page. */
+function _docxStampInlineMargins(liveRoot, cloneRoot) {
+  if (!liveRoot || !cloneRoot || typeof getComputedStyle !== 'function') return;
+  var sel = 'span,a,strong,b,em,i,u,sup,sub';
+  var live = liveRoot.querySelectorAll(sel);
+  var clone = cloneRoot.querySelectorAll(sel);
+  if (live.length !== clone.length) return;
+  for (var i = 0; i < live.length; i++) {
+    var cs = getComputedStyle(live[i]);
+    if (cs.display === 'block' || cs.display === 'flex' || cs.display === 'table') continue;
+    var ml = parseFloat(cs.marginLeft);
+    var mr = parseFloat(cs.marginRight);
+    if (ml > 0) clone[i].setAttribute('data-dx-ml', String(Math.round(ml * 10) / 10));
+    if (mr > 0) clone[i].setAttribute('data-dx-mr', String(Math.round(mr * 10) / 10));
   }
 }
 
@@ -2536,11 +2600,95 @@ function _docxTranslateBlockChildren(parentEl, ctx, inheritedFmt) {
       out = out.concat(_docxTranslateBlock(node, ctx, inheritedFmt));
     } else if (node.nodeType === 3) {
       var text = _docxCollapseLooseText(node.nodeValue);
-      if (text) out.push(_docxParagraph({ text: text, spacingAfter: 240 }));
+      if (text) out.push(_docxParagraph({ text: text, spacingAfter: ctx && ctx._flexStamped ? 0 : 240 }));
     }
     // other nodeTypes (comments, etc.) -- skip, same as _docxWalkInline.
   }
   return out;
+}
+
+/** A CSS length in px ('70px', '8px') as a number; 0 for anything else (a percentage, auto, empty). */
+function _docxPxLength(v) {
+  var m = /^\s*([\d.]+)px\s*$/.exec(v || '');
+  return m ? parseFloat(m[1]) : 0;
+}
+
+/**
+ * Column widths (twips, summing to totalTwips) of a flex row, from what the browser laid out. Each child has its width
+ * (px, stamped as data-dx-w from the live page, else its own inline width) and whether it grows (flex-grow). A fixed child
+ * keeps its width; the growing children share what is left; the gap between children is added to the cell on its left.
+ * Returns null when nothing is known about any child (the caller then splits the row evenly).
+ */
+function _docxFlexColWidths(el, children, totalTwips) {
+  var n = children.length;
+  var known = children.map(function (c) {
+    return parseFloat(c.getAttribute('data-dx-w')) || _docxPxLength(c.style && c.style.width) || 0;
+  });
+  var grow = children.map(function (c) {
+    var g = parseFloat(c.getAttribute('data-dx-grow'));
+    if (isNaN(g)) {
+      var fl = (c.style && (c.style.flexGrow || c.style.flex)) || '';
+      g = parseFloat(fl) > 0 ? parseFloat(fl) : 0;
+    }
+    return g;
+  });
+  if (!known.some(function (k) { return k > 0; }) && !grow.some(function (g) { return g > 0; })) return null;
+
+  var gapPx = parseFloat(el.getAttribute('data-dx-gap'));
+  if (isNaN(gapPx)) gapPx = _docxPxLength(el.style && (el.style.columnGap || el.style.gap));
+  var rowPx = parseFloat(el.getAttribute('data-dx-w')) || 0;
+  // The PDF text area is wider than Word's: shrink the whole row in proportion so the rings keep their share.
+  var scale = rowPx > 0 ? Math.min(1, totalTwips / (rowPx * 15)) : 1;
+  var gapTw = Math.round(gapPx * 15 * scale);
+
+  var flexible = children.map(function (c, i) {
+    return grow[i] > 0 || !(known[i] > 0);
+  });
+  var contentTotal = totalTwips - gapTw * (n - 1);
+  var fixedTw = children.map(function (c, i) {
+    return flexible[i] ? 0 : Math.round(known[i] * 15 * scale);
+  });
+  var fixedSum = fixedTw.reduce(function (a, b) { return a + b; }, 0);
+  var flexIdx = [];
+  flexible.forEach(function (f, i) { if (f) flexIdx.push(i); });
+  var content = fixedTw.slice();
+  var packed = false; // the children sit at the left and the row is not filled (justify-content: flex-start)
+  if (!flexIdx.length) {
+    var just = el.getAttribute('data-dx-justify') || (el.style && el.style.justifyContent) || '';
+    if (fixedSum > contentTotal) {
+      content = fixedTw.map(function (w) { return Math.round((w * contentTotal) / fixedSum); });
+    } else if (/^(|normal|flex-start|start|left)$/.test(just)) {
+      packed = true;
+    } else {
+      // space-between, space-around, centered: the free width goes to the cells in equal parts
+      var extra = (contentTotal - fixedSum) / n;
+      content = fixedTw.map(function (w) { return Math.round(w + extra); });
+    }
+  } else {
+    var minFlex = 1500 * flexIdx.length;
+    if (contentTotal - fixedSum < minFlex) {
+      var f2 = (contentTotal - minFlex) / fixedSum;
+      content = fixedTw.map(function (w) { return Math.round(w * f2); });
+      fixedSum = content.reduce(function (a, b) { return a + b; }, 0);
+    }
+    var left = contentTotal - fixedSum;
+    var weights = flexIdx.map(function (i) { return grow[i] > 0 ? grow[i] : 1; });
+    var wSum = weights.reduce(function (a, b) { return a + b; }, 0);
+    flexIdx.forEach(function (i, k) { content[i] = Math.round((left * weights[k]) / wSum); });
+  }
+  var widths = content.map(function (w, i) {
+    return w + (i < n - 1 ? gapTw : 0);
+  });
+  if (!packed) widths[n - 1] += totalTwips - widths.reduce(function (a, b) { return a + b; }, 0);
+  return widths;
+}
+
+/** Text alignment of one flex cell: its stamped/inline alignment ('left' when the page measured it), else '' (not known). */
+function _docxFlexCellAlign(child) {
+  var a = (child.style && child.style.textAlign) || child.getAttribute('data-dx-align') || '';
+  if (a === 'start') return 'left';
+  if (a === 'end') return 'right';
+  return a;
 }
 
 /**
@@ -2550,38 +2698,41 @@ function _docxTranslateBlockChildren(parentEl, ctx, inheritedFmt) {
  * one cell, translated via the normal _docxTranslateBlock dispatch (so a
  * child's own gauge <svg>/text-leaf divs are handled exactly as they would
  * be anywhere else -- this function only supplies the side-by-side
- * placement, not any content-shape logic of its own) with center alignment
- * forced on every paragraph produced inside the cell (ctx._flexCellAlign),
- * because the design's center intent lives on ancestor wrapper divs
- * (`text-align:center`) that are never themselves a leaf paragraph and so
- * would otherwise be lost -- see the plan Step 4 inventory's cover
- * gauge-row/stat-row markup, where only the OUTER per-item wrapper carries
- * `text-align:center`, not the inner bold-number/label leaf divs.
- * Equal-width columns across the spec's full content width (10080 twips,
- * spec §1) -- the source's own centered/gapped narrow cluster has no direct
- * OOXML equivalent, and the plan's acceptance criteria (side-by-side tiles,
- * columns within content width) do not require reproducing the exact
- * source gap/centering, only that the tiles share a row.
+ * placement, not any content-shape logic of its own).
+ * Column widths follow the browser's layout (_docxFlexColWidths): fixed children keep their width, a growing child
+ * takes the rest, so three rings group at the left and the text block gets the remaining width. Only when the
+ * page gives no width at all is the row split evenly.
+ * Alignment follows the HTML: a cell is centered only if the page centers it; a left cell stays left (the stamp
+ * data-dx-align says so). Rows without any stamp keep the older rule (center forced), because their centered intent
+ * sits on wrapper divs the detached clone cannot show.
  */
 function _docxTranslateFlexRowTable(el, ctx) {
   var children = Array.prototype.slice.call(el.children);
   var n = children.length;
   var contentWidthTwips = 10080;
-  var each = Math.floor(contentWidthTwips / n);
-  var colWidths = [];
-  for (var w = 0; w < n; w++) colWidths.push(each);
-  colWidths[n - 1] += contentWidthTwips - each * n;
+  var colWidths = _docxFlexColWidths(el, children, contentWidthTwips);
+  var measured = !!colWidths;
+  if (!colWidths) {
+    var each = Math.floor(contentWidthTwips / n);
+    colWidths = [];
+    for (var w = 0; w < n; w++) colWidths.push(each);
+    colWidths[n - 1] += contentWidthTwips - each * n;
+  }
 
   var priorAlign = ctx._flexCellAlign;
-  ctx._flexCellAlign = 'center';
+  var priorStamped = ctx._flexStamped;
+  ctx._flexStamped = measured;
   var cellsXml = children.map(function (child, idx) {
+    var cellAlign = measured ? _docxFlexCellAlign(child) || 'left' : 'center';
+    ctx._flexCellAlign = cellAlign === 'left' ? undefined : cellAlign; // a left cell lets the text's own stamped alignment show
     var blockParas = _docxTranslateBlock(child, ctx);
     var paragraphs = blockParas.length
       ? blockParas
-      : [_docxParagraph({ runs: [_docxRun({ text: '' })], align: 'center', spacingAfter: 0 })];
+      : [_docxParagraph({ runs: [_docxRun({ text: '' })], align: cellAlign, spacingAfter: 0 })];
     return _docxTableCell({ widthTwips: colWidths[idx], paragraphs: paragraphs, vAlign: 'center' });
   });
   ctx._flexCellAlign = priorAlign;
+  ctx._flexStamped = priorStamped;
 
   var grid =
     '<w:tblGrid>' +
@@ -2598,10 +2749,22 @@ function _docxTranslateFlexRowTable(el, ctx) {
     '<w:top w:val="nil"/><w:left w:val="nil"/><w:bottom w:val="nil"/><w:right w:val="nil"/>' +
     '<w:insideH w:val="nil"/><w:insideV w:val="nil"/>' +
     '</w:tblBorders>' +
+    // The HTML row has no cell padding: text starts at the page margin and the gaps are in the widths.
+    (measured ? '<w:tblCellMar><w:left w:w="0" w:type="dxa"/><w:right w:w="0" w:type="dxa"/></w:tblCellMar>' : '') +
     '<w:tblLook w:val="0000" w:firstRow="0" w:lastRow="0" w:firstColumn="0" w:lastColumn="0" w:noHBand="1" w:noVBand="1"/>' +
     '</w:tblPr>';
 
   return '<w:tbl>' + tblPr + grid + _docxTableRow(cellsXml, { header: true }) + '</w:tbl>';
+}
+
+/** Space after a paragraph (twips): 0 for a picture line in a table cell; in a flex cell the margin-bottom the page shows (data-dx-mb, px); elsewhere dflt. */
+function _docxParagraphSpacingAfter(el, ctx, dflt) {
+  // A table cell's picture line (a score bar and its percentage) has no space after it: the cell padding is the gap.
+  // 12pt after every such line made each row of the readiness table about 12pt taller in Word than in the PDF.
+  if (el.closest && el.querySelector && el.querySelector('img') && el.closest('td,th')) return 0;
+  if (!ctx || !ctx._flexStamped) return dflt;
+  var mb = parseFloat(el.getAttribute && el.getAttribute('data-dx-mb'));
+  return mb >= 0 ? Math.round(mb * 15) : 0;
 }
 
 /**
@@ -2667,8 +2830,8 @@ function _docxTranslateBlock(el, ctx, inheritedFmt) {
         pStyle: tag === 'H1' ? 'Heading1' : tag === 'H2' ? 'Heading2' : 'Heading3',
         runs: hRuns,
         align: (el.style && el.style.textAlign) || el.getAttribute('data-dx-align') || undefined,
-        spacingBefore: 240,
-        spacingAfter: 120,
+        spacingBefore: ctx && ctx._flexStamped ? 0 : 240,
+        spacingAfter: _docxParagraphSpacingAfter(el, ctx, 120),
         // U5, 2026-08-02: keep the heading with the block it introduces. With
         // the forced page break between source pages now budgeted rather than
         // unconditional (_docxTranslatePages), Word does more of the flowing --
@@ -2764,7 +2927,7 @@ function _docxTranslateBlock(el, ctx, inheritedFmt) {
           {
             runs: pRuns,
             align: (ctx && ctx._flexCellAlign) || (el.style && el.style.textAlign) || el.getAttribute('data-dx-align') || undefined,
-            spacingAfter: 240, // body-paragraph policy (Part E); indentation-only override below
+            spacingAfter: _docxParagraphSpacingAfter(el, ctx, 240), // body-paragraph policy (Part E); in a flex cell the page's own margin
           },
           indOpts,
         ),
@@ -2779,6 +2942,14 @@ function _docxTranslateBlock(el, ctx, inheritedFmt) {
     // so loose text nodes sitting directly inside the container are still walked, not silently
     // dropped (fix/docx-writer-step5-adversarial; see that function's header comment).
     return _docxTranslateBlockChildren(el, ctx, baseFmt);
+  }
+
+  // A span at block position inside a flex cell (the status line under a building's name) is one paragraph: its own
+  // size and colour, its <br> as line breaks, not one paragraph per text node.
+  if (tag === 'SPAN' && ctx && ctx._flexStamped) {
+    var sRuns = _docxCollectRuns(el, _docxStyleFmtFromEl(el, baseFmt, ctx), ctx);
+    if (!sRuns.length) return [];
+    return [_docxParagraph({ runs: sRuns, align: ctx._flexCellAlign || undefined, spacingAfter: 0 })];
   }
 
   // Outside the closed vocabulary at a block position -- walk childNodes (elements AND loose
