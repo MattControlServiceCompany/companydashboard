@@ -21460,7 +21460,7 @@ var _RPT_A36_HEAD_STYLE =
 // One plain line per option: what it includes. The cover cost table and the Cost Estimate page both read it.
 var _RPT_A36_TIER_PLAIN = {
   recommended: 'The control sequences that matter most for energy use and comfort, plus the few devices they need.',
-  compliance: 'The devices and safety programming that ASHRAE 36 needs first, such as freeze protection.',
+  compliance: 'The missing devices that ASHRAE 36 calls for, plus safety programming such as freeze protection.',
   'full-scope':
     // Full Scope also prices optional devices that ASHRAE 36 does not require (fan coil units, heaters); the Audit Report lists only the required gaps.
     // Keep it short (about 120 characters): a longer line pushes the page 1 cost table into the footer.
@@ -23431,8 +23431,7 @@ function _rptA36VisionInnerHTML(d, opts) {
     '</ul>' +
     '<div style="' +
     BODY +
-    ';margin-top:4px">Later work can be planned when needs and budget allow. It is not in the costs ' +
-    'in this proposal.</div>';
+    ';margin-top:4px">Later work can be planned when needs and budget allow. The Full Scope option already includes the fault reports and some extra devices. The other options do not include this work.</div>';
 
   // Expected Outcomes section REMOVED 2026-07-27 (client review, verbatim: "Just get rid of the
   // entire Expected Outcomes page. No questions."). Was previously a bullet-list section inside
@@ -24342,7 +24341,7 @@ function _rptA36OptionalZoneCo2HTML(summaryData, tierCols) {
   var sameLine = allTotalsSame
     ? 'The optional carbon dioxide sensors cost the same with any option.'
     : devicesSame
-      ? 'The sensors and their installation cost the same with any option. Programming the sensors is included only with the options that show a programming cost.'
+      ? 'The sensors and their installation cost the same with any option. Programming the sensors is included only with the options that show a programming cost in this table.'
       : '';
   return (
     '<div style="' + _RPT_A36_HEAD_STYLE + '">Optional: Carbon Dioxide (CO2) Sensors in Rooms</div>' +
