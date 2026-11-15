@@ -22788,6 +22788,16 @@ function _rptA36MeasureContentH(html) {
  *     roughly 30% under real Client D data, corrupting the printed page count and page-number
  *     footers (measured via page.pdf() print-path render, not just the on-screen preview).
  */
+// The ONE Step 1 text, for the step table and the Order of Work (2026-11-15 client-reader review: the two said it differently, and
+// "Appendix B" did not name the Audit Report).
+function _rptA36Step1Text(setpointZones) {
+  var text = 'Check the equipment and confirm what to program.';
+  if (setpointZones > 0) {
+    text += ' Reset zone setpoints and schedules (' + rptCount(setpointZones) + (setpointZones === 1 ? ' zone' : ' zones') + ', Audit Report Appendix B).';
+  }
+  return text;
+}
+
 function _rptA36PhaseTableDerive(d, opts) {
   // Density pass (2026-07-27, page-2/3 merge): margin/line-height tightened (spacing only, font
   // size unchanged) — see rptPageASHRAE36ProposalPhaseAndVision's header comment.
@@ -22995,8 +23005,7 @@ function _rptA36PhaseTableDerive(d, opts) {
     // units and the seqGroups loop below renders nothing for it — programming lines begin in
     // month 2. This line states the reserved verification work that month 1's room is spent on.
     if (mi === 0) {
-      var verifyLine = 'Check the equipment and confirm what to program.';
-      if (plan.setpointZones > 0) verifyLine += ' Reset setpoints and schedules (' + rptCount(plan.setpointZones) + (plan.setpointZones === 1 ? ' zone' : ' zones') + ').';
+      var verifyLine = _rptA36Step1Text(plan.setpointZones);
       lines.push('<div style="' + _cellLineStyle + '">' + verifyLine + '</div>');
       charLens.push(verifyLine.length);
     }
@@ -24455,7 +24464,7 @@ function _rptA36RecommendedTimelineHTML(d) {
   plan.steps.forEach(function (st, idx) {
     var text;
     if (idx === 0) {
-      text = 'Check the equipment and confirm what to program.' + (plan.setpointZones > 0 ? ' Reset zone setpoints and schedules (Appendix B).' : '');
+      text = _rptA36Step1Text(plan.setpointZones);
     } else {
       // The row names every group of the step, as the step table does: the work it starts, the work that began earlier and
       // ends here ("finish"), and the work that began earlier and goes on in a later step ("continue").

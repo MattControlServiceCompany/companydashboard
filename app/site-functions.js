@@ -2515,7 +2515,7 @@ var RELEASE_NOTES = [
       { type: 'fix', text: 'Plant points named "Chilled Water Loop Return Temperature" and "Chilled Water Loop Supply Temperature", and a hot water plant "Heating Set Point", are now found, so they are no longer called missing or priced.' },
       { type: 'fix', text: 'Service Proposal: the Order of Work names every group of each step (new, finish or continue), the Full Scope line says it adds devices that are not in the Audit Report findings, fan coil carbon dioxide sensors have their own line, and the report date is the local date.' },
       { type: 'fix', text: 'Detailed audit: the timeline keeps every step, single-zone findings cite Section 5.18, the variable speed drive text matches the price, and a note explains why the portfolio scores weight each building by its equipment.' },
-      { type: 'fix', text: 'Service Proposal: the setpoint and schedule changes of the Audit Report Appendix B now have a price (covering estimate, one line in each option, done in Step 1). The Appendix B text says the cost is in the Service Proposal.' }
+      { type: 'fix', text: 'Service Proposal: the setpoint and schedule changes of the Audit Report Appendix B now have a price (covering estimate, one line in each option, done in Step 1). The Appendix B text says the cost is in the Service Proposal. Step 1 reads the same in the step table and the Order of Work and names the Audit Report Appendix B.' }
     ] },
   { v: 'v2026.11.14.295', date: '2026-11-14', title: 'ASHRAE 36 cost estimate: no cost for what is already there, a price for every fix',
     items: [
