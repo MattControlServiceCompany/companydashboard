@@ -21464,7 +21464,7 @@ var _RPT_A36_TIER_PLAIN = {
   'full-scope':
     // Full Scope also prices optional devices that ASHRAE 36 does not require (fan coil units, heaters); the Audit Report lists only the required gaps.
     // Keep it short (about 120 characters): a longer line pushes the page 1 cost table into the footer.
-    'Every ASHRAE 36 device and sequence on all equipment, plus extra devices beyond the audit findings and fault reports.',
+    'Every ASHRAE 36 device and sequence except room CO2 sensors, plus extra devices beyond the audit findings and fault reports.',
 };
 
 /**
