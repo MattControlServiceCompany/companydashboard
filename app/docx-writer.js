@@ -255,6 +255,7 @@ function _docxListItem(text, numId, opts) {
  *   text/bold/align/sizeHalfPt  -- shorthand for a single paragraph
  *   vAlign      'top'|'center'|'bottom' -- default 'center' (spec §5c)
  *   gridSpan    number -- merge N grid columns
+ *   margins     {top,right,bottom,left} twips -- this cell's own inner padding (w:tcMar); the table default otherwise
  *   vMerge      'restart'|'continue' -- vertical cell merge (HTML rowspan equivalent,
  *               added 2026-09-13). 'restart' on the spanning cell, 'continue' on each
  *               covered row's placeholder cell at the same grid column -- see
@@ -267,6 +268,12 @@ function _docxTableCell(opts) {
   if (opts.gridSpan) tcPr += '<w:gridSpan w:val="' + opts.gridSpan + '"/>';
   if (opts.vMerge) tcPr += '<w:vMerge w:val="' + opts.vMerge + '"/>';
   if (opts.shade) tcPr += '<w:shd w:val="clear" w:color="auto" w:fill="' + _docxEscapeXml(opts.shade) + '"/>';
+  if (opts.margins) {
+    var mg = opts.margins;
+    tcPr +=
+      '<w:tcMar><w:top w:w="' + mg.top + '" w:type="dxa"/><w:left w:w="' + mg.left + '" w:type="dxa"/>' +
+      '<w:bottom w:w="' + mg.bottom + '" w:type="dxa"/><w:right w:w="' + mg.right + '" w:type="dxa"/></w:tcMar>';
+  }
   tcPr += '<w:vAlign w:val="' + (opts.vAlign || 'center') + '"/>';
   tcPr += '</w:tcPr>';
 
@@ -1728,6 +1735,8 @@ function _docxStampLiveStyles(liveRoot, cloneRoot) {
   if (!liveRoot || !cloneRoot || typeof getComputedStyle !== 'function') return;
   _docxStampTextBlocks(liveRoot, cloneRoot);
   _docxStampInlineMargins(liveRoot, cloneRoot);
+  // ASHRAE 36 reports: each table takes the padding and the column widths the PDF shows (see _docxLiveColsTable).
+  var liveCols = _docxIsAshraeReport();
   var sel = 'table,td,th,.rpt-pg-title,.rpt-info,h1,h2,h3,h4,.rpt-g,.rpt-r,.rpt-o,.rpt-finding-icon';
   var live = liveRoot.querySelectorAll(sel);
   var clone = cloneRoot.querySelectorAll(sel);
@@ -1754,12 +1763,20 @@ function _docxStampLiveStyles(liveRoot, cloneRoot) {
       if (cs.whiteSpace === 'nowrap' && !live[i].matches('.rpt-q-dense td.rpt-n')) t.setAttribute('data-dx-nw', '1');
       var w = live[i].getBoundingClientRect().width;
       if (w > 0) t.setAttribute('data-dx-w', String(Math.round(w * 10) / 10));
+      if (liveCols) {
+        // The cell's inner padding in px (top,right,bottom,left); 1 px = 15 twips in Word.
+        var pad = [cs.paddingTop, cs.paddingRight, cs.paddingBottom, cs.paddingLeft].map(function (v) {
+          return Math.round((parseFloat(v) || 0) * 10) / 10;
+        });
+        t.setAttribute('data-dx-pad', pad.join(','));
+      }
     } else if (/^H[1-4]$/.test(tag)) {
       var hPx = parseFloat(cs.fontSize);
       if (hPx > 0) t.setAttribute('data-dx-fs', String(Math.round(hPx * 10) / 10));
       var hta = cs.textAlign;
       t.setAttribute('data-dx-align', hta === 'right' || hta === 'end' ? 'right' : hta === 'center' ? 'center' : 'left');
     } else if (tag === 'TABLE') {
+      if (liveCols) t.setAttribute('data-dx-live-cols', '1');
       var first = live[i].querySelector('td');
       if (first) {
         var bc = _docxCssColorToHex(getComputedStyle(first).borderTopColor);
@@ -1823,6 +1840,30 @@ function _docxStampInlineMargins(liveRoot, cloneRoot) {
   }
 }
 
+/** True while an ASHRAE 36 report (Audit, Detailed Audit, ...) is being exported: its tables take the PDF's padding and widths. */
+function _docxIsAshraeReport() {
+  return typeof window !== 'undefined' && !!(window._currentReportData && window._currentReportData._ashrae);
+}
+
+/** True for a report table stamped for the PDF's padding and column widths (ASHRAE 36 reports). */
+function _docxLiveColsTable(tableEl) {
+  return !!(tableEl && tableEl.getAttribute && tableEl.getAttribute('data-dx-live-cols'));
+}
+
+/**
+ * Inner padding of a stamped cell in twips ({top,right,bottom,left}), from the px the live page showed (data-dx-pad).
+ * Null for a table that is not stamped for it (other reports keep the table default margins).
+ */
+function _docxCellMargins(cell) {
+  var tbl = cell.closest && cell.closest('table');
+  var pad = (cell.getAttribute('data-dx-pad') || '').split(',').map(parseFloat);
+  if (!_docxLiveColsTable(tbl) || pad.length !== 4 || pad.some(isNaN)) return null;
+  var tw = pad.map(function (px) {
+    return Math.round(px * 15);
+  });
+  return { top: tw[0], right: tw[1], bottom: tw[2], left: tw[3] };
+}
+
 /** Alignment of a table cell: its own inline text-align, else the one stamped from the live page, else ''. */
 function _docxCellAlign(cell) {
   var a = (cell.style && cell.style.textAlign) || cell.getAttribute('data-dx-align') || '';
@@ -1852,6 +1893,19 @@ function _docxDeriveColWidths(tableEl, colCount, contentWidthTwips) {
   // Widths the report sets for Word only (the PDF uses its own colgroup widths).
   // Quarterly report: the widths the PDF shows (measured on the live page, stamped as data-dx-w on the first row).
   var liveRow = tableEl.closest && tableEl.closest('[data-dx-live-widths]') ? tableEl.querySelector('tr') : null;
+  if (_docxLiveColsTable(tableEl)) {
+    // An ASHRAE 36 table: the first row that has one cell per column (no colspan) gives the measured proportions.
+    var allRows = Array.prototype.slice.call(tableEl.querySelectorAll('tr')).filter(function (tr) {
+      return _docxClosestTable(tr) === tableEl;
+    });
+    liveRow = null;
+    for (var lr = 0; lr < allRows.length && !liveRow; lr++) {
+      var lc = Array.prototype.slice.call(allRows[lr].children).filter(function (c) {
+        return (c.tagName === 'TD' || c.tagName === 'TH') && (parseInt(c.getAttribute('colspan'), 10) || 1) === 1;
+      });
+      if (lc.length === colCount && lc.length === allRows[lr].children.length) liveRow = allRows[lr];
+    }
+  }
   if (liveRow) {
     var liveCells = Array.prototype.slice.call(liveRow.children).filter(function (c) {
       return c.tagName === 'TD' || c.tagName === 'TH';
@@ -2024,6 +2078,19 @@ function _docxTextWithBreaks(el) {
   return out;
 }
 
+/**
+ * Width in twips of the pictures that sit in a cell next to its text (the score bar of the readiness table), from their
+ * inline width in px. Only for a stamped ASHRAE 36 table; other tables keep their minimums as they were.
+ */
+function _docxCellPictureTwips(cell) {
+  if (!_docxLiveColsTable(cell.closest && cell.closest('table')) || !cell.querySelectorAll) return 0;
+  var tw = 0;
+  Array.prototype.forEach.call(cell.querySelectorAll('img'), function (img) {
+    tw += Math.round(_docxPxLength(img.style && img.style.width) * 15);
+  });
+  return tw;
+}
+
 function _docxColumnMinWidths(rowCells, colCount, cellMarginTwips, sizeHalfPt, strict) {
   var mins = [];
   for (var c = 0; c < colCount; c++) mins.push(0);
@@ -2043,7 +2110,7 @@ function _docxColumnMinWidths(rowCells, colCount, cellMarginTwips, sizeHalfPt, s
         pieces.forEach(function (piece) {
           if (!piece) return;
           var cellHp = _docxReportCellHalfPt(cell);
-          var w = _docxTextWidthTwips(piece, bold, cellHp) + 2 * cellMarginTwips + 20;
+          var w = _docxTextWidthTwips(piece, bold, cellHp) + 2 * cellMarginTwips + 20 + _docxCellPictureTwips(cell);
           if (w > mins[ci]) mins[ci] = w;
         });
       }
@@ -2204,21 +2271,34 @@ function _docxTranslateTable(tableEl, ctx) {
     }, 0);
     // The strictest rule the table has room for: short cells whole, then numbers and no-wrap cells whole, then only whole words.
     var _mins = null;
+    // Side padding the minimum widths allow for: the widest cell padding of a stamped table, else the table default.
+    var _sidePad = _DOCX_REPORT_CELL_SIDE_TWIPS;
+    if (_docxLiveColsTable(tableEl)) {
+      _sidePad = 0;
+      _cellsByRow.forEach(function (cs2) {
+        cs2.forEach(function (c2) {
+          var m2 = _docxCellMargins(c2);
+          if (m2) _sidePad = Math.max(_sidePad, m2.left, m2.right);
+        });
+      });
+    }
     var _sumOf = function (m) {
       return m.reduce(function (a, b) {
         return a + b;
       }, 0);
     };
+    // A stamped ASHRAE 36 table keeps the PDF's proportions: its headers wrap by word as in the PDF, so only level 0 applies.
     [2, 1, 0].forEach(function (level) {
       if (_mins) return;
-      var m = _docxColumnMinWidths(_cellsByRow, colCount, _DOCX_REPORT_CELL_SIDE_TWIPS, _DOCX_REPORT_TABLE_HALFPT, level);
+      if (_docxLiveColsTable(tableEl) && level > 0) return;
+      var m = _docxColumnMinWidths(_cellsByRow, colCount, _sidePad, _DOCX_REPORT_TABLE_HALFPT, level);
       if (_sumOf(m) <= _total || level === 0) _mins = m;
     });
     // Quarterly report: whole words still too wide for the table: set the table text smaller, in steps, until they fit.
     if (_sumOf(_mins) > _total && tableEl.closest('[data-dx-live-widths]')) {
       for (var _sc = 0.95; _sc >= 0.69; _sc -= 0.05) {
         tableEl.setAttribute('data-dx-fscale', String(_sc));
-        var _m2 = _docxColumnMinWidths(_cellsByRow, colCount, _DOCX_REPORT_CELL_SIDE_TWIPS, _DOCX_REPORT_TABLE_HALFPT, 0);
+        var _m2 = _docxColumnMinWidths(_cellsByRow, colCount, _sidePad, _DOCX_REPORT_TABLE_HALFPT, 0);
         _mins = _m2;
         if (_sumOf(_m2) <= _total) break;
       }
@@ -2389,7 +2469,12 @@ function _docxTranslateTable(tableEl, ctx) {
           var _priorCellAlign = ctx ? ctx._flexCellAlign : undefined;
           if (_cellExplicitAlign && ctx) ctx._flexCellAlign = _cellExplicitAlign;
           Array.prototype.forEach.call(cell.childNodes, function (child) {
-            if (child.nodeType === 1) {
+            if (child.nodeType === 1 && _hasStamp && _DOCX_INLINE_TAGS[child.tagName] && child.tagName !== 'BR') {
+              // A styled span next to a block (the orange status line above a "Recommended for ..." line) is one paragraph
+              // that keeps its own colour and weight; the block dispatch would drop them (it reads only the loose text).
+              var inlRuns = _docxCollectRuns(child, _docxStyleFmtFromEl(child, cellBaseFmt, ctx), ctx);
+              if (inlRuns.length) cellParagraphs.push(_docxParagraph({ runs: inlRuns, align: align, spacingAfter: 0 }));
+            } else if (child.nodeType === 1) {
               cellParagraphs = cellParagraphs.concat(_docxTranslateBlock(child, ctx, cellBaseFmt));
             } else if (child.nodeType === 3) {
               var looseText = _docxCollapseLooseText(child.nodeValue);
@@ -2436,6 +2521,7 @@ function _docxTranslateTable(tableEl, ctx) {
             vAlign: 'center',
             vMerge: rowSpanAttr > 1 ? 'restart' : undefined,
             shade: cellShade || undefined,
+            margins: _docxCellMargins(cell) || undefined,
           }),
         );
         if (rowSpanAttr > 1) {
