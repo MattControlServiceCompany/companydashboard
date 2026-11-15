@@ -302,7 +302,30 @@ const ok = (c, m) => {
     ok(/Beta Library is served by one air handling unit \(AHU-3\)/.test(t) && /three variable air volume terminals/.test(t) && !/Total\s*6/.test(t), 'System Overview: one unit is named, more than 3 are counted only, no Total line');
     ok(det.overviewNoTable === true, 'item 1: the System Overview has no <table> (the Findings Summary keeps its table)');
     ok(/Building automation controller: Sample Controller \(5 of 6 units\)/.test(t), 'BAS controller line from the rows (5 of 6 units in Alpha Library: the exhaust fan row has none)');
-    ok(/The building automation system monitors the supply air temperature \(55\.2°F\)\./.test(t) && !/showed:/.test(t), 'a: System Descriptions: the reading is inside the sentence (55.2°F), no "showed:" list');
+    ok(/The building automation system monitors the supply air temperature[ .,]/.test(t) && !/55\.2°F|showed:/.test(t), 'a: System Descriptions: the sequence names the supply air temperature; the reading (55.2°F) is not printed, no "showed:" list');
+    // no description holds a reading of the audit time, a time stamp, or a note about the data source
+    const descs = await page.evaluate((PID) => {
+      const d = collectASHRAE36Data(PID, '2026-11-10', null);
+      const ctx = _a36DetContext(d);
+      const out = [];
+      ctx.model.libs.forEach((m) =>
+        m.groups.forEach((g) => {
+          const vals = [];
+          g.units.forEach((eq) => {
+            const rd = _a36DetUnitReadings(eq, ctx.rowsById);
+            Object.keys(rd).forEach((k) => {
+              if (A36_DET_PARAM_KEYS.indexOf(k) < 0) vals.push(rd[k]);
+            });
+          });
+          out.push({ label: g.label, text: _a36DetDescriptionParas(g, ctx, 1).join(' '), vals });
+        }),
+      );
+      return out;
+    }, seed);
+    const dtext = descs.map((x) => x.text).join(' ');
+    ok(descs.length > 0 && !/at the time of the audit|\bread\b|point export|graphics were saved|\(Normal\)|readings below|can differ/i.test(dtext), 'a: no description says "at the time of the audit", "read", "point export", "graphics were saved" or "(Normal)": ' + dtext.slice(0, 300));
+    ok(descs.every((x) => x.vals.every((v) => x.text.indexOf(v) === -1)) && descs.some((x) => x.vals.length > 0), 'a: no reading value of a unit appears in its group description (' + descs.reduce((n, x) => n + x.vals.length, 0) + ' readings checked)');
+    ok(!/The point readings in this chapter|graphics were saved/.test(t), 'a: the chapter has no time or provenance paragraph');
     ok(!/provides [^.]*, [^.]*, /.test(t), 'a: no "the building automation system provides A, B, C" inventory sentence');
     ok(!/Every point of this equipment/.test(t) && !/Appendix A lists every building automation point reviewed for each system\./.test(t), 'item 3: no "Every point of this equipment" sentence; the Appendix A sentence is not repeated in the chapters (2026-11-11: report length)');
     ok(det.joins.length === 0, 'item 2: no missing space after a full stop inside a paragraph of the chapters: ' + det.joins.join(' | '));
@@ -630,15 +653,22 @@ const ok = (c, m) => {
       };
       const out = {};
       // 1. a DOAS whose set point points and outdoor air temperature have no reading
-      out.doas = run('doas', 'Dedicated Outdoor Air System', ['sat', 'satCoolSp', 'satHtgSp', 'oat', 'rat', 'co2'], { sat: '58.5°F', rat: '70.1°F' }, null, 1).map((s) => s.text);
+      out.doas = run('doas', 'Dedicated Outdoor Air System', ['sat', 'satCoolSp', 'satHtgSp', 'oat', 'rat', 'co2'], { satCoolSp: '55°F' }, null, 1).map((s) => s.text);
       out.hw = run('hwp', 'Hot Water Plant', ['hwst', 'hwrt'], {}, null, 1).map((s) => s.text);
-      // a status word in a temperature point is not a temperature (live: a chilled water supply point read "Normal")
-      out.chwStatusWord = run('chwp', 'Chilled Water Plant', ['chwst', 'chwSetpoint'], { chwst: 'Normal', chwSetpoint: '44.0°F' }, null, 1).map((s) => s.text);
-      out.hwStatusWord = run('hwp', 'Hot Water Plant', ['hwst', 'hwrt'], { hwst: 'Normal', hwrt: '130.0°F' }, null, 1).map((s) => s.text);
+      // a plant description holds set points and limits, never a status word or a temperature read at the audit time
+      out.chwSp = run('chwp', 'Chilled Water Plant', ['chwst', 'chwSetpoint'], { chwSetpoint: '44°F' }, null, 1).map((s) => s.text);
+      // a hot water plant with an outdoor air lockout set point (enable limit) gives an enable sentence with that set point
+      out.hwLockout = run('hwp', 'Hot Water Plant', ['boilerEnable', 'hwst', 'hwSetpoint', 'oaEnable'], { oaEnable: '55°F', hwSetpoint: '120°F' }, null, 1).map((s) => s.text);
+      out.hwLockoutStatus = run('hwp', 'Hot Water Plant', ['boilerEnable', 'hwst'], {}, { plantLockout: 'outdoor air temperature lockout' }, 1).map((s) => s.text);
+      // zone set points: the "70°F heating / 75°F cooling" form
+      out.vavSp = run('vav', 'Variable Air Volume Terminal', ['discFlow', 'dampCmd', 'zoneTemp', 'htgSP', 'coolSP'], { htgSP: '70°F', coolSP: '75°F' }, null, 4).map((s) => s.text);
+      // the type count line: singular for one unit
+      out.counts = [['ahu', 1], ['ahu', 2], ['heater', 1], ['ef', 1], ['doas', 1], ['vav', 21], ['hwp', 1]].map((x) => _a36CatCountLabel(x[0], x[1]));
       // 2. adjustment 0.0 is not printed
       const termKeys = ['discFlow', 'dampCmd', 'zoneTemp', 'htgSP', 'coolSP', 'htgAdj', 'coolAdj'];
       out.adjZero = run('vav', 'Variable Air Volume Terminal', termKeys, { zoneTemp: '71.0°F', htgSP: '68.0°F', coolSP: '73.0°F', htgAdj: '0.0°F', coolAdj: '0.0°F' }, null, 4).map((s) => s.text);
       out.adjSome = run('vav', 'Variable Air Volume Terminal', termKeys, { htgAdj: '1.5°F', coolAdj: '0.0°F' }, null, 4).map((s) => s.text);
+      out.vavNoSp = run('vav', 'Variable Air Volume Terminal', termKeys, {}, null, 4).map((s) => s.text);
       // 7. the airflow reset sentence needs the stored minimum and maximum airflow set points
       out.noProof = run('vav', 'Variable Air Volume Terminal', termKeys, { zoneTemp: '71.0°F' }, { flowReset: false }, 4).map((s) => s.text);
       out.proof = run('vav', 'Variable Air Volume Terminal', termKeys, { zoneTemp: '71.0°F' }, { flowReset: true }, 4).map((s) => s.text);
@@ -650,8 +680,8 @@ const ok = (c, m) => {
       out.proofRows = ['a', 'b', 'c'].map((k) => _a36DetAirflowResetProof({ units: [{ id: k }] }, rows));
       // A. fan speed: a speed reading alone is not a variable speed command
       const ahuKeys = ['sfEnable', 'sfStatus', 'sfSpeed', 'dsp', 'htgValve', 'sat', 'oaDampCmd', 'mat', 'oat', 'oaFlow', 'freezeStat'];
-      out.fanReading = run('ahu', 'Variable Air Volume Air Handling Unit', ahuKeys, { sfSpeed: '76.2%', dsp: '1.1 in H2O', sat: '59.3°F' }, null, 1);
-      out.fanCmd = run('ahu', 'Variable Air Volume Air Handling Unit', ahuKeys.concat(['sfSpeedCmd']), { sfSpeedCmd: '60.0%', dsp: '1.1 in H2O' }, null, 1);
+      out.fanReading = run('ahu', 'Variable Air Volume Air Handling Unit', ahuKeys, {}, null, 1);
+      out.fanCmd = run('ahu', 'Variable Air Volume Air Handling Unit', ahuKeys.concat(['sfSpeedCmd']), { dspSp: '1.1 in. w.c.' }, null, 1);
       // 3. header fit: every header cell of the Findings Summary holds its text
       const th = Array.from(document.querySelectorAll('#reportPages .rpt-page[data-section="detailedSummary"] thead th'));
       out.th = th.map((x) => ({ t: x.textContent.trim(), over: x.scrollWidth - x.clientWidth, inside: x.getBoundingClientRect().right <= x.closest('table').getBoundingClientRect().right + 0.5 }));
@@ -681,18 +711,24 @@ const ok = (c, m) => {
       return out;
     });
     const allText = (a) => a.join(' ');
-    ok(!/ \./.test(allText(r3.doas)) && !/(are|is) \./.test(allText(r3.doas)) && !/outdoor air\./.test(allText(r3.doas)) && /return air 70\.1°F/.test(allText(r3.doas)) && !/set points are/.test(allText(r3.doas)),
-      '1: a clause whose value is empty is never printed (DOAS: no "set points are .", no "outdoor air."): ' + allText(r3.doas));
-    ok(!/Normal/.test(allText(r3.chwStatusWord)) && !/Normal/.test(allText(r3.hwStatusWord)) && /return was 130\.0°F/.test(allText(r3.hwStatusWord)), 'a status word in a temperature point is never printed as a temperature (' + allText(r3.chwStatusWord) + ' | ' + allText(r3.hwStatusWord) + ')');
-    ok(r3.hw.length === 0, '1: the hot water temperature sentence is not printed when neither reading exists (' + allText(r3.hw) + ')');
-    ok(r3.adjZero.some((x) => x === 'The zone sensor can adjust the set points.') && !/0\.0/.test(allText(r3.adjZero).replace(/68\.0|73\.0|71\.0/g, '')), '2: a 0.0 adjustment is omitted: ' + r3.adjZero.filter((x) => /adjust/.test(x)).join(''));
-    ok(r3.adjSome.some((x) => x === 'The zone sensor can adjust the set points (heating 1.5°F).'), '2: a non-zero adjustment is printed, the 0.0 one is not: ' + r3.adjSome.filter((x) => /adjust/.test(x)).join(''));
+    ok(!/ \./.test(allText(r3.doas)) && !/(are|is) \./.test(allText(r3.doas)) && /The supply air temperature is held at a set point of 55°F for cooling\./.test(allText(r3.doas)) && !/58\.5|70\.1/.test(allText(r3.doas)),
+      '1: a DOAS gives its set point and no empty clause and no reading: ' + allText(r3.doas));
+    ok(!/Normal/.test(allText(r3.chwSp)) && /holds the chilled water supply temperature at a set point of 44°F/.test(allText(r3.chwSp)), 'a chilled water plant gives its supply set point, no status word (' + allText(r3.chwSp) + ')');
+    ok(!/\d/.test(allText(r3.hw)) && /monitors the hot water supply temperature and the hot water return temperature/.test(allText(r3.hw)), '1: a plant with no set point names what it monitors and prints no number (' + allText(r3.hw) + ')');
+    ok(/The plant is enabled when the outdoor air temperature is below 55°F\./.test(allText(r3.hwLockout)) && /at a set point of 120°F/.test(allText(r3.hwLockout)), 'b: a hot water plant with an outdoor air lockout set point gives the enable sentence with that set point (' + allText(r3.hwLockout) + ')');
+    ok(/The plant is locked out on outdoor air temperature\./.test(allText(r3.hwLockoutStatus)) && !/Lockout|was off|At the time/.test(allText(r3.hwLockoutStatus)), 'b: a plant with a lockout status point says it has the lockout, not that it was off (' + allText(r3.hwLockoutStatus) + ')');
+    ok(allText(r3.vavSp).indexOf('Zones are held at 70°F heating / 75°F cooling when occupied.') >= 0, 'c: a VAV group with heating and cooling set points gives "70°F heating / 75°F cooling" (' + allText(r3.vavSp) + ')');
+    ok(!/\d°F/.test(allText(r3.vavNoSp)) && /held between the heating set point and the cooling set point/.test(allText(r3.vavNoSp)), 'c: no set point value, no number printed (' + allText(r3.vavNoSp) + ')');
+    ok(r3.counts.join(' / ') === 'Air Handler / Air Handlers / Heater / Exhaust Fan / Dedicated Outdoor Air System Unit / Variable Air Volume Terminals / Hot Water Plant', 'd: the type count line is singular for one unit (' + r3.counts.join(' / ') + ')');
+    ok(r3.adjZero.some((x) => x === 'The zone sensor can adjust the set points.') && !/0\.0/.test(allText(r3.adjZero)), '2: no adjustment value is printed: ' + r3.adjZero.filter((x) => /adjust/.test(x)).join(''));
+    ok(r3.adjSome.some((x) => x === 'The zone sensor can adjust the set points.') && !/1\.5/.test(allText(r3.adjSome)), '2: a stored adjustment is a reading, not printed: ' + r3.adjSome.filter((x) => /adjust/.test(x)).join(''));
     ok(!/resets between/.test(allText(r3.noProof)) && /resets between its minimum and maximum/.test(allText(r3.proof)), '7: "airflow set point resets between minimum and maximum" only with the stored minimum and maximum airflow set points');
     ok(r3.proofRows.join(',') === 'true,false,true', '7: proof = a minimum and a maximum airflow point of the unit; the Air Source Minimum point does not count (' + r3.proofRows.join(',') + ')');
-    ok(/monitors its speed \(76\.2%\)/.test(allText(r3.fanReading.map((s) => s.text))) && !/variable speed|speed is varied|varies/.test(allText(r3.fanReading.map((s) => s.text))), 'A: a supply fan speed reading alone is "monitors its speed", not variable speed under control: ' + r3.fanReading.map((s) => s.text).filter((x) => /fan/.test(x)).join(' '));
-    ok(/varies its speed by a speed command \(60\.0%\)/.test(allText(r3.fanCmd.map((s) => s.text))) && /varies the supply fan speed to hold the duct static pressure \(1\.1 in H2O\)/.test(allText(r3.fanCmd.map((s) => s.text))), 'A: with a speed command point the fan is run at variable speed and the speed holds the duct static pressure');
+    ok(/monitors the supply fan speed/.test(allText(r3.fanReading.map((s) => s.text))) && !/variable speed|speed is varied|varies|speed is set/.test(allText(r3.fanReading.map((s) => s.text))), 'A: a supply fan speed point alone is "monitors the supply fan speed", not variable speed under control: ' + r3.fanReading.map((s) => s.text).filter((x) => /fan/.test(x)).join(' '));
+    ok(/The supply fan speed varies to hold the duct static pressure at 1\.1 in\. w\.c\./.test(allText(r3.fanCmd.map((s) => s.text))), 'A: with a speed command point the supply fan speed varies to hold the duct static pressure at its set point');
     const fns = r3.fanReading.map((s) => s.fn);
-    ok(fns.join(',') === fns.slice().sort((a, b) => ['temp', 'air', 'oa', 'other'].indexOf(a) - ['temp', 'air', 'oa', 'other'].indexOf(b)).join(',') && new Set(fns).size === 4, '6: air handler sentences are grouped by function (temperature, airflow and static, outside air, other): ' + fns.join(','));
+    const FN_ORDER = ['start', 'temp', 'air', 'oa', 'other'];
+    ok(fns.join(',') === fns.slice().sort((a, b) => FN_ORDER.indexOf(a) - FN_ORDER.indexOf(b)).join(',') && new Set(fns).size === 5, '6: air handler sentences are grouped by part of the sequence (start and stop, temperature, airflow and static, outdoor air, other): ' + fns.join(','));
     ok(r3.th.length >= 5 && r3.th.length % 5 === 0 && r3.th.every((x) => x.over <= 1 && x.inside), '3: every Findings Summary header cell holds its text (ATTRIBUTE inside the table): ' + JSON.stringify(r3.th));
     ok(r3.heater === 'sparse' && r3.light === 'light page' && r3.busy === '', '4: figure rule: a sparse graphic (a heater tile) and a light property page are not printed, a graphic with many readouts is: ' + [r3.heater, r3.light, r3.busy].join(' / '));
     ok(r3.trimHalf.w < 700 && r3.trimHalf.w > 500 && r3.trimHalf.h === 660 && r3.trimFull.w === 1200 && r3.trimFull.h === 660 && r3.trimLight.w === 300 && r3.trimLight.h === 200, '4: a dark crop with a wide empty black margin is cut to its content; others are not: ' + JSON.stringify([r3.trimHalf, r3.trimFull, r3.trimLight]));
@@ -822,7 +858,7 @@ const ok = (c, m) => {
     ok(fStart > 0 && fEnd > fStart && /Chilled Water Plant/.test(findPlants) && /Hot Water Plant/.test(findPlants), 'D4: Findings has a Chilled Water Plant block and a Hot Water Plant block');
     ok(!/schedul/i.test(findPlants) && !/Occupied schedule/.test(pt), 'D4: plants get no schedule finding and no schedule line');
     ok(/Chilled Water Supply Temperature Reset/.test(findPlants) && /Hot Water Supply Temperature Reset/.test(findPlants), 'D4: plant findings include the supply temperature reset sequence of each plant (same treatment as the plants Detailed already printed)');
-    ok(/The hot water plant serves the building heating system\. The building automation system monitors the boiler run status, and enables the primary hot water pump\. At the time of the audit the plant supplied hot water at 150\.2°F with a 130\.0°F return( \(Figure \d+\))?\./.test(pt), 'item 2: a plant description is connected sentences in an engineering voice (what it serves, what the system enables and monitors, the readings)');
+    ok(/The hot water plant serves the building heating system\. The primary hot water pump starts and stops by an enable command\. The plant holds the hot water supply temperature at a setpoint of 160°F\./.test(pt) && !/At the time of the audit|150\.2|130\.0/.test(pt), 'item 2: a plant description is the sequence of operation (what it serves, how it starts, what it holds), no reading');
     ok(!/primary hot water pump (has|has a)|status point/.test(pt), 'item 2: no "has an enable command" or "status point" wording');
 
     // ---- 12. Round 4 (2026-11-11): figure crop, picture rank, carbon dioxide counts, power meter wording ----

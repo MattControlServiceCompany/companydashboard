@@ -1,7 +1,7 @@
 // tools/test-a36-round4-wording.js - round 4 wording fixes (2026-11-14). SYNTHETIC data only.
 //   A1 Summary sentence has a subject. A2 "zones" (one word) in the Summary gaps and a Glossary row for Zone.
 //   A3 airflow point labels are plain words (one label map). A4 "Affects N of M units: names". A5 heating coil text is true for any coil.
-//   A6 "(On for 1 of 3 fans)". P1 Recommended "What you get" makes no alarm/report claim. P2 Order of Work joins with "and", lower-case "check".
+//   A6 "(on 1 of 3 fans)" (no reading in a description). P1 Recommended "What you get" makes no alarm/report claim. P2 Order of Work joins with "and", lower-case "check".
 // Run: node tools/test-a36-round4-wording.js   (exit 0 = all pass)
 'use strict';
 const fs = require('fs');
@@ -66,8 +66,8 @@ check(/'The work needed is ' \+ rptCount\(_sumCounts\.sensors\)/.test(RE), 'A1. 
 check(/' zones have no carbon dioxide sensor, so ventilation/.test(RE) && !/ rooms have no carbon dioxide sensor/.test(RE), 'A2. Summary gaps say "zones", not "rooms"');
 check(/\['Zone', 'A room or area that one terminal unit controls\.'\]/.test(RE), 'A2. Glossary has a Zone row');
 
-// A6
-check(/bits\[0\] \+ ' for ' \+ where\.replace/.test(RE), 'A6. a reading and a share join with "for": "(On for 1 of 3 fans)"');
+// A6 (a reading and a share join with "for") is gone: a description holds no reading (2026-11-15, no narration).
+check(!/bits\[0\] \+ ' for '/.test(RE) && /function part\(keys, noun\)/.test(RE), 'A6. a description holds no reading; a share of units is "(on 1 of 3 fans)"');
 
 // P1
 check(!/Alarms and reports that show/.test(RE) && /'Better comfort and efficiency from '/.test(RE), 'P1. Recommended "What you get" makes no alarm or report claim');
