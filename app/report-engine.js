@@ -3961,7 +3961,7 @@ function _rptQSchedulePage(n, d) {
   var rows = _rptBasScheduleRows(d);
   if (!rows.length) return '';
   var fix = function (l) {
-    return _escHtml(l).replace(/(Mon|Tue|Wed|Thu|Fri|Sat|Sun)-(Mon|Tue|Wed|Thu|Fri|Sat|Sun)/g, '$1 to $2').replace(/(\d{1,2}:\d{2}) to (\d{1,2}:\d{2})/g, '$1\u2013$2');
+    return _escHtml(l).replace(/\b(Mon|Tue|Wed|Thu|Fri|Sat|Sun)-(Mon|Tue|Wed|Thu|Fri|Sat|Sun)\b/g, '$1 to $2').replace(/(\d{1,2}:\d{2}) to (\d{1,2}:\d{2})/g, '$1\u2013$2');
   };
   var cell = function (lines) {
     return lines.length
@@ -3992,7 +3992,7 @@ function _rptQSchedulePage(n, d) {
   var body =
     _rptQNote('Occupied hours are the hours the building is in use, on the 24-hour clock. A set point is the temperature, in &deg;F, that the heating or cooling system holds. Dates are in ' + d.period.year + '.') +
     t +
-    (/Area [A-Z]/.test(allText) ? _rptQNote('Area B and Area C are areas of the building as named in the building automation system.') : '');
+    (/Area [A-Z]\b/.test(allText) ? _rptQNote('Area B and Area C are areas of the building as named in the building automation system.') : '');
   return rptPage(n, 'Operating Hours and Set Points', body, { data: d, letterhead: false, label: 'Page ' + n + ' - Operating Hours and Set Points' });
 }
 
@@ -17955,6 +17955,9 @@ function _a36SeqRequiredSensorLabels(seq) {
         }
       }
       if (!lbl) lbl = catKey; // last-resort fallback — should not normally happen
+      // The zone damper (dampCmd) is the terminal unit's own damper; the plain label would read as a copy of the air handler's
+      // "Outdoor Air Damper Actuator" and "Damper Actuator" in the same list.
+      if (catKey === 'dampCmd') lbl = 'Terminal Damper Actuator';
       if (!seenLabel[lbl]) {
         seenLabel[lbl] = true;
         labels.push(lbl);
@@ -18103,7 +18106,7 @@ function rptPageASHRAE36Cover(n, d, perBuildingIncluded) {
       : 'The sections that follow list, across the facilities in scope, the sensors to install and the control sequences to program.') +
     // Item 14 (2026-11-14): the two device counts differ; say why in one sentence (both numbers come from the same shared values).
     (_a36ConsolidatedSensors !== p.totalMissingHardwarePoints && p.totalMissingHardwarePoints > 0
-      ? ' The ' + rptCount(_a36ConsolidatedSensors) + ' devices to install are fewer than the ' + rptCount(p.totalMissingHardwarePoints) + ' missing points in the Building Readiness table, because one device can serve more than one missing point and points on units with no zone setpoint control path are not counted.'
+      ? ' The ' + rptCount(_a36ConsolidatedSensors) + ' devices to install are fewer than the ' + rptCount(p.totalMissingHardwarePoints) + ' missing points in the Building Readiness table, because one device can serve more than one missing point and points on units that do not control a room temperature are not counted.'
       : '');
 
   var gauges =
@@ -18773,6 +18776,8 @@ function rptPageASHRAE36Executive(n, d, detailedTitles) {
     '<div style="font-size:10px;color:var(--rpt-page-text);margin-top:-10px;margin-bottom:12px;line-height:1.5">' +
     '<strong>Score</strong> is Control Service Company’s own readiness assessment, built on ASHRAE 36 requirements ' +
     'and weighted by how many apply to each equipment type. ASHRAE 36 itself defines no composite score or compliance threshold. ' +
+    // Round 7 R3 (2026-11-14, Matt 2026-07-31 keeps the equipment-weighted portfolio scores): say why the cover scores differ from the counts here.
+    'The portfolio scores weight each building by its amount of equipment, so they can differ a little from the totals of the counts in this table. ' +
     '<strong>Readiness bands:</strong> High ≥' +
     ASHRAE36_READINESS_HIGH_THRESHOLD +
     '%, Partial ' +
@@ -19212,6 +19217,40 @@ function rptPageASHRAE36CostEstimate(n, d, detailedSectionNo) {
       _seqCatalogTotal += r.qty || 0;
     });
 
+    // Which kinds of air handler a sequence row counts: the units that still need it programmed (the units the quantity above counts),
+    // sorted by the same single-zone rule the findings use (_a36DetIsSingleZoneUnit). seqKey -> { sz: bool, other: bool }.
+    var _seqUnitKinds = {};
+    try {
+      var _kindRows = typeof _a36DetRowsById === 'function' && d.project ? _a36DetRowsById(d.project.id) : {};
+      (d.buildings || []).forEach(function (b) {
+        (b.equipResults || []).forEach(function (eq) {
+          if (typeof _pricingIsMonitoringOnlyZoneUnit === 'function' && _pricingIsMonitoringOnlyZoneUnit(eq)) return;
+          var sz = _a36DetIsSingleZoneUnit(eq, _kindRows[eq.id]);
+          Object.keys(eq.seqReadiness || {}).forEach(function (k) {
+            var st = eq.seqReadiness[k] && eq.seqReadiness[k].status;
+            if (st !== 'blocked' && st !== 'partial') return;
+            var kinds = _seqUnitKinds[k] || (_seqUnitKinds[k] = { sz: false, other: false });
+            if (sz) kinds.sz = true;
+            else kinds.other = true;
+          });
+        });
+      });
+    } catch (e) {
+      _seqUnitKinds = {};
+    }
+    // The sections a sequence row cites: the multiple-zone section for equipment that is not single-zone, the 5.18 section for
+    // single-zone air handlers (emSingleZoneSection; a sequence with no 5.18 counterpart keeps its section).
+    function _seqSectionsOf(seq, sectionNum) {
+      var kinds = _seqUnitKinds[seq.key] || { sz: false, other: true };
+      var out = [];
+      if (kinds.other || !kinds.sz) if (sectionNum) out.push(sectionNum);
+      if (kinds.sz) {
+        var szSec = (typeof emSingleZoneSection === 'function' && emSingleZoneSection(seq.key)) || sectionNum;
+        if (szSec && out.indexOf(szSec) === -1) out.push(szSec);
+      }
+      return out;
+    }
+
     var seqDefsList =
       typeof EM_SEQUENCE_DEFS !== 'undefined' && Array.isArray(EM_SEQUENCE_DEFS) ? EM_SEQUENCE_DEFS : [];
     // Occupancy-Based Ventilation merge (Matt, 2026-08-03, docx item 10; standing OBV-once rule):
@@ -19252,7 +19291,9 @@ function rptPageASHRAE36CostEstimate(n, d, detailedSectionNo) {
           rowSpecs.push(_obvSpec);
         }
         _obvSpec.qty += _qty;
-        if (_sectionNum && _obvSpec.sections.indexOf(_sectionNum) === -1) _obvSpec.sections.push(_sectionNum);
+        _seqSectionsOf(seq, _sectionNum).forEach(function (sec) {
+          if (_obvSpec.sections.indexOf(sec) === -1) _obvSpec.sections.push(sec);
+        });
         if (seq.key === 'demandCtrl' && _plain) _obvSpec.plainDesc = _plain;
         (_sensorLine ? _sensorLine.split(', ') : []).forEach(function (lbl) {
           if (lbl && _obvSpec.sensorLabels.indexOf(lbl) === -1) _obvSpec.sensorLabels.push(lbl);
@@ -19262,7 +19303,7 @@ function rptPageASHRAE36CostEstimate(n, d, detailedSectionNo) {
       rowSpecs.push({
         name: _a36SeqDisplayLabel(seq),
         qty: _qty,
-        sections: _sectionNum ? [_sectionNum] : [],
+        sections: _seqSectionsOf(seq, _sectionNum),
         sensorLabels: _sensorLine ? _sensorLine.split(', ') : [],
         plainDesc: _plain,
       });
@@ -19281,7 +19322,7 @@ function rptPageASHRAE36CostEstimate(n, d, detailedSectionNo) {
       // "Section 5.16.2" for a normal row; "Sections 5.16 and 5.6" for the merged OBV row. The
       // merged text is allowed to wrap (no white-space:nowrap) — it is wider than the column.
       var sectionText = spec.sections.length
-        ? (spec.sections.length > 1 ? 'Sections ' : 'Section ') + spec.sections.join(' and ')
+        ? (spec.sections.length > 1 || / to /.test(spec.sections[0]) ? 'Sections ' : 'Section ') + spec.sections.join(' and ')
         : '';
       var sectionNowrap = spec.sections.length > 1 ? '' : ';white-space:nowrap';
       _seqProgramTotal += seqQty;
@@ -21414,7 +21455,8 @@ var _RPT_A36_TIER_PLAIN = {
   recommended: 'The control sequences that matter most for energy use and comfort, plus the few devices they need.',
   compliance: 'The devices and safety programming that ASHRAE 36 needs first, such as freeze protection.',
   'full-scope':
-    'Every ASHRAE 36 device and control sequence on all of the equipment, plus reports that flag equipment faults.',
+    // Full Scope also prices optional devices that ASHRAE 36 does not require (fan coil units, heaters); the Audit Report lists only the required gaps.
+    'Every ASHRAE 36 device and control sequence on all of the equipment, plus extra devices that are not in the Audit Report findings (such as on fan coil units) and reports that flag equipment faults.',
 };
 
 /**
@@ -21434,6 +21476,7 @@ function _rptA36PlainName(label) {
  */
 function _rptA36PlainRowLabel(r) {
   var item = (r && r.item) || '';
+  if (r && r.isOfflineCheck) return 'Check an offline unit (power and network)';
   if (r && r.isSensorInvestigation) {
     var what = item.replace(/\s+Sensor Investigation$/, '').toLowerCase();
     return 'Check a ' + what + ' sensor that reads wrong';
@@ -21583,14 +21626,14 @@ function _rptA36OptionalCo2Qty(d) {
   return o.length ? o[0].qty : 0;
 }
 
-// "N existing control points need programming only" (plural from the count, with the reason there is no hardware cost).
+// "N existing control points need programming only (no device to install)" (plural from the count).
 function _rptA36ExistingPointsLine(qty) {
   var n = qty || 0;
   return (
     n +
     ' existing control ' +
     (n === 1 ? 'point needs' : 'points need') +
-    ' programming only. The cost is in the programming price.'
+    ' programming only (no device to install).'
   );
 }
 
@@ -21637,7 +21680,7 @@ function _rptA36CostSummaryHTML(d, HEAD, BODY) {
       var only = labels.filter(function (l) {
         return noProgLabels[l];
       });
-      return only.length === labels.length ? ', which ' + (labels.length > 1 ? 'have' : 'has') + ' no programming' : '';
+      return only.length === labels.length ? ', which ' + (labels.length > 1 ? 'do' : 'does') + ' not program the sensors' : '';
     }
     var sentence;
     if (order.length === 1) {
@@ -22650,8 +22693,8 @@ function _rptA36MonthSequenceSentence(groups) {
  */
 /**
  * _rptA36MeasureContentH(html) — real off-screen pixel height of `html` rendered at the proposal
- * page's exact content width (816px page − 2×48px wrapper gutters = 720px, the same width
- * wrapPage's content div yields) inside a .rpt-page-classed probe (same font/CSS-var context as
+ * page's exact content width (816px page − 2×96px: the .rpt-body padding of 48px plus the wrapPage
+ * content div padding of 48px on each side = 624px, the width a table on the page really gets) inside a .rpt-page-classed probe (same font/CSS-var context as
  * the real page). Returns 0 when no document is available — callers keep their model/constant
  * fallbacks. Extracted 2026-08-04 (pages 2+3 re-merge) from _rptA36PhaseTableDerive's inline
  * table probe so the page renderer's chrome/notes budgets use the SAME "measure, don't model"
@@ -22667,7 +22710,7 @@ function _rptA36MeasureContentH(html) {
     probe.style.cssText =
       'position:absolute;left:-10000px;top:0;width:816px;height:auto;min-height:0;margin:0;box-shadow:none;overflow:visible';
     var inner = document.createElement('div');
-    inner.style.cssText = 'padding:0 48px';
+    inner.style.cssText = 'padding:0 96px'; // .rpt-body padding (48px) + the page wrapper padding (48px) on each side: 624px of content
     inner.innerHTML = html;
     probe.appendChild(inner);
     document.body.appendChild(probe);
@@ -22987,12 +23030,25 @@ function _rptA36PhaseTableDerive(d, opts) {
 
   // colgroup (2026-08-03 side-by-side rebuild): equal-width month columns, one per calendar
   // month of the term (5 for the Client D term), table-layout:fixed so widths are deterministic.
-  var _monthColPct = Math.floor((100 / Math.max(monthCount, 1)) * 100) / 100;
+  // Round 6 (Manager 2026-11-14): the widths follow the text of each step, so a long step column is wide and a short one is narrow.
+  // With equal widths the tallest column ran into the page footer. Every column keeps at least 14% of the width.
+  var _colChars = monthEntries.map(function (e) {
+    return e.charLens.reduce(function (sum, n) {
+      return sum + n;
+    }, 0);
+  });
+  var _charSum = _colChars.reduce(function (sum, n) {
+    return sum + n;
+  }, 0);
+  var _colMin = Math.min(14, Math.floor(100 / Math.max(monthCount, 1)));
+  var _colPcts = _colChars.map(function (n) {
+    return Math.floor((_colMin + (_charSum ? (n / _charSum) * (100 - _colMin * monthCount) : (100 - _colMin * monthCount) / Math.max(monthCount, 1))) * 100) / 100;
+  });
   var colgroup =
     '<colgroup>' +
-    headCols
-      .map(function () {
-        return '<col style="width:' + _monthColPct + '%">';
+    _colPcts
+      .map(function (pct) {
+        return '<col style="width:' + pct + '%">';
       })
       .join('') +
     '</colgroup>';
@@ -24022,6 +24078,7 @@ var _RPT_A36_POINT_CATEGORY_LABEL = {
   co2_ahu: 'Carbon Dioxide Sensors in Air Handler Ducts',
   oaFlow: 'Outdoor Air Flow Stations',
   sfSpeedCmd: 'Supply Fan Variable Speed Drives',
+  hwPumpSpeed: 'Hot Water Pump Variable Speed Drives',
 };
 
 /**
@@ -24053,7 +24110,9 @@ function _rptA36HardwareCategoryAgg(rows, toggles) {
       return;
     }
     var cls = (typeof POINT_KEY_INSTALL_CLASS !== 'undefined' && POINT_KEY_INSTALL_CLASS[r._pointKey]) || null;
+    // A fan coil unit carries its carbon dioxide sensor in the unit, not in an air handler duct.
     var label =
+      (r._pointKey === 'co2_ahu' && r.category === 'fcu' ? 'Carbon Dioxide Sensors in Fan Coil Units' : '') ||
       _RPT_A36_POINT_CATEGORY_LABEL[r._pointKey] ||
       (cls && _RPT_A36_DEVICE_CLASS_LABEL[cls]) ||
       (r.isFddAddon ? 'Equipment Fault Reports' : '') ||
@@ -24352,16 +24411,26 @@ function _rptA36RecommendedTimelineHTML(d) {
     if (idx === 0) {
       text = 'Check the equipment and confirm what to program.';
     } else {
-      var names = st.groups
-        .filter(function (g) {
-          return g.isNew;
-        })
-        .map(function (g, gi) {
-          // "Check a ..." items follow a first item in lower case: "X and check a ...".
-          return gi > 0 ? g.label.replace(/^Check /, 'check ') : g.label;
+      // The row names every group of the step, as the step table does: the work it starts, the work that began earlier and
+      // ends here ("finish"), and the work that began earlier and goes on in a later step ("continue").
+      var laterLabels = {};
+      plan.steps.slice(idx + 1).forEach(function (ls) {
+        ls.groups.forEach(function (g) {
+          laterLabels[g.label] = true;
         });
-      if (!names.length) return;
-      text = _a36DetJoin(names) + '.';
+      });
+      var lower = function (l) {
+        return l.replace(/^Check /, 'check ');
+      };
+      var newNames = st.groups.filter(function (g) { return g.isNew; }).map(function (g, gi) { return gi > 0 ? lower(g.label) : g.label; });
+      var finNames = st.groups.filter(function (g) { return !g.isNew && !laterLabels[g.label]; }).map(function (g) { return lower(g.label); });
+      var contNames = st.groups.filter(function (g) { return !g.isNew && laterLabels[g.label]; }).map(function (g) { return lower(g.label); });
+      var parts = [];
+      if (newNames.length) parts.push(_a36DetJoin(newNames));
+      if (finNames.length) parts.push('finish ' + _a36DetJoin(finNames));
+      if (contNames.length) parts.push('continue ' + _a36DetJoin(contNames));
+      text = parts.length ? parts.join('; ') + '.' : 'Finish the work of the earlier steps.';
+      text = text.charAt(0).toUpperCase() + text.slice(1);
     }
     rowsHTML +=
       '<tr><td style="' + tdStyle + ';font-weight:700">Step ' + (idx + 1) + '</td>' +
@@ -25629,6 +25698,11 @@ function _a36DetRowsById(projId) {
   return out;
 }
 
+// The ONE rule for "this unit is a single-zone air handler" (groups of the findings and the sections of Control Sequences use it).
+function _a36DetIsSingleZoneUnit(eq, row) {
+  return typeof emIsSingleZoneAirUnit === 'function' && emIsSingleZoneAirUnit(row ? Object.assign({}, row, { category: eq.category }) : eq);
+}
+
 // One group per equipment type inside a library: { label, category, units: [eq], names: [string] }.
 function _a36DetGroups(b, rowsById) {
   var byLabel = {};
@@ -25641,7 +25715,7 @@ function _a36DetGroups(b, rowsById) {
     }
     if (!byLabel[label]) {
       // singleZone: the group label names the unit type (single-zone, variable air volume, ...), so every unit of a group has the same answer.
-      byLabel[label] = { label: label, category: eq.category, units: [], names: [], shown: [], singleZone: typeof emIsSingleZoneAirUnit === 'function' && emIsSingleZoneAirUnit(row ? Object.assign({}, row, { category: eq.category }) : eq) };
+      byLabel[label] = { label: label, category: eq.category, units: [], names: [], shown: [], singleZone: _a36DetIsSingleZoneUnit(eq, row) };
       groups.push(byLabel[label]);
     }
     byLabel[label].units.push(eq);
@@ -26711,6 +26785,11 @@ function _a36DetSectionRef(f) {
   return 'ASHRAE 36, Section' + (f.sectionPlural || / (to|and) /.test(f.section) ? 's ' : ' ') + f.section;
 }
 
+// The supply fan speed points: on a single-zone unit with a constant-speed fan, the missing point is a variable speed drive.
+function _a36DetIsFanSpeedKey(key) {
+  return key === 'sfSpeed' || key === 'sfSpeedCmd';
+}
+
 // "all 5 units", "3 of 25 units", "the unit".
 function _a36DetFraction(qty, total) {
   if (!total) return qty + (qty === 1 ? ' item' : ' items');
@@ -26806,11 +26885,25 @@ function _a36DetModel(d, rowsById, picMap, loaded) {
         affected: extra.affected || [],
         missing: extra.missing || [],
         missingText: extra.missingText || extra.missing || [],
+        missingKeys: extra.missingKeys || [],
         pic: null,
         picCands: [],
       };
       var frac = _a36DetFraction(units, f.total);
       var szGroup = !!(g && g.singleZone);
+      // The drive is priced by the one rule _pricingDriveIsPriced (pricing-estimator.js): the supply fan drive on a single-zone unit with no fan
+      // speed reading, the hot water pump drive on a plant that shows no pump drive point. The text says "drive" on the same rule.
+      var driveUnits = function (driveKey) {
+        if (!g || typeof _pricingDriveIsPriced !== 'function') return [];
+        var aff = g.units.filter(function (u) { return !f.affected.length || f.affected.indexOf(u.name) > -1; });
+        return (aff.length ? aff : g.units).filter(function (u) { return _pricingDriveIsPriced(u, driveKey); });
+      };
+      var fanDrive = driveUnits('sfSpeedCmd').length > 0;
+      var pumpUnits = driveUnits('hwPumpSpeed');
+      var pumpDrive = pumpUnits.length > 0;
+      // Pricing counts one pump drive per pump (compliance.pumpCount); the text names the pumps when a plant shows more than one.
+      var pumpTotal = pumpUnits.reduce(function (n, u) { return n + Math.max(1, (u.compliance && u.compliance.pumpCount) || 1); }, 0);
+      var pumpPhrase = pumpTotal > pumpUnits.length ? 'each of the ' + pumpTotal + ' hot water pumps' : 'the hot water pump';
       if (kind === 'seq') {
         // extra.keys: one finding that stands for two sequences on the same units (Minimum Outside Air with Occupancy-Based
         // Ventilation of the air handling units); the finding names both sequences and both Guideline 36 sections.
@@ -26837,14 +26930,31 @@ function _a36DetModel(d, rowsById, picMap, loaded) {
           (g ? 'The ' + seqNoun + secPart + seqBe + ' not fully in place on ' + frac + '.' : 'The ' + seqNoun + secPart + seqBe + ' not fully in place at building level (' + units + ' needed).') +
           (f.missing.length ? ' The building automation system shows no ' + _a36DetJoin(f.missingText) + ' point' + plural + ' that the ' + (many ? 'sequences need' : 'sequence needs') + '.' : '');
         f.issueShort = seqNoun + ' not fully in place';
-        f.recommendation =
-          (f.missing.length ? 'Add the ' + _a36DetJoin(f.missingText) + ' point' + plural + ', then program' : 'Program') +
-          ' the ' + seqNoun + (g ? ' on ' + frac : ' (quantity ' + units + ')') + '.';
+        // A single-zone unit with no fan speed point has a constant-speed fan: the missing point is a variable speed drive.
+        var fanKeys = fanDrive ? (extra.missingKeys || []).filter(_a36DetIsFanSpeedKey) : [];
+        // A plant with no pump drive point has constant-speed pumps (round 7 R4): the missing pump speed point is a drive, priced as one.
+        var pumpKeys = pumpDrive ? (extra.missingKeys || []).filter(function (k) { return k === 'hwPumpSpeed'; }) : [];
+        var driveKeyList = fanKeys.concat(pumpKeys);
+        var otherText = f.missingText.filter(function (t, i) {
+          return driveKeyList.indexOf((extra.missingKeys || [])[i]) === -1;
+        });
+        if (fanKeys.length || pumpKeys.length) {
+          f.recommendation =
+            'Install a variable speed drive on ' + (fanKeys.length ? 'the supply fan' : pumpPhrase) + (g ? ' of ' + frac : '') +
+            (otherText.length ? ' and add the ' + _a36DetJoin(otherText) + ' point' + (otherText.length > 1 ? 's' : '') : '') +
+            ', then program the ' + seqNoun + (g ? ' on ' + frac : ' (quantity ' + units + ')') + '.';
+        } else
+          f.recommendation =
+            (f.missing.length ? 'Add the ' + _a36DetJoin(f.missingText) + ' point' + plural + ', then program' : 'Program') +
+            ' the ' + seqNoun + (g ? ' on ' + frac : ' (quantity ' + units + ')') + '.';
       } else {
         var sensor = _a36DetIsSensorLabel(label);
         f.section = String((row && row.g36Section) || '').replace(/^[§\s]*(Section\s*)?/i, '');
-        if (f.section && szGroup && emSingleZoneSection(key)) f.section = emSingleZoneSection(key);
+        if (szGroup && emSingleZoneSection(key)) f.section = emSingleZoneSection(key);
         f.impact = _a36DetImpactText(ASHRAE36_GAP_DESCRIPTIONS[key] && ASHRAE36_GAP_DESCRIPTIONS[key].plain);
+        // A single-zone fan with no speed point has a constant-speed fan: the Impact line says what the missing drive means.
+        if (fanDrive && _a36DetIsFanSpeedKey(key)) f.impact = 'Lets the system change the fan speed. Without a variable speed drive the fan runs at full speed all the time.';
+        if (pumpDrive && key === 'hwPumpSpeed') f.impact = 'Lets the system change the pump speed. Without a variable speed drive the pump runs at full speed all the time.';
         f.effect = 'Equipment control';
         var names = '';
         if (g && f.affected.length === units && units > 1 && units < f.total && units <= 6) names = ' (' + f.affected.map(_a36DetEquipName).join(', ') + ')';
@@ -26853,8 +26963,12 @@ function _a36DetModel(d, rowsById, picMap, loaded) {
         f.observed = g ? 'The building automation system shows no ' + label + ' point' + pSec + ' on ' + frac + names + '.' : 'The building automation system shows no ' + label + ' point' + pSec + ' at building level (' + units + ' needed).';
         f.issueShort = label + ' point missing';
         f.recommendation = sensor ? 'Install the ' + label + (/ sensor$/i.test(label) ? '' : ' sensor') + (g ? ' on ' + frac : ' (quantity ' + units + ')') + '.' : 'Add the ' + label + ' point' + (g ? ' on ' + frac : ' (quantity ' + units + ')') + '.';
-        // Item 6: a fan speed point on a constant-speed fan means a variable frequency drive (VFD).
-        if (/^(sfSpeed|sfSpeedCmd)$/.test(key))
+        // Item 6: a fan speed point on a constant-speed fan means a variable speed drive. A single-zone unit is priced as a drive.
+        if (fanDrive && _a36DetIsFanSpeedKey(key))
+          f.recommendation = 'Install a variable speed drive on the supply fan of ' + frac + ', so the building automation system can set and read the fan speed.';
+        else if (pumpDrive && key === 'hwPumpSpeed')
+          f.recommendation = 'Install a variable speed drive on ' + pumpPhrase + ' of ' + frac + ', so the building automation system can set and read the pump speed.';
+        else if (_a36DetIsFanSpeedKey(key))
           f.recommendation = 'Add a variable frequency drive (VFD) to the supply fan where it runs at constant speed, so the building automation system can command and read the ' + label + (g ? ' on ' + frac : ' (quantity ' + units + ')') + '.';
       }
       // A picture only when the listed page text names the topic of this finding, on a non-graphic page of an affected unit.
@@ -26945,6 +27059,7 @@ function _a36DetModel(d, rowsById, picMap, loaded) {
       function seqDetail(seqs) {
         var affected = [];
         var missing = [];
+        var missingKeys = []; // the point keys, in the order of missing
         var unitsMissing = {};
         g.units.forEach(function (eq) {
           var cats = [];
@@ -26964,7 +27079,10 @@ function _a36DetModel(d, rowsById, picMap, loaded) {
           affected.push(eq.name || 'Unknown');
           cats.forEach(function (c) {
             var pointLabel = _a36DetCatLabel(c);
-            if (!unitsMissing[pointLabel]) missing.push(pointLabel);
+            if (!unitsMissing[pointLabel]) {
+              missing.push(pointLabel);
+              missingKeys.push(c);
+            }
             unitsMissing[pointLabel] = (unitsMissing[pointLabel] || 0) + 1;
           });
         });
@@ -26973,7 +27091,7 @@ function _a36DetModel(d, rowsById, picMap, loaded) {
           var count = unitsMissing[pointLabel];
           return count < affected.length ? pointLabel + ' (on ' + count + ' ' + (count === 1 ? 'unit' : 'units') + ')' : pointLabel;
         });
-        return { affected: affected, missing: missing, missingText: missingText };
+        return { affected: affected, missing: missing, missingText: missingText, missingKeys: missingKeys };
       }
       // Minimum Outside Air and Occupancy-Based Ventilation (air handling units) on the very same units is ONE finding that names both
       // (Matt, 2026-11-11: "Min OA and CO2: merge into one row per unit"). When the two lists of units differ, the two stay separate.
@@ -26993,12 +27111,13 @@ function _a36DetModel(d, rowsById, picMap, loaded) {
             affected: pairDetail.affected,
             missing: pairDetail.missing,
             missingText: pairDetail.missingText,
+            missingKeys: pairDetail.missingKeys,
             keys: pairKeys,
           });
           return;
         }
         var one = seqDetail([s]);
-        add(g, 'seq', s.key, s.label, Math.min(s.qty, g.units.length), s.row, { affected: one.affected, missing: one.missing, missingText: one.missingText });
+        add(g, 'seq', s.key, s.label, Math.min(s.qty, g.units.length), s.row, { affected: one.affected, missing: one.missing, missingText: one.missingText, missingKeys: one.missingKeys });
       });
     });
     work.building.sensors.forEach(function (w) {
@@ -27791,7 +27910,7 @@ var A36_DET_POINT_GROUPS = ['Sensors', 'Commands', 'Status', 'Setpoints'];
 function _a36DetPointGroup(pointName) {
   var name = String(pointName || '');
   if (/set ?point|setpt/i.test(name)) return 'Setpoints';
-  if (/status|alarm|mode|proof|state|occupied|permissive/i.test(name)) return 'Status';
+  if (/status|alarm|mode\b|proof|state\b|occupied|permissive/i.test(name)) return 'Status';
   if (/command|enable|output|signal|valve|damper|stage|speed|position|actuator|reset/i.test(name)) return 'Commands';
   return 'Sensors';
 }
@@ -27997,6 +28116,12 @@ function _a36DetGlossaryTokens() {
     ['HWP', 'Hot water plant: the boilers and pumps that supply hot water.'],
     ['CO2', 'Carbon dioxide. A CO2 sensor shows how many people use a space.'],
     ['CFM', 'Cubic feet per minute: a measure of air flow.'],
+    ['DOAS', 'Dedicated outdoor air system: a unit that supplies only outdoor air to the building.'],
+    ['VRF', 'Variable refrigerant flow: a heating and cooling system with small indoor units that share one outdoor unit.'],
+    ['Variable speed drive', 'A motor controller that lets the building automation system set the speed of a fan or a pump, so it runs slower when less is needed.'],
+    ['psi', 'Pounds per square inch: a measure of water pressure.'],
+    ['in. w.c.', 'Inches of water column: a measure of small air pressures in ducts and rooms.'],
+    ['ppm', 'Parts per million: the unit of a CO2 reading.'],
     ['Effect', 'What a fix changes: Energy use (less energy) or Equipment control (better control).'],
     ['Score bands', 'High Readiness: ' + ASHRAE36_READINESS_HIGH_THRESHOLD + ' or more. Partial Readiness: ' + ASHRAE36_READINESS_PARTIAL_THRESHOLD + ' to ' + (ASHRAE36_READINESS_HIGH_THRESHOLD - 1) + '. Low Readiness: below ' + ASHRAE36_READINESS_PARTIAL_THRESHOLD + '.'],
   ];
@@ -28510,7 +28635,7 @@ function openASHRAE36ReportModal(projId, type) {
     '<div style="margin-bottom:14px">' +
     '<div style="font-size:13px;font-weight:600;color:var(--text);margin-bottom:4px">Report Date</div>' +
     '<input type="date" id="a36ReportDate" value="' +
-    new Date().toISOString().slice(0, 10) +
+    localISODate() + // the local date (the UTC date is tomorrow after 6 PM Central)
     '" style="padding:6px 10px;border:1px solid var(--s3);border-radius:6px;background:var(--s1);color:var(--text);font-size:13px;width:180px">' +
     '</div>';
 

@@ -103,7 +103,7 @@ vm.createContext(sb2);
 vm.runInContext(fnSrc(RE, '_rptA36ExistingPointsLine'), sb2);
 assert(/^1 existing control point needs programming only/.test(sb2._rptA36ExistingPointsLine(1)), '1 point (singular)');
 assert(/^181 existing control points need programming only/.test(sb2._rptA36ExistingPointsLine(181)), '181 points (plural)');
-assert(/programming price/.test(sb2._rptA36ExistingPointsLine(3)), 'says why there is no hardware cost');
+assert(/\(no device to install\)\.$/.test(sb2._rptA36ExistingPointsLine(3)), 'says there is no device to install');
 
 
 // ---- 5. round 3: plain names, one count, one step plan, one-time cost said twice ----------------------

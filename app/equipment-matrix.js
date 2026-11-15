@@ -1107,7 +1107,7 @@ var EM_POINT_MAP = [
     // 5eb5be06 Phase 1: added per-unit chiller evaporator leaving/supply temp patterns.
     patterns: [
       /chw supply temp/i,
-      /chilled water supply/i,
+      /chilled water (?:loop )?supply/i, // "Chilled Water Loop Supply Temperature"
       /chwst\b/i,
       /chiller\s+\d+\s+evaporator\s+leaving\s+temp/i, // "Chiller N Evaporator Leaving Temperature"
       /chiller\s+\d+\s+supply\s+water\s+temp/i, // "Chiller N Supply Water Temperature"
@@ -1127,7 +1127,7 @@ var EM_POINT_MAP = [
     // 5eb5be06 Phase 1: added per-unit chiller evaporator entering/return temp patterns.
     patterns: [
       /chw return temp/i,
-      /chilled water return/i,
+      /chilled water (?:loop )?return/i, // "Chilled Water Loop Return Temperature"
       /chwrt\b/i,
       /chiller\s+\d+\s+evaporator\s+entering\s+temp/i, // "Chiller N Evaporator Entering Temperature"
       /chiller\s+\d+\s+return\s+water\s+temp/i, // "Chiller N Return Water Temperature"
@@ -17822,6 +17822,8 @@ var EM_POINT_CATEGORIES = {
         /hw.?reset/i,
         // Round 3 plant mapping, 2026-11-14: the whole name must be the setpoint ("Hot Water Set Point Reset Signal" is a reset signal, not matched).
         /^hot.?water.?set.?point$/i,
+        // A hot water plant point named only "Heating Set Point" (120 F) is the water supply setpoint.
+        /^heating\s+set\s*point$/i,
         /^(?:active\s+)?system\s+set.?point(?:\s+ani)?$/i,
       ],
       aliases: [
@@ -18050,7 +18052,7 @@ var EM_POINT_CATEGORIES = {
       patterns: [
         /\bchwst\b/i,
         /chw.?supply.?temp/i,
-        /chilled.?water.?supply.?temp/i,
+        /chilled.?water.?(?:loop.?)?supply.?temp/i,
         /leaving.?chilled.?water/i,
         /\blchwt\b/i,
         /\blwt\b/i,
@@ -18093,7 +18095,7 @@ var EM_POINT_CATEGORIES = {
       patterns: [
         /\bchwrt\b/i,
         /chw.?return.?temp/i,
-        /chilled.?water.?return.?temp/i,
+        /chilled.?water.?(?:loop.?)?return.?temp/i,
         /entering.?chilled.?water/i,
         /\bechwt\b/i,
       ],
@@ -22099,6 +22101,8 @@ var EM_SZ_AIR_UNIT_SECTIONS = {
   ahu_freeze_prot: '5.18.11',
   ahu_rf_control: '5.18.10',
   demandCtrl: '5.18.6',
+  sfSpeed: '5.18.4',
+  sfSpeedCmd: '5.18.4',
   sat: '5.18.5',
   htgValve: '5.18.5',
   clgValve: '5.18.5',
@@ -22229,6 +22233,50 @@ function emElectricReheat(pointNames) {
   }
   return false;
 }
+// Round 7 R4 (2026-11-14): a pump drive (variable frequency drive) shows in the point names: a speed, VFD, drive, frequency or inverter point
+// (status, fault and run points of a drive included). A pump with only enable, hand-off-auto, amperage and runtime points shows no drive.
+function emPumpDriveEvidence(pointNames) {
+  for (var i = 0; i < pointNames.length; i++) {
+    // A fan point (a boiler burner "Fan Speed") is not a pump drive.
+    if (/fan/i.test(pointNames[i])) continue; // also the camelCase keys (boiler1FanSpeed)
+    if (/\b(vfd|vfds|vsd|drive|inverter|hz)\b|speed|frequency/i.test(pointNames[i])) return true;
+  }
+  return false;
+}
+// The number of pumps a plant row shows: the distinct pump numbers in its pump point names ("HWP-1", "Hot Water Pump 2",
+// "Pump P-1"). At least 1. One pump = one drive (one physical deficiency = one priced line).
+function emPumpCount(pointNames) {
+  var ids = {};
+  for (var i = 0; i < pointNames.length; i++) {
+    var m = /(?:\b(?:hhwp|hwp|chwp|pump)\s*-?\s*(?:p\s*-?\s*)?)(\d+[a-z]?)\b/i.exec(String(pointNames[i]));
+    if (m) ids[m[1].toLowerCase()] = true;
+  }
+  return Math.max(1, Object.keys(ids).length);
+}
+// Round 7 R1 (2026-11-14): the heating side of a zone terminal (vav, fpb), read from its point names.
+//   'device'  a heating device or heat source the terminal itself controls (valve, heat source, electric, stage, baseboard, hot water).
+//   'airOnly' the terminal is fed hot air (hot deck points, a heating air source, a heat request to its air source) and shows no device of its own.
+//   'none'    no heating-side point at all: a cooling-only terminal.
+// A setpoint is NOT evidence: cooling-only terminals carry "Setpoint / Heating ..." and "Zone Heating Setpoint" points too.
+// A terminal that shows no zone temperature point is 'device' (unknown, never a conclusion): a unit with a few alarm points proves nothing.
+function emTerminalHeating(pointNames) {
+  var seesZone = false;
+  for (var z = 0; z < pointNames.length && !seesZone; z++) seesZone = /(zone|room|space)\s*(air\s*)?temp/i.test(String(pointNames[z]).replace(/([a-z])([A-Z])/g, '$1 $2'));
+  if (!seesZone) return 'device';
+  var air = false;
+  for (var i = 0; i < pointNames.length; i++) {
+    // The names include the internal column keys (camelCase, "zoneHtgSetpoint"): read them as words.
+    var n = String(pointNames[i]).replace(/([a-z])([A-Z])/g, '$1 $2');
+    if (/set.?point|\bsp\b|\bstpt\b|adjust/i.test(n)) continue;
+    if (/hot.?deck|air source.*(heat|htg)|(heat|htg).*air source|primary air.*(heat|htg)/i.test(n)) {
+      air = true;
+      continue;
+    }
+    if (/heat|htg|\bscr\b|baseboard|radiant|hot.?water|\bhw\b|electric/i.test(n)) return 'device';
+  }
+  return air ? 'airOnly' : 'none';
+}
+
 // The one place that says a point category is not applicable to a unit on positive evidence (round 1b items 2, 5, 7; 2026-11-14):
 //   dampCmd / coldDampCmd / hotDampCmd: a zone damper position point or an airflow control loop (the damper actuator exists, positioned by
 //     the loop); reheatValve: electric (SCR) reheat, or a building with no hot water plant; clgValve: a building with no chilled water
@@ -22242,15 +22290,28 @@ function emNaEvidence(equipRow, category, catKey, rawNames, coilEv) {
     why = emDamperEvidence(rawNames);
     source = 'damperEvidence';
   } else if ((category === 'vav' || category === 'fpb') && catKey === 'reheatValve') {
+    var _htg = emTerminalHeating(rawNames);
     if (emElectricReheat(rawNames)) {
       why = 'electric (SCR) reheat, no hot water valve';
       source = 'reheatType';
+    } else if (_htg === 'none') {
+      why = 'no heating device on this terminal';
+      source = 'noHeat';
+    } else if (_htg === 'airOnly') {
+      why = 'heated by hot deck air';
+      source = 'hotDeck';
     } else {
       var bpR = emBuildingPlants(equipRow);
       if (bpR && !bpR.hw) {
         why = 'no hot water plant in this building';
         source = 'noPlant';
       }
+    }
+  } else if ((category === 'vav' || category === 'fpb') && catKey === 'dat') {
+    // Round 7 R1: the discharge air temperature sits at the reheat coil; a terminal with no heating-side point has no coil.
+    if (emTerminalHeating(rawNames) === 'none') {
+      why = 'no heating device on this terminal';
+      source = 'noHeat';
     }
   } else if ((category === 'ahu' || category === 'rtu') && catKey === 'clgValve') {
     var bpC = emBuildingPlants(equipRow);
@@ -22271,6 +22332,9 @@ function emNaEvidence(equipRow, category, catKey, rawNames, coilEv) {
 }
 // Point categories that a source of N/A below counts as satisfied for a sequence that needs them (emComputeSequenceReadiness).
 var EM_NA_SATISFIES_SEQUENCE = { coilType: true, noPlant: true, reheatType: true, damperEvidence: true };
+// A source of N/A below makes the sequence that needs the category N/A for the unit: a terminal with no heating device (or fed hot deck air)
+// has no reheat to control (round 7 R1). The other sources above only count the category as satisfied.
+var EM_NA_ENDS_SEQUENCE = { noHeat: true, hotDeck: true };
 
 function emSingleZoneStagePoints(pointNames) {
   var out = { cool: false, heat: false };
@@ -22543,6 +22607,8 @@ function emComputeCompliance(equipRow, configFlags, customMappings) {
     naPoints: naPoints,
     naEvidence: naEv,
     singleZone: _szUnit, // single-zone air handler or rooftop unit (emIsSingleZoneAirUnit); pricing reads it for the fan drive
+    pumpDrive: category === 'hwp' && (!!coveredKeys.hwPumpSpeed || emPumpDriveEvidence(rawNames)), // the plant shows a pump drive point (round 7 R4); pricing reads it for the pump drive
+    pumpCount: category === 'hwp' ? emPumpCount(rawNames) : 0, // pumps on the plant row; one pump drive each
     spaceTypeExemptCovered: spaceTypeExemptCovered,
     coveragePct: coveragePct,
     totalRequired: totalRequired,
@@ -23722,6 +23788,31 @@ function emComputeSequenceReadiness(equipRow, complianceData) {
         keyCatsMissing: false,
         spaceTypeNA: true,
         naReason: 'Not needed: space type exemption (zone CO2 not required)',
+      };
+      continue;
+    }
+
+    // Round 7 R1: a required category that is N/A because the unit has no part this sequence controls (no heating device, hot deck air)
+    // ends the sequence for the unit; it is not matched and not missing. Same pattern as the space type exemption above.
+    var _naEndEv = (complianceData && complianceData.naEvidence) || {};
+    var _seqEndNA = false;
+    var _seqEndSrc = '';
+    for (var _eni = 0; _eni < requiredCats.length; _eni++) {
+      if (!coveredSet[requiredCats[_eni]] && _naEndEv[requiredCats[_eni]] && EM_NA_ENDS_SEQUENCE[_naEndEv[requiredCats[_eni]].source]) {
+        _seqEndNA = true;
+        _seqEndSrc = _naEndEv[requiredCats[_eni]].source;
+        break;
+      }
+    }
+    if (_seqEndNA) {
+      result[seq.key] = {
+        status: 'na',
+        label: seq.label,
+        ashrae36: seq.ashrae36,
+        presentCats: [],
+        missingCats: [],
+        keyCatsMissing: false,
+        naReason: _seqEndSrc === 'hotDeck' ? 'Not needed: hot deck air heats this terminal' : 'Not needed: this terminal has no heating device to control',
       };
       continue;
     }

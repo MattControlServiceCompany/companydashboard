@@ -4,6 +4,15 @@
 const fs = require('fs');
 const path = require('path');
 
+// Playwright saves downloads in the OS temp folder (TMP/TEMP). On Windows, headless Chromium 147 cancels every download when
+// that path has forward slashes ("C:/Users/..."): Download Word/PDF tests then fail with "download.saveAs: canceled".
+// Normalize the path once here (every test loads this file before it starts a browser).
+if (process.platform === 'win32') {
+  ['TMP', 'TEMP'].forEach((k) => {
+    if (process.env[k]) process.env[k] = path.resolve(process.env[k]);
+  });
+}
+
 function tmpRoot() {
   const r = process.env.CH_TMP_ROOT;
   if (!r || !String(r).trim()) {

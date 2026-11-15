@@ -142,6 +142,7 @@ const POINT_KEY_INSTALL_CLASS = {
   oaFlow: 'flowBtuMeter',
   enable: 'currentSwitchStatusRelay', // heater enable relay, 1.0 h (covering estimate, Manager 2026-11-14)
   sfSpeedCmd: 'vfdIntegration', // supply fan variable speed drive, 5.0 h (round 5 C5, Manager 2026-11-14)
+  hwPumpSpeed: 'vfdIntegration', // hot water pump variable speed drive, 5.0 h (round 7 R4, Manager 2026-11-14)
 };
 
 /* Computed default install-hours per point key — resolved once so buildCatalogRows/every caller
@@ -516,7 +517,9 @@ const SEQUENCE_BLOCKING_SENSORS = {
   vav_dcv: ['co2_zone'],
   hwp_supply_reset: ['hwst', 'hwSetpoint'],
   chwp_supply_reset: ['chwst', 'chwSetpoint'],
-  hwp_pump_dp_reset: ['hwdp'],
+  // hwPumpSpeed (round 7 R4, Manager 2026-11-14): a constant-speed pump needs a drive before the differential pressure reset can run;
+  // the drive row is $0 I/O where the plant shows pump drive points.
+  hwp_pump_dp_reset: ['hwdp', 'hwPumpSpeed'],
   chwp_pump_dp_reset: ['chwdp'],
   ahu_rf_control: [],
   vav_zone_temp: ['coolSP', 'htgSP'],
@@ -2114,7 +2117,19 @@ const PRICE_POINT_MAP = {
   hwSetpoint: { defaultSku: null, qtyRule: 'perUnit', flags: ['ioOnly'], note: 'Controller I/O' },
   hwPumpStatus: { defaultSku: null, qtyRule: 'perUnit', flags: ['ioOnly'], note: 'Controller I/O' },
   hwPumpEnable: { defaultSku: null, qtyRule: 'perUnit', flags: ['ioOnly'], note: 'Controller I/O' },
-  hwPumpSpeed: { defaultSku: null, qtyRule: 'perUnit', flags: ['ioOnly'], note: 'Controller I/O' },
+  // Hot water pump drive (round 7 R4, 2026-11-14): a plant that shows no pump drive point (no speed, VFD status or VFD fault point)
+  // has constant-speed pumps; the differential pressure reset needs a variable speed drive. Same rule as the supply fan drive: one
+  // priced drive per pump (compliance.pumpCount; PRICE_POINT_MAP_DRIVE_IO, below, covers a plant that already has drive points: $0 controller point).
+  hwPumpSpeed: {
+    defaultSku: null,
+    qtyRule: 'perUnit',
+    flags: ['noSku'],
+    coverPrice: 3000, // covering estimate, Manager 2026-11-14 (variable speed drive for a 1-5 hp pump; typical $1,200-$2,800, high side)
+    note: 'Hot water pump variable speed drive — covering estimate $3,000 (typical $1,200-$2,800); a typed price replaces it',
+    whyNeeded:
+      'Lets the control system command and read the pump speed, so the pump can follow the ASHRAE 36 differential pressure reset sequence.',
+    g36Section: '',
+  },
   chillerStatus: { defaultSku: null, qtyRule: 'perUnit', flags: ['ioOnly'], note: 'Controller I/O' },
   chillerEnable: { defaultSku: null, qtyRule: 'perUnit', flags: ['ioOnly'], note: 'Controller I/O' },
   chwSetpoint: { defaultSku: null, qtyRule: 'perUnit', flags: ['ioOnly'], note: 'Controller I/O' },
@@ -2156,7 +2171,7 @@ const PRICE_POINT_MAP = {
   // constant-speed fan. ASHRAE 36 speed control needs a variable speed drive (VFD or ECM motor controller).
   // One drive gives both the command and the speed reading, so only sfSpeedCmd carries the price; sfSpeed stays
   // $0 (one drive = one priced line). A unit that already reads its fan speed has the drive: its gap is I/O only
-  // (PRICE_POINT_MAP_SF_SPEED_CMD_IO below), never priced.
+  // (PRICE_POINT_MAP_DRIVE_IO below), never priced.
   sfSpeedCmd: {
     defaultSku: null,
     qtyRule: 'perUnit',
@@ -2179,9 +2194,9 @@ const PRICE_POINT_MAP = {
   },
 };
 
-// A unit whose supply fan speed is already read (sfSpeed covered) has a drive: its sfSpeedCmd gap is a controller
-// point only, $0 (round 5 C5). Used by buildCatalogRows (general case, key sfSpeedCmd).
-const PRICE_POINT_MAP_SF_SPEED_CMD_IO = { defaultSku: null, qtyRule: 'perUnit', flags: ['ioOnly'], note: 'Controller I/O' };
+// A unit that already has the drive (fan: sfSpeed covered; pump: pump drive points shown) has a controller point gap only, $0
+// (round 5 C5, round 7 R4). Used by buildCatalogRows for the keys of _pricingDriveIsPriced.
+const PRICE_POINT_MAP_DRIVE_IO = { defaultSku: null, qtyRule: 'perUnit', flags: ['ioOnly'], note: 'Controller I/O' };
 
 /* ── CSV parser (spec §7)
    Handles: SKU, List Price, Net, Contract, Category, Short Description, Note
@@ -2833,15 +2848,16 @@ function buildCatalogRows(projId, buildingNames) {
         // Round 5 C5: the supply fan drive is priced only on a single-zone unit with no fan speed reading (a
         // constant-speed fan). A unit that reads its fan speed has the drive; a multiple-zone VAV unit cannot run
         // without one, so a missing speed point there is a controller point only. Both: $0 (own bucket).
-        if (effectiveKey === 'sfSpeedCmd' && (_pricingUnitCoversPoint(eq, 'sfSpeed') || !(eq.compliance && eq.compliance.singleZone))) {
-          var sfIoKey = 'sfSpeedCmd__io__' + cat;
+        // Round 7 R4: the hot water pump drive follows the same rule (priced only where the plant shows no pump drive point).
+        if ((effectiveKey === 'sfSpeedCmd' || effectiveKey === 'hwPumpSpeed') && !_pricingDriveIsPriced(eq, effectiveKey)) {
+          var sfIoKey = effectiveKey + '__io__' + cat;
           if (!hardwareGaps[sfIoKey]) {
             hardwareGaps[sfIoKey] = {
               pointKey: effectiveKey,
               equipType: cat,
               catLabel: catLabel,
               count: 0,
-              mapEntry: PRICE_POINT_MAP_SF_SPEED_CMD_IO,
+              mapEntry: PRICE_POINT_MAP_DRIVE_IO,
             };
           }
           hardwareGaps[sfIoKey].count++;
@@ -2859,7 +2875,8 @@ function buildCatalogRows(projId, buildingNames) {
             mapEntry: mapEntry,
           };
         }
-        hardwareGaps[gKey].count++;
+        // A priced pump drive: one per pump on the plant row (compliance.pumpCount, emPumpCount).
+        hardwareGaps[gKey].count += effectiveKey === 'hwPumpSpeed' && eq.compliance && eq.compliance.pumpCount > 1 ? eq.compliance.pumpCount : 1;
       });
     });
 
@@ -2896,6 +2913,9 @@ function buildCatalogRows(projId, buildingNames) {
         // equipment count (e.g. 2 AHUs each missing both dampers reads as count=4, not "4 of 2
         // AHUs"). State it directly as an actuator count instead.
         eqLabel = gap.count + ' damper actuator' + (gap.count !== 1 ? 's' : '');
+      } else if (gap.pointKey === 'hwPumpSpeed' && gap.mapEntry !== PRICE_POINT_MAP_DRIVE_IO) {
+        // A priced pump drive counts pumps (one drive per pump), not plants: "2 hot water pumps", never "2 of 1 Hot Water Plant".
+        eqLabel = gap.count + ' hot water pump' + (gap.count !== 1 ? 's' : '');
       } else if (gap.equipType === 'building') {
         eqLabel = '1 building';
       } else if (gap.count === totalForCat) {
@@ -3049,7 +3069,7 @@ function buildCatalogRows(projId, buildingNames) {
           }
           // The fan drive blocks only where it is a priced device (single-zone unit, no fan speed reading); elsewhere
           // the missing speed command is a $0 controller point and the sequence is programming only (round 5 C5).
-          if (sk === 'sfSpeedCmd' && (_pricingUnitCoversPoint(eq, 'sfSpeed') || !(eq.compliance && eq.compliance.singleZone))) return false;
+          if ((sk === 'sfSpeedCmd' || sk === 'hwPumpSpeed') && !_pricingDriveIsPriced(eq, sk)) return false;
           return !!eqMissing[sk];
         });
         var group = needsHw ? 'gap' : 'ready';
@@ -3188,13 +3208,52 @@ function buildSensorInvestigationRows(projId) {
   if (typeof emLoadMatrix !== 'function' || typeof emComputeSensorDeficiencyInventory !== 'function') return [];
   var matData = emLoadMatrix(projId);
   if (!matData || !matData.rows || !matData.rows.length) return [];
+  // Round 7 R2 (2026-11-14): an offline unit (emIsUnitOffline, the one rule) reads "?" on every point, so its sensors are not each
+  // suspect: one physical deficiency is one priced line, "Check an offline unit (power and network)", at the same investigation
+  // hour. A unit that is online with a bad reading keeps its investigation row.
+  var offlineRows = matData.rows.filter(function (r) {
+    return typeof emIsUnitOffline === 'function' && emIsUnitOffline(r);
+  });
+  var offlineIds = {};
+  offlineRows.forEach(function (r) {
+    offlineIds[r.id] = true;
+  });
   var inventory = emComputeSensorDeficiencyInventory(matData.rows);
-  if (!inventory || !inventory.rows.length) return [];
+  var invRows = ((inventory && inventory.rows) || []).filter(function (d) {
+    return !offlineIds[d.id];
+  });
+  if (!invRows.length && !offlineRows.length) return [];
 
   var cfg = _pricingGetConfig();
   var hourlyRate = cfg.hourlyRate || COST_LABOR_RATE_DEFAULT;
 
-  return inventory.rows.map(function (d, idx) {
+  var offlineLines = offlineRows.map(function (r, idx) {
+    return {
+      id: 'sinv_offline_' + (r.id || 'row') + '_' + idx,
+      building: r.building || '',
+      item: 'Offline Unit Check',
+      type: 'Investigation',
+      equipment: (r.equipName || 'Equipment') + ' (offline)',
+      qty: 1,
+      sku: null,
+      engReview: false,
+      noSku: false,
+      ioOnly: false,
+      unitPrice: hourlyRate,
+      listPrice: null,
+      netPrice: null,
+      contractPrice: null,
+      lineTotal: parseFloat((1 * hourlyRate).toFixed(2)),
+      note: 'The unit did not report any readings during the review (offline).',
+      phase: 2,
+      hrsPerUnit: 1,
+      isSensorInvestigation: true,
+      isOfflineCheck: true,
+      sensorDeficiencyStatus: 'offline',
+    };
+  });
+
+  return offlineLines.concat(invRows.map(function (d, idx) {
     var statusLabel = d.status === 'failed' ? 'failed reading' : 'suspect reading';
     return {
       id: 'sinv_' + (d.id || 'row') + '_' + d.col + '_' + idx,
@@ -3226,7 +3285,7 @@ function buildSensorInvestigationRows(projId) {
       isSensorInvestigation: true,
       sensorDeficiencyStatus: d.status,
     };
-  });
+  }));
 }
 
 /* ── buildComplianceRows(projId) ────────────────────────────────────────────
@@ -4931,6 +4990,18 @@ function _pricingRecommendedRowsAll(projId) {
 function _pricingUnitCoversPoint(eq, categoryKey) {
   var cps = eq && eq.compliance && eq.compliance.coveredPoints ? eq.compliance.coveredPoints : [];
   for (var i = 0; i < cps.length; i++) if (cps[i].categoryKey === categoryKey) return true;
+  return false;
+}
+// The one rule for a variable speed drive: is the missing speed point of this unit a priced drive (true) or only a controller point, $0 (false)?
+//  Supply fan (sfSpeed, sfSpeedCmd; round 5 C5): priced on a single-zone unit that reads no fan speed (a constant-speed fan); a unit that
+//    reads its fan speed has the drive, and a multiple-zone VAV unit cannot run without one.
+//  Hot water pump (hwPumpSpeed; round 7 R4): priced where the plant shows no pump drive point (compliance.pumpDrive, emPumpDriveEvidence).
+// buildCatalogRows prices by this rule; the audit text ("Install a variable speed drive on ...") reads it, so the text says "drive" exactly
+// where the price is a drive.
+function _pricingDriveIsPriced(eq, pointKey) {
+  var comp = eq && eq.compliance;
+  if (pointKey === 'sfSpeed' || pointKey === 'sfSpeedCmd') return !!(comp && comp.singleZone) && !_pricingUnitCoversPoint(eq, 'sfSpeed');
+  if (pointKey === 'hwPumpSpeed') return !(comp && comp.pumpDrive);
   return false;
 }
 function buildOptionalPointRows(projId) {

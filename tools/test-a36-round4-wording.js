@@ -73,7 +73,7 @@ check(/bits\[0\] \+ ' for ' \+ where\.replace/.test(RE), 'A6. a reading and a sh
 check(!/Alarms and reports that show/.test(RE) && /'Better comfort and efficiency from '/.test(RE), 'P1. Recommended "What you get" makes no alarm or report claim');
 
 // P2
-check(/_a36DetJoin\(names\) \+ '\.'/.test(RE) && /replace\(\/\^Check \/, 'check '\)/.test(RE), 'P2. Order of Work joins with "and" and lower-cases a later "Check"');
+check(/parts\.push\(_a36DetJoin\(newNames\)\)/.test(RE) && /replace\(\/\^Check \/, 'check '\)/.test(RE), 'P2. Order of Work joins with "and" and lower-cases a later "Check"');
 const names = ['Duct Static Pressure Reset', 'Check a zone air temperature sensor that reads wrong', 'Check a discharge airflow sensor that reads wrong'].map((l, gi) => (gi > 0 ? l.replace(/^Check /, 'check ') : l));
 check(sb._a36DetJoin(names) === 'Duct Static Pressure Reset, check a zone air temperature sensor that reads wrong and check a discharge airflow sensor that reads wrong', 'P2. joined text reads as one sentence');
 

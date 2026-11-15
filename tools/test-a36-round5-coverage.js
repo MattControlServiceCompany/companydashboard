@@ -63,7 +63,7 @@ check(em.emSingleZoneSection('ahu_dsp_reset') === '', 'C6. duct static pressure 
 const RE = read('app/report-engine.js');
 check(/szGroup && emSingleZoneSection\(k\)/.test(RE) && /szGroup && emSingleZoneSection\(key\)/.test(RE), 'C6. the Detailed audit takes the section of a single-zone group from emSingleZoneSection (sequence and point findings)');
 
-check(/singleZone: typeof emIsSingleZoneAirUnit === 'function' && emIsSingleZoneAirUnit\(/.test(RE) && /var szGroup = !!\(g && g\.singleZone\)/.test(RE), 'C6. a group is single-zone from the one rule emIsSingleZoneAirUnit (the equipment result has no subtype; the matrix row has)');
+check(/function _a36DetIsSingleZoneUnit\(eq, row\) \{\s+return typeof emIsSingleZoneAirUnit === 'function' && emIsSingleZoneAirUnit\(/.test(RE) && /singleZone: _a36DetIsSingleZoneUnit\(eq, row\)/.test(RE) && /var szGroup = !!\(g && g\.singleZone\)/.test(RE), 'C6. a group is single-zone from the one rule emIsSingleZoneAirUnit (the equipment result has no subtype; the matrix row has)');
 
 // ---------- pricing-estimator sandbox (C1, C5) ----------
 const PE = read('app/pricing-estimator.js');
