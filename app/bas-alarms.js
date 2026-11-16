@@ -480,6 +480,10 @@ function baRenderView(projId) {
       data.rows.length +
       ' rows &bull; ' +
       new Date(data.importedAt).toLocaleDateString() +
+      (function () {
+        var d = Math.floor((Date.now() - new Date(data.importedAt).getTime()) / 86400000);
+        return d >= 2 ? ' (' + d + ' days ago)' : '';
+      })() +
       '</span>'
     : '';
 
@@ -641,8 +645,8 @@ function baRenderLog(body, rows) {
     { key: 'source', label: 'Source', minW: 80 },
     { key: 'description', label: 'Description', minW: 120 },
     { key: 'state', label: 'State', minW: 70 },
-    { key: 'duration', label: 'Duration', minW: 70 },
-    { key: 'acknowledged', label: 'Acknowledged', minW: 100 },
+    { key: 'duration', label: 'Duration', minW: 70, hint: 'How long the alarm stayed off normal. Blank when the export has no duration for the row.' },
+    { key: 'acknowledged', label: 'Acknowledgement', minW: 100, hint: 'Whether anyone acknowledged the alarm, and who.' },
   ];
 
   var theadHtml =
@@ -659,6 +663,7 @@ function baRenderLog(body, rows) {
           c.key +
           '\')" title="Sort by ' +
           c.label +
+          (c.hint ? '. ' + c.hint : '') +
           '">' +
           c.label +
           arrow +

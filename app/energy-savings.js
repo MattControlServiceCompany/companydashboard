@@ -955,14 +955,14 @@ function _renderSavingsContent(wrap, projId) {
         const dollar = projSavings > 0 ? '$' + Math.round(projSavings).toLocaleString() : '—';
         const selOpts = bldgOpts.replace(`value="${m.bldgId}"`, `value="${m.bldgId}" selected`);
         const srcBadge = m.source
-          ? `<span style="font-size:9px;padding:1px 5px;border-radius:4px;background:var(--accent-dim);color:var(--accent);font-weight:600;white-space:nowrap">${m.source === 'solar' ? '☀️ Solar' : m.source}</span>`
+          ? `<span title="${m.source === 'solar' ? 'Quantities came from the Solar calculator' : m.source === 'bas' ? 'Quantities came from the BAS Savings calculator' : 'Source: ' + _escHtml(m.source)}" style="font-size:9px;padding:1px 5px;border-radius:4px;background:var(--accent-dim);color:var(--accent);font-weight:600;white-space:nowrap">${m.source === 'solar' ? '☀️ Solar' : m.source === 'bas' ? 'BAS calc' : _escHtml(m.source)}</span>`
           : '';
         return `<tr id="sv-pg-msr-row-${mid}">
               <td style="text-align:center;vertical-align:top;padding-top:6px"><span class="sv-detail-toggle" id="sv-dtog-${mid}" onclick="svToggleDetail('${mid}')">▶</span></td>
               <td></td>
               <td style="text-align:center"><input type="checkbox" class="sv-sel-cb" ${m.selected ? 'checked' : ''} onchange="svUpdateMsrSel('${mid}',this.checked)"></td>
-              <td><input class="sv-msr-txt" style="width:44px;text-align:center" placeholder="#" value="${_escHtml(m.msrNum)}" onchange="svUpdateMsrField('${mid}','msrNum',this.value)" onfocusout="svAutoSave()"></td>
-              <td><select class="sv-msr-sel" onchange="svUpdateMsrField('${mid}','bldgId',this.value)">${selOpts}</select></td>
+              <td><input class="sv-msr-txt" style="width:44px;text-align:center" placeholder="–" title="Measure number (optional)" value="${_escHtml(m.msrNum)}" onchange="svUpdateMsrField('${mid}','msrNum',this.value)" onfocusout="svAutoSave()"></td>
+              <td><select class="sv-msr-sel" style="min-width:150px" title="${_escHtml((bldgs.find((b) => String(b.id) === String(m.bldgId)) || {}).name || '')}" onchange="svUpdateMsrField('${mid}','bldgId',this.value)">${selOpts}</select></td>
               <td><input class="sv-num-inp sv-sqft-inp" type="number" style="width:68px" placeholder="0" value="${m.sqft || ''}" onchange="svUpdateMsrField('${mid}','sqft',parseFloat(this.value)||0)" onfocusout="svAutoSave()"></td>
               <td><div style="display:flex;align-items:center;gap:4px"><input class="sv-msr-txt" style="flex:1;min-width:130px" placeholder="e.g. BAS Setpoint Optimization 74/70°F" value="${_escHtml(m.desc)}" onchange="svUpdateMsrField('${mid}','desc',this.value)" onfocusout="svAutoSave()"><button class="btn btn-ghost btn-sm" style="padding:3px 6px;font-size:11px;flex-shrink:0" onclick="openCalcForMeasure(${pid},'${mid}','${wrap.id === 'ptab-savings' ? 'ptab' : 'sv'}')" title="Open calc template for this measure">📐</button>${srcBadge}</div></td>
               ${rateCell(mid, 'kwhSummer', '0.0001', r)}${rateCell(mid, 'kwhWinter', '0.0001', r)}
@@ -1107,10 +1107,10 @@ function _renderSavingsContent(wrap, projId) {
       : '';
   const summaryHtml = sc
     ? `<div class="bl-result">
-          <div class="bl-title">💡 Selected Measures — ${p.name} (${sc} measure${sc !== 1 ? 's' : ''})</div>
+          <div class="bl-title">💡 Selected Measures — ${p.name} (${sc} measure${sc !== 1 ? 's' : ''}${grandTotal > 0 || annKwh || annGas || annPropane ? '' : ' — no savings entered yet'})</div>
           <div class="bl-grid">
             <div class="bl-item"><div class="bl-lbl">Annual kWh Savings</div><div class="bl-val" style="color:var(--accent)">${Math.round(annKwh).toLocaleString()}<span class="bl-unit"> kWh/yr</span></div></div>
-            <div class="bl-item"><div class="bl-lbl">Avg kW Reduction</div><div class="bl-val" style="color:var(--amber)">${annKwAvg.toFixed(1)}<span class="bl-unit"> kW avg</span></div></div>
+            <div class="bl-item"><div class="bl-lbl">Avg kW Reduction</div><div class="bl-val" style="color:var(--amber)">${annKwAvg > 0 ? annKwAvg.toFixed(1) : '—'}<span class="bl-unit"> ${annKwAvg > 0 ? 'kW avg' : 'no kW entered'}</span></div></div>
             <div class="bl-item"><div class="bl-lbl">Annual Gas Savings</div><div class="bl-val" style="color:var(--teal)">${Math.round(annGas).toLocaleString()}<span class="bl-unit"> Therms/yr</span></div></div>
             <div class="bl-item"><div class="bl-lbl">Annual Propane Savings</div><div class="bl-val" style="color:var(--purple,#a855f7)">${Math.round(annPropane).toLocaleString()}<span class="bl-unit"> Gal/yr</span></div></div>
             <div class="bl-item" style="grid-column:1/-1">
@@ -1125,7 +1125,7 @@ function _renderSavingsContent(wrap, projId) {
 
   wrap.innerHTML = `<div style="padding:16px;overflow-y:auto;flex:1;min-height:0;display:flex;flex-direction:column;gap:16px">
 
-          <div class="card">
+          <div class="card" style="flex-shrink:0">
             <div class="card-hdr" style="flex-wrap:wrap;gap:8px">
               <span class="card-title">💡 Energy Savings Measures</span>
               <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-left:auto">
@@ -1137,15 +1137,16 @@ function _renderSavingsContent(wrap, projId) {
                 ${typeof tableZoomControlHTML === 'function' ? tableZoomControlHTML('sv-matrix-wrap-' + projId, 'en_sv_matrix_zoom_' + projId, 'sv-matrix-zoom-lbl-' + projId) : ''}
               </div>
             </div>
-            <div id="sv-matrix-wrap-${projId}" style="overflow-x:auto">
+            <div style="padding:6px 14px 8px;font-size:12px;color:var(--text2);line-height:1.4">Projected savings from the planned measures below (estimates, not measured results). Rate columns: S = summer, W = winter, in dollars per kWh, kW, therm or gallon. Click a column group heading to show its 12 months.</div>
+            <div id="sv-matrix-wrap-${projId}" style="${hasMeasures ? 'overflow-x:auto' : 'display:none'}">
               <table class="dtbl sv-matrix-tbl">
                 <thead>
                   <tr>
                     <th style="width:20px"></th><th style="width:28px"></th><th style="width:28px">✓</th><th style="width:44px" title="Measure number">Msr #</th>
-                    <th style="min-width:130px">Building</th><th style="width:74px">Sq Ft</th><th style="min-width:190px">Measure Description</th>
-                    <th style="width:54px;font-size:9px;text-align:center" title="kWh rate, summer ($/kWh)">kWh $/S</th><th style="width:54px;font-size:9px;text-align:center" title="kWh rate, winter ($/kWh)">kWh $/W</th>
-                    <th style="width:54px;font-size:9px;text-align:center" title="Demand rate, summer ($/kW)">kW $/S</th><th style="width:54px;font-size:9px;text-align:center" title="Demand rate, winter ($/kW)">kW $/W</th>
-                    <th style="width:54px;font-size:9px;text-align:center" title="Gas rate ($/therm)">$/Therm</th><th style="width:54px;font-size:9px;text-align:center" title="Propane rate ($/gallon)">$/Gallon</th>
+                    <th style="min-width:170px">Building</th><th style="width:74px">Sq Ft</th><th style="min-width:190px">Measure Description</th>
+                    <th style="width:54px;font-size:10px;text-align:center" title="kWh rate, summer ($/kWh)">kWh $/S</th><th style="width:54px;font-size:10px;text-align:center" title="kWh rate, winter ($/kWh)">kWh $/W</th>
+                    <th style="width:54px;font-size:10px;text-align:center" title="Demand rate, summer ($/kW)">kW $/S</th><th style="width:54px;font-size:10px;text-align:center" title="Demand rate, winter ($/kW)">kW $/W</th>
+                    <th style="width:54px;font-size:10px;text-align:center" title="Gas rate ($/therm)">$/Therm</th><th style="width:54px;font-size:10px;text-align:center" title="Propane rate ($/gallon)">$/Gallon</th>
                     ${grpHdr('kwh', '⚡ kWh Savings', 13, 'rgba(59,130,246,0.07)')}
                     ${grpHdr('kw', '⚡ kW Savings', 13, 'rgba(245,158,11,0.07)')}
                     ${grpHdr('gas', '🔥 Gas Therms', 13, 'rgba(20,184,166,0.07)')}

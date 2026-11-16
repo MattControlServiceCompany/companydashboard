@@ -51,7 +51,9 @@ function _getOrInitBudgetData(projId) {
 }
 
 /* ── Fiscal year helpers ── */
-function _fyLabel(year) {
+// A fiscal year that starts in January is the calendar year ('FY 2026'); any other start spans two years ('FY 2026-27').
+function _fyLabel(year, fyStart) {
+  if (parseInt(fyStart) === 1) return 'FY ' + year;
   return 'FY ' + year + '-' + String(year + 1).slice(2);
 }
 
@@ -207,7 +209,7 @@ function initBudgetTab(projId) {
 function _renderBudgetTab(projId, bd) {
   const year = _budgetSelYear[projId];
   const fyStart = bd.fiscalYearStart || '07';
-  const fyLabel = _fyLabel(year);
+  const fyLabel = _fyLabel(year, fyStart);
   const bldgs = getUDBldgs(projId);
 
   // Year options: current year ± 2
@@ -215,7 +217,7 @@ function _renderBudgetTab(projId, bd) {
   const fyMo = parseInt(fyStart);
   const curFyYear = now.getMonth() + 1 >= fyMo ? now.getFullYear() : now.getFullYear() - 1;
   const yearOptions = [curFyYear - 2, curFyYear - 1, curFyYear, curFyYear + 1]
-    .map((y) => `<option value="${y}"${y === year ? ' selected' : ''}>${_fyLabel(y)}</option>`)
+    .map((y) => `<option value="${y}"${y === year ? ' selected' : ''}>${_fyLabel(y, fyStart)}</option>`)
     .join('');
 
   // Get budget lines for this year
@@ -362,7 +364,7 @@ function _renderVarianceSection(projId, line, bd, bldgs) {
     projText = `<div style="margin-top:12px;padding:10px 14px;background:var(--s2);border-radius:6px;font-size:12px;color:var(--text2)">
       <strong style="color:${projection >= 0 ? 'var(--danger)' : 'var(--green)'}">Projection:</strong>
       At the current YTD pace (${ytdVariance >= 0 ? '+' : ''}${_fmtUSD(ytdVariance, '$0')} through ${monthsElapsed} month${monthsElapsed !== 1 ? 's' : ''}),
-      you are on track to end ${_fyLabel(line.year)} approximately
+      you are on track to end ${_fyLabel(line.year, bd.fiscalYearStart)} approximately
       <strong style="color:${projection >= 0 ? 'var(--danger)' : 'var(--green)'}">${projOverUnder}</strong>.
       <span style="color:var(--text3);font-size:11px;margin-left:4px" title="Straight-line projection: (YTD variance ÷ months elapsed) × 12. Does not account for seasonality.">(?)</span>
     </div>`;
@@ -410,7 +412,7 @@ function _renderVarianceSection(projId, line, bd, bldgs) {
   return `
     <div class="card" style="margin-bottom:16px">
       <div class="card-hdr" style="justify-content:space-between">
-        <span class="card-title">${_escHtml(commLabel)} Budget — ${_fyLabel(line.year)} · ${_escHtml(bldgName)}</span>
+        <span class="card-title">${_escHtml(commLabel)} Budget — ${_fyLabel(line.year, bd.fiscalYearStart)} · ${_escHtml(bldgName)}</span>
         <div style="display:flex;gap:6px;align-items:center">
           ${typeof tableZoomControlHTML === 'function' ? tableZoomControlHTML('budget-var-wrap-' + line.id, 'en_budget_var_zoom_' + line.id, 'budget-var-zoom-lbl-' + line.id) : ''}
           <button class="btn btn-ghost btn-sm" style="font-size:10px" onclick="_budgetExportCSV(${projId},'${line.id}')">Export CSV</button>
@@ -637,7 +639,7 @@ function renderBudgetKPICard(projId) {
     cardBorder = 'rgba(239,68,68,0.25)';
   }
 
-  const fyLabel = _fyLabel(year);
+  const fyLabel = _fyLabel(year, fyStart);
   const progressBar = Math.round(progressPct);
   const progressColor = ytdVarPct <= 0 ? 'var(--green)' : ytdVarPct <= 5 ? 'var(--amber)' : 'var(--danger)';
   const nowYM = now.getFullYear() + '-' + String(now.getMonth() + 1).padStart(2, '0');
@@ -688,7 +690,7 @@ function _budgetShowModal(projId, line) {
   const yearOptions = [curFyYear - 2, curFyYear - 1, curFyYear, curFyYear + 1]
     .map(
       (y) =>
-        `<option value="${y}"${line && line.year === y ? ' selected' : y === curFyYear && !line ? ' selected' : ''}>${_fyLabel(y)}</option>`,
+        `<option value="${y}"${line && line.year === y ? ' selected' : y === curFyYear && !line ? ' selected' : ''}>${_fyLabel(y, fyStart)}</option>`,
     )
     .join('');
   const commodities = ['electric', 'gas', 'propane', 'water', 'sewer', 'all'];
@@ -740,7 +742,7 @@ function _budgetShowModal(projId, line) {
     .sort((a, b) => b - a);
   const copyOption = priorYears.length
     ? `<div style="display:flex;align-items:center;gap:8px;margin-top:12px;padding-top:12px;border-top:1px solid var(--border)">
-        <button class="btn btn-ghost btn-sm" style="font-size:11px" onclick="_budgetCopyFromPrior(${projId})">Copy from ${_fyLabel(priorYears[0])} with adjustment:</button>
+        <button class="btn btn-ghost btn-sm" style="font-size:11px" onclick="_budgetCopyFromPrior(${projId})">Copy from ${_fyLabel(priorYears[0], fyStart)} with adjustment:</button>
         <select class="fi" id="bm-copy-adj" style="width:100px">
           <option value="0">Flat (0%)</option>
           <option value="1">+1%</option>
@@ -907,7 +909,7 @@ function _budgetSaveLine(projId) {
     if (idx >= 0) {
       bd.budgets[idx] = Object.assign(bd.budgets[idx], {
         year,
-        label: _fyLabel(year),
+        label: _fyLabel(year, bd.fiscalYearStart),
         scope,
         commodity,
         buildingId,
@@ -922,7 +924,7 @@ function _budgetSaveLine(projId) {
     bd.budgets.push({
       id: 'b' + Date.now(),
       year,
-      label: _fyLabel(year),
+      label: _fyLabel(year, bd.fiscalYearStart),
       scope,
       commodity,
       buildingId,
@@ -1042,7 +1044,7 @@ function _budgetExportCSV(projId, lineId) {
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
   a.href = url;
-  a.download = 'budget-' + line.commodity + '-' + _fyLabel(line.year).replace(' ', '') + '.csv';
+  a.download = 'budget-' + line.commodity + '-' + _fyLabel(line.year, bd.fiscalYearStart).replace(' ', '') + '.csv';
   a.click();
   setTimeout(() => URL.revokeObjectURL(url), 5000);
 }

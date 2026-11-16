@@ -4127,7 +4127,7 @@ function _pricingOptionalZoneCo2HTML(projId, rawRows) {
   var foot =
     '<tr><td style="' + tf + '" colspan="4">Hardware and installation</td><td style="' + tf + 'text-align:right">' + sensorQty +
     ' sensors</td><td style="' + tf + 'text-align:right">' + money(totals.phase1) + '</td></tr>' +
-    '<tr><td style="' + tf + '" colspan="5">Programming</td><td style="' + tf + 'text-align:right">' + money(totals.phase2) + '</td></tr>' +
+    '<tr><td style="' + tf + '" colspan="5">Programming' + (totals.phase2 ? '' : ' (this optional work has none)') + '</td><td style="' + tf + 'text-align:right">' + money(totals.phase2) + '</td></tr>' +
     '<tr><td style="' + tf + '" colspan="5">' + _escHtml(PRICING_OPTIONAL_ZONE_CO2_LABEL) + ' total (not in the totals above)</td>' +
     '<td style="' + tf + 'text-align:right">' + money(totals.grand) + '</td></tr>';
   return (
@@ -5492,10 +5492,10 @@ var _pricingBldgFilter = {}; // projId → building name or '' for All
    ─────────────────────────────────────────────────────────────────────────── */
 var PRICING_TBL_COLS = [
   { label: 'Incl', noSort: true, noHide: true, numeric: false, minWidth: 36 }, // 0
-  { label: 'Building', noSort: false, noHide: false, numeric: false, minWidth: 90 }, // 1
-  { label: 'Item', noSort: false, noHide: false, numeric: false, minWidth: 120 }, // 2
-  { label: 'Type', noSort: false, noHide: false, numeric: false, minWidth: 70 }, // 3
-  { label: 'Equipment', noSort: false, noHide: false, numeric: false, minWidth: 120 }, // 4 — widened for "(N blocked, N partial)" suffix (item 5a317ac7)
+  { label: 'Building', noSort: false, noHide: false, numeric: false, minWidth: 110 }, // 1
+  { label: 'Item', noSort: false, noHide: false, numeric: false, minWidth: 190 }, // 2
+  { label: 'Type', noSort: false, noHide: false, numeric: false, minWidth: 90 }, // 3
+  { label: 'Equipment', noSort: false, noHide: false, numeric: false, minWidth: 190 }, // 4 — widened for "(N blocked, N partial)" suffix (item 5a317ac7)
   { label: 'Quantity', noSort: false, noHide: false, numeric: true, minWidth: 40 }, // 5
   { label: 'SKU', noSort: false, noHide: false, numeric: false, minWidth: 100 }, // 6
   { label: 'List', noSort: false, noHide: false, numeric: true, minWidth: 70 }, // 7
@@ -5512,7 +5512,7 @@ var PRICING_TBL_COLS = [
     minWidth: 170, // 13 — Phase 5 savings-tier badge + (0ae36950) the $-savings-range chip moved here from Notes
     isImpactCol: true,
   },
-  { label: 'Notes', noSort: false, noHide: false, numeric: false, minWidth: 80 }, // 14
+  { label: 'Notes', noSort: false, noHide: false, numeric: false, minWidth: 150 }, // 14
 ];
 
 /* ── Apply labor overrides to a cloned row list ──────────────────────────── */
@@ -7877,13 +7877,24 @@ function _pricingRenderCondensedTab(projId, el, estimate, tier) {
     '<div class="ch-panel" style="display:flex;flex-direction:column;flex:1;min-height:0;overflow:hidden;height:100%">',
     toolbarHTML,
     '<div class="ch-panel-body" style="flex:1;min-height:220px;overflow:auto;padding-top:10px">',
-    _pricingGetShowHardware(projId) ? section('Hardware & Installation', agg.hw) : '',
+    _pricingGetShowHardware(projId)
+      ? section('Hardware & Installation', agg.hw)
+      : condWb.phase1 > 0
+        ? '<div style="margin:0 14px 10px;font-size:11px;color:var(--text2)">Hardware and installation (' + _pricingFmt(condWb.phase1) + ') is hidden. Use the Hardware &amp; Install button to show it.</div>'
+        : '',
     section('Programming', agg.lb),
     _pricingOptionalZoneCo2HTML(projId, _tierSplit.optional),
     emptyState,
     '</div>',
     '<div class="ch-panel-footer" style="display:flex;flex-wrap:wrap;gap:10px 20px;align-items:center;padding:10px 14px;background:var(--s1);border-top:2px solid var(--border2);flex-shrink:0">',
     _pricingTierLabelHTML(tier),
+    condWb.grand !== null && condWb.grand !== undefined
+      ? '<span style="font-size:12px;font-weight:700;color:var(--text2)">Hardware and installation:</span><span style="font-size:13px;font-weight:700;color:var(--text);font-variant-numeric:tabular-nums">' +
+        _pricingFmt(condWb.phase1) +
+        '</span><span style="font-size:12px;font-weight:700;color:var(--text2)">Programming:</span><span style="font-size:13px;font-weight:700;color:var(--text);font-variant-numeric:tabular-nums">' +
+        _pricingFmt(condWb.phase2) +
+        '</span>'
+      : '',
     '</div>',
     '</div>',
   ].join('');
@@ -10974,7 +10985,9 @@ function _pricingWorkbookPanelHTML(projId, wbSet) {
     projId +
     '" style="flex-shrink:0;padding:6px 14px;background:var(--s1);border-bottom:1px solid var(--border2)">' +
     '<summary style="font-size:11px;color:var(--text2);cursor:pointer">Pricing settings and how this total is built' +
-    (totals && totals.grand != null ? ' (' + _auditEstFmtWhole(totals.grand) + ')' : '') +
+    (totals && totals.grand != null
+      ? ' (hardware and installation ' + _auditEstFmtWhole(totals.phase1) + ' + programming ' + _auditEstFmtWhole(totals.phase2) + ' = ' + _auditEstFmtWhole(totals.grand) + ')'
+      : '') +
     '</summary>' +
     auditEstWorkbookPanelHTML(projId, { settings: wbSet, chain: wb ? wb.chain : [], tasks: tasks }, 'Labor by task') +
     '</details>'

@@ -2237,7 +2237,7 @@ function siteBuildSettingsModal() {
     '<div><div class="settings-row-label">Show Calculations</div><div class="settings-row-sub">Display a &#402; badge on computed values &mdash; click to see the formula</div></div>' +
     '<label style="display:flex;align-items:center;gap:8px;cursor:pointer"><input type="checkbox" ' +
     (uc.showCalcFormulas ? 'checked' : '') +
-    ' onchange="uiCustomToggleCalc(this.checked)"> On</label>' +
+    ' onchange="uiCustomToggleCalc(this.checked);this.nextSibling.nodeValue=this.checked?\' On\':\' Off\'">' + (uc.showCalcFormulas ? ' On' : ' Off') + '</label>' +
     '</div>' +
     '</div>' +
     '<div class="settings-section">' +
@@ -2246,13 +2246,13 @@ function siteBuildSettingsModal() {
     '<div><div class="settings-row-label">Show Tooltips</div><div class="settings-row-sub">Show contextual help bubbles on key areas of the app</div></div>' +
     '<label style="display:flex;align-items:center;gap:8px;cursor:pointer"><input type="checkbox" id="siteTooltipsChk" ' +
     (chGetSetting('showTooltips', true) ? 'checked' : '') +
-    ' onchange="chSetSetting(\'showTooltips\',this.checked)"> On</label>' +
+    ' onchange="chSetSetting(\'showTooltips\',this.checked);this.nextSibling.nodeValue=this.checked?\' On\':\' Off\'">' + (chGetSetting('showTooltips', true) ? ' On' : ' Off') + '</label>' +
     '</div>' +
     '<div class="settings-row">' +
     '<div><div class="settings-row-label">Show Quick Start Guide</div><div class="settings-row-sub">Display the step-by-step guide automatically on first visit</div></div>' +
     '<label style="display:flex;align-items:center;gap:8px;cursor:pointer"><input type="checkbox" id="siteQsChk" ' +
     (chGetSetting('showQuickStart', true) ? 'checked' : '') +
-    ' onchange="chSetSetting(\'showQuickStart\',this.checked)"> On</label>' +
+    ' onchange="chSetSetting(\'showQuickStart\',this.checked);this.nextSibling.nodeValue=this.checked?\' On\':\' Off\'">' + (chGetSetting('showQuickStart', true) ? ' On' : ' Off') + '</label>' +
     '</div>' +
     '<div class="settings-row">' +
     '<div><div class="settings-row-label">Reset Dismissed Tips</div><div class="settings-row-sub">Show all tips again even if you clicked &ldquo;don&rsquo;t show again&rdquo;</div></div>' +
