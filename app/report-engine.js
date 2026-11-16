@@ -15073,6 +15073,8 @@ function initUtilityTool() {
   renderUDProjList();
   renderUDDetail();
   _checkForVersionUpdate();
+  // Release push (Matt 2026-11-16): one Realtime socket (app/version-push.js) tells this tab at once that a release was announced.
+  if (window.chVersionPush) window.chVersionPush.start((v) => { if (v && v !== _loadedVersion()) _checkForVersionUpdate(); });
   // Issue e9f1157c round 2: the check above only fires once, right after page load,
   // when the loaded bundle and the live server were necessarily in sync (they were
   // just served together) — a mismatch can never be observed at that instant. The
@@ -15096,9 +15098,8 @@ function initUtilityTool() {
     if (Date.now() - _chVerLastCheck < _CH_VER_MIN_GAP_MS) return;
     _checkForVersionUpdate();
   };
-  // Matt 2026-11-16: "make the site load the newest version without any user action". A tab left open on screen gets no
-  // focus or page-change event, so a timer checks every 60 s (one 4 KB Range GET; no build credits) and swaps when safe.
-  setInterval(_verRecheck, _CH_VER_MIN_GAP_MS);
+  // Matt 2026-11-16: "make the site load the newest version without any user action". No polling timer: the release
+  // announces itself over the socket above; the checks below are the backup when the socket was down.
   document.addEventListener('visibilitychange', _verRecheck);
   window.addEventListener('focus', _verRecheck);
   // Focus moved into a frame of this page (a PDF view) is not "away": only another program or tab counts.
@@ -15138,7 +15139,7 @@ const _CH_VER_MIN_GAP_MS = 60 * 1000;
 /* Version check: ONE small GET of the first 4 KB of site-ui.js (Range request, no-store). CH_VERSION is on line 9 of
    that file, so it is the one source of truth for the live version. The version is compared with the version this tab
    loaded (RELEASE_NOTES[0].v). A HEAD ETag is not used: a local server gives the same ETag every time, so a stale tab
-   never saw an update. Runs on page load, on tab focus or visible, when the user leaves the window and on a page change (at least 60 s apart). */
+   never saw an update. Runs on page load, when a release is announced over the socket (app/version-push.js), on tab focus or visible, when the user leaves the window and on a page change (at least 60 s apart). */
 function _checkForVersionUpdate() {
   _chVerLastCheck = Date.now();
   fetch('site-ui.js', { cache: 'no-store', headers: { Range: 'bytes=0-4095' } })
@@ -15153,10 +15154,27 @@ function _checkForVersionUpdate() {
         _showVersionUpdateBanner(fetchedVer);
         _chPendingVer = fetchedVer;
         _updateWhenSafe();
+        _armPendingRetry();
       }
       localStorage.setItem('ch_last_seen_version', fetchedVer);
     })
     .catch(() => {});
+}
+
+/* A new version waits for a safe moment (user idle 30 s or away). One local timer, only while a version is pending, retries
+   then. No server call. */
+let _chPendingTimer = null;
+function _armPendingRetry() {
+  if (_chPendingTimer || !_chPendingVer) return;
+  const due = _chLastInputAt + _CH_IDLE_MS - Date.now();
+  _chPendingTimer = setTimeout(
+    () => {
+      _chPendingTimer = null;
+      _updateWhenSafe();
+      if (_chPendingVer && !_chSwap) _armPendingRetry();
+    },
+    due > 0 ? due + 50 : 5000,
+  );
 }
 
 /* ONE rule for "swapping to the new version now loses nothing": no queued or in-flight write, no unsaved extracted bills,

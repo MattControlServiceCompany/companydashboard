@@ -2507,6 +2507,10 @@ async function siteResetAllMeterTableSettings() {
    site-ui.js delegates to this array and should NOT maintain its own copy.
 */
 var RELEASE_NOTES = [
+  { v: 'v2026.11.16.309', date: '2026-11-16', title: 'New versions arrive by themselves',
+    items: [
+      { type: 'fix', text: 'An open tab now hears about a new version the moment it is released (one live connection), and changes to it when nobody has used the page for 30 seconds. The every-minute check is gone.' },
+    ] },
   { v: 'v2026.11.16.308', date: '2026-11-16', title: 'The site updates itself',
     items: [
       { type: 'fix', text: 'An open tab now checks for a new version every minute and changes to it by itself when nobody has used the page for 30 seconds, also while the tab stays on screen. Before, it checked only when you clicked into or out of the window or changed page.' },

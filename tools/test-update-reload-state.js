@@ -8,6 +8,7 @@
 // A fresh visit (no update) still shows What's New, as today.
 // Run: node tools/test-update-reload-state.js [screenshot.png]   (CH_TMP_ROOT must be set)
 const { launchBrowser } = require('./launch-browser.js');
+const { announce } = require('./announce-version.js');
 const { startServer, seed, SEED, appState, frameTools, PID } = require('./update-test-helpers.js');
 let pass = 0,
   fail = 0;
@@ -81,7 +82,8 @@ function eq(a, b, l) {
     const plain = await app().evaluate(appState);
     eq([plain.detail, plain.proj, plain.tab, plain.sub, plain.whatsNewOpen], [true, PID, 'eq-matrix', 'setpoints', false], 'plain reload: same place, dialog closed');
     // 5. Matt 2026-11-16: the tab is open on screen, has focus and nobody touches it: the new version arrives with no user
-    // action and no event (the 60 s timer finds it; 30 s with no input counts as away).
+    // action and no event: the release announces itself over the realtime socket (tools/announce-version.js); 30 s with no
+    // input counts as away. No timer polls site-ui.js.
     await markOld();
     srv.liveVer = 'v9999.01.01.2';
     const focusedIdle = await app().evaluate(() => {
@@ -89,7 +91,8 @@ function eq(a, b, l) {
       return document.hasFocus() && !document.hidden;
     });
     eq(focusedIdle, true, 'idle tab: visible and focused (no away event)');
-    eq(await waitSwap(80000), true, 'idle tab on screen: the timer finds the new version and the new frame takes its place with no user action');
+    await announce(new URL(srv.base).host, 'v9999.01.01.2');
+    eq(await waitSwap(15000), true, 'idle tab on screen: the broadcast reaches the tab and the new frame takes its place with no user action');
     eq(errs, [], 'no console or page errors');
   } finally {
     await ctx.close();

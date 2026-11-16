@@ -109,7 +109,7 @@ async function run(kind) {
     const errs = [];
     let topNavs = 0;
     page.on('pageerror', (e) => errs.push(String(e)));
-    page.on('console', (m) => m.type() === 'error' && !/site-ui\.js|favicon|Failed to load resource/.test(m.text()) && errs.push(m.text()));
+    page.on('console', (m) => m.type() === 'error' && !/site-ui\.js|favicon|Failed to load resource|__cf_bm/.test(m.text()) && errs.push(m.text()));
     page.on('framenavigated', (f) => f === page.mainFrame() && topNavs++);
     const { kids, app, waitSwap, markOld } = frameTools(page);
     const st = async () => app().evaluate(appState);

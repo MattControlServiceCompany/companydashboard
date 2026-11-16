@@ -621,6 +621,8 @@
   }
 
   window.CH_AUTH = {
+    SUPABASE_URL: SUPABASE_URL, // read by app/version-push.js (Realtime socket)
+    SUPABASE_ANON_KEY: SUPABASE_ANON_KEY,
     needsSignIn: needsSignIn,
     getToken: getToken,
     getTokenInteractive: getTokenInteractive,
