@@ -16479,6 +16479,29 @@ var ASHRAE36_SEQUENCE_PLAIN = {
 };
 
 /**
+ * ASHRAE36_SEQUENCE_EXEC_PHRASE: one short phrase per sequence key for the Key Findings of the Detailed Executive Summary. It finishes the
+ * sentence "N units ...": many = the verb phrase for 2 or more units, one = the same phrase for exactly 1 unit. Occupancy-based
+ * ventilation (demandCtrl, vav_dcv) has no entry: it has its own bullet. Keyed by EM_SEQUENCE_DEFS.key.
+ */
+var ASHRAE36_SEQUENCE_EXEC_PHRASE = {
+  ahu_sat_reset: { many: 'hold one supply air temperature at all times', one: 'holds one supply air temperature at all times' },
+  ahu_dsp_reset: { many: 'run the supply fan at one fixed pressure', one: 'runs the supply fan at one fixed pressure' },
+  ahu_economizer: { many: 'do not use outdoor air for free cooling', one: 'does not use outdoor air for free cooling' },
+  ahu_freeze_prot: { many: 'have no automatic freeze protection', one: 'has no automatic freeze protection' },
+  ahu_min_oa: { many: 'do not control their minimum outdoor air', one: 'does not control its minimum outdoor air' },
+  ahu_rf_control: { many: 'do not match the return fan to the supply fan', one: 'does not match the return fan to the supply fan' },
+  vav_zone_temp: { many: 'do not control zone temperature with the full sequence', one: 'does not control zone temperature with the full sequence' },
+  vav_damper_writeback: { many: 'do not confirm the damper position', one: 'does not confirm the damper position' },
+  vav_reheat: { many: 'have no reheat control at the zone', one: 'has no reheat control at the zone' },
+  hwp_supply_reset: { many: 'send hot water at one temperature in all weather', one: 'sends hot water at one temperature in all weather' },
+  hwp_pump_dp_reset: { many: 'run the hot water pump at full speed at all times', one: 'runs the hot water pump at full speed at all times' },
+  hwp_staging: { many: 'do not add boilers only when needed', one: 'does not add boilers only when needed' },
+  chwp_supply_reset: { many: 'send chilled water at one temperature at all loads', one: 'sends chilled water at one temperature at all loads' },
+  chwp_pump_dp_reset: { many: 'run the chilled water pump at full speed at all times', one: 'runs the chilled water pump at full speed at all times' },
+  chwp_staging: { many: 'do not add chillers only when needed', one: 'does not add chillers only when needed' },
+};
+
+/**
  * _a36SeqDisplayLabel(sd) — client-facing display name for one EM_SEQUENCE_DEFS entry.
  *
  * V-11 (visual review 2026-08-02): EM_SEQUENCE_DEFS names vav_damper_writeback
@@ -18281,21 +18304,9 @@ function rptPageASHRAE36Executive(n, d, detailedTitles) {
   var execHeader = detailed
     ? _a36DetSectionTitle(detailedTitles.execNo, 'Executive Summary', '')
     : '<div style="font-size:' + RPT_SECTION_HEAD_PX + 'px;font-weight:700;color:var(--rpt-blue);margin-bottom:8px">Executive Summary</div>';
-  // Detailed: the sequence items fill the page: a bold heading line with its text below, more space between items, larger body text.
+  // Detailed: the Executive Summary is written as prose with a Key Findings list (built below, after the sequence counts are known).
   var A36_DET_EXEC_BODY_PX = 16;
   var A36_DET_EXEC_ITEM_GAP_PX = 12;
-  function _execItem(headingText, bodyText) {
-    if (!detailed) return null;
-    return (
-      '<div class="rpt-a36-callout" style="margin:0 0 ' + A36_DET_EXEC_ITEM_GAP_PX + 'px 0;padding:0">' +
-      '<div style="font-size:' + A36_DET_EXEC_BODY_PX + 'px;font-weight:700;color:var(--rpt-page-text);line-height:1.4;margin-bottom:4px">' +
-      _escHtml(headingText) +
-      '</div>' +
-      '<div style="font-size:' + A36_DET_EXEC_BODY_PX + 'px;color:var(--rpt-page-text);line-height:1.6">' +
-      bodyText +
-      '</div></div>'
-    );
-  }
 
   // Executive Summary intro paragraph (Matt, 2026-08-03, item 7e): one concise plain-language
   // lead-in at the very top of the page, BEFORE the five sequence paragraphs, explaining what
@@ -18303,18 +18314,18 @@ function rptPageASHRAE36Executive(n, d, detailedTitles) {
   // NO numbers — the paragraphs and table below carry the real, derived figures.
   var execIntro =
     execHeader +
-    '<div style="font-size:' + (detailed ? 16 : 14) + 'px;color:var(--rpt-page-text);line-height:1.6;margin-bottom:' + (detailed ? 16 : 14) + 'px">' +
-    'ASHRAE 36 is the industry standard for how a building automation system should run heating, ' +
-    'cooling, and ventilation equipment. It is built from proven control sequences — programmed ' +
-    'instructions that tell equipment how to respond to conditions such as occupancy, temperature, ' +
-    'and time of day.' +
     (detailed
       ? ''
-      : ' This audit compared each building’s current programming against that ' +
+      : '<div style="font-size:14px;color:var(--rpt-page-text);line-height:1.6;margin-bottom:14px">' +
+        'ASHRAE 36 is the industry standard for how a building automation system should run heating, ' +
+        'cooling, and ventilation equipment. It is built from proven control sequences — programmed ' +
+        'instructions that tell equipment how to respond to conditions such as occupancy, temperature, ' +
+        'and time of day.' +
+        ' This audit compared each building’s current programming against that ' +
         'standard. The sequences summarized below are the ones that apply to the most equipment across ' +
         'the portfolio, so they are where programming work would have the greatest reach; the table ' +
-        'that follows shows how ready each building is to run them.') +
-    '</div>';
+        'that follows shows how ready each building is to run them.' +
+        '</div>');
 
   // Top ASHRAE 36 Sequences, as short plain-language paragraphs (first page only).
   // 2026-08-03 (Matt, verbatim): "I want the Top ASHRAE 36 Sequences table removed completely and
@@ -18377,9 +18388,9 @@ function rptPageASHRAE36Executive(n, d, detailedTitles) {
     // mini-sections. Each is now ONE body-size paragraph whose sequence name is a small BOLD
     // INLINE lead-in, so the five read as one connected section under the page's single
     // "Executive Summary" header + intro.
-    callout = topSeqTypes
+    // Detailed: the sequences are grouped into the Key Findings of the Executive Summary below, so this block stays empty.
+    callout = (detailed ? [] : topSeqTypes)
       .map(function (s) {
-        if (detailed) return _execItem(s.label, rptCount(s.qty) + ' pieces of equipment still need this programmed.');
         return (
           '<div class="rpt-a36-callout" style="margin-bottom:10px;padding:0">' +
           '<div style="font-size:' +
@@ -18422,14 +18433,7 @@ function rptPageASHRAE36Executive(n, d, detailedTitles) {
     // Same flowing-paragraph shape as the 4 paragraphs below (Matt, 2026-08-03, docx items 5+6):
     // bold inline lead-in at body size, never a standalone 13pt heading.
     dcvCallout = detailed
-      ? _execItem(
-          'Occupancy-Based Ventilation',
-          dcvSentence + ' Without it, these units ventilate at their fixed minimum rate whether or not the space is occupied, wasting fan and cooling energy.' +
-            // B4: the Control Sequences table counts every unit that needs the sequence programmed; this sentence counts the missing sensors only
-            (typeof _execSeqCounts !== 'undefined' && (_execSeqCounts.demandCtrl || 0) + (_execSeqCounts.vav_dcv || 0) > _dcvAhuMissing + _dcvZonesMissing
-              ? ' In all, ' + rptCount((_execSeqCounts.demandCtrl || 0) + (_execSeqCounts.vav_dcv || 0)) + ' units need this sequence programmed, because some units that have a sensor lack other points the sequence needs.'
-              : ''),
-        )
+      ? ''
       : '<div class="rpt-a36-callout" style="margin-bottom:10px;padding:0">' +
       '<div style="font-size:' +
       RPT_BODY_PX +
@@ -18444,49 +18448,176 @@ function rptPageASHRAE36Executive(n, d, detailedTitles) {
       '</div>';
   }
 
-  // A1: Summary (Detailed only): what we did, what we found, what it takes, in plain words. Every number is a shared value: the building
-  // and equipment counts and the score of collectASHRAE36Data, the point count of its point inventory, the largest gaps of the paragraphs
-  // below (the same sequence counts and the same carbon dioxide counts), and the two work counts of _a36ConsolidatedCounts (the cover's).
+  // Detailed Executive Summary: what was audited, the overall result, the Key Findings and the Recommendations, in plain words. Every number is a
+  // shared value: the building and equipment counts, the Composite, Sensor Coverage and Sequence Readiness scores of collectASHRAE36Data (the cover
+  // gauges: p.composite, p.pointPct, p.seqPct), the point count of its point inventory, the lowest building scores, the carbon dioxide counts and the
+  // sequence counts above (_execSeqCounts, topSeqTypes), the two work counts of _a36ConsolidatedCounts (the same as the cover) and the setpoint count of
+  // _a36SetpointNeedsChangeCount (the same as the Setpoint Programming Review, Appendix A). A value of 0 or a missing value drops its sentence or bullet.
   if (detailed) {
     var _sumCounts = _a36ConsolidatedCounts(d);
     var _allLib = d.buildings.length > 0 && d.buildings.every(function (b) { return /librar/i.test(b.name || ''); });
-    var _noun = _allLib ? 'librar' + (p.totalBuildings === 1 ? 'y' : 'ies') : 'building' + (p.totalBuildings === 1 ? '' : 's');
+    var _nounOne = _allLib ? 'library' : 'building';
+    var _nounMany = _allLib ? 'libraries' : 'buildings';
+    var _noun = p.totalBuildings === 1 ? _nounOne : _nounMany;
     var _inv = d.pointInventory && d.pointInventory.totalAll ? d.pointInventory.totalAll : 0;
+    var _plural = function (n, one, many) { return rptCount(n) + ' ' + (n === 1 ? one : many); };
+    var _pStyle = 'font-size:' + A36_DET_EXEC_BODY_PX + 'px;color:var(--rpt-page-text);line-height:1.6;margin:0 0 ' + A36_DET_EXEC_ITEM_GAP_PX + 'px 0';
+    var _subHtml = function (t) {
+      return '<div style="font-size:' + A36_DET_EXEC_BODY_PX + 'px;font-weight:700;color:var(--rpt-page-text);line-height:1.4;margin:0 0 4px 0">' + _escHtml(t) + '</div>';
+    };
+    var _pHtml = function (t) { return '<p style="' + _pStyle + '">' + _escHtml(t) + '</p>'; };
+
+    // What was audited.
+    var _scope = [];
+    if (p.totalEquip > 0) _scope.push(_plural(p.totalEquip, 'piece of equipment', 'pieces of equipment'));
+    if (_inv > 0) _scope.push(_plural(_inv, 'control point', 'control points'));
     var _sumDid =
-      'Control Service Company reviewed the building automation system (the computer system that runs the heating, cooling and ventilation) at ' +
-      rptCount(p.totalBuildings) + ' ' + _noun + ', ' + rptCount(p.totalEquip) + ' pieces of equipment' + (_inv ? ' and ' + rptCount(_inv) + ' data points' : '') +
-      ', against ASHRAE 36.';
+      'Control Service Company audited the building automation system' +
+      (p.totalBuildings > 0 ? ' at ' + rptCount(p.totalBuildings) + ' ' + _noun : '') +
+      ' against ASHRAE 36, the industry standard for high-performance heating, cooling and ventilation control.' +
+      (_scope.length ? ' The audit covered ' + _scope.join(' and ') + '.' : '');
+
+    // Overall result.
     var _lowScoreBldgs = d.buildings
       .filter(function (b) { return b.seqPct !== null && b.seqPct !== undefined; })
       .sort(function (a, c) { return a.composite - c.composite || rptBuildingNameSort(a.name, c.name); })
       .slice(0, 3);
-    var _gaps = [];
-    var _obvQty = typeof _execSeqCounts !== 'undefined' ? (_execSeqCounts.demandCtrl || 0) + (_execSeqCounts.vav_dcv || 0) : 0;
-    if (_dcvZonesMissing > 0) _gaps.push({ qty: Math.max(_obvQty, _dcvZonesMissing), text: rptCount(_dcvZonesMissing) + ' of ' + rptCount(dcv.totalZones) + ' zones have no carbon dioxide sensor' });
-    (typeof topSeqTypes !== 'undefined' ? topSeqTypes : []).forEach(function (s) {
-      _gaps.push({ qty: s.qty, text: rptCount(s.qty) + ' pieces of equipment need ' + s.label.toLowerCase() + ' programmed' });
-    });
-    _gaps.sort(function (a, c) { return c.qty - a.qty; });
-    _gaps = _gaps.slice(0, 3);
-    var _sumFound =
-      'Overall the ' + _noun + ' meet ' + p.composite + '% of the standard.' +
-      (_lowScoreBldgs.length
-        ? ' The lowest scores are ' + _a36DetJoin(_lowScoreBldgs.map(function (b) { return _a36DisplayName(b) + ' (' + b.composite + '%)'; })) + '.'
-        : '') +
-      (_gaps.length ? ' The largest gaps are: ' + _a36DetJoin(_gaps.map(function (g) { return g.text; })) + '.' : '');
-    var _sumTakes =
-      'The work needed is ' + rptCount(_sumCounts.sensors) + (_sumCounts.sensors === 1 ? ' device' : ' devices') + ' to install and ' + rptCount(_sumCounts.sequences) +
-      ' control sequence' + (_sumCounts.sequences === 1 ? '' : 's') + ' to program. The Service Proposal gives the cost of this work.';
+    var _sensorPct = typeof p.pointPct === 'number' ? p.pointPct : null;
+    var _seqPctP = typeof p.seqPct === 'number' ? p.seqPct : null;
+    var _gapSentence = '';
+    if (_sensorPct !== null && _seqPctP !== null) {
+      if (_sensorPct > _seqPctP && _sensorPct >= 50) {
+        _gapSentence = ' Sensor coverage is ' + _sensorPct + '%, but only ' + _seqPctP + '% of the required control sequences are in place: most of the sensors are installed, and the larger gap is programming.';
+      } else if (_seqPctP > _sensorPct && _seqPctP >= 50) {
+        _gapSentence = ' Sequence readiness is ' + _seqPctP + '%, but only ' + _sensorPct + '% of the required sensors are installed: most of the programming is in place, and the larger gap is sensors.';
+      } else {
+        _gapSentence = ' Sensor coverage is ' + _sensorPct + '% and sequence readiness is ' + _seqPctP + '%.';
+      }
+    } else if (_sensorPct !== null) {
+      _gapSentence = ' Sensor coverage is ' + _sensorPct + '%.';
+    } else if (_seqPctP !== null) {
+      _gapSentence = ' Sequence readiness is ' + _seqPctP + '%.';
+    }
+    var _lowNames = _lowScoreBldgs.map(function (b) { return _a36DisplayName(b) + ' (' + b.composite + '%)'; });
+    var _numWord = ['', 'One', 'Two', 'Three'];
+    var _lowSentence = '';
+    if (_lowScoreBldgs.length && p.totalBuildings > _lowScoreBldgs.length) {
+      _lowSentence =
+        _lowScoreBldgs.length === 1
+          ? ' The ' + _nounOne + ' that needs the most work is ' + _lowNames[0] + '.'
+          : ' ' + _numWord[_lowScoreBldgs.length] + ' ' + _nounMany + ' need the most work: ' + _a36DetJoin(_lowNames) + '.';
+    }
+    var _sumResult =
+      'The ' + _noun + (p.totalBuildings === 1 ? ' meets ' : ' meet ') + p.composite + '% of the standard.' + _gapSentence + _lowSentence;
+
+    // Setpoints of Appendix A: the same count as its totals line, only when the appendix prints.
+    var _spNeed = 0;
+    if (detailedTitles.setpointAppendix) {
+      try {
+        _spNeed = _a36SetpointNeedsChangeCount(_a36SetpointBuildingRows(d).buildingRows);
+      } catch (e) {
+        console.error('rptPageASHRAE36Executive: setpoint count failed', e);
+      }
+    }
+
+    // Key Findings, ordered by equipment count (the setpoint finding counts buildings, so it goes last), at most 4.
+    var _seqQty = function (key) { return typeof _execSeqCounts !== 'undefined' ? _execSeqCounts[key] || 0 : 0; };
+    var _topQty = typeof topSeqTypes !== 'undefined' ? topSeqTypes : [];
+    var _findings = [];
+    var _missingCO2 = _dcvAhuMissing + _dcvZonesMissing;
+    if (_missingCO2 > 0) {
+      var _co2Parts = [];
+      if (_dcvZonesMissing > 0) _co2Parts.push(rptCount(_dcvZonesMissing) + ' of ' + rptCount(dcv.totalZones) + ' zone' + (dcv.totalZones > 1 ? 's' : ''));
+      if (_dcvAhuMissing > 0) _co2Parts.push(rptCount(_dcvAhuMissing) + ' of ' + rptCount(dcv.totalAHU) + ' air handler' + (dcv.totalAHU > 1 ? 's' : ''));
+      var _obvQty = _seqQty('demandCtrl') + _seqQty('vav_dcv');
+      var _obvRank = Math.max(_obvQty, _missingCO2);
+      var _largestOther = _topQty.reduce(function (m, s) { return Math.max(m, s.qty); }, 0);
+      _findings.push({
+        qty: _obvRank,
+        head: 'Ventilation does not follow occupancy.',
+        text:
+          _co2Parts.join(' and ') + (_co2Parts.length === 1 && _missingCO2 === 1 ? ' has' : ' have') + ' no carbon dioxide (CO2) sensor.' +
+          ' These units bring in a fixed amount of outdoor air whether a space is full or empty.' +
+          // B4: the Control Sequences table counts every unit that needs the sequence programmed; this sentence counts the missing sensors only
+          (_obvQty > _missingCO2
+            ? ' In all, ' + rptCount(_obvQty) + ' units need this sequence programmed, because some units that have a sensor lack other points the sequence needs.'
+            : '') +
+          (_obvRank > _largestOther ? ' This finding affects the most equipment in the audit.' : ''),
+      });
+    }
+    // One phrase per listed sequence of a key group ("9 units hold ..., 9 do not ..."): the counts are those of topSeqTypes.
+    var _seqPhrases = function (match) {
+      var items = _topQty.filter(function (s) {
+        return match.test(s.key) && ASHRAE36_SEQUENCE_EXEC_PHRASE[s.key];
+      });
+      return {
+        qty: items.reduce(function (m, s) { return Math.max(m, s.qty); }, 0),
+        text: items.map(function (s, i) {
+          var ph = ASHRAE36_SEQUENCE_EXEC_PHRASE[s.key];
+          return rptCount(s.qty) + ' ' + (i === 0 ? (s.qty === 1 ? 'unit ' : 'units ') : '') + (s.qty === 1 ? ph.one : ph.many);
+        }),
+      };
+    };
+    var _ahuGroup = _seqPhrases(/^ahu_/);
+    if (_ahuGroup.text.length) {
+      _findings.push({
+        qty: _ahuGroup.qty,
+        head: 'Air handlers run at fixed settings.',
+        text: _a36DetJoin(_ahuGroup.text) + '. These sequences adjust the equipment to what the building needs, which lowers fan, heating and cooling energy.',
+      });
+    }
+    var _plantGroup = _seqPhrases(/^(hwp|chwp|vav)_/);
+    if (_plantGroup.text.length) {
+      _findings.push({
+        qty: _plantGroup.qty,
+        head: 'Plant and zone controls.',
+        text: _a36DetJoin(_plantGroup.text) + '. These sequences adjust the equipment to what the building needs, which lowers energy use.',
+      });
+    }
+    _findings = _findings
+      .map(function (f, i) { f.i = i; return f; })
+      .sort(function (a, c) { return c.qty - a.qty || a.i - c.i; });
+    if (_spNeed > 0) {
+      _findings.push({
+        qty: -1,
+        head: 'Zone setpoints.',
+        text:
+          rptCount(_spNeed) + (_spNeed <= p.totalBuildings ? ' of ' + rptCount(p.totalBuildings) : '') + ' ' + (_spNeed === 1 && p.totalBuildings !== 1 ? _nounOne : _noun) +
+          (_spNeed === 1 ? ' has' : ' have') + ' zone setpoints outside the ASHRAE 36 recommended values (Appendix A).',
+      });
+    }
+    _findings = _findings.slice(0, 4);
+
+    // Recommendations: the work counts of the cover, plus the setpoint change when Appendix A prints.
+    var _todo = [];
+    if (_sumCounts.sensors > 0) _todo.push('install ' + (_sumCounts.sensors === 1 ? '1 sensor or device' : rptCount(_sumCounts.sensors) + ' sensors and devices'));
+    if (_sumCounts.sequences > 0) _todo.push('program ' + _plural(_sumCounts.sequences, 'control sequence', 'control sequences'));
+    if (_spNeed > 0) _todo.push('change the zone setpoints in ' + _plural(_spNeed, _nounOne, _nounMany));
+    var _todoText = _a36DetJoin(_todo);
+    var _sumRec = _todo.length
+      ? _todoText.charAt(0).toUpperCase() + _todoText.slice(1) + '. This brings the ' + _noun + ' to the ASHRAE 36 standard for the equipment in scope. The Service Proposal gives the cost of this work.'
+      : '';
+
     var _sumHtml =
-      '<div style="margin-bottom:' + A36_DET_EXEC_ITEM_GAP_PX + 'px">' +
-      '<div style="font-size:' + A36_DET_EXEC_BODY_PX + 'px;font-weight:700;color:var(--rpt-page-text);line-height:1.4;margin-bottom:4px">Summary</div>' +
-      [_sumDid, _sumFound, _sumTakes]
-        .map(function (t) {
-          return '<p style="font-size:' + A36_DET_EXEC_BODY_PX + 'px;color:var(--rpt-page-text);line-height:1.6;margin:0 0 6px 0">' + _escHtml(t) + '</p>';
-        })
-        .join('') +
-      '</div>';
-    execIntro = execHeader + _sumHtml + execIntro.slice(execHeader.length);
+      _pHtml(_sumDid) +
+      _subHtml('Overall Result') +
+      _pHtml(_sumResult) +
+      (_findings.length
+        ? _subHtml('Key Findings') +
+          '<ul style="margin:0 0 ' + A36_DET_EXEC_ITEM_GAP_PX + 'px 0;padding:0 0 0 24px;list-style:disc">' +
+          _findings
+            .map(function (f) {
+              return (
+                '<li style="font-size:' + A36_DET_EXEC_BODY_PX + 'px;color:var(--rpt-page-text);line-height:1.6;margin:0 0 6px 0">' +
+                '<strong>' + _escHtml(f.head) + '</strong> ' + _escHtml(f.text) +
+                '</li>'
+              );
+            })
+            .join('') +
+          '</ul>'
+        : '') +
+      (_sumRec ? _subHtml('Recommendations') + _pHtml(_sumRec) : '');
+    execIntro = execHeader + _sumHtml;
   }
 
   // Fix B: compute dynamic row budgets now that callout presence is known.
@@ -21036,6 +21167,14 @@ function _a36SetpointReprogramPlan(d, buildingRows) {
   return { zones: zones, buildings: buildings };
 }
 
+// _a36SetpointNeedsChangeCount(buildingRows) - the number of rows of _a36SetpointBuildingRows that need setpoints changed (bStatus
+// NEEDS_REVIEW). The one reader of this count: the totals line of the Setpoint Programming Review and the Detailed Executive Summary.
+function _a36SetpointNeedsChangeCount(buildingRows) {
+  return (buildingRows || []).filter(function (r) {
+    return r.bStatus === 'NEEDS_REVIEW';
+  }).length;
+}
+
 // ─── rptPageASHRAE36SetpointReview ───────────────────────────────────────────
 /**
  * Setpoint Programming Review page: compares actual zone setpoints against GL36
@@ -21250,9 +21389,7 @@ function rptPageASHRAE36SetpointReview(n, d, detailedTitle) {
   }
 
   // ── Totals callout ────────────────────────────────────────────────────────
-  var needsReviewTotal = buildingRows.filter(function (r) {
-    return r.bStatus === 'NEEDS_REVIEW';
-  }).length;
+  var needsReviewTotal = _a36SetpointNeedsChangeCount(buildingRows);
   var matchesTotal = buildingRows.filter(function (r) {
     return r.bStatus === 'MATCHES';
   }).length;
@@ -28190,7 +28327,7 @@ function generateASHRAE36AuditHTML(data, selectedSections) {
   if (s.cover !== false)
     pages.push(_tagA36Section(rptPageASHRAE36Cover(pageNum++, data, s.building !== false, detailed), 'cover'));
   if (s.executive !== false) {
-    var execPages = rptPageASHRAE36Executive(pageNum, data, detailed ? { execNo: sectionNo, readinessNo: sectionNo + 1 } : undefined);
+    var execPages = rptPageASHRAE36Executive(pageNum, data, detailed ? { execNo: sectionNo, readinessNo: sectionNo + 1, setpointAppendix: hasSetpointAppendix } : undefined);
     if (detailed) sectionNo += 2;
     execPages.forEach(function (pg) {
       pages.push(_tagA36Section(pg, 'executive'));
@@ -28685,7 +28822,7 @@ function openASHRAE36ReportModal(projId, type) {
 window.openASHRAE36ReportModal = openASHRAE36ReportModal;
 
 // Report Style radio of the audit modal: Detailed shows the picture folder picker and turns on the Setpoint Programming Review
-// (Appendix A, printed only when zone setpoint data exists). The Detailed style has no Point Inventory, so its box is off and disabled.
+// (Appendix A, printed only when zone setpoint data exists). The Detailed style has no Point Inventory, so its row is hidden and its box is off.
 // Per-Building Detail and the infrastructure notes stay available in Detailed (default unchecked, as in Simple).
 function _a36StyleChanged() {
   var checked = document.querySelector('input[name="a36Style"]:checked');
@@ -28699,8 +28836,11 @@ function _a36StyleChanged() {
   document.querySelectorAll('.a36SecCheck').forEach(function (cb) {
     if (detailed && cb.dataset.key === 'setpointReview') cb.checked = true;
     if (cb.dataset.key === 'pointInventory') {
+      // The Detailed style has no point inventory: the row is hidden (not just disabled) and the box is off, so it is never sent.
       if (detailed) cb.checked = false;
-      cb.disabled = detailed;
+      cb.disabled = false;
+      var row = cb.closest('label');
+      if (row) row.style.display = detailed ? 'none' : '';
     }
   });
 }
