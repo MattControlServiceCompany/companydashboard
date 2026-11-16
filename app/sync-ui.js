@@ -159,10 +159,17 @@
     }
     return { text: 'Sync status', level: 'ok', short: 'Sync', title: 'Open the sync status panel' };
   }
+  var _loggedSyncSig = '';
   function setSyncState(patch) {
     Object.keys(patch).forEach(function (k) {
       _syncState[k] = patch[k];
     });
+    // Site event log (app/site-events.js): one event per change of the status word, not per queue count.
+    var sig = syncStatusView().level + '|' + (_syncState.offline ? 'offline' : '') + '|' + (_syncState.refused ? 'refused' : '') + '|' + (_syncState.depth > 0 ? 'unsynced' : '');
+    if (sig !== _loggedSyncSig) {
+      _loggedSyncSig = sig;
+      if (window.chLog) window.chLog('sync-status', { level: syncStatusView().level, offline: !!_syncState.offline, refused: !!_syncState.refused, unsynced: _syncState.depth });
+    }
     renderSyncStatusButton();
   }
 
@@ -496,6 +503,7 @@
   window.addEventListener('dbOfflineBanner', function (e) {
     var d = (e && e.detail) || {};
     renderOfflineBanner(true, d.waiting === true, d.what, d.detail);
+    if (window.chLog) window.chLog('sync-failed', { waiting: d.waiting === true, what: d.what, error: d.detail });
     setSyncState({ offline: true });
   });
 
@@ -509,6 +517,7 @@
       code +
       '). Your changes stay in this browser and are not syncing. Sign out and sign in again, or ask your administrator for access.';
     el.style.display = 'block';
+    if (window.chLog) window.chLog('sync-failed', { refused: true, status: code });
     setSyncState({ refused: true });
   });
 
