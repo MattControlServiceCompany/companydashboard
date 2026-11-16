@@ -2507,6 +2507,8 @@ async function siteResetAllMeterTableSettings() {
    site-ui.js delegates to this array and should NOT maintain its own copy.
 */
 var RELEASE_NOTES = [
+  { v: 'v2026.11.16.323', date: '2026-11-16', title: 'Mark a quarter as presented from the PDF the client got',
+    items: [ { type: 'new', text: 'Dashboard > Documents > Presented Reports: pick the quarter and the PDF you gave the client. The site reads the figures from that PDF, shows where each one came from, and locks them after you confirm. No report is generated.' } ] },
   { v: 'v2026.11.16.322', date: '2026-11-16', title: 'Small fixes',
     items: [ { type: 'fix', text: 'The calendar intro says what to check again. Hover text spells out Site Energy Use Intensity.' } ] },
   { v: 'v2026.11.16.321', date: '2026-11-16', title: 'Clearer buttons and tooltips',
