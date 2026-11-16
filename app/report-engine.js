@@ -18217,7 +18217,7 @@ function rptPageASHRAE36Cover(n, d, perBuildingIncluded, detailed) {
     // No visual change in the browser (the wrapper already centered it there).
     '<div style="font-size:' +
     RPT_DOC_TITLE_PX +
-    'px;font-weight:700;color:var(--rpt-blue);text-align:center;margin-bottom:4px">ASHRAE 36 Audit Report</div>' +
+    'px;font-weight:700;color:var(--rpt-blue);text-align:center;margin-bottom:4px">' + rptA36AuditTitle(detailed) + '</div>' +
     '<div style="font-size:15px;font-weight:700;color:var(--rpt-page-text);text-align:center;margin-bottom:12px">' +
     _escHtml(d.project.name) +
     '</div>' +
@@ -29461,11 +29461,11 @@ function generateASHRAE36Preview() {
     var reportTitle =
       type === 'proposal'
         ? data.project.name + ' — ASHRAE 36 Service Proposal'
-        : data.project.name + ' — ASHRAE 36 Audit Report';
+        : data.project.name + ' — ' + rptA36AuditTitle(detailedStyle);
 
     // Expose report data so downloadReportPdf() and saveReportToHistory() can use it.
     // Store the report type alongside so the filename builder can distinguish Audit vs Proposal.
-    data._ashrae = { type: type, title: reportTitle };
+    data._ashrae = { type: type, title: reportTitle, detailed: detailedStyle };
     window._currentReportData = data;
 
     showReportOverlay(html, reportTitle);

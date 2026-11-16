@@ -2507,6 +2507,10 @@ async function siteResetAllMeterTableSettings() {
    site-ui.js delegates to this array and should NOT maintain its own copy.
 */
 var RELEASE_NOTES = [
+  { v: 'v2026.11.16.304', date: '2026-11-16', title: 'Audit Report: Detailed title',
+    items: [
+      { type: 'fix', text: 'Detailed Audit Report: the cover, the report window and the file name now say "Detailed ASHRAE 36 Audit Report". The Simple style keeps "ASHRAE 36 Audit Report".' },
+    ] },
   { v: 'v2026.11.16.303', date: '2026-11-16', title: 'Audit Report: less browser memory',
     items: [
       { type: 'fix', text: 'Detailed Audit Report: the report reads only the pictures it shows and frees each picture as soon as it is scaled, and closing the report frees its pictures. The report itself does not change.' },
