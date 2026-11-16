@@ -2594,7 +2594,7 @@ function initDashboardTab(projId) {
                             i,
                           ) => `<div style="flex:1;text-align:center;background:rgba(147,51,234,0.12);border-radius:6px;padding:6px 4px">
                         <div style="font-size:9px;color:var(--text3);text-transform:uppercase;letter-spacing:.5px">Q${i + 1}</div>
-                        <div style="font-size:13px;font-weight:700;font-family:var(--mono);color:var(--violet-text)">${v !== 0 ? $c(v) : '—'}</div>
+                        <div style="font-size:13px;font-weight:700;font-family:var(--mono);color:var(--violet-text)">${v !== 0 ? $c2(v) : '—'}</div>
                       </div>`,
                         )
                         .join('')}
@@ -2608,7 +2608,7 @@ function initDashboardTab(projId) {
                             i,
                           ) => `<div style="flex:1;text-align:center;background:rgba(34,197,94,0.10);border-radius:6px;padding:6px 4px">
                         <div style="font-size:9px;color:var(--text3);text-transform:uppercase;letter-spacing:.5px">Q${i + 1}</div>
-                        <div style="font-size:13px;font-weight:700;font-family:var(--mono);color:var(--green)">${qtrWeather[(headQtr ? headQtr.year : '') + '-Q' + (i + 1)] ? 'Waiting for weather' : v !== 0 || actualQtrHasData[i] ? $c(v) : '—'}</div>
+                        <div style="font-size:13px;font-weight:700;font-family:var(--mono);color:var(--green)">${qtrWeather[(headQtr ? headQtr.year : '') + '-Q' + (i + 1)] ? 'Waiting for weather' : v !== 0 || actualQtrHasData[i] ? $c2(v) : '—'}</div>
                       </div>`,
                         )
                         .join('')}
@@ -2621,38 +2621,44 @@ function initDashboardTab(projId) {
                 </div>
               </div>
               ${(function () {
-                // Matt 2026-11-16: two matching tiles; one big number, one short line, details on hover. No caption walls.
-                const tile = 'flex:1;min-width:180px;background:var(--s2);border:1px solid var(--border);border-radius:8px;padding:16px 18px;display:flex;flex-direction:column;gap:6px';
+                // Matt 2026-11-16: keep every fact, make it readable. Each tile: label, big number, then labeled rows (name: value).
+                // Nothing moves into a hover only; the hover adds detail (the list of missing bills).
+                const tile = 'flex:1;min-width:200px;background:var(--s2);border:1px solid var(--border);border-radius:8px;padding:16px 18px;display:flex;flex-direction:column;gap:4px';
                 const lab = 'font-size:11px;color:var(--text3);text-transform:uppercase;letter-spacing:.6px;font-weight:600';
-                const big = 'font-size:30px;font-weight:800;font-family:var(--mono);line-height:1.1';
-                const sub = 'font-size:12px;color:var(--text2)';
-                const basisTip = cardBasis ? cardBasis.replace(/^vs /, 'Measured against the ') + '. ' : '';
-                const sub1 = cardBill
-                  ? _monNames(cardDataYMs).join(', ') + ' bills' + (cardWaitYMs.length ? ' · ' + _monNames(cardWaitYMs).join(' and ') + ' to come' : '')
-                  : '';
-                const late = cardMissing.length
-                  ? ' · <span title="' + _escHtml('Not in yet: ' + cardMissing.join(', ')) + '" style="border-bottom:1px dotted var(--text3);cursor:help">' + cardMissing.length + ' bill' + (cardMissing.length !== 1 ? 's' : '') + ' missing</span>'
-                  : '';
+                const big = 'font-size:30px;font-weight:800;font-family:var(--mono);line-height:1.15;margin-bottom:6px';
+                const row = (k, v, tip) =>
+                  '<div style="display:flex;gap:8px;font-size:12px;line-height:1.5"' + (tip ? ' title="' + _escHtml(tip) + '"' : '') + '>' +
+                  '<span style="color:var(--text3);min-width:84px">' + k + '</span><span style="color:var(--text)">' + v + '</span></div>';
+                const sep = '<div style="border-top:1px solid var(--border);margin:6px 0 4px"></div>';
+                const basisRow = cardBasis ? row('Compared to', _escHtml(cardBasis.replace(/^vs /, ''))) : '';
                 const q = !cardBill
-                  ? '<div style="' + lab + '">' + cardLabel + '</div><div style="' + sub + '">No bills yet</div>'
-                  : '<div style="' + lab + '">' + cardLabel + ' so far</div>' +
-                    '<div title="' + _escHtml(basisTip) + '" style="' + big + ';color:' + (cardWeather.length ? 'var(--text2)' : _cardShown.color) + '">' +
+                  ? '<div style="' + lab + '">' + cardLabel + '</div><div style="font-size:13px;color:var(--text2)">No bills yet</div>'
+                  : '<div style="' + lab + '">' + cardLabel + ' savings to date</div>' +
+                    '<div style="' + big + ';color:' + (cardWeather.length ? 'var(--text2)' : _cardShown.color) + '">' +
                     (cardWeather.length ? '<span style="font-size:15px">Waiting for weather data: ' + _escHtml(weatherWaitingLabel(cardWeather)) + '</span>' : _cardShown.text) + '</div>' +
-                    '<div style="' + sub + '">' + _escHtml(sub1) + late + '</div>' +
-                    (cardPct !== null ? '<div style="' + sub + '">' + cardPct + '% of the ' + $c(cardProjected) + ' projected</div>' : '') +
-                    (cardPairShown && useNormalized
-                      ? '<div style="display:flex;gap:20px;margin-top:6px;padding-top:8px;border-top:1px solid var(--border);font-size:12px;color:var(--text3)">' +
-                        '<span title="' + _escHtml('Baseline cost of ' + cardPairLabel) + '">Baseline <b style="font-family:var(--mono);color:var(--text)">' + $c(cardPairBl) + '</b></span>' +
-                        '<span title="' + _escHtml('Actual cost of ' + cardPairLabel) + '">Actual <b style="font-family:var(--mono);color:var(--text)">' + $c(cardPairCur) + '</b></span></div>'
+                    row('Bills in', _escHtml(_monNames(cardDataYMs).join(', '))) +
+                    (cardWaitYMs.length ? row('Not in yet', _escHtml(_monNames(cardWaitYMs).join(', '))) : '') +
+                    (cardMissing.length
+                      ? row('Missing', cardMissing.length + ' meter bill' + (cardMissing.length !== 1 ? 's' : '') + ' <span style="color:var(--text3)">(hover for the list)</span>', 'Not in yet: ' + cardMissing.join(', '))
+                      : '') +
+                    (cardPct !== null ? row('Of projected', cardPct + '% of ' + $c2(cardProjected)) : '') +
+                    basisRow +
+                    (cardPairShown
+                      ? sep +
+                        row('Period', _escHtml(cardPairLabel)) +
+                        row('Baseline', '<b style="font-family:var(--mono)">' + $c(cardPairBl) + '</b>', 'Baseline cost of ' + cardPairLabel) +
+                        row('Current', '<b style="font-family:var(--mono)">' + $c(cardPairCur) + '</b>', 'Baseline cost less the savings of ' + cardPairLabel)
                       : '');
                 const c =
-                  '<div style="' + lab + '">Since contract start</div>' +
-                  '<div title="' + _escHtml(basisTip + 'Each quarter counts as $0 or more; savings cannot be negative.') + '" style="' + big + ';color:' + _totalSavShown.color + '">' + _totalSavShown.text + '</div>' +
-                  '<div style="' + sub + '">' + _escHtml(cumRange) + '</div>' +
-                  (cumWeatherWaiting.length ? '<div style="' + sub + '">Does not include ' + _escHtml(weatherWaitingLabel(cumWeatherWaiting)) + ': waiting for weather data</div>' : '');
+                  '<div style="' + lab + '">Total savings since contract start</div>' +
+                  '<div style="' + big + ';color:' + _totalSavShown.color + '">' + _totalSavShown.text + '</div>' +
+                  (cumRange ? row('Period', _escHtml(cumRange)) : '') +
+                  basisRow +
+                  row('Rule', 'each quarter counted at $0 or more') +
+                  (cumWeatherWaiting.length ? row('Not included', _escHtml(weatherWaitingLabel(cumWeatherWaiting)) + ' (waiting for weather data)') : '');
                 const extra =
                   (estSavings > 0 ? '<div style="' + lab + '">Target</div><div style="font-size:18px;font-weight:700;font-family:var(--mono)">$' + Number(estSavings).toLocaleString() + '</div>' : '') +
-                  (ecmTotal > 0 ? '<div style="' + lab + ';margin-top:8px">ECM projected</div><div style="font-size:18px;font-weight:700;font-family:var(--mono);color:var(--violet-text)">$' + ecmTotal.toLocaleString() + '/yr</div><div style="' + sub + '">' + ecmCount + ' ECM' + (ecmCount !== 1 ? 's' : '') + ' saved · <button onclick="sv(&quot;calculators&quot;)" style="font-size:12px;color:var(--violet-label);background:none;border:none;cursor:pointer;padding:0;text-decoration:underline">view</button></div>' : '');
+                  (ecmTotal > 0 ? '<div style="' + lab + ';margin-top:8px">ECM projected</div><div style="font-size:18px;font-weight:700;font-family:var(--mono);color:var(--violet-text)">$' + ecmTotal.toLocaleString() + '/yr</div><div style="font-size:12px;color:var(--text2)">' + ecmCount + ' ECM' + (ecmCount !== 1 ? 's' : '') + ' saved · <button onclick="sv(&quot;calculators&quot;)" style="font-size:12px;color:var(--violet-label);background:none;border:none;cursor:pointer;padding:0;text-decoration:underline">view</button></div>' : '');
                 return '<div style="' + tile + '">' + q + '</div><div style="' + tile + '">' + c + '</div>' + (extra ? '<div style="' + tile + ';flex:0 0 auto;min-width:160px">' + extra + '</div>' : '');
               })()}
             </div>
