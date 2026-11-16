@@ -2867,12 +2867,12 @@ function renderSetpointsTab(projId) {
               <div style="display:flex;gap:8px;align-items:center">
                 ${
                   !isAvg && !isViewingSnapshot
-                    ? `<button class="btn btn-ghost btn-sm" id="sp-pull-em-btn-${projId}" onclick="spOpenPullFromEMDialog('${projId}','${activeBldgId}')">Pull from Equipment Matrix</button>
-                <button class="btn btn-ghost btn-sm" id="sp-delete-all-btn-${projId}" onclick="spDeleteAllZones('${projId}','${activeBldgId}')" style="color:var(--red);border-color:rgba(244,63,94,.3)">Delete All</button>
-                <button class="btn btn-ghost btn-sm" onclick="spAddZoneRow('${projId}','${activeBldgId}')">+ Add Zone</button>
-                <button class="btn btn-em btn-sm" onclick="spSave('${projId}','${activeBldgId}')">💾 Save</button>
+                    ? `<button class="btn btn-ghost btn-sm" id="sp-pull-em-btn-${projId}" title="Rebuild the zone rows of this building from the Equipment Matrix. Asks you to confirm before it replaces saved rows." onclick="spOpenPullFromEMDialog('${projId}','${activeBldgId}')">Pull from Equipment Matrix</button>
+                <button class="btn btn-ghost btn-sm" id="sp-delete-all-btn-${projId}" title="Delete every zone row of the building you are viewing (not the other buildings). It shows the row count and asks you to confirm first." onclick="spDeleteAllZones('${projId}','${activeBldgId}')" style="color:var(--red);border-color:rgba(244,63,94,.3)">Delete All</button>
+                <button class="btn btn-ghost btn-sm" title="Add one empty zone row to this building." onclick="spAddZoneRow('${projId}','${activeBldgId}')">+ Add Zone</button>
+                <button class="btn btn-em btn-sm" title="Save the zone rows you see now as the current set points of this building." onclick="spSave('${projId}','${activeBldgId}')">💾 Save</button>
                 <div style="position:relative;display:inline-block">
-                  <button class="btn btn-ghost btn-sm" onclick="spShowSaveAsMenu(event,'${projId}','${activeBldgId}')">Save As…</button>
+                  <button class="btn btn-ghost btn-sm" title="Save your edits, then keep a dated copy (snapshot) of the saved set points, for example as Baseline or as of today. The current rows stay as they are." onclick="spShowSaveAsMenu(event,'${projId}','${activeBldgId}')">Save As…</button>
                 </div>`
                     : ''
                 }
@@ -2961,7 +2961,7 @@ function _spZoneRow(projId, bldgId, z, idx) {
             value="${v(z.unoccCool)}" placeholder="${EM_SP_PLACEHOLDER.unoccCool}"
             oninput="spUpdateField('${projId}','${bldgId}',${idx},'unoccCool',_spParseSpField(this.value))"></td>
           <td style="padding:4px 6px"><input class="fi" style="width:100%;font-size:12px" type="text"
-            value="${_escHtml(z.schedule || '')}" placeholder="e.g. Monday–Friday 6:00a-4:30p"
+            value="${_escHtml(z.schedule || '')}" placeholder="No schedule imported" title="Occupied schedule of this zone. It is empty when no WebCTRL program schedule was imported for this equipment. Type one, or import schedules on the Calendar tab and use Pull from Equipment Matrix."
             oninput="spUpdateField('${projId}','${bldgId}',${idx},'schedule',this.value)"></td>
           <td style="padding:4px 6px;text-align:center">
             <button class="btn btn-ghost btn-sm" style="padding:2px 6px;color:var(--red);border-color:rgba(244,63,94,.3);font-size:11px"

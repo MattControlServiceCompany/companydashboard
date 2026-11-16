@@ -648,8 +648,11 @@ function _pricingMeasureCostRollupHTML(projId) {
     .map(function (m) {
       var c = msrCostSummary(projId, m);
       var b = typeof getUDBldg === 'function' ? getUDBldg(projId, m.bldgId) : null;
+      // A measure with no description, no savings and no cost lines is an empty placeholder: say so in the row.
+      var emptyMeasure = !m.desc && !(c.annual > 0) && !(c.gross > 0);
+      var measureLabel = m.desc || 'Measure ' + (m.msrNum || '') + (emptyMeasure ? ' (empty: no description, savings or cost lines yet)' : '');
       return (
-        '<tr><td style="' + lbl + '">' + _escHtml(m.desc || 'Measure ' + (m.msrNum || '')) + '</td>' +
+        '<tr><td style="' + lbl + '">' + _escHtml(measureLabel) + '</td>' +
         '<td style="' + lbl + '">' + _escHtml(b ? b.name : '') + '</td>' +
         '<td style="' + num + '">' + money(c.thirdParty) + '</td>' +
         '<td style="' + num + '">' + money(c.labor) + '</td>' +

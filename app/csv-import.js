@@ -948,14 +948,19 @@ function renderBillRow(row, m, incl, allBills, cols, rowNum) {
   // Bug #17: rows with missing start/end dates get a special class so they're
   // visually distinct from normal rows and easy to identify for deletion/re-extraction.
   const _missingDates = !row.start || !row.end;
-  const _warnTip = _missingDates
-    ? 'Missing start/end dates — delete this row and re-extract'
-    : 'This bill has missing or inconsistent data fields';
+  // The tooltip names the actual problem(s), not a generic message (D14, D17).
+  const _warnDetail = [...new Set(Object.values(_fieldWarningsEarly))].join('; ');
+  const _warnTip = (
+    _missingDates
+      ? 'Missing start/end dates — delete this row and re-extract'
+      : 'This bill has missing or inconsistent data fields' + (_warnDetail ? ': ' + _warnDetail : '') +
+        (row.estimated ? '. This row is an estimate, so the on-peak and off-peak kWh split is not stored.' : '')
+  ).replace(/"/g, '&quot;');
   // Estimated rows (feat/estimate-missing-period, 2026-09-25): distinct
   // badge next to the month, no click-to-edit (there is nothing saved to
   // edit — see actionBtns above), and a dedicated row class for styling.
   const _estBadge = row.estimated
-    ? ` <span class="ud-bill-est-badge" title="${(row.estimatedNote || 'Estimated kWh — no real bill on file for this period').replace(/"/g, '&quot;')}" style="font-size:9px;font-weight:700;letter-spacing:.3px;text-transform:uppercase;background:var(--amber-dim,rgba(245,158,11,.15));color:var(--amber,#f59e0b);border:1px solid rgba(245,158,11,.35);border-radius:4px;padding:1px 6px;cursor:help">Estimated</span>`
+    ? ` <span class="ud-bill-est-badge" title="${('ESTIMATED: this row is marked estimated (the bill record has estimated = true), so it is a computed estimate and not a utility bill. ' + (row.estimatedNote || 'No real bill on file for this period.')).replace(/"/g, '&quot;')}" style="font-size:9px;font-weight:700;letter-spacing:.3px;text-transform:uppercase;background:var(--amber-dim,rgba(245,158,11,.15));color:var(--amber,#f59e0b);border:1px solid rgba(245,158,11,.35);border-radius:4px;padding:1px 6px;cursor:help">Estimated</span>`
     : '';
   let html =
     `<tr data-bill-start="${row.start}" ${row.estimated ? 'class="ud-bill-estimated-row"' : `style="cursor:pointer" onclick="showBillSplitPanel('${m.id}','${row.id}',event)"${_missingDates ? ' class="ud-bill-missing-dates"' : ''}`}>` +
@@ -3768,10 +3773,10 @@ function renderMeetingsList(projId) {
             <span class="mtg-badge" style="background:rgba(59,130,246,0.15);color:#3b82f6">Report</span>
             <span class="mtg-title">${reportHistoryLabel({ type: r.type, period: r.period || '' })} · ${ts}</span>
             <div class="mtg-actions" onclick="event.stopPropagation()">
-              <button class="btn btn-ghost btn-sm" onclick="reopenReport('${r.id}')" title="Open">📊</button>
-              <button class="btn btn-ghost btn-sm" onclick="reexportReport('${r.id}','word')" title="Download Word">W</button>
-              <button class="btn btn-ghost btn-sm" onclick="reexportReport('${r.id}','pdf')" title="Download PDF">📄</button>
-              <button class="btn btn-ghost btn-sm" onclick="deleteReport('${r.id}');renderMeetingsList(${projId})" title="Delete" style="color:var(--warn)">🗑️</button>
+              <button class="btn btn-ghost btn-sm" onclick="reopenReport('${r.id}')" title="Open this saved report">Open</button>
+              <button class="btn btn-ghost btn-sm" onclick="reexportReport('${r.id}','word')" title="Download Word">Word</button>
+              <button class="btn btn-ghost btn-sm" onclick="reexportReport('${r.id}','pdf')" title="Download PDF">PDF</button>
+              <button class="btn btn-ghost btn-sm" onclick="deleteReport('${r.id}');renderMeetingsList(${projId})" title="Delete this saved report (asks you to confirm first)" style="color:var(--warn)">Delete</button>
             </div>
           </div>`;
       })
@@ -3795,10 +3800,10 @@ function renderMeetingsList(projId) {
             <span class="mtg-badge ${badge}">${label}</span>
             <span class="mtg-title">${m.projectNickname || ''} — ${m.sectionHeading || ''}</span>
             <div class="mtg-actions" onclick="event.stopPropagation()">
-              <button class="btn btn-ghost btn-sm" onclick="meetingFileById(${projId},${m.id},'word')" title="Download Word">W</button>
-              <button class="btn btn-ghost btn-sm" onclick="meetingFileById(${projId},${m.id},'pdf')" title="Download PDF">📄</button>
-              ${m.type === 'agenda' ? `<button class="btn btn-ghost btn-sm" onclick="convertToMinutesById(${projId},${m.id})" title="Convert to Minutes">📝</button>` : ''}
-              <button class="btn btn-ghost btn-sm" onclick="deleteMeeting(${projId},${m.id})" title="Delete" style="color:var(--warn)">🗑️</button>
+              <button class="btn btn-ghost btn-sm" onclick="meetingFileById(${projId},${m.id},'word')" title="Download Word">Word</button>
+              <button class="btn btn-ghost btn-sm" onclick="meetingFileById(${projId},${m.id},'pdf')" title="Download PDF">PDF</button>
+              ${m.type === 'agenda' ? `<button class="btn btn-ghost btn-sm" onclick="convertToMinutesById(${projId},${m.id})" title="Convert this agenda to minutes">To Minutes</button>` : ''}
+              <button class="btn btn-ghost btn-sm" onclick="deleteMeeting(${projId},${m.id})" title="Delete this meeting (asks you to confirm first)" style="color:var(--warn)">Delete</button>
             </div>
           </div>`;
       })

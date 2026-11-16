@@ -196,10 +196,10 @@ const ok = (c, m) => {
       document.body.appendChild(host);
       _renderDocsMeetings(host, 9001);
       renderMeetingsList(9001);
-      return [...host.querySelectorAll('.mtg-actions')].map((a) => [...a.querySelectorAll('button')].map((b) => b.title));
+      return [...host.querySelectorAll('.mtg-actions')].map((a) => [...a.querySelectorAll('button')].map((b) => b.textContent.trim()));
     });
-    ok(rows.some((r) => r.includes('Download Word') && r.includes('Download PDF') && r.includes('Convert to Minutes')), 'meeting row: Word and PDF icons');
-    ok(rows.some((r) => r.includes('Open') && r.includes('Download Word') && r.includes('Download PDF')), 'saved-report row: Word and PDF icons');
+    ok(rows.some((r) => r.includes('Word') && r.includes('PDF') && r.includes('To Minutes') && r.includes('Delete')), 'meeting row: Word, PDF, To Minutes, Delete (text labels)');
+    ok(rows.some((r) => r.includes('Open') && r.includes('Word') && r.includes('PDF') && r.includes('Delete')), 'saved-report row: Open, Word, PDF, Delete (text labels)');
 
     // Scorecard
     await page.evaluate(() => {

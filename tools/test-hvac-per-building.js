@@ -51,6 +51,7 @@ function fnSource(src, fnName) {
 const read = (rel) => fs.readFileSync(path.join(REPO, rel), 'utf8');
 const CALC = read('app/calculators.js');
 const ENDUSE = read('computations/hvac-enduse.js');
+const UTIL = read('app/utility-data.js');
 // the report engine file that defines _wdBaselineHvac (found by content, not by a client-named path)
 const WD = fs
   .readdirSync(path.join(REPO, 'app'))
@@ -81,6 +82,8 @@ const code = [
   fnSource(CALC, 'hvacLoadStoredFor'),
   fnSource(CALC, 'hvacEstimateForBuilding'),
   fnSource(CALC, 'hvlBasisLabel'),
+  fnSource(UTIL, 'isUnmatchedSentinelBldg'),
+  fnSource(UTIL, 'getProjectBuildingCounts'),
   fnSource(CALC, 'hvacLoadProjectRollup'),
   'const _HVL_ROLLUP_FIELDS = ' + /const _HVL_ROLLUP_FIELDS = (\[[\s\S]*?\]);/.exec(CALC)[1] + ';',
   fnSource(CALC, '_hvlFieldsFor'),
@@ -151,6 +154,7 @@ function makeEnv() {
     shown: {},
     bldgs,
     getUDBldgs: () => bldgs,
+    getIncludedBldgs: () => bldgs,
     getUDBldg: (pid, id) => bldgs.find((b) => b.id === id),
     isBaselineExcluded: (pid, id) => id === 'eX',
     getWeatherForBuilding: () => ({ byYm: {} }),
