@@ -2507,6 +2507,10 @@ async function siteResetAllMeterTableSettings() {
    site-ui.js delegates to this array and should NOT maintain its own copy.
 */
 var RELEASE_NOTES = [
+  { v: 'v2026.11.16.315', date: '2026-11-16', title: 'Calendar: one clear to-do list',
+    items: [ { type: 'fix', text: 'The Calendar shows one list, "To do in WebCTRL", for the day, week or month you view. Each row says the event, what to change in WebCTRL and why. Covered events and later events are collapsed below it.' },
+      { type: 'fix', text: 'The event badge, its hover and the to-do list now use one coverage check, so they always agree. The hover names the rooms, the group and the minutes not covered.' },
+      { type: 'fix', text: 'The feed line shows when the feed was last checked, even when nothing changed.' } ] },
   { v: 'v2026.11.16.314', date: '2026-11-16', title: 'The report dialog remembers your choices',
     items: [ { type: 'fix', text: 'Generate Audit Report and Generate Service Proposal now open with the style, buildings and sections you used last time for that project. "Reset to defaults" clears them.' } ] },
   { v: 'v2026.11.16.313', date: '2026-11-16', title: 'One score everywhere; clearer savings card',
