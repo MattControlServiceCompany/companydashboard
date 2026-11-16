@@ -1760,7 +1760,7 @@ function renderDetail(p) {
             </div>
             <div id="ptab-district" class="ptab" style="padding:16px">
               <div id="ptab-district-inner-${p.id}" style="padding:16px">
-                <div style="font-size:12px;color:var(--text2);margin-bottom:12px">Check that each school event has a matching BAS schedule: compare the feed (top) with BAS schedules (below).</div>
+                <div style="font-size:12px;color:var(--text2);margin-bottom:12px">School events that need a WebCTRL schedule change are listed first. The full event feed is below.</div>
                 <div id="pcal-top-${p.id}"></div>
                 <div id="sact-panel-${p.id}"></div>
                 <div id="pcal-panel-${p.id}"></div>
@@ -2534,8 +2534,8 @@ function initDashboardTab(projId) {
 
   perfWrap.innerHTML = `
           <div class="card" style="margin-bottom:16px">
-            <div style="padding:20px;display:flex;gap:24px;align-items:stretch;flex-wrap:wrap">
-              <div style="flex:1;min-width:320px;background:rgba(147,51,234,0.15);border:1px solid rgba(147,51,234,0.3);border-radius:8px;padding:16px">
+            <div style="padding:20px;display:flex;gap:16px;align-items:stretch;flex-wrap:wrap">
+              <div style="flex:1.3;min-width:300px;background:rgba(147,51,234,0.15);border:1px solid rgba(147,51,234,0.3);border-radius:8px;padding:16px">
                 <div style="display:flex;align-items:flex-start;gap:16px;flex-wrap:wrap">
                   <div style="flex:1">
                     <div style="font-size:10px;color:var(--violet-label);text-transform:uppercase;letter-spacing:.6px;margin-bottom:8px;font-weight:600">Projected Savings</div>
@@ -2547,7 +2547,7 @@ function initDashboardTab(projId) {
                             i,
                           ) => `<div style="flex:1;text-align:center;background:rgba(147,51,234,0.12);border-radius:6px;padding:6px 4px">
                         <div style="font-size:9px;color:var(--text3);text-transform:uppercase;letter-spacing:.5px">Q${i + 1}</div>
-                        <div style="font-size:13px;font-weight:700;font-family:var(--mono);color:var(--violet-text)">${v !== 0 ? $c2(v) : '—'}</div>
+                        <div style="font-size:13px;font-weight:700;font-family:var(--mono);color:var(--violet-text)">${v !== 0 ? $c(v) : '—'}</div>
                       </div>`,
                         )
                         .join('')}
@@ -2561,7 +2561,7 @@ function initDashboardTab(projId) {
                             i,
                           ) => `<div style="flex:1;text-align:center;background:rgba(34,197,94,0.10);border-radius:6px;padding:6px 4px">
                         <div style="font-size:9px;color:var(--text3);text-transform:uppercase;letter-spacing:.5px">Q${i + 1}</div>
-                        <div style="font-size:13px;font-weight:700;font-family:var(--mono);color:var(--green)">${qtrWeather[(headQtr ? headQtr.year : '') + '-Q' + (i + 1)] ? 'Waiting for weather' : v !== 0 || actualQtrHasData[i] ? $c2(v) : '—'}</div>
+                        <div style="font-size:13px;font-weight:700;font-family:var(--mono);color:var(--green)">${qtrWeather[(headQtr ? headQtr.year : '') + '-Q' + (i + 1)] ? 'Waiting for weather' : v !== 0 || actualQtrHasData[i] ? $c(v) : '—'}</div>
                       </div>`,
                         )
                         .join('')}
@@ -2573,31 +2573,41 @@ function initDashboardTab(projId) {
                   </div>
                 </div>
               </div>
-              <div style="flex:1;min-width:200px;display:flex;flex-direction:column;justify-content:center;gap:16px">
-                <div>
-                  ${!cardBill
-                    ? '<div style="font-size:11px;color:var(--text3);text-transform:uppercase;letter-spacing:.6px">' + cardLabel + ': no bills yet</div>'
-                    : `<div style="font-size:11px;color:var(--text3);text-transform:uppercase;letter-spacing:.6px">${cardLabel} savings to date</div>
-                  <div style="font-size:28px;font-weight:800;font-family:var(--mono);color:${cardWeather.length ? 'var(--green)' : _cardShown.color};margin:4px 0">${cardWeather.length ? '<span style="font-size:15px">Waiting for weather data: ' + _escHtml(weatherWaitingLabel(cardWeather)) + '</span>' : _cardShown.text}</div>
-                  <div style="font-size:12px;color:var(--text2)">${_monNames(cardDataYMs).join(', ')} bills in${cardWaitYMs.length ? '; ' + _monNames(cardWaitYMs).join(' and ') + ' not in yet' : ''}</div>
-                  ${cardMissing.length ? '<div title="' + _escHtml(cardMissing.join(', ')) + '" style="display:inline-block;font-size:11px;color:var(--text2);background:var(--s2);border:1px solid var(--border);border-radius:10px;padding:2px 8px;margin:4px 0">' + cardMissing.length + ' meter bill' + (cardMissing.length !== 1 ? 's' : '') + ' not in yet (hover for the list)</div>' : ''}
-                  ${cardPct !== null ? '<div style="font-size:12px;color:var(--text2)"><span style="color:var(--green);font-weight:600">' + cardPct + '%</span> of ' + cardLabel + ' projected (' + $c2(cardProjected) + ')</div>' : ''}
-                  ${cardBasis ? '<div style="font-size:11px;color:var(--text3)">' + _escHtml(cardBasis) + '</div>' : ''}`}
-                </div>
-                <div style="border-top:1px solid var(--border);padding-top:12px">
-                  <div style="font-size:11px;color:var(--text3);text-transform:uppercase;letter-spacing:.6px">Total savings since contract start${cumRange ? ' (' + cumRange + ')' : ''}</div>
-                  <div style="font-size:28px;font-weight:800;font-family:var(--mono);color:${_totalSavShown.color};margin:4px 0">${_totalSavShown.text}</div>
-                  <div style="font-size:11px;color:var(--text3)">${cardBasis ? _escHtml(cardBasis) + ' · ' : ''}each quarter counted at $0 or more</div>
-                  ${cumWeatherWaiting.length ? '<div style="font-size:11px;color:var(--text2);margin-top:4px">Does not include ' + _escHtml(weatherWaitingLabel(cumWeatherWaiting)) + ': waiting for weather data</div>' : ''}
-                </div>
-              </div>
-              <div style="display:flex;flex-direction:column;gap:12px;justify-content:center">
-                ${cardPairShown ? `<div style="text-align:center"><div style="font-size:10px;color:var(--text3);text-transform:uppercase" title="Baseline cost of ${cardPairLabel}">Baseline</div><div style="font-size:16px;font-weight:700;font-family:var(--mono)">${$c(cardPairBl)}</div></div>
-                <div style="text-align:center"><div style="font-size:10px;color:var(--text3);text-transform:uppercase" title="Baseline cost less the savings of ${cardPairLabel}">Current</div><div style="font-size:16px;font-weight:700;font-family:var(--mono)">${$c(cardPairCur)}</div></div>
-                <div style="text-align:center;font-size:10px;color:var(--text3)">for ${cardPairLabel}</div>` : ''}
-                ${estSavings > 0 ? '<div style="text-align:center"><div style="font-size:10px;color:var(--text3);text-transform:uppercase">Target</div><div style="font-size:16px;font-weight:700;font-family:var(--mono)">$' + Number(estSavings).toLocaleString() + '</div></div>' : ''}
-                ${ecmTotal > 0 ? '<div style="text-align:center;border-top:1px solid rgba(167,139,250,0.25);padding-top:8px;margin-top:4px"><div style="font-size:10px;color:var(--violet-label);text-transform:uppercase">ECM Projected</div><div style="font-size:16px;font-weight:700;font-family:var(--mono);color:var(--violet-text)">$' + ecmTotal.toLocaleString() + '/yr</div><div style="font-size:10px;color:var(--text3)">' + ecmCount + ' ECM' + (ecmCount !== 1 ? 's' : '') + ' saved — <button onclick="sv(\'calculators\')" style="font-size:10px;color:var(--violet-label);background:none;border:none;cursor:pointer;padding:0;text-decoration:underline">view</button></div></div>' : ''}
-              </div>
+              ${(function () {
+                // Matt 2026-11-16: two matching tiles; one big number, one short line, details on hover. No caption walls.
+                const tile = 'flex:1;min-width:180px;background:var(--s2);border:1px solid var(--border);border-radius:8px;padding:16px 18px;display:flex;flex-direction:column;gap:6px';
+                const lab = 'font-size:11px;color:var(--text3);text-transform:uppercase;letter-spacing:.6px;font-weight:600';
+                const big = 'font-size:30px;font-weight:800;font-family:var(--mono);line-height:1.1';
+                const sub = 'font-size:12px;color:var(--text2)';
+                const basisTip = cardBasis ? cardBasis.replace(/^vs /, 'Measured against the ') + '. ' : '';
+                const sub1 = cardBill
+                  ? _monNames(cardDataYMs).join(', ') + ' bills' + (cardWaitYMs.length ? ' · ' + _monNames(cardWaitYMs).join(' and ') + ' to come' : '')
+                  : '';
+                const late = cardMissing.length
+                  ? ' · <span title="' + _escHtml('Not in yet: ' + cardMissing.join(', ')) + '" style="border-bottom:1px dotted var(--text3);cursor:help">' + cardMissing.length + ' bill' + (cardMissing.length !== 1 ? 's' : '') + ' missing</span>'
+                  : '';
+                const q = !cardBill
+                  ? '<div style="' + lab + '">' + cardLabel + '</div><div style="' + sub + '">No bills yet</div>'
+                  : '<div style="' + lab + '">' + cardLabel + ' so far</div>' +
+                    '<div title="' + _escHtml(basisTip) + '" style="' + big + ';color:' + (cardWeather.length ? 'var(--text2)' : _cardShown.color) + '">' +
+                    (cardWeather.length ? '<span style="font-size:15px">Waiting for weather data: ' + _escHtml(weatherWaitingLabel(cardWeather)) + '</span>' : _cardShown.text) + '</div>' +
+                    '<div style="' + sub + '">' + _escHtml(sub1) + late + '</div>' +
+                    (cardPct !== null ? '<div style="' + sub + '">' + cardPct + '% of the ' + $c(cardProjected) + ' projected</div>' : '') +
+                    (cardPairShown && useNormalized
+                      ? '<div style="display:flex;gap:20px;margin-top:6px;padding-top:8px;border-top:1px solid var(--border);font-size:12px;color:var(--text3)">' +
+                        '<span title="' + _escHtml('Baseline cost of ' + cardPairLabel) + '">Baseline <b style="font-family:var(--mono);color:var(--text)">' + $c(cardPairBl) + '</b></span>' +
+                        '<span title="' + _escHtml('Actual cost of ' + cardPairLabel) + '">Actual <b style="font-family:var(--mono);color:var(--text)">' + $c(cardPairCur) + '</b></span></div>'
+                      : '');
+                const c =
+                  '<div style="' + lab + '">Since contract start</div>' +
+                  '<div title="' + _escHtml(basisTip + 'Each quarter counts as $0 or more; savings cannot be negative.') + '" style="' + big + ';color:' + _totalSavShown.color + '">' + _totalSavShown.text + '</div>' +
+                  '<div style="' + sub + '">' + _escHtml(cumRange) + '</div>' +
+                  (cumWeatherWaiting.length ? '<div style="' + sub + '">Does not include ' + _escHtml(weatherWaitingLabel(cumWeatherWaiting)) + ': waiting for weather data</div>' : '');
+                const extra =
+                  (estSavings > 0 ? '<div style="' + lab + '">Target</div><div style="font-size:18px;font-weight:700;font-family:var(--mono)">$' + Number(estSavings).toLocaleString() + '</div>' : '') +
+                  (ecmTotal > 0 ? '<div style="' + lab + ';margin-top:8px">ECM projected</div><div style="font-size:18px;font-weight:700;font-family:var(--mono);color:var(--violet-text)">$' + ecmTotal.toLocaleString() + '/yr</div><div style="' + sub + '">' + ecmCount + ' ECM' + (ecmCount !== 1 ? 's' : '') + ' saved · <button onclick="sv(&quot;calculators&quot;)" style="font-size:12px;color:var(--violet-label);background:none;border:none;cursor:pointer;padding:0;text-decoration:underline">view</button></div>' : '');
+                return '<div style="' + tile + '">' + q + '</div><div style="' + tile + '">' + c + '</div>' + (extra ? '<div style="' + tile + ';flex:0 0 auto;min-width:160px">' + extra + '</div>' : '');
+              })()}
             </div>
           </div>
           ${(function () {

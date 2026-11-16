@@ -2507,6 +2507,8 @@ async function siteResetAllMeterTableSettings() {
    site-ui.js delegates to this array and should NOT maintain its own copy.
 */
 var RELEASE_NOTES = [
+  { v: 'v2026.11.16.317', date: '2026-11-16', title: 'Cleaner savings card',
+    items: [ { type: 'fix', text: 'The Dashboard savings card is two matching tiles: this quarter so far and since contract start. Each shows one number and one short line; details are in the hover. Quarter tiles show whole dollars.' } ] },
   { v: 'v2026.11.16.316', date: '2026-11-16', title: 'Calendar: one clear to-do list',
     items: [ { type: 'fix', text: 'The Calendar shows one list, "To do in WebCTRL", for the day, week or month you view. Each row says the event, what to change in WebCTRL and why. Covered events and later events are collapsed below it.' },
       { type: 'fix', text: 'The event badge, its hover and the to-do list now use one coverage check, so they always agree. The hover names the rooms, the group and the minutes not covered.' },
