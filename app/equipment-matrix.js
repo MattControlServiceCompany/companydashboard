@@ -4708,6 +4708,7 @@ function emRenderMatrix(container, data, pid) {
 }
 
 function emStatPill(label, val, title) {
+  if (typeof val === 'number') val = val.toLocaleString();
   return (
     '<div' + (title ? ' title="' + _escHtml(title) + '"' : '') + ' style="display:flex;flex-direction:column;align-items:center;min-width:64px">' +
     '<div style="font-size:18px;font-weight:700;color:var(--text);line-height:1">' +
@@ -4728,6 +4729,7 @@ function emStatPill(label, val, title) {
    (emStatPill) — they were never the complaint and stay full-size as the
    at-a-glance headline numbers. */
 function emStatPillCompact(label, val, title) {
+  if (typeof val === 'number') val = val.toLocaleString();
   return (
     '<div' + (title ? ' title="' + _escHtml(title) + '"' : '') + ' style="display:flex;flex-direction:column;align-items:center;min-width:46px;padding:1px 2px">' +
     '<div style="font-size:13px;font-weight:700;color:var(--text);line-height:1.1">' +
@@ -5104,7 +5106,6 @@ function emRenderToolbar(data, pid, projBadge) {
     // Escaping (2026-09-23): id="..." here so wiring is attached via addEventListener
     // (see emRenderMatrix, right after this toolbar HTML is inserted) instead of
     // interpolating pid into an onclick string — removes 3 injection points.
-    '<button id="em-clear-all-btn" class="btn btn-ghost btn-sm" style="height:28px;font-size:11px;background:#b91c1c;border-color:#991b1b;color:#fff">Clear All Data</button>' +
     '<button class="btn btn-ghost btn-sm" onclick="emHandleExportCSV()" style="height:28px;font-size:11px">Export CSV</button>' +
     '<button id="em-export-setpoints-btn" class="btn btn-ghost btn-sm" style="height:28px;font-size:11px">Export Setpoints &amp; Schedules</button>' +
     // Escaping (2026-09-23, item 5ar): id="..." here so wiring is attached via addEventListener
@@ -5116,11 +5117,11 @@ function emRenderToolbar(data, pid, projBadge) {
     '\')" style="height:28px;font-size:11px">+ Column</button>' +
     '<button class="btn btn-ghost btn-sm" onclick="emShowUploadPanel(this,\'merge\',\'' +
     pid +
-    '\')" style="height:28px;font-size:11px">Import CSVs</button>' +
+    '\')" title="Add equipment from WebCTRL CSV exports. Existing equipment is kept and duplicates are skipped." style="height:28px;font-size:11px">Import CSVs</button>' +
     (data.rows && data.rows.length > 0
       ? '<button class="btn btn-ghost btn-sm" onclick="emShowUploadPanel(this,\'reimport\',\'' +
         pid +
-        '\')" style="height:28px;font-size:11px;color:#b45309;border-color:#d97706">Re-Import CSVs</button>'
+        '\')" title="Import newer WebCTRL CSV exports. Existing equipment is kept and duplicates are skipped; nothing is removed." style="height:28px;font-size:11px">Re-Import CSVs</button>'
       : '') +
     (data.rows && data.rows.length > 0
       ? '<button class="btn btn-ghost btn-sm" onclick="emOpenManageMappings(\'' +
@@ -5147,6 +5148,8 @@ function emRenderToolbar(data, pid, projBadge) {
         pid +
         '\')" style="height:28px;font-size:11px">Energy Services Agreement</button>'
       : '') +
+    '<span style="width:1px;height:20px;background:var(--border);display:inline-block;margin:0 4px;vertical-align:middle"></span>' +
+    '<button id="em-clear-all-btn" class="btn btn-ghost btn-sm" title="Remove every equipment row, edit, custom column and point mapping for this project. Asks you to confirm first." style="height:28px;font-size:11px;color:var(--red);border-color:var(--red)">Clear All Data</button>' +
     '<span style="width:1px;height:20px;background:var(--border);display:inline-block;margin:0 4px;vertical-align:middle"></span>' +
     '<div style="display:inline-flex;align-items:center;gap:2px">' +
     '<button onclick="emSetZoom(-10)" style="height:28px;width:24px;font-size:13px;line-height:1;background:var(--s2);border:1px solid var(--border);color:var(--text2);border-radius:4px;cursor:pointer;padding:0" title="Zoom out">−</button>' +
@@ -5245,11 +5248,11 @@ function emGetColDefs(projId) {
     },
     {
       key: 'pointCount',
-      label: 'Points',
+      label: 'All Points',
       group: 'id',
       width: 70,
       isComputed: true,
-      hint: 'Number of Building Automation System points. Hover for the point names. Click to open the full list.',
+      hint: 'Every Building Automation System point imported for this unit, counted by point path. The Audit view shows fewer: it counts point types (ASHRAE Points plus Other). Hover for the point names. Click to open the full list.',
     },
     {
       key: 'screenshot',
@@ -5520,7 +5523,7 @@ function emGetAuditColDefs(filteredRows) {
       width: 100,
       isAuditBasPts: true,
       title:
-        'Number of Building Automation System points mapped to ASHRAE 36 categories for this equipment (Phase D-1)',
+        'Number of point types mapped to ASHRAE 36 categories for this equipment. The Raw view All Points column counts every point, so it is larger.',
     },
     {
       key: '_autoOther',
@@ -8425,13 +8428,11 @@ function emRenderSequenceView(data, filters) {
     bodyHtml =
       '<div style="padding:40px;text-align:center;color:var(--text3);font-size:13px">' +
       'Sequence of Operations generation is not available for any equipment type in this project yet.</div>';
-  } else if (!bldg) {
-    bodyHtml =
-      '<div style="padding:40px;text-align:center;color:var(--text3);font-size:13px">' +
-      'Select a building from the filter above to generate a Sequence of Operations.</div>';
   } else {
+    // All Buildings (no building picked) covers every building: the checklist labels and the
+    // clause sets already name the building of each unit.
     var scopeRows = rows.filter(function (r) {
-      return (r.category || '') === activeCat && (r.building || '') === bldg;
+      return (r.category || '') === activeCat && (!bldg || (r.building || '') === bldg);
     });
 
     if (!scopeRows.length) {
@@ -8440,7 +8441,7 @@ function emRenderSequenceView(data, filters) {
         'No ' +
         _escHtml(EM_CATEGORY_LABELS[activeCat] || activeCat) +
         ' equipment found in ' +
-        _escHtml(bldg) +
+        _escHtml(bldg || 'any building') +
         '.</div>';
     } else {
       // Reset the checklist's default selection whenever the building/type scope changes —
@@ -8533,7 +8534,7 @@ function emRenderSequenceView(data, filters) {
         ' ' +
         _escHtml(EM_CATEGORY_LABELS[activeCat] || activeCat) +
         ' units selected in ' +
-        _escHtml(bldg) +
+        _escHtml(bldg || 'all buildings') +
         ' — ' +
         groups.length +
         ' clause set' +
@@ -8697,6 +8698,19 @@ function emRenderSummaryView(data, filters) {
     return (Math.round(statObj.avg * 10) / 10).toFixed(1) + (unit || '');
   }
 
+  // A building setpoint average well outside what an occupied room uses gets a plain flag with the reason on hover.
+  function fmtSetpointAvg(statObj, kind, totalZones) {
+    var base = fmtAvg(statObj, '°F', totalZones);
+    if (totalZones === 0 || !statObj || statObj.count === 0 || isNaN(statObj.avg)) return base;
+    var low = kind === 'heating' ? 60 : 65;
+    if (statObj.avg >= low) return base;
+    return (
+      base +
+      ' <span style="color:var(--text3);font-size:11px;cursor:help" title="Average ' + kind + ' setpoint is below ' + low +
+      '°F, which is low for an occupied room. It may be an unoccupied setback value or a wrong point. Check the source point.">(check)</span>'
+    );
+  }
+
   // fix/point-evidence-all-rows (2026-07-28): same as fmtAvg, plus a visible marker when one or
   // more sensors were excluded from this average by the CO2/RH plausibility guard (Change 2/3) —
   // "excluded, not vanished." Title attribute carries the count + reason for hover detail.
@@ -8819,7 +8833,10 @@ function emRenderSummaryView(data, filters) {
     '<th style="' +
     thStyleCenter +
     '" title="Setpoints require a WebCTRL point-list export, not the enriched matrix snapshot.">Zone Cooling Setpoint</th>';
-  html += '<th style="' + thStyleCenter + '">Zones vs Setpoints</th>';
+  html +=
+    '<th style="' +
+    thStyleCenter +
+    '" title="Zones by temperature: hot = warmer than the cooling setpoint, cold = cooler than the heating setpoint, ok = between the two. Only zones with a temperature and a setpoint are counted.">Zones vs Setpoints</th>';
   html += '<th style="' + thStyleCenter + '">CO2 (ppm)</th>';
   html += '<th style="' + thStyleCenter + '">Humidity (%)</th>';
   html +=
@@ -8872,8 +8889,8 @@ function emRenderSummaryView(data, filters) {
       html += '<tr style="min-height:48px">';
       html += '<td style="' + tdStyle + 'font-weight:600">' + bldgLink + '</td>';
       html += '<td style="' + tdCenter + 'font-weight:600">' + fmtAvg(bs.zoneTemp, '°F', bs.totalZones) + '</td>';
-      html += '<td style="' + tdCenter + '">' + fmtAvg(bs.htgSp, '°F', bs.totalZones) + '</td>';
-      html += '<td style="' + tdCenter + '">' + fmtAvg(bs.coolSp, '°F', bs.totalZones) + '</td>';
+      html += '<td style="' + tdCenter + '">' + fmtSetpointAvg(bs.htgSp, 'heating', bs.totalZones) + '</td>';
+      html += '<td style="' + tdCenter + '">' + fmtSetpointAvg(bs.coolSp, 'cooling', bs.totalZones) + '</td>';
       html += '<td style="' + tdCenter + '">' + vsCell + '</td>';
       html +=
         '<td style="' +
@@ -8924,6 +8941,9 @@ function emRenderSummaryView(data, filters) {
     pageAgg.cold +
     ' cold</span>';
   html += '<tfoot>';
+  // The Filtered row only appears when it differs from the Total row below it (same rows = a duplicate).
+  var _sameAsTotal = JSON.stringify(pageAgg) === JSON.stringify(totalAgg) && bldgNames.length === Object.keys(totalZoneStats).length;
+  if (!_sameAsTotal) {
   html += '<tr style="' + tfootRowStyle + '">';
   html +=
     '<td style="' +
@@ -8955,6 +8975,7 @@ function emRenderSummaryView(data, filters) {
     (_autoPageTotal > 0 ? _autoPageTotal.toLocaleString() : '<span style="color:var(--text3)">&#8212;</span>') +
     '</td>';
   html += '</tr>';
+  }
 
   // Total Average row (all rows in project)
   var totalBldgCount = Object.keys(totalZoneStats).length;
@@ -9175,7 +9196,7 @@ function emRenderCountsView(data, filters) {
       '<td style="' + tdNum + 'font-style:italic' + (isTotal ? ';font-weight:700' : '') + '" title="ESTIMATE, not a nameplate value. Sized from ' + fmt(t.hp) +
       ' of ' + fmt(t.hpN) + ' fan units (' + srcWords + '). ' + fmt(notKnown) + ' have no usable reading and are not counted. ' +
       'Each unit is rounded up to the next standard motor size and added together.">' +
-      '<a href="#" data-em-counts-list="1" data-scope="' + scope + '" data-key="' + _escHtml(key) + '" data-col="hp" style="color:var(--text);text-decoration:none">~' + fmt(Math.round(t.hpSum)) + '</a></td>'
+      '<a href="#" data-em-counts-list="1" data-scope="' + scope + '" data-key="' + _escHtml(key) + '" data-col="hp" style="color:var(--text);text-decoration:none">about ' + fmt(Math.round(t.hpSum)) + '</a></td>'
     );
   }
   function rowCells(t, scope, key, isTotal) {
@@ -9639,25 +9660,35 @@ function emRenderAuditTable(data, filters) {
         else filtAshrae++;
       }
     }
+    // Point TYPES per piece of equipment (a name that maps to one ASHRAE 36 column counts once per unit).
+    // The stat bar total above counts every distinct point, so it is larger: several points can share one type.
     var ptsText;
     if (filtered.length < rows.length) {
       ptsText =
+        (filtAshrae + filtOther).toLocaleString() +
+        ' point types in this view: ' +
         filtAshrae.toLocaleString() +
-        ' points count toward ASHRAE 36 scoring + ' +
+        ' scored for ASHRAE 36 + ' +
         filtOther.toLocaleString() +
-        ' additional points found (not scored) — of ' +
+        ' not scored (of ' +
+        (totalAshrae + totalOther).toLocaleString() +
+        ' building-wide: ' +
         totalAshrae.toLocaleString() +
         ' + ' +
         totalOther.toLocaleString() +
-        ' building-wide';
+        ')';
     } else {
       ptsText =
+        (totalAshrae + totalOther).toLocaleString() +
+        ' point types: ' +
         totalAshrae.toLocaleString() +
-        ' points count toward ASHRAE 36 scoring · ' +
+        ' scored for ASHRAE 36 + ' +
         totalOther.toLocaleString() +
-        ' additional points found (not scored)';
+        ' found but not scored';
     }
     countEl.textContent = ptsText;
+    countEl.title =
+      'Point types, counted once per piece of equipment. The Building Automation System Points total at the top counts every distinct point, so it is larger: several points can share one point type.';
   }
 
   // Pagination removed (2026-09-23) — all filtered rows render into the scrollable wrap.
@@ -10115,7 +10146,7 @@ function emRenderAuditCell(row, def, compliance, coveredMap, naMap, missingMap, 
         var _normVal = _normPtsForDisplay ? _normPtsForDisplay[match.pointName] : undefined;
         if (_normVal != null) rawVal = _normVal;
       }
-      var displayVal = rawVal !== '' ? (String(rawVal).length > 8 ? String(rawVal).slice(0, 8) : String(rawVal)) : null;
+      var displayVal = rawVal !== '' ? (String(rawVal).length > 12 ? String(rawVal).slice(0, 11) + '…' : String(rawVal)) : null;
       var tooltipBase = _escHtml((match.pointName || '') + (rawVal !== '' ? ': ' + rawVal : ''));
 
       // FIX 65030b9b: detect "present but blank at export time" state.

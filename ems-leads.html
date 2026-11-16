@@ -2254,7 +2254,7 @@
         document.getElementById('statsRow').innerHTML = `
     <div class="stat"><div class="stat-lbl">Total Leads</div><div class="stat-val c-em">${leads.length}</div><div class="stat-meta">${active.length} active</div></div>
     <div class="stat"><div class="stat-lbl">Pipeline Value</div><div class="stat-val c-em2">$${fmtNum(totalVal)}</div><div class="stat-meta">estimated annual</div></div>
-    <div class="stat"><div class="stat-lbl">Won Value</div><div class="stat-val c-lime">$${fmtNum(wonVal)}</div><div class="stat-meta">${won.length} contract${won.length !== 1 ? 's' : ''}</div></div>
+    <div class="stat"><div class="stat-lbl">Won Value</div><div class="stat-val c-lime">$${fmtNum(wonVal)}</div><div class="stat-meta">${won.length} won${won.filter((l) => +l.annualValue > 0).length < won.length ? ', ' + won.filter((l) => +l.annualValue > 0).length + ' with a value entered' : ''}</div></div>
     <div class="stat"><div class="stat-lbl">In Proposal</div><div class="stat-val c-violet">${leads.filter((l) => ['Proposal', 'Negotiating'].includes(l.stage)).length}</div><div class="stat-meta">active proposals</div></div>
     <div class="stat"><div class="stat-lbl">Follow-ups Due</div><div class="stat-val ${overdue.length > 0 ? 'c-danger' : 'c-em'}">${overdue.length}</div><div class="stat-meta">action needed</div></div>
   `;
@@ -2278,6 +2278,13 @@
         });
       }
 
+      // A column with thousands of cards made the page hundreds of thousands of pixels tall: show the first cards, then all on request.
+      const STAGE_CARD_LIMIT = 50;
+      const stageShowAll = {};
+      function showAllInStage(stage) {
+        stageShowAll[stage] = true;
+        renderPipeline();
+      }
       function renderPipeline() {
         renderStats();
         const filtered = getFilteredLeads();
@@ -2301,7 +2308,8 @@
           ondragleave="this.classList.remove('drag-over')"
           ondrop="dropToStage('${stage}',event)">
           ${stageLeads.length === 0 ? '<div style="font-size:11px;color:var(--text3);text-align:center;padding:20px 0">No leads</div>' : ''}
-          ${stageLeads.map((l) => leadCardHTML(l)).join('')}
+          ${stageLeads.slice(0, stageShowAll[stage] ? stageLeads.length : STAGE_CARD_LIMIT).map((l) => leadCardHTML(l)).join('')}
+          ${stageLeads.length > STAGE_CARD_LIMIT && !stageShowAll[stage] ? `<button class="btn" style="width:100%;margin-top:8px" onclick="showAllInStage('${stage}')">Showing ${STAGE_CARD_LIMIT} of ${stageLeads.length}. Show all</button>` : ''}
         </div>
       </div>`;
           })
@@ -2509,7 +2517,7 @@
         document.getElementById('analyticsContent').innerHTML = `
     <div class="stats-row" style="margin-bottom:20px">
       <div class="stat"><div class="stat-lbl">Total Pipeline</div><div class="stat-val c-em">$${fmtNum(totalVal)}</div><div class="stat-meta">all active stages</div></div>
-      <div class="stat"><div class="stat-lbl">Won Revenue</div><div class="stat-val c-lime">$${fmtNum(wonVal)}</div><div class="stat-meta">${leads.filter((l) => l.stage === 'Won').length} contracts</div></div>
+      <div class="stat"><div class="stat-lbl">Won Revenue</div><div class="stat-val c-lime">$${fmtNum(wonVal)}</div><div class="stat-meta">${leads.filter((l) => l.stage === 'Won').length} won${leads.filter((l) => l.stage === 'Won' && +l.annualValue > 0).length < leads.filter((l) => l.stage === 'Won').length ? ', ' + leads.filter((l) => l.stage === 'Won' && +l.annualValue > 0).length + ' with a value entered' : ''}</div></div>
       <div class="stat"><div class="stat-lbl">Win Rate</div><div class="stat-val c-violet">${winRate}%</div><div class="stat-meta">of closed deals</div></div>
       <div class="stat"><div class="stat-lbl">Avg Deal Size</div><div class="stat-val c-em2">$${total > 0 ? fmtNum(Math.round(totalVal / total)) : 0}</div><div class="stat-meta">estimated annual</div></div>
     </div>

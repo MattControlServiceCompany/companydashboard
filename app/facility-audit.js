@@ -416,8 +416,7 @@ var _faCss =
   '.fa-fld input{background:var(--s2);color:var(--text);border:1px solid var(--border);border-radius:4px;padding:4px 6px;font-size:12px}' +
   '.fa-line{flex-basis:100%;font-size:12px}' +
   '.fa-cell{width:100%;min-width:140px;box-sizing:border-box;background:var(--s2);color:var(--text);border:1px solid var(--border);border-radius:4px;padding:4px 6px;font-size:12px;font-family:inherit;resize:vertical}' +
-  '.fa-vscroll{max-height:320px;overflow:auto}' +
-  '.fa-vscroll th{position:sticky;top:0;z-index:var(--z-sticky-head,3)}' +
+  '.fa-vscroll{overflow:visible}' +
   '.fa-tbl tr.fa-total td{font-weight:600;background:var(--s1)}' +
   '.fa-tbl td.fa-num,.fa-tbl th.fa-num{text-align:right;white-space:nowrap}' +
   '.fa-cols{display:grid;grid-template-columns:repeat(auto-fit,minmax(300px,1fr));gap:12px;margin-bottom:12px}' +

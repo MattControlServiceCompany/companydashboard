@@ -1169,7 +1169,7 @@ function auditEstToggleUnits(projId, auditType, cat) {
 /* ── UI: breakdown table for one audit type ──────────────────────────────────────────────── */
 function _auditEstBreakdownTableHTML(b, titleText) {
   if (!b) {
-    return '<div style="padding:12px;color:var(--text3);font-size:12px">No Equipment Matrix data — import a BAS point list on the Equipment tab first.</div>';
+    return '<div style="padding:12px;color:var(--text3);font-size:12px">No Equipment Matrix data — import a BAS point list on the Equipment Matrix tab first.</div>';
   }
   var numTd = function (v) {
     return '<td class="ch-tbl-col-type-number">' + v + '</td>';

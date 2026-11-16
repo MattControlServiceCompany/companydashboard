@@ -85,10 +85,13 @@ function initHvacLoadTab(projId) {
   const method = _hvlMethod[_hvlKey(projId, selBid)] || 'thumb';
 
   wrap.innerHTML = `
+          <div style="padding:10px 16px;border-bottom:1px solid var(--border);font-size:13px;color:var(--text);line-height:1.45;flex-shrink:0">Estimates how much of each building's electricity, electric demand and gas goes to heating and cooling, starting from its baseline utility bills. <strong>Next step:</strong> pick a building, check the percentages under Method, then click Save so the building counts in the project total.</div>
           <div style="padding:12px 16px;border-bottom:1px solid var(--border);display:flex;align-items:center;gap:12px;flex-wrap:wrap;flex-shrink:0">
             <span style="font-size:13px;font-weight:700;color:var(--text)">🌡️ HVAC Load Estimation</span>
             <span style="font-size:11px;color:var(--text3)">Building:</span>
-            <div style="display:flex;gap:4px;flex-wrap:wrap">${bldgPills}</div>
+            ${bldgs.length > 8
+              ? `<select aria-label="Building" onchange="_hvlSelectBldg(${projId},this.value)" style="font-size:12px;padding:4px 8px;background:var(--s2);border:1px solid var(--border);color:var(--text);border-radius:6px;min-width:260px;max-width:420px">${bldgs.map((b) => `<option value="${_escHtml(b.id)}"${b.id === selBid ? ' selected' : ''}>${_escHtml(b.name || 'Building')}${b.sqft ? ' (' + Number(b.sqft).toLocaleString() + ' sf)' : ''}</option>`).join('')}</select>`
+              : `<div style="display:flex;gap:4px;flex-wrap:wrap">${bldgPills}</div>`}
             <div style="margin-left:auto;display:flex;align-items:center;gap:10px">
               <span id="hvl-savedts-${projId}" style="font-size:11px;color:var(--text3)">${_hvlSavedLabel(selBldg)}</span>
               <span id="hvl-unsaved-${projId}" style="font-size:11px;color:var(--warn);display:none">● Unsaved changes</span>
@@ -237,7 +240,7 @@ function _hvlRenderRollup(projId) {
 
 function _hvlSavedLabel(b) {
   const at = b && b.hvacLoad && b.hvacLoad.savedAt;
-  return at ? 'Last saved: ' + new Date(at).toLocaleString() : 'Not saved yet';
+  return at ? 'Last saved: ' + new Date(at).toLocaleString() : '';
 }
 
 function _hvlUpdateSaveUI(projId) {
@@ -798,8 +801,8 @@ function _buildBaselineDataHtml(b, projId, opts) {
               <thead>
                 <tr>
                   <th style="width:80px">Month</th>
-                  ${elecM ? '<th style="text-align:right">Normalized kWh</th>' + (rpt ? '<th style="text-align:right">Billed kWh</th>' : '') + '<th style="text-align:right">Actual kW</th>' + (hasBilledKW ? '<th style="text-align:right">Billed kW</th>' : '') + (hasFacKW ? '<th style="text-align:right">Facilities kW</th>' : '') + '<th style="text-align:right">kW Cost</th>' + (rpt && hasFacKW ? '<th style="text-align:right">Facilities kW Cost</th>' : '') + '<th style="text-align:right">kWh Cost</th><th style="text-align:right">Electric Cost</th><th style="text-align:right">' + (rpt ? '$/kWh' : 'Average $/kWh') + '</th><th style="text-align:right">' + (rpt ? '$/billed kW' : 'Average $/kW') + '</th><th style="text-align:right">Load Factor</th>' : ''}
-                  ${gasM ? '<th style="border-left:2px solid var(--border2);text-align:right">Normalized therms</th>' + (rpt ? '<th style="text-align:right">Billed therms</th>' : '') + '<th style="text-align:right">Average $/Therm</th><th style="text-align:right">Gas Cost</th>' : ''}
+                  ${elecM ? '<th style="text-align:right"' + (rpt ? '' : ' title="Baseline-year kWh adjusted for weather. The Load Breakdown Results below use the kWh on the bills, so their total is a little different."') + '>Normalized kWh</th>' + (rpt ? '<th style="text-align:right">Billed kWh</th>' : '') + '<th style="text-align:right">Actual kW</th>' + (hasBilledKW ? '<th style="text-align:right">Billed kW</th>' : '') + (hasFacKW ? '<th style="text-align:right"' + (rpt ? '' : ' title="Facilities kW: the highest billed kW of the past 12 months. The highest month is used for sizing equipment."') + '>Facilities kW</th>' : '') + '<th style="text-align:right">kW Cost</th>' + (rpt && hasFacKW ? '<th style="text-align:right">Facilities kW Cost</th>' : '') + '<th style="text-align:right">kWh Cost</th><th style="text-align:right">Electric Cost</th><th style="text-align:right">' + (rpt ? '$/kWh' : 'Average $/kWh') + '</th><th style="text-align:right">' + (rpt ? '$/billed kW' : 'Average $/kW') + '</th><th style="text-align:right">Load Factor</th>' : ''}
+                  ${gasM ? '<th style="border-left:2px solid var(--border2);text-align:right"' + (rpt ? '' : ' title="Baseline-year therms adjusted for weather. The Load Breakdown Results below use the therms on the bills, so their total is a little different."') + '>Normalized therms</th>' + (rpt ? '<th style="text-align:right">Billed therms</th>' : '') + '<th style="text-align:right">Average $/Therm</th><th style="text-align:right">Gas Cost</th>' : ''}
                   ${propaneM ? '<th style="border-left:2px solid var(--border2);text-align:right">Propane Gal</th><th style="text-align:right">Average $/Gal</th><th style="text-align:right">Propane Cost</th>' : ''}
                   ${showTotalUtility ? '<th style="text-align:right;border-left:2px solid var(--border2)">Total Utility</th>' : ''}
                 </tr>
@@ -947,7 +950,7 @@ function _buildBaselineDataHtml(b, projId, opts) {
                     (totKwh / sqft).toFixed(1) +
                     '</strong></span>'
                   : '') +
-                '<span>kBtu/sf: <strong style="color:var(--em)">' +
+                (rpt ? '<span>kBtu/sf: ' : '<span title="Weather-normalized baseline. The Site EUI on the Dashboard uses the kWh and therms on the bills, so it can differ.">kBtu/sf (normalized): ') + '<strong style="color:var(--em)">' +
                 (computeKBtu(totKwh, totTherms, totPropGal) / sqft).toFixed(1) +
                 '</strong></span>' +
                 '<span>$/sf: <strong style="color:var(--green)">' +
@@ -2443,7 +2446,7 @@ function _hvlRenderMsr(projId) {
             ${check.missing.map((m) => `<li>${_escHtml(m.label)}</li>`).join('')}
           </ul>
         </div>
-        <div style="margin-top:12px"><button class="btn btn-em btn-sm" onclick="_hvlOpenReportInputsAndRefresh(${projId},'${_escHtml(selBid)}')">Open Report Inputs</button></div>
+        <div style="margin-top:12px"><button class="btn btn-em btn-sm" onclick="_hvlOpenReportInputsAndRefresh(${projId},'${_escHtml(selBid)}')">Enter the missing inputs</button></div>
       </div>
     </div>`;
     return;
