@@ -4696,8 +4696,8 @@
         font-family: var(--mono);
         color: var(--text);
       }
-      /* Narrow windows: the info items wrap with the row. 1280 px and wider: info bar and buttons stay on ONE row;
-         the info text is cut with an ellipsis (full text in its tooltip) and the buttons never wrap. */
+      /* Narrow windows: the info items wrap with the row. 1280 px and wider: the buttons stay on the right and never wrap;
+         the info items wrap to a second line when they do not fit, so no fact is cut (D05, 2026-11-16). */
       .pd-hero-compact .phc-info {
         display: contents;
       }
@@ -4710,8 +4710,7 @@
           flex: 1 1 0;
           min-width: 0;
           overflow: hidden;
-          white-space: nowrap;
-          text-overflow: ellipsis;
+          white-space: normal;
         }
         .pd-hero-compact .phc-info > .phc-name,
         .pd-hero-compact .phc-info > .phc-item {
@@ -4780,6 +4779,15 @@
         padding-top: 6px;
         margin-bottom: -1px;
         padding-bottom: 9px;
+      }
+      /* A header panel (Project Baseline, Projected Savings, Project Performance) covers the tab page: no tab looks active (D55). */
+      .pd-tabs.panel-open .pdt.active {
+        font-weight: 500;
+        background: var(--s3);
+        border-top: 1px solid var(--border2);
+        padding-top: 8px;
+        margin-bottom: 0;
+        padding-bottom: 8px;
       }
       .pdt.drag-over {
         border-left: 2px solid var(--accent);
@@ -9943,11 +9951,11 @@
                 <div
                   class="stat-val c-em2"
                   id="h-equip"
-                  data-calc-formula="Total equipment records across all projects and buildings"
+                  data-calc-formula="Equipment Matrix rows, added up over all projects"
                 >
                   0
                 </div>
-                <div class="stat-meta">in repository</div>
+                <div class="stat-meta" title="Rows in the Equipment Matrix of every project">in all project matrices</div>
               </div>
               <div class="stat" data-fb="energy.home.stat-card.baselines">
                 <div class="stat-lbl">Baselines Set</div>
@@ -9958,18 +9966,18 @@
                 >
                   0
                 </div>
-                <div class="stat-meta">projects</div>
+                <div class="stat-meta" id="h-base-meta">projects</div>
               </div>
               <div class="stat" data-fb="energy.home.stat-card.savings">
-                <div class="stat-lbl">Est. Savings/yr</div>
+                <div class="stat-lbl">Savings to Date</div>
                 <div
                   class="stat-val c-green"
                   id="h-sav"
-                  data-calc-formula="Sum of estimated savings per year across all active/in-progress projects"
+                  data-calc-formula="Savings counted so far (since each contract start, each quarter at $0 or more), added up over all active projects"
                 >
                   $0
                 </div>
-                <div class="stat-meta">across active projects</div>
+                <div class="stat-meta" title="Savings since contract start, not a yearly figure">since contract start, active projects</div>
               </div>
             </div>
             <div
@@ -10057,9 +10065,9 @@
                         <th>Type</th>
                         <th>Status</th>
                         <th title="Project Manager">Project Manager</th>
-                        <th>Contract</th>
-                        <th>Start</th>
-                        <th>Progress</th>
+                        <th title="Contract value in dollars (set in Edit Project)">Contract $</th>
+                        <th title="Project start date">Start</th>
+                        <th title="Share of the time from the project start date to its end date that has passed (a higher value typed on the project wins)">Progress</th>
                         <th>Tasks</th>
                         <th></th>
                       </tr>

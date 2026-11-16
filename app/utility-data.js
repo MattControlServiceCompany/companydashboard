@@ -999,6 +999,15 @@ function getIncludedBldgs(pid) {
     return !(calc.length && calc.every((m) => isBaselineExcluded(pid, m.id)));
   });
 }
+// The ONE building count for a project (defects D08/D12/D13/D15, 2026-11-16). listed = every building the project holds
+// (what the Dashboard table lists, never the Unmatched Bills bucket); inBaseline = getIncludedBldgs, the ones the baseline
+// totals count. The Dashboard header, the Projected Savings panel and the Utility page all read it; none counts on its own.
+function getProjectBuildingCounts(pid) {
+  return {
+    listed: getUDBldgs(pid).filter((b) => !isUnmatchedSentinelBldg(b)).length,
+    inBaseline: getIncludedBldgs(pid).length,
+  };
+}
 // Baseline/EUI-eligible buildings: the included buildings that also have sqft (EUI-chart parity,
 // graphics-setpoints.js:1606). Used by getProjectBaselineTotals and the baseline cost sums, not the count.
 function getBaselineEligibleBldgs(pid) {
@@ -1028,6 +1037,10 @@ function getProjectBaselineTotals(pid) {
     }),
   );
   out.monthCount = monthSet.size || 12;
+  // The first and last baseline month ('YYYY-MM') so a label can say which period the baseline covers (display only).
+  const _blYMs = Array.from(monthSet).sort();
+  out.firstYM = _blYMs.length ? _blYMs[0] : null;
+  out.lastYM = _blYMs.length ? _blYMs[_blYMs.length - 1] : null;
   out.kBtu = computeKBtu(out.kwh, out.therms, out.gallons);
   out.eui = computeBaselineEUI(out.kBtu, out.monthCount, sqft);
   return out;
@@ -1419,7 +1432,7 @@ function udFlagBadgeHtml(summary, goto) {
       ')"'
     : '';
   return (
-    '<span class="ud-flag-badge" style="font-size:8px;font-weight:700;color:var(--amber);background:rgba(245,158,11,.12);padding:1px 4px;border-radius:3px;margin-left:2px;flex-shrink:0;white-space:nowrap' +
+    '<span class="ud-flag-badge" style="font-size:10px;font-weight:700;color:var(--amber);background:rgba(245,158,11,.12);padding:1px 4px;border-radius:3px;margin-left:2px;flex-shrink:0;white-space:nowrap' +
     (goto ? ';cursor:pointer' : '') +
     '" title="' +
     _escHtml(hover) +
@@ -2280,13 +2293,16 @@ function renderUDProjAggPanel(content) {
     });
     const annProjSav = projSavByMo.reduce((s, v) => s + v, 0);
     const avgSavPct = annBase > 0 ? annProjSav / annBase : 0;
+    const _bCounts = getProjectBuildingCounts(udSelProjId); // the one building count (same as the Dashboard header)
     const _srcLabel =
       _msrBldgCount > 0
         ? '<div style="font-size:10px;color:var(--accent);margin-top:2px">\u{1F4CA} Source: Energy Savings Measures (' +
           _msrBldgCount +
+          ' of ' +
+          _bCounts.listed +
           ' building' +
-          (_msrBldgCount !== 1 ? 's' : '') +
-          ')</div>'
+          (_bCounts.listed !== 1 ? 's' : '') +
+          ' have measures)</div>'
         : '<div style="font-size:10px;color:var(--text3);margin-top:2px">\u{1F4CA} No measures configured</div>';
 
     const tdN = (v, color = 'var(--text)') =>
@@ -2304,7 +2320,7 @@ function renderUDProjAggPanel(content) {
                 <div style="background:var(--s1);border:1px solid var(--border);border-radius:7px;padding:8px 11px"><div style="font-size:10px;color:var(--text2);text-transform:uppercase;letter-spacing:.5px;margin-bottom:2px">Annual Baseline</div><div style="font-size:15px;font-weight:800">${$f(annBase)}</div></div>
                 <div style="background:var(--s1);border:1px solid var(--border);border-radius:7px;padding:8px 11px"><div style="font-size:10px;color:var(--text2);text-transform:uppercase;letter-spacing:.5px;margin-bottom:2px">Projected Savings</div><div style="font-size:15px;font-weight:800;color:var(--em)">${$f(annProjSav)}</div><div style="font-size:11px;color:var(--text2);margin-top:2px">${(avgSavPct * 100).toFixed(1)}% of baseline</div></div>
                 <div style="background:var(--s1);border:1px solid var(--border);border-radius:7px;padding:8px 11px"><div style="font-size:10px;color:var(--text2);text-transform:uppercase;letter-spacing:.5px;margin-bottom:2px">Projected Spend</div><div style="font-size:15px;font-weight:800;color:var(--em2)">${$f(annBase - annProjSav)}</div></div>
-                <div style="background:var(--s1);border:1px solid var(--border);border-radius:7px;padding:8px 11px"><div style="font-size:10px;color:var(--text2);text-transform:uppercase;letter-spacing:.5px;margin-bottom:2px">Buildings</div><div style="font-size:15px;font-weight:800">${bldgs.length}</div></div>
+                <div style="background:var(--s1);border:1px solid var(--border);border-radius:7px;padding:8px 11px"><div style="font-size:10px;color:var(--text2);text-transform:uppercase;letter-spacing:.5px;margin-bottom:2px">Buildings</div><div style="font-size:15px;font-weight:800">${_bCounts.listed}</div></div>
               </div>
             </div>
             <div style="overflow-x:auto"><table style="border-collapse:collapse;width:100%;font-size:12px">
@@ -3308,21 +3324,23 @@ function renderUDDetail(targetWrap) {
     udSelProjId +
     "','" +
     udSelBldgId +
-    '\')">✏️ Edit</button>' +
+    '\')" title="Edit this meter: name, account, commodity, units">✏️ Edit</button>' +
+    '<span style="display:flex;gap:6px;margin-left:14px;padding-left:14px;border-left:1px solid var(--border2)" title="Destructive actions: each one asks you to confirm first">' +
     '<button class="btn btn-ghost btn-sm" style="color:var(--danger);border-color:var(--danger)" onclick="deleteAllBills(\'' +
     udActiveMid +
     "','" +
     udSelProjId +
     "','" +
     udSelBldgId +
-    '\')" title="Delete all bills in this meter">🗑 Clear Bills</button>' +
+    '\')" title="Delete all bills in this meter (asks you to confirm first)">🗑 Clear Bills</button>' +
     '<button class="btn-del" onclick="deleteMeter(\'' +
     udActiveMid +
     "','" +
     udSelProjId +
     "','" +
     udSelBldgId +
-    '\')" title="Delete meter">✕</button>' +
+    '\')" title="Delete this meter and its bills (asks you to confirm first)">✕</button>' +
+    '</span>' +
     '</div>' +
     '</div>' +
     '<div id="maMeterWorkspace"></div>';
@@ -4529,7 +4547,7 @@ function renderBillsPane(pane, m, bills, incl) {
     m.id +
     '\')">📎 Attach bill PDFs</button>' +
     '<div class="ud-incl-toggle">' +
-    '<span style="font-size:11px;color:var(--text2)">Day calc:</span>' +
+    '<span style="font-size:11px;color:var(--text2)" title="How the Days column counts a billing period: with or without the end day">Day calc:</span>' +
     '<button class="ud-incl-btn' +
     (incl ? ' sel' : '') +
     '" title="Inclusive: count the start and end day (Aug 27 to Sep 28 = 33 days)" onclick="setMeterIncl(\'' +
