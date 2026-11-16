@@ -13855,8 +13855,10 @@ async function exportReportToDocx() {
     });
 
     showToast('Word document generated ✓');
+    if (window.chLog) chLog('report-generated', Object.assign({ format: 'word', ok: true, pages: pages.length }, chReportKind(data))); // site event log (app/site-events.js)
   } catch (err) {
     console.error('Word (.docx) export failed:', err);
+    if (window.chLog) chLog('report-generated', Object.assign({ format: 'word', ok: false, error: String((err && err.message) || err) }, chReportKind(data)));
     showToast('Word export failed: ' + (err && err.message ? err.message : err), 'error');
   } finally {
     restoreTierPanels();
@@ -15257,6 +15259,7 @@ function _startVersionSwap(manual) {
   } catch (e) {}
   _savePageStateForVersionUpdate();
   _chSwap = { nav: _chLastNavAt, input: _chInputSeq, manual: manual };
+  if (window.chLog) chLog('version-swap', { from: _loadedVersion(), to: _chPendingVer, trigger: _swapTrigger(manual) }); // site event log (app/site-events.js)
   if (!shell.swap(_chPendingVer)) _chSwapDropped();
 }
 // The shell asks this just before it removes this frame: still the same safe state as when the page state was saved?
@@ -15269,7 +15272,14 @@ window.chSwapAborted = function () {
   _chSwapDropped();
   if (manual && typeof showToast === 'function') showToast('The update did not finish because the page changed. Select New version again.');
 };
+// Why a swap starts, for the site event log: the same order of tests as _updateWhenSafe.
+function _swapTrigger(manual) {
+  if (manual) return 'user-click-update-link';
+  if (_userJustNavigated()) return 'page-change';
+  return document.hidden || (typeof document.hasFocus === 'function' && !document.hasFocus()) ? 'auto-away' : 'auto-idle';
+}
 function _chSwapDropped() {
+  if (window.chLog && _chSwap) chLog('version-swap-dropped', { to: _chPendingVer });
   _chSwap = null;
   try {
     sessionStorage.removeItem('ch_update_swap_ver');
@@ -15327,8 +15337,10 @@ function _showVersionUpdateBanner(fetchedVer) {
   link.textContent = 'New version: update';
   link.setAttribute('data-sync-short', 'Update');
   link.title = 'Version ' + fetchedVer + ' is available. Select to update. Your in-progress work is kept.';
+  if (link.style.display !== '' && window.chLog) chLog('update-link-shown', { to: fetchedVer });
   link.style.display = '';
   link.onclick = function () {
+    if (window.chLog) chLog('update-link-click', { to: fetchedVer, safe: chSafeToReload() });
     if (!_chFrameShell()) return showToast('Reload this page to get the new version.');
     if (!chSafeToReload()) return showToast('Save or close your open work first, then select New version again.');
     _startVersionSwap(true);

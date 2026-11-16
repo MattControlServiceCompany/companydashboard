@@ -428,8 +428,10 @@ async function downloadReportPdf() {
       URL.revokeObjectURL(url);
     }, 10000);
     showToast('PDF saved: ' + filename + ' (' + sheet + ' pages)', 'success', 6000);
+    if (window.chLog) window.chLog('report-generated', Object.assign({ format: 'pdf', ok: true, pages: sheet }, window.chReportKind(data))); // site event log (app/site-events.js)
   } catch (err) {
     console.error('downloadReportPdf failed:', err);
+    if (window.chLog) window.chLog('report-generated', Object.assign({ format: 'pdf', ok: false, error: String((err && err.message) || err) }, window.chReportKind(data)));
     showToast('Could not build the PDF: ' + (err && err.message ? err.message : err), 'error', 8000);
   } finally {
     restoreTierPanels();

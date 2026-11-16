@@ -693,16 +693,22 @@
     s.msg = '';
     s.feedChanged = false;
     render(pid);
+    if (window.chLog) window.chLog('calendar-sync-click', {});
     try {
       var snap = await readFeed(pid, cfg, token);
-      if (!snap) return;
+      if (!snap) {
+        if (window.chLog) window.chLog('calendar-sync-result', { ok: false, error: s.msg });
+        return;
+      }
       var id = 'calh_' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
       var rec = CalendarSync.historyRecord(snapOf(pid), snap, id); // the one copy of this rule (computations/calendar-sync.js), also used by the daily update
       await DB.set(k('hist', pid), CalendarSync.historyList(rec, histOf(pid)));
       await DB.set(k('snap', pid), snap);
       if (typeof window.sactPersist === 'function') await window.sactPersist(pid); // closes or reopens actions against the new copy
+      if (window.chLog) window.chLog('calendar-sync-result', { ok: true });
     } catch (e) {
       s.msg = 'The calendar feed could not be read. The last saved copy is kept.';
+      if (window.chLog) window.chLog('calendar-sync-result', { ok: false, error: String((e && e.message) || e) });
     } finally {
       s.busy = false;
       render(pid);
