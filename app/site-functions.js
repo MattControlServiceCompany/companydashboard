@@ -2507,6 +2507,12 @@ async function siteResetAllMeterTableSettings() {
    site-ui.js delegates to this array and should NOT maintain its own copy.
 */
 var RELEASE_NOTES = [
+  { v: 'v2026.11.16.318', date: '2026-11-16', title: 'Fixes from a full review of every page',
+    items: [ { type: 'fix', text: 'Energy Savings: the totals row is no longer hidden behind the scroll bar.' },
+      { type: 'fix', text: 'Equipment Matrix: the Sequence view works with All Buildings; point counts say what they count; Clear All Data is set apart.' },
+      { type: 'fix', text: 'HVAC Load Estimate: the page says what it is for; a building list replaces the long row of buttons; the two kWh figures are labeled billed and normalized.' },
+      { type: 'fix', text: 'Dashboard and header: building counts agree everywhere; the header baseline names its months; contract dates read clearly; the building table has a totals row; every status has a tooltip.' },
+      { type: 'fix', text: 'Home, Projects, Cost Estimate, Budget, EMS Leads and Settings: wrong labels and counts fixed.' } ] },
   { v: 'v2026.11.16.317', date: '2026-11-16', title: 'Cleaner savings card',
     items: [ { type: 'fix', text: 'The Dashboard savings card is two matching tiles: this quarter so far and since contract start. Each shows one number and one short line; details are in the hover. Quarter tiles show whole dollars.' } ] },
   { v: 'v2026.11.16.316', date: '2026-11-16', title: 'Calendar: one clear to-do list',
