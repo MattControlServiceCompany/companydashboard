@@ -15074,7 +15074,17 @@ function initUtilityTool() {
   renderUDDetail();
   _checkForVersionUpdate();
   // Release push (Matt 2026-11-16): one Realtime socket (app/version-push.js) tells this tab at once that a release was announced.
-  if (window.chVersionPush) window.chVersionPush.start((v) => { if (v && v !== _loadedVersion()) _checkForVersionUpdate(); });
+  if (window.chVersionPush) window.chVersionPush.start((v) => {
+    // The channel is public (publishable key): a message only starts a check of site-ui.js, never a swap by itself. Real version
+    // format only, and at most one check per 10 s, so a flood of fake messages cannot flood the site with requests.
+    if (!/^v\d{4}\.\d{2}\.\d{2}\.\d+$/.test(String(v)) || v === _loadedVersion() || _chPushWait) return;
+    const wait = _chVerLastCheck + _CH_PUSH_MIN_GAP_MS - Date.now();
+    if (wait <= 0) return _checkForVersionUpdate();
+    _chPushWait = setTimeout(() => {
+      _chPushWait = null;
+      _checkForVersionUpdate();
+    }, wait); // a release soon after the last check is checked at the end of the 10 s, not dropped
+  });
   // Issue e9f1157c round 2: the check above only fires once, right after page load,
   // when the loaded bundle and the live server were necessarily in sync (they were
   // just served together) — a mismatch can never be observed at that instant. The
@@ -15163,6 +15173,8 @@ function _checkForVersionUpdate() {
 
 /* A new version waits for a safe moment (user idle 30 s or away). One local timer, only while a version is pending, retries
    then. No server call. */
+let _chPushWait = null; // one delayed check after a pushed release message
+const _CH_PUSH_MIN_GAP_MS = 10 * 1000; // a pushed message checks at most once per 10 s (fake-message flood limit)
 let _chPendingTimer = null;
 function _armPendingRetry() {
   if (_chPendingTimer || !_chPendingVer) return;
