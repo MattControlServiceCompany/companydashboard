@@ -2507,6 +2507,8 @@ async function siteResetAllMeterTableSettings() {
    site-ui.js delegates to this array and should NOT maintain its own copy.
 */
 var RELEASE_NOTES = [
+  { v: 'v2026.11.16.312', date: '2026-11-16', title: 'The site keeps a log of what happens',
+    items: [ { type: 'new', text: 'The site now records version changes (and whether they happened by themselves or by a click), page errors, sync problems, calendar syncs and report downloads, so problems can be found without asking you.' } ] },
   { v: 'v2026.11.16.311', date: '2026-11-16', title: 'A quarter below the baseline shows one value',
     items: [ { type: 'fix', text: 'A quarter whose savings fell below zero now shows "$0 (actual −$7,783)" instead of "−$7,783 → $0": the counted value first, the actual in brackets.' } ] },
   { v: 'v2026.11.16.310', date: '2026-11-16', title: 'Safer update messages',
