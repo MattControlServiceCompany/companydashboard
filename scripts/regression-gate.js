@@ -238,11 +238,11 @@ function probeInPage() {
       const rows = (m && m.rows) || [];
       if (rows.length) {
         const s = emCalcSummaryStats(rows);
-        const a = emComputeAuditStats(rows);
+        const a = a36ComputeScores(p.id);
         put(ps + '.em.rows', rows.length);
         put(ps + '.em.buildings', s.buildings);
-        put(ps + '.em.pointCoveragePct', a.avgCoverage);
-        put(ps + '.em.sequenceReadyPct', a.seqReadinessPct);
+        put(ps + '.em.pointCoveragePct', a && a.portfolio.pointPct);
+        put(ps + '.em.sequenceReadyPct', a && a.portfolio.seqPct);
         put(ps + '.em.pointTotal', emPointTotal(rows).total);
         const cat = {};
         rows.forEach((r) => (cat[r.category || '?'] = (cat[r.category || '?'] || 0) + 1));

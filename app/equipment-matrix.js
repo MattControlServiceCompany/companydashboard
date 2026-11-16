@@ -5884,52 +5884,53 @@ function emAuditSeqReadiness(r, comp) {
 }
 
 /* ── emComputeAuditStats ────────────────────────────────────────────────────
-   Compute average compliance % and total BAS point count across all rows.
-   Returns: { avgCoverage: number, totalBASPoints: number }              */
+   Total BAS point count across all rows. Returns: { totalBASPoints: number }
+   The Sensor Coverage %, Sequence Readiness % and overall score are NOT computed here: they come
+   from a36ComputeScores (report-engine.js), the one owner shared with the Audit Report
+   (backlog 45e09ff0). See emAuditScorePills.                                         */
 function emComputeAuditStats(rows) {
   var totalPts = 0;
-  var totalCoverage = 0;
-  var covCount = 0;
-  var _auditStatsMaps = emLoadCustomMappings(window._emActivePid || '');
-  var _auditStatsPid = window._emActivePid || '';
-  for (var i = 0; i < rows.length; i++) {
-    var r = rows[i];
-    totalPts += emRowPointCount(r);
-    if (r.category && EM_POINT_CATEGORIES[r.category]) {
-      // space-type-classifier-2026-07-29 fix: real per-row flags so the footer/summary
-      // avgCoverage stat agrees with the priced coverage and the Audit table column.
-      var compliance = emAuditCompliance(r, _auditStatsPid, _auditStatsMaps);
-      totalCoverage += compliance.coveragePct;
-      covCount++;
-    }
-  }
-  // Compute sequence readiness across all applicable rows
-  // Count sequences that are 'ready' vs total applicable (non-'na') sequences
-  var totalSeqApplicable = 0;
-  var totalSeqReady = 0;
-  for (var si = 0; si < rows.length; si++) {
-    var sr = rows[si];
-    if (!sr.category || !EM_POINT_CATEGORIES[sr.category]) continue;
-    var srCompliance = emAuditCompliance(sr, _auditStatsPid, _auditStatsMaps);
-    var srReadiness = emAuditSeqReadiness(sr, srCompliance);
-    for (var sk in srReadiness) {
-      if (!srReadiness.hasOwnProperty(sk)) continue;
-      var seqEntry = srReadiness[sk];
-      if (seqEntry.status !== 'na') {
-        totalSeqApplicable++;
-        if (seqEntry.status === 'ready') totalSeqReady++;
-      }
-    }
-  }
-  var seqReadinessPct = totalSeqApplicable > 0 ? Math.round((totalSeqReady / totalSeqApplicable) * 100) : 0;
+  for (var i = 0; i < rows.length; i++) totalPts += emRowPointCount(rows[i]);
+  return { totalBASPoints: totalPts };
+}
 
-  return {
-    avgCoverage: covCount > 0 ? Math.round(totalCoverage / covCount) : 0,
-    totalBASPoints: totalPts,
-    seqReadinessPct: seqReadinessPct,
-    seqReady: totalSeqReady,
-    seqApplicable: totalSeqApplicable,
+/* ── emAuditScorePills ──────────────────────────────────────────────────────
+   The three score pills (Sensor Coverage %, Sequence Readiness %, Overall Score %) for the stats
+   bar. Same numbers as the Audit Report: a36ComputeScores for the buildings of `rows`.
+   Returns '' when there is no scored equipment. */
+var EM_SCORE_TITLES = {
+  pointPct:
+    'Sensor Coverage %: share of the expected BAS points that the equipment has, weighted by equipment count. Same number as the Audit Report',
+  seqPct:
+    'Sequence Readiness %: share of the ASHRAE 36 sequences that apply to the equipment and have all the points they need, weighted by equipment count. Same number as the Audit Report',
+  composite:
+    'Overall Score %: points and sequences met over points and sequences required, weighted by equipment count. Same number as the Audit Report',
+};
+// The scores of the buildings of `rows` (the one owner a36ComputeScores). Pills and column footers both read this.
+function emAuditScoreFor(rows) {
+  var names = {};
+  for (var i = 0; i < rows.length; i++) names[rows[i].building || 'Unknown Building'] = true;
+  var keys = Object.keys(names);
+  var sc = keys.length && typeof a36ComputeScores === 'function' ? a36ComputeScores(window._emActivePid || '', keys) : null;
+  return sc ? sc.portfolio : null;
+}
+function emAuditScorePills(rows) {
+  var p = emAuditScoreFor(rows);
+  if (!p) return '';
+  var pillDef = function (pct, label, title) {
+    var color = pct >= 75 ? 'var(--green)' : pct >= 50 ? 'var(--warn)' : '#c0392b';
+    return (
+      '<div title="' + title + '" style="display:flex;flex-direction:column;align-items:center;min-width:64px">' +
+      '<div style="font-size:18px;font-weight:700;color:' + color + ';line-height:1">' + pct + '%</div>' +
+      '<div style="font-size:10px;color:var(--text3);margin-top:2px;text-transform:uppercase;letter-spacing:0.04em">' + label + '</div>' +
+      '</div>'
+    );
   };
+  return (
+    pillDef(p.pointPct, 'Sensor Coverage %', EM_SCORE_TITLES.pointPct) +
+    pillDef(p.seqPct, 'Sequence Readiness %', EM_SCORE_TITLES.seqPct) +
+    pillDef(p.composite, 'Overall Score %', EM_SCORE_TITLES.composite)
+  );
 }
 
 /* ── emUpdateStatsPillsForAudit ─────────────────────────────────────────────
@@ -5939,37 +5940,11 @@ function emUpdateStatsPillsForAudit(rows, pointRows) {
   if (!bar) return;
   emResetStatsBarLayout(bar); // undo Raw View's stacked/collapsible layout if it was active
   var base = emCalcSummaryStats(rows);
-  var audit = emComputeAuditStats(rows);
   var _pt = emPointTotal(pointRows || rows);
-  var avgCov = audit.avgCoverage;
-  var covColor = avgCov >= 75 ? 'var(--green)' : avgCov >= 50 ? 'var(--warn)' : '#c0392b';
-  var covPill =
-    '<div title="Sensor Coverage %: average share of the expected BAS points that each piece of equipment has" style="display:flex;flex-direction:column;align-items:center;min-width:64px">' +
-    '<div style="font-size:18px;font-weight:700;color:' +
-    covColor +
-    ';line-height:1">' +
-    avgCov +
-    '%</div>' +
-    '<div style="font-size:10px;color:var(--text3);margin-top:2px;text-transform:uppercase;letter-spacing:0.04em">Sensor Coverage %</div>' +
-    '</div>';
-  var seqPct = audit.seqReadinessPct;
-  var seqColor = seqPct >= 75 ? 'var(--green)' : seqPct >= 50 ? 'var(--warn)' : '#c0392b';
-  var seqPill =
-    audit.seqApplicable > 0
-      ? '<div title="Sequence Readiness %: share of the ASHRAE 36 sequences that apply to the equipment and have all the points they need" style="display:flex;flex-direction:column;align-items:center;min-width:64px">' +
-        '<div style="font-size:18px;font-weight:700;color:' +
-        seqColor +
-        ';line-height:1">' +
-        seqPct +
-        '%</div>' +
-        '<div style="font-size:10px;color:var(--text3);margin-top:2px;text-transform:uppercase;letter-spacing:0.04em">Sequence Readiness %</div>' +
-        '</div>'
-      : '';
   bar.innerHTML =
     emStatPill('Buildings', base.buildings) +
     emStatPill('Equipment', base.total) +
-    covPill +
-    seqPill +
+    emAuditScorePills(rows) +
     emStatPill('Building Automation System Points', _pt.total.toLocaleString(), _pt.title);
 }
 
@@ -6051,37 +6026,11 @@ function emUpdateStatsPillsForSummary(rows, pointRows) {
   if (!bar) return;
   emResetStatsBarLayout(bar); // undo Raw View's stacked/collapsible layout if it was active
   var base = emCalcSummaryStats(rows);
-  var audit = emComputeAuditStats(rows);
   var _pt = emPointTotal(pointRows || rows);
-  var avgCov = audit.avgCoverage;
-  var covColor = avgCov >= 75 ? 'var(--green)' : avgCov >= 50 ? 'var(--warn)' : '#c0392b';
-  var covPill =
-    '<div title="Sensor Coverage %: average share of the expected BAS points that each piece of equipment has" style="display:flex;flex-direction:column;align-items:center;min-width:64px">' +
-    '<div style="font-size:18px;font-weight:700;color:' +
-    covColor +
-    ';line-height:1">' +
-    avgCov +
-    '%</div>' +
-    '<div style="font-size:10px;color:var(--text3);margin-top:2px;text-transform:uppercase;letter-spacing:0.04em">Sensor Coverage %</div>' +
-    '</div>';
-  var seqPct = audit.seqReadinessPct;
-  var seqColor = seqPct >= 75 ? 'var(--green)' : seqPct >= 50 ? 'var(--warn)' : '#c0392b';
-  var seqPill =
-    audit.seqApplicable > 0
-      ? '<div title="Sequence Readiness %: share of the ASHRAE 36 sequences that apply to the equipment and have all the points they need" style="display:flex;flex-direction:column;align-items:center;min-width:64px">' +
-        '<div style="font-size:18px;font-weight:700;color:' +
-        seqColor +
-        ';line-height:1">' +
-        seqPct +
-        '%</div>' +
-        '<div style="font-size:10px;color:var(--text3);margin-top:2px;text-transform:uppercase;letter-spacing:0.04em">Sequence Readiness %</div>' +
-        '</div>'
-      : '';
   bar.innerHTML =
     emStatPill('Buildings', base.buildings) +
     emStatPill('Equipment', base.total) +
-    covPill +
-    seqPill +
+    emAuditScorePills(rows) +
     emStatPill('Building Automation System Points', _pt.total.toLocaleString(), _pt.title);
 }
 
@@ -7184,7 +7133,7 @@ function emComputeFooterAvgUncached(rows, defs) {
    Computes footer totals for the Audit view.
    _baspoints: sum of BAS point counts across all rows.
    _coverage:  average coverage % across rows that have a recognized point
-               category (mirrors the avgCoverage logic in emComputeAuditStats).
+               category (the same a36ComputeScores number as the pills).
    _cat_<key>: count of rows where that point category is "present" (covered,
                tier 1/2 = exact match, tier 3+ = fuzzy match). N/A rows are
                excluded from the count (not applicable to equip type).
@@ -7196,8 +7145,6 @@ function emComputeFooterAvgUncached(rows, defs) {
                                      [_seq_*]: { present, applicable } }      */
 function emComputeAuditFooterTotals(rows, defs) {
   var ptSum = 0;
-  var covSum = 0;
-  var covCount = 0;
   var _footerMaps = emLoadCustomMappings(window._emActivePid || '');
   var _footerPid = window._emActivePid || '';
 
@@ -7230,8 +7177,6 @@ function emComputeAuditFooterTotals(rows, defs) {
     // extra emLoadEquipConfigFlags calls per row.
     if (r.category && EM_POINT_CATEGORIES[r.category]) {
       comp = emAuditCompliance(r, _footerPid, _footerMaps);
-      covSum += comp.coveragePct;
-      covCount++;
     }
 
     // Count per-cat column presence
@@ -7282,8 +7227,16 @@ function emComputeAuditFooterTotals(rows, defs) {
 
   var result = {
     _baspoints: { sum: ptSum, count: rows.length },
-    _coverage: covCount > 0 ? { avg: Math.round(covSum / covCount), count: covCount } : null,
+    _coverage: null,
+    _seqPct: null,
   };
+  // The Sensor Coverage % and Sequence Readiness % footers are the owner's numbers (a36ComputeScores), the
+  // same as the pills: no second average of the visible cells.
+  var _footScore = rows.length ? emAuditScoreFor(rows) : null;
+  if (_footScore) {
+    result._coverage = { avg: _footScore.pointPct, count: _footScore.equipCount };
+    result._seqPct = { avg: _footScore.seqPct, count: _footScore.equipCount };
+  }
 
   // Merge cat/seq counts into result
   for (var ck in catCounts) {
@@ -7322,11 +7275,13 @@ function buildAuditFooterRow(totalsMap, defs, label, isBold) {
         '">' +
         totalsMap['_baspoints'].sum +
         '</td>';
-    } else if (def.isAuditCoverage && totalsMap['_coverage']) {
-      var cov = totalsMap['_coverage'].avg;
+    } else if ((def.isAuditCoverage || def.isAuditSeqPct) && totalsMap[def.isAuditCoverage ? '_coverage' : '_seqPct']) {
+      var cov = totalsMap[def.isAuditCoverage ? '_coverage' : '_seqPct'].avg;
       var covColor = cov >= 75 ? 'var(--green)' : cov >= 50 ? 'var(--warn)' : '#c0392b';
       html +=
-        '<td style="' +
+        '<td title="' +
+        EM_SCORE_TITLES[def.isAuditCoverage ? 'pointPct' : 'seqPct'] +
+        '" style="' +
         tdBase +
         'text-align:right;font-weight:' +
         (isBold ? '700' : '500') +
@@ -9979,6 +9934,14 @@ function emRenderAuditCell(row, def, compliance, coveredMap, naMap, missingMap, 
     var pctColor = pct >= 75 ? 'var(--green)' : pct >= 50 ? 'var(--amber)' : '#c0392b';
     var pctBg = pct >= 75 ? 'rgba(39,174,96,0.1)' : pct >= 50 ? 'rgba(230,126,34,0.1)' : 'rgba(192,57,43,0.1)';
     var hasPoints = row.category && EM_POINT_CATEGORIES[row.category];
+    if (hasPoints && compliance.totalRequired - compliance.totalNA <= 0) {
+      // 0 required points (nothing is expected of this unit): no percentage, never 0%. It is not scored.
+      return (
+        '<td style="' +
+        baseStyle +
+        'color:var(--text3)" title="No required ASHRAE 36 points for this equipment, so it is not scored">&#8212;</td>'
+      );
+    }
     if (!hasPoints) {
       // Equipment type is 'other' or unrecognized — no ASHRAE 36 compliance requirements apply
       return (
@@ -10020,7 +9983,7 @@ function emRenderAuditCell(row, def, compliance, coveredMap, naMap, missingMap, 
       return (
         '<td style="' +
         baseStyle +
-        'color:var(--text3)" title="No applicable ASHRAE 36 sequences for this equipment type">N/A</td>'
+        'color:var(--text3)" title="No applicable ASHRAE 36 sequences for this equipment type">&#8212;</td>'
       );
     }
     var _seqPctVal = Math.round((_seqReady / _seqApplicable) * 100);
