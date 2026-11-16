@@ -9,7 +9,7 @@
 //  E  a building with every meter excluded reads "Not in scope"; a building with in-scope meters and no data keeps "No Data"
 //  F  Period = the savings months; Baseline $ = baseline cost of those months; Current $ = that less the savings; Savings $ and % unchanged
 //  G  the quarter card shows the CURRENT calendar quarter to date (clock faked to 2026-11-16 = Q4): "Q4 2026: no bills yet" with no Q4 bill;
-//     with Oct savings, "Q4 2026 savings to date", the months named, a true basis label (no "Normalized"), a Baseline/Current pair labelled
+//     with Oct savings, "Q4 2026 Savings to Date", the months named, a true basis label (no "Normalized"), a Baseline/Current pair labelled
 //     with the same months, and a floored quarter shown as only "$0"; the cumulative card is labelled with the contract range
 // Run: CH_TMP_ROOT=<scratch> node tools/test-dashboard-performance-table.js   Exit 1 on any FAIL.
 'use strict';
@@ -144,10 +144,10 @@ const srv = http.createServer((q, r) => {
     check(a && money(a[iCu].t) === blP - 450, 'F Alpha Current $ = Baseline $ less the savings of those months = ' + (blP - 450) + ' (got ' + (a && a[iCu].t) + ')');
     check(a && money(a[iSv].t) === 450, 'F Alpha Savings $ unchanged = 450 (got ' + (a && a[iSv].t) + ')');
     check(a && a[iPc].t === (450 / blP * 100).toFixed(1) + '%', 'F Alpha % = Savings $ / the Baseline $ shown in the same row (' + (450 / blP * 100).toFixed(1) + '%, got ' + (a && a[iPc].t) + ')');
-    check(/Q4 2026\s*No bills yet/.test(got.card) && !/Q4 2026 savings to date/.test(got.card), 'G no Q4 bill yet: the card says "Q4 2026: no bills yet" and nothing else for the quarter (card: ' + got.card.slice(0, 40) + ')');
+    check(/Savings to Date[^$]{0,40}No bills yet/.test(got.card) && !/Oct bills in/.test(got.card), 'G no Q4 bill yet: the card says "Q4 2026: no bills yet" and nothing else for the quarter (card: ' + got.card.slice(0, 40) + ')');
     check(!/for Jan 26/.test(got.card) && !/Normalized/.test(got.card), 'G no unlabeled Jan-Sep Baseline/Current pair and no "Normalized" on the card');
-    check(/Total savings since contract start\s*\$640\s*Period\s*Dec 2025 – Sep 2026/.test(got.card), 'G cumulative card labelled with the real range and the sum of the floored quarters 340 + 300 + 0 (card: ' + (got.card.match(/Since contract start[^$]{0,45}\$[\d,]+/) || [''])[0] + ')');
-    check(/Compared to\s*baseline Jan 25 – Dec 25/.test(got.card) && /Rule\s*each quarter counted at \$0 or more/.test(got.card), 'G the card names the baseline months and the $0 rule');
+    check(/Total Savings Since Contract Start\s*\$640\s*Dec 2025 – Sep 2026/.test(got.card), 'G cumulative card labelled with the real range and the sum of the floored quarters 340 + 300 + 0 (card: ' + (got.card.match(/Since contract start[^$]{0,45}\$[\d,]+/) || [''])[0] + ')');
+    check(/a quarter below the baseline counts as \$0/.test(got.card), 'G the card states the $0 rule');
     // B at 1366: the table fits its card, headers on one line
     await page.setViewportSize({ width: 1366, height: 1080 });
     await page.waitForTimeout(600);
@@ -172,17 +172,17 @@ const srv = http.createServer((q, r) => {
     await page.evaluate((id) => initDashboardTab(id), PID);
     await page.waitForTimeout(800);
     const c1 = await cardText();
-    check(/Q4 2026 savings to date\s*\$40/.test(c1), 'G Q4 card: "Q4 2026 savings to date $40" (got ' + (c1.match(/Q4 2026 savings to date[^O]{0,12}/) || [''])[0] + ')');
-    check(/Bills in\s*Oct\s*Not in yet\s*Nov, Dec/.test(c1), 'G Q4 card names the months with bills and the ones not in yet (got ' + (c1.match(/Bills in[^M]{0,40}/) || [''])[0] + ')');
-    check(!/Normalized/.test(c1) && /Compared to\s*baseline Jan 25 – Dec 25/.test(c1), 'G Q4 card has the true basis label and no "Normalized"');
-    check(/Period\s*Q4 2026 to date \(Oct\)\s*Baseline\s*\$1,090\s*Current\s*\$1,050/.test(c1), 'G Baseline/Current pair = Oct baseline $1,090 and $1,090 less $40, labelled "Q4 2026 to date (Oct)" (got ' + (c1.match(/Period[^C]{0,60}Current\s*\$[\d,]+/) || [''])[0] + ')');
-    check(/Total savings since contract start\s*\$680\s*Period\s*Dec 2025 – Oct 2026/.test(c1), 'G cumulative = floored quarters 340 + 300 + 0 + 40 (got ' + (c1.match(/Since contract start[^$]{0,45}\$[\d,]+/) || [''])[0] + ')');
+    check(/Q4 2026 Savings to Date[^$]{0,60}\$40/.test(c1), 'G Q4 card: "Q4 2026 Savings to Date $40" (got ' + (c1.match(/Q4 2026 Savings to Date[^B]{0,70}/) || [''])[0] + ')');
+    check(/Oct bills in · Nov, Dec not in yet/.test(c1), 'G Q4 card names the months with bills and the ones not in yet (got ' + (c1.match(/Oct bills in[^$]{0,40}/) || [''])[0] + ')');
+    check(!/Normalized/.test(c1) && /Compared to the Jan 25 – Dec 25 baseline/.test(c1), 'G Q4 card has the true basis label and no "Normalized"');
+    check(/Baseline\s*\$1,090\s*Current\s*\$1,050\s*Q4 2026 to date \(Oct\)/.test(c1), 'G Baseline/Current pair = Oct baseline $1,090 and $1,090 less $40, labelled "Q4 2026 to date (Oct)" (got ' + (c1.match(/Period[^C]{0,60}Current\s*\$[\d,]+/) || [''])[0] + ')');
+    check(/Total Savings Since Contract Start\s*\$680\s*Dec 2025 – Oct 2026/.test(c1), 'G cumulative = floored quarters 340 + 300 + 0 + 40 (got ' + (c1.match(/Since contract start[^$]{0,45}\$[\d,]+/) || [''])[0] + ')');
     // G floor: Oct -30 -> billable $0, the measured value beside it
     await octStub(-30);
     await page.evaluate((id) => initDashboardTab(id), PID);
     await page.waitForTimeout(800);
     const c2 = await cardText();
-    check(/Q4 2026 savings to date\s*\$0(?! \()/.test(c2) && !/actual −/.test(c2), 'G a floored Q4 to date shows only "$0" (got ' + (c2.match(/Q4 2026 savings to date[^O]{0,28}/) || [''])[0] + ')');
+    check(/Q4 2026 Savings to Date[^$]{0,60}\$0(?! \()/.test(c2) && !/actual −/.test(c2), 'G a floored Q4 to date shows only "$0" (got ' + (c2.match(/Q4 2026 Savings to Date[^O]{0,28}/) || [''])[0] + ')');
     // G (source): "bills through" and the shared floored-display call
     const core = fs.readFileSync(path.join(ROOT, 'app', 'core.js'), 'utf8');
     check(/_cardShown = cardBill \? savingsFlooredShown\(/.test(core) && !/function _?quarterFloorText/.test(core), 'G the quarter card reuses savingsFlooredShown (no second formatter)');

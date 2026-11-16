@@ -2507,6 +2507,8 @@ async function siteResetAllMeterTableSettings() {
    site-ui.js delegates to this array and should NOT maintain its own copy.
 */
 var RELEASE_NOTES = [
+  { v: 'v2026.11.16.320', date: '2026-11-16', title: 'Savings card: back to the 11/9 layout',
+    items: [ { type: 'fix', text: 'The savings card uses the 11/9 layout again: the quarter and total savings in the middle, Baseline and Current on the right. Only the wording is new.' } ] },
   { v: 'v2026.11.16.319', date: '2026-11-16', title: 'Savings card: all facts back, in labeled rows',
     items: [ { type: 'fix', text: 'The savings card shows every fact again (bills in, not in yet, missing bills, baseline months, the $0 rule, the period of the Baseline and Current figures), each as a labeled row. Quarter tiles show cents again.' } ] },
   { v: 'v2026.11.16.318', date: '2026-11-16', title: 'Fixes from a full review of every page',
