@@ -62,10 +62,11 @@ const coilText = 'Controls the heat output of the heating coil; required for mor
 check(RE.includes(coilText) && PE.includes(coilText) && !/hot water flow through the heating coil/.test(RE + PE), 'A5. heating coil text names no hot water and is the same in both text sources');
 
 // A1
-check(/'The work needed is ' \+ rptCount\(_sumCounts\.sensors\)/.test(RE), 'A1. Summary work sentence starts with "The work needed is"');
+// The Detailed Executive Summary was rewritten 2026-11-16 (Matt: "not really an executive summary"); its work counts now open the Recommendations sentence.
+check(/_todo\.push\('install ' \+/.test(RE) && !/'The work needed is '/.test(RE), 'A1. Summary Recommendations sentence states the install count; the old "The work needed is" line is gone');
 
 // A2
-check(/' zones have no carbon dioxide sensor' \}\)/.test(RE) && !/zones have no carbon dioxide sensor, so ventilation/.test(RE) && !/ rooms have no carbon dioxide sensor/.test(RE), 'A2. Summary gaps say "zones", not "rooms"');
+check(/_co2Parts\.push\(rptCount\(_dcvZonesMissing\) \+ ' of ' \+ rptCount\(dcv\.totalZones\) \+ ' zone'/.test(RE) && !/ rooms? have no carbon dioxide/.test(RE) && !/zones have no carbon dioxide sensor, so ventilation/.test(RE), 'A2. Summary gaps say "zones", not "rooms"');
 check(!/Glossary/.test(RE.replace(/\/\/[^\n]*/g, '')) &&!/A room or area that one terminal unit controls/.test(RE), 'A2. the Glossary is gone (no Zone row)');
 
 // A6 (a reading and a share join with "for") is gone: a description holds no reading (2026-11-15, no narration).
