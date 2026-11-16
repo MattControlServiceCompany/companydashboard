@@ -32,7 +32,20 @@ const SyncClassification = (() => {
   // ── SYNCED — server-authoritative, hydrated at load, CAS on write ─────────
   // Each entry is either an exact key or a prefix (dynamic-suffix key family).
   // `prefix: true` means "key.startsWith(pattern)".
+  // The site event log (app/site-events.js chLog): one key per month, en_site_events_YYYY-MM, a list of events
+  // {id, ts, email, host, version, page, event, detail}, newest first, at most EVENT_LOG_MAX per month. It syncs through
+  // the same kv store as the other keys (merged by id when two tabs or users write the same month) but it is
+  // diagnostic data, not client data: never in a backup, an export or a restore (isNeverBackupKey), never counted in the
+  // sync status, never redrawn, and a failed write is dropped (app/db.js _enqueueWrite).
+  const EVENT_LOG_PREFIX = 'en_site_events_';
+  const EVENT_LOG_MAX = 2000;
   const SYNCED = [
+    {
+      pattern: EVENT_LOG_PREFIX,
+      prefix: true,
+      neverBackup: true,
+      note: 'app/site-events.js: en_site_events_<YYYY-MM> = the site event log of that month (version swaps, page errors, sync and report events). Shared by both users, merged by id, newest EVENT_LOG_MAX kept. Diagnostic: never in a backup.',
+    },
     {
       pattern: 'en_projects',
       prefix: false,
@@ -483,16 +496,37 @@ const SyncClassification = (() => {
    * (app/site-functions.js) and RestoreMerge.isEngineKey (app/restore-merge.js).
    */
   function isNeverBackupKey(key) {
-    return PER_USER_CH_ENGINE_EXCLUSIONS.some(
+    return PER_USER_CH_ENGINE_EXCLUSIONS.concat(SYNCED).some(
       (e) =>
         e.neverBackup === true &&
         (e.prefix ? typeof key === 'string' && key.indexOf(e.pattern) === 0 : e.pattern === key),
     );
   }
 
+  /** isEventLogKey(key): the site event log month keys (see EVENT_LOG_PREFIX above). */
+  function isEventLogKey(key) {
+    return typeof key === 'string' && key.indexOf(EVENT_LOG_PREFIX) === 0;
+  }
+  /** capEventList(items): newest first (ts descending, stable), at most EVENT_LOG_MAX. The ONE cap rule, used by the writer and the merge. */
+  function capEventList(items) {
+    return (Array.isArray(items) ? items : [])
+      .map((e, i) => ({ e, i }))
+      .sort((a, b) => {
+        const x = (a.e && a.e.ts) || '';
+        const y = (b.e && b.e.ts) || '';
+        return x < y ? 1 : x > y ? -1 : a.i - b.i;
+      })
+      .slice(0, EVENT_LOG_MAX)
+      .map((o) => o.e);
+  }
+
   return {
     canonicalJSON,
     isNeverBackupKey,
+    isEventLogKey,
+    capEventList,
+    EVENT_LOG_PREFIX,
+    EVENT_LOG_MAX,
     RV_PREFIX,
     SYNCED,
     LOCAL_ONLY,
