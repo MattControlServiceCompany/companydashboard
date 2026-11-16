@@ -10,7 +10,7 @@
 //  F  Period = the savings months; Baseline $ = baseline cost of those months; Current $ = that less the savings; Savings $ and % unchanged
 //  G  the quarter card shows the CURRENT calendar quarter to date (clock faked to 2026-11-16 = Q4): "Q4 2026: no bills yet" with no Q4 bill;
 //     with Oct savings, "Q4 2026 savings to date", the months named, a true basis label (no "Normalized"), a Baseline/Current pair labelled
-//     with the same months, and a floored $0 shown as "$0 (actual -$X)"; the cumulative card is labelled with the contract range
+//     with the same months, and a floored quarter shown as only "$0"; the cumulative card is labelled with the contract range
 // Run: CH_TMP_ROOT=<scratch> node tools/test-dashboard-performance-table.js   Exit 1 on any FAIL.
 'use strict';
 const path = require('path');
@@ -182,7 +182,7 @@ const srv = http.createServer((q, r) => {
     await page.evaluate((id) => initDashboardTab(id), PID);
     await page.waitForTimeout(800);
     const c2 = await cardText();
-    check(/Q4 2026 savings to date \$0 \(actual −\$30\)/.test(c2), 'G a floored Q4 to date shows "$0 (actual -$30)" (got ' + (c2.match(/Q4 2026 savings to date[^O]{0,28}/) || [''])[0] + ')');
+    check(/Q4 2026 savings to date \$0(?! \()/.test(c2) && !/actual −/.test(c2), 'G a floored Q4 to date shows only "$0" (got ' + (c2.match(/Q4 2026 savings to date[^O]{0,28}/) || [''])[0] + ')');
     // G (source): "bills through" and the shared floored-display call
     const core = fs.readFileSync(path.join(ROOT, 'app', 'core.js'), 'utf8');
     check(/_cardShown = cardBill \? savingsFlooredShown\(/.test(core) && !/function _?quarterFloorText/.test(core), 'G the quarter card reuses savingsFlooredShown (no second formatter)');

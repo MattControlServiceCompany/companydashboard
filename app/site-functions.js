@@ -2507,6 +2507,12 @@ async function siteResetAllMeterTableSettings() {
    site-ui.js delegates to this array and should NOT maintain its own copy.
 */
 var RELEASE_NOTES = [
+  { v: 'v2026.11.16.313', date: '2026-11-16', title: 'One score everywhere; clearer savings card',
+    items: [
+      { type: 'fix', text: 'The Equipment Matrix Sensor Coverage, Sequence Readiness and new Overall Score now come from the same calculation as the Audit Report (JOCO Libraries: 88% / 72% / 84%). Lighting, plumbing and monitoring rows show a dash instead of 0%.' },
+      { type: 'fix', text: 'A quarter below the baseline now shows only $0. Savings cannot be negative, so there is no second figure.' },
+      { type: 'fix', text: 'The Dashboard savings card shows the current quarter to date and names the months that have bills. Baseline and Current are for those same months. "Normalized" is replaced by the real basis, and the total names its period.' },
+    ] },
   { v: 'v2026.11.16.312', date: '2026-11-16', title: 'The site keeps a log of what happens',
     items: [ { type: 'new', text: 'The site now records version changes (and whether they happened by themselves or by a click), page errors, sync problems, calendar syncs and report downloads, so problems can be found without asking you.' } ] },
   { v: 'v2026.11.16.311', date: '2026-11-16', title: 'A quarter below the baseline shows one value',

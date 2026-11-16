@@ -49,9 +49,9 @@ ok(ctx.sumPositiveSavings([-1, -2]) === 0 && ctx.sumPositiveSavings([]) === 0, '
 // floored negative vs true zero
 const fmt$ = (n) => '$' + Math.round(n).toLocaleString('en-US');
 const fl = ctx.savingsFlooredShown(-2023.4, 0, 0, fmt$, 'G', 'R', 'N');
-ok(fl.floored === true && fl.color === 'R' && fl.text === '$0 (actual ' + MINUS + '$2,023)', 'floored negative: billable first, actual in brackets, red: ' + fl.text);
+ok(fl.floored === true && fl.color === 'N' && fl.text === '$0', 'floored negative: only $0, neutral: ' + fl.text);
 const flp = ctx.savingsFlooredShown(-1.2, 0, 1, (n) => n.toFixed(1) + '%', 'G', 'R', 'N');
-ok(flp.floored && flp.color === 'R' && flp.text === '0.0% (actual ' + MINUS + '1.2%)', 'floored percent: ' + flp.text);
+ok(flp.floored && flp.color === 'N' && flp.text === '0.0%', 'floored percent: ' + flp.text);
 const z = ctx.savingsFlooredShown(0, 0, 0, fmt$, 'G', 'R', 'N');
 ok(!z.floored && z.color === 'N' && z.text === '$0', 'true zero: neutral, one value: ' + z.text);
 const z2 = ctx.savingsFlooredShown(-0.004, 0, 2, (n) => '$' + n.toFixed(2), 'G', 'R', 'N');
@@ -124,11 +124,11 @@ async function part2() {
     let rows = await egfxRows();
     ok(rows && rows.length > 0, 'Energy Graphics quarterly table rendered rows');
     const redOk = (c) => c === pal.red || c === pal.danger;
-    const flooredRows = (rows || []).filter((r) => /\(actual /.test(r[0].text));
+    const flooredRows = (rows || []).filter((r) => r[0].text === '$0');
     ok(flooredRows.length > 0, 'EG quarterly: a floored row shows measured -> $0 (' + JSON.stringify((rows || [])[0]) + ')');
     flooredRows.forEach((r) => {
-      ok(/^\$0 \(actual \u2212\$[\d,]+\)$/.test(r[0].text) && redOk(r[0].color), 'EG quarterly savings cell red, both values: ' + r[0].text);
-      ok(/^0\.0% \(actual \u2212[\d.]+%\)$/.test(r[1].text) && redOk(r[1].color), 'EG quarterly percent cell red, both values: ' + r[1].text);
+      ok(r[0].text === '$0' && r[0].color === pal.text, 'EG quarterly savings cell red, both values: ' + r[0].text);
+      ok(r[1].text === '0.0%' && r[1].color === pal.text, 'EG quarterly percent cell red, both values: ' + r[1].text);
     });
     // True zero (measured 0.004, billable 0.004): neutral, no sign, no arrow.
     await setBill(0.004, 0.004);
@@ -148,7 +148,7 @@ async function part2() {
     await setBill(0, -2023.4);
     let foot = await ppFoot();
     ok(foot && foot[0] && foot[0].label === 'Total (billable, not below $0)', 'PP quarter footer label: ' + (foot && foot[0] && foot[0].label));
-    ok(foot && foot[0] && foot[0].text === '$0.00 (actual ' + MINUS + '$2,023.40)' && redOk(foot[0].color), 'PP quarter footer floored: red, both values: ' + (foot && foot[0] && foot[0].text));
+    ok(foot && foot[0] && foot[0].text === '$0.00' && foot[0].color === pal.text, 'PP quarter footer floored: red, both values: ' + (foot && foot[0] && foot[0].text));
     await page.evaluate((id) => { toggleProjDetailPanel(id, 'perf'); }, pid); // close
     await setBill(0.004, 0.004);
     foot = await ppFoot();
