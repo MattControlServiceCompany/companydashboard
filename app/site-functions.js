@@ -2507,6 +2507,10 @@ async function siteResetAllMeterTableSettings() {
    site-ui.js delegates to this array and should NOT maintain its own copy.
 */
 var RELEASE_NOTES = [
+  { v: 'v2026.11.16.302', date: '2026-11-16', title: 'Audit Report: terminal counts',
+    items: [
+      { type: 'fix', text: 'Detailed Audit Report: findings for zone terminals count terminals ("all 10 terminals"), not units, so every terminal finding uses the same word.' },
+    ] },
   { v: 'v2026.11.16.301', date: '2026-11-16', title: 'Audit Report: second review corrections',
     items: [
       { type: 'fix', text: 'Detailed Audit Report: a finding marks a point that needs only programming (no device to install), so the findings agree with the devices listed for each library.' },

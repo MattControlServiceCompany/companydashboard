@@ -27285,9 +27285,9 @@ function _a36DetModel(d, rowsById, picMap, loaded) {
         pic: null,
         picCands: [],
       };
-      // What the count is of: a plant is a plant, not a unit; a CO2 count is against the units that need a CO2 sensor (the Executive Summary base).
+      // What the count is of: a plant is a plant and a terminal is a terminal, not a unit; a CO2 count is against the units that need a CO2 sensor (the Executive Summary base).
       var dcvNarrow = !!g && A36_DET_DCV_KEYS.indexOf(key) > -1 && f.total !== g.units.length;
-      f.fracNoun = g && (g.category === 'hwp' || g.category === 'chwp') ? 'plant' : dcvNarrow && A36_DET_TERMINALS[g.category] ? 'terminal' : 'unit';
+      f.fracNoun = g && (g.category === 'hwp' || g.category === 'chwp') ? 'plant' : g && A36_DET_TERMINALS[g.category] ? 'terminal' : 'unit';
       f.fracTail = dcvNarrow ? ' that need a CO2 sensor' : '';
       var frac = _a36DetFraction(units, f.total, f.fracNoun, f.fracTail);
       var szGroup = !!(g && g.singleZone);
