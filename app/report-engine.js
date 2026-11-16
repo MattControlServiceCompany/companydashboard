@@ -29296,7 +29296,7 @@ function generateASHRAE36ProposalHTML(data, selectedSections) {
  * @param {number|string} projId
  * @param {'audit'|'proposal'} type
  */
-function openASHRAE36ReportModal(projId, type) {
+function openASHRAE36ReportModal(projId, type, skipRestore) {
   var modal = document.getElementById('ashrae36ReportModal');
   if (!modal) {
     showToast('ASHRAE 36 report modal not found', 'error');
@@ -29310,6 +29310,7 @@ function openASHRAE36ReportModal(projId, type) {
   var sections = ASHRAE36_SECTIONS[type] || ASHRAE36_SECTIONS.audit;
 
   var bodyHTML =
+    '<div style="text-align:right;margin-bottom:6px"><a href="#" onclick="_a36ResetDialog();return false" style="font-size:12px;color:var(--em)">Reset to defaults</a></div>' +
     '<div style="margin-bottom:14px">' +
     '<div style="font-size:13px;font-weight:600;color:var(--text);margin-bottom:4px">Report Date</div>' +
     '<input type="date" id="a36ReportDate" value="' +
@@ -29390,15 +29391,73 @@ function openASHRAE36ReportModal(projId, type) {
 
   var bodyEl = modal.querySelector('#ashrae36ReportModalBody');
   if (bodyEl) bodyEl.innerHTML = bodyHTML;
-  scopeTreeSync(document.getElementById('a36Scope'));
-
   // Store context for generate button
   modal._a36ProjId = projId;
   modal._a36Type = type;
 
+  if (!skipRestore) _a36DialogRestore(projId, type, modal);
+  scopeTreeSync(document.getElementById('a36Scope'));
+
   modal.classList.add('open');
 }
 window.openASHRAE36ReportModal = openASHRAE36ReportModal;
+
+// Dialog memory (backlog f1a2858f): the choices of the last Generate click, per project and per report type, in the synced
+// per-project key en_audit_<pid>.reportDialog = { audit: {...}, proposal: {...} } (app/facility-audit.js faLoad/faSave).
+// Each entry: { style, buildings: [checked names], knownBuildings: [every name in the dialog then], sections: { key: bool } }.
+// The report date is not remembered (it starts at today). The picture folder has its own memory (app/picture-folder.js).
+function _a36DialogRestore(projId, type, modal) {
+  var saved = typeof faLoad === 'function' ? (faLoad(projId).reportDialog || {})[type] : null;
+  if (!saved || typeof saved !== 'object') return;
+  if (type !== 'proposal' && saved.style === 'detailed') {
+    var det = modal.querySelector('input[name="a36Style"][value="detailed"]');
+    if (det) det.checked = true;
+    _a36StyleChanged();
+  }
+  var known = Array.isArray(saved.knownBuildings) ? saved.knownBuildings : [];
+  var picked = Array.isArray(saved.buildings) ? saved.buildings : [];
+  // A building not in the saved list is new: it keeps today's default (checked). A saved building that is gone is ignored.
+  document.querySelectorAll('#a36Scope input[type="checkbox"]').forEach(function (cb) {
+    var name = cb.dataset ? cb.dataset.id || cb.dataset.key || cb.value : '';
+    if (name && known.indexOf(name) >= 0) cb.checked = picked.indexOf(name) >= 0;
+  });
+  var secs = saved.sections && typeof saved.sections === 'object' ? saved.sections : {};
+  modal.querySelectorAll('.a36SecCheck').forEach(function (cb) {
+    if (typeof secs[cb.dataset.key] === 'boolean') cb.checked = secs[cb.dataset.key];
+  });
+}
+
+function _a36DialogSave(projId, type, modal, buildingNames) {
+  if (typeof faLoad !== 'function') return;
+  var d = faLoad(projId);
+  var styleChosen = modal.querySelector('input[name="a36Style"]:checked');
+  var sections = {};
+  modal.querySelectorAll('.a36SecCheck').forEach(function (cb) {
+    sections[cb.dataset.key] = cb.checked;
+  });
+  if (!d.reportDialog || typeof d.reportDialog !== 'object') d.reportDialog = {};
+  d.reportDialog[type] = {
+    style: type !== 'proposal' && styleChosen ? styleChosen.value : 'simple',
+    buildings: buildingNames.slice(),
+    knownBuildings: _a36ScopeNodes(projId).map(function (n) {
+      return n.id;
+    }),
+    sections: sections,
+  };
+  faSave(projId, d);
+}
+
+function _a36ResetDialog() {
+  var modal = document.getElementById('ashrae36ReportModal');
+  if (!modal) return;
+  var d = faLoad(modal._a36ProjId);
+  if (d.reportDialog && d.reportDialog[modal._a36Type]) {
+    delete d.reportDialog[modal._a36Type];
+    faSave(modal._a36ProjId, d);
+  }
+  openASHRAE36ReportModal(modal._a36ProjId, modal._a36Type, true);
+}
+window._a36ResetDialog = _a36ResetDialog;
 
 // Report Style radio of the audit modal: Detailed shows the picture folder picker and turns on the Setpoint Programming Review
 // (Appendix A, printed only when zone setpoint data exists). The Detailed style has no Point Inventory, so its row is hidden and its box is off.
@@ -29590,6 +29649,8 @@ function generateASHRAE36Preview() {
   checks.forEach(function (cb) {
     selectedSections[cb.dataset.key] = cb.checked;
   });
+
+  _a36DialogSave(projId, type, modal, buildingNames);
 
   // Detailed style (audit only): the picture list and the files chosen in the folder picker become figures.
   var detailed = detailedStyle;

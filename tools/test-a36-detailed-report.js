@@ -812,7 +812,7 @@ const ok = (c, m) => {
     // ---- 10. Simple through the modal ----
     await page.evaluate(() => { document.getElementById('reportOverlay').style.display = 'none'; document.getElementById('reportPages').innerHTML = ''; });
     const simpleModal = await page.evaluate(async (PID) => {
-      openASHRAE36ReportModal(PID, 'audit');
+      openASHRAE36ReportModal(PID, 'audit', true);
       generateASHRAE36Preview();
       await new Promise((r) => setTimeout(r, 400));
       return Array.from(document.querySelectorAll('#reportPages .rpt-page')).map((p) => p.getAttribute('data-section'));
