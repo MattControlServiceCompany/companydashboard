@@ -2507,6 +2507,8 @@ async function siteResetAllMeterTableSettings() {
    site-ui.js delegates to this array and should NOT maintain its own copy.
 */
 var RELEASE_NOTES = [
+  { v: 'v2026.11.16.311', date: '2026-11-16', title: 'A quarter below the baseline shows one value',
+    items: [ { type: 'fix', text: 'A quarter whose savings fell below zero now shows "$0 (actual −$7,783)" instead of "−$7,783 → $0": the counted value first, the actual in brackets.' } ] },
   { v: 'v2026.11.16.310', date: '2026-11-16', title: 'Safer update messages',
     items: [ { type: 'fix', text: 'An update message must carry a real version number, and one tab checks at most once every 10 seconds, so false messages cannot load the site.' } ] },
   { v: 'v2026.11.16.309', date: '2026-11-16', title: 'New versions arrive by themselves',

@@ -151,7 +151,7 @@ const srv = http.createServer((q, r) => {
     check(n.sw <= n.cw, 'B at 1366 px no sideways scroll (scrollWidth ' + n.sw + ' <= clientWidth ' + n.cw + ')');
     check(n.h.every((h) => h < 45), 'B at 1366 px every header cell is one line high (' + n.h.join(',') + ')');
     // G: Q3 net -150, floored to 0
-    check(/Q3 2026 Total Savings\s*−\$150 → \$0/i.test(got.card) || /−\$150 → \$0/.test(got.card), 'G quarter card shows the measured value beside the floored $0 (card: ' + (got.card.match(/Q\d 2026 Total Savings[^%]{0,40}/i) || [''])[0] + ')');
+    check(/\$0 \(actual −\$150\)/.test(got.card), 'G quarter card shows the floored $0 with the actual in brackets (card: ' + (got.card.match(/Q\d 2026 Total Savings[^%]{0,60}/i) || [''])[0] + ')');
     // G (source): "bills through" and the shared floored-display call
     const core = fs.readFileSync(path.join(ROOT, 'app', 'core.js'), 'utf8');
     check(/_curQtrShown = savingsFlooredShown\(/.test(core) && !/function _?quarterFloorText/.test(core), 'G the quarter card reuses savingsFlooredShown (no second formatter)');

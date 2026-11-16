@@ -1064,12 +1064,12 @@ function savingsSign(v, decimals, minusOnly) {
 
 // savingsFlooredShown(measured, billable, decimals, fmtAbs, pos, neg, neutral) -> { text, color, floored } - how to show a
 // billable (floored) figure. When the measured value is negative and the floor made it $0 (floorQuarterSavings), show both,
-// "−$2,023 → $0", in `neg` (floored = true). Otherwise the figure with savingsSign and savingsSignColor (plus = true adds '+' to a positive; a true zero has
+// "$0 (actual −$2,023)", in `neg` (floored = true): the billable value first, the actual in brackets (Matt 2026-11-16). Otherwise the figure with savingsSign and savingsSignColor (plus = true adds '+' to a positive; a true zero has
 // no sign and is `neutral`). fmtAbs(n) formats |n|. The same call serves a percent: pass the two percents and a percent fmtAbs.
 function savingsFlooredShown(measured, billable, decimals, fmtAbs, pos, neg, neutral, plus) {
   const floored = savingsShown(measured, decimals) < 0 && savingsShown(billable, decimals) === 0;
   if (floored)
-    return { floored, color: neg, text: '−' + fmtAbs(Math.abs(measured)) + ' → ' + fmtAbs(0) };
+    return { floored, color: neg, text: fmtAbs(0) + ' (actual −' + fmtAbs(Math.abs(measured)) + ')' }; // Matt 2026-11-16: one value, not 'A → B'
   return {
     floored,
     color: savingsSignColor(billable, decimals, pos, neg, neutral),
