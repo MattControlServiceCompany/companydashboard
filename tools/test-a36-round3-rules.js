@@ -152,7 +152,7 @@ const nt = (t) => rsb._a36DetNormalizeText('<p>' + t + '</p>');
 check(/Mixed Air Temperature/.test(nt('Mixed Air Temp')) && !/\bTemp\b/.test(nt('Mixed Air Temp')), '8. Temp becomes Temperature');
 check(/Outdoor Air/.test(nt('OA Damper')) && /Chilled Water/.test(nt('CHW Supply')), '8b. OA and CHW are spelled out');
 check(/1\.2 in\. w\.c\./.test(nt('1.2 in H2O')), '8c. in H2O becomes in. w.c.');
-check(nt('(FPB-101 (Electrical))') === '<p>FPB-101 (Electrical)</p>', '8d. nested brackets flattened (' + nt('(FPB-101 (Electrical))') + ')');
+check(nt('(FPB-101 (Electrical))') === '<p>FPB\u2011101 (Electrical)</p>', '8d. nested brackets flattened (' + nt('(FPB-101 (Electrical))') + ')');
 
 // 9. section allow-list: headings of the 2021 standard (full.txt, verified 2026-11-14). x.y.z level at most.
 const ALLOW = new Set([

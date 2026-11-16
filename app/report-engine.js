@@ -16483,22 +16483,24 @@ var ASHRAE36_SEQUENCE_PLAIN = {
  * sentence "N units ...": many = the verb phrase for 2 or more units, one = the same phrase for exactly 1 unit. Occupancy-based
  * ventilation (demandCtrl, vav_dcv) has no entry: it has its own bullet. Keyed by EM_SEQUENCE_DEFS.key.
  */
+// A phrase says only what the audit data shows: the unit lacks the full sequence (a point or the programming is missing), never what the unit does or
+// does not do in service (a unit with an economizer that lacks a point still opens its damper).
 var ASHRAE36_SEQUENCE_EXEC_PHRASE = {
-  ahu_sat_reset: { many: 'hold one supply air temperature at all times', one: 'holds one supply air temperature at all times' },
-  ahu_dsp_reset: { many: 'hold one fixed duct static pressure', one: 'holds one fixed duct static pressure' },
-  ahu_economizer: { many: 'do not use outdoor air for free cooling', one: 'does not use outdoor air for free cooling' },
-  ahu_freeze_prot: { many: 'have no automatic freeze protection', one: 'has no automatic freeze protection' },
-  ahu_min_oa: { many: 'do not control their minimum outdoor air', one: 'does not control its minimum outdoor air' },
-  ahu_rf_control: { many: 'do not match the return fan to the supply fan', one: 'does not match the return fan to the supply fan' },
-  vav_zone_temp: { many: 'do not control zone temperature with the full sequence', one: 'does not control zone temperature with the full sequence' },
-  vav_damper_writeback: { many: 'do not confirm the damper position', one: 'does not confirm the damper position' },
-  vav_reheat: { many: 'have no reheat control at the zone', one: 'has no reheat control at the zone' },
-  hwp_supply_reset: { many: 'send hot water at one temperature in all weather', one: 'sends hot water at one temperature in all weather' },
-  hwp_pump_dp_reset: { many: 'run the hot water pump at full speed at all times', one: 'runs the hot water pump at full speed at all times' },
-  hwp_staging: { many: 'do not add boilers only when needed', one: 'does not add boilers only when needed' },
-  chwp_supply_reset: { many: 'send chilled water at one temperature at all loads', one: 'sends chilled water at one temperature at all loads' },
-  chwp_pump_dp_reset: { many: 'run the chilled water pump at full speed at all times', one: 'runs the chilled water pump at full speed at all times' },
-  chwp_staging: { many: 'do not add chillers only when needed', one: 'does not add chillers only when needed' },
+  ahu_sat_reset: 'supply air temperature reset',
+  ahu_dsp_reset: 'duct static pressure reset',
+  ahu_economizer: 'economizer',
+  ahu_freeze_prot: 'freeze protection',
+  ahu_min_oa: 'minimum outdoor air',
+  ahu_rf_control: 'return fan control',
+  vav_zone_temp: 'zone temperature control',
+  vav_damper_writeback: 'damper position',
+  vav_reheat: 'reheat control',
+  hwp_supply_reset: 'hot water supply temperature reset',
+  hwp_pump_dp_reset: 'hot water pump differential pressure reset',
+  hwp_staging: 'boiler staging',
+  chwp_supply_reset: 'chilled water supply temperature reset',
+  chwp_pump_dp_reset: 'chilled water pump differential pressure reset',
+  chwp_staging: 'chiller staging',
 };
 
 /**
@@ -18577,9 +18579,9 @@ function rptPageASHRAE36Executive(n, d, detailedTitles) {
       });
       return {
         qty: items.reduce(function (m, s) { return Math.max(m, s.qty); }, 0),
+        // "supply air temperature reset (9 units), economizer (7)": the sequence name, then how many units lack it (Manager, 2026-11-16: plain summary words, no repeated verb).
         text: items.map(function (s, i) {
-          var ph = ASHRAE36_SEQUENCE_EXEC_PHRASE[s.key];
-          return rptCount(s.qty) + ' ' + (i === 0 ? (s.qty === 1 ? 'unit ' : 'units ') : '') + (s.qty === 1 ? ph.one : ph.many);
+          return ASHRAE36_SEQUENCE_EXEC_PHRASE[s.key] + ' (' + rptCount(s.qty) + (i === 0 ? (s.qty === 1 ? ' unit' : ' units') : '') + ')';
         }),
       };
     };
@@ -18587,16 +18589,16 @@ function rptPageASHRAE36Executive(n, d, detailedTitles) {
     if (_ahuGroup.text.length) {
       _findings.push({
         qty: _ahuGroup.qty,
-        head: 'Air handlers run at fixed settings.',
-        text: _a36DetJoin(_ahuGroup.text) + '. These sequences adjust the equipment to what the building needs, which lowers fan, heating and cooling energy.',
+        head: 'Air handler sequences are incomplete.',
+        text: 'Air handlers lack these ASHRAE 36 sequences: ' + _a36DetJoin(_ahuGroup.text) + '. These sequences adjust the equipment to what the building needs, which lowers fan, heating and cooling energy.',
       });
     }
     var _plantGroup = _seqPhrases(/^(hwp|chwp|vav)_/);
     if (_plantGroup.text.length) {
       _findings.push({
         qty: _plantGroup.qty,
-        head: 'Plant and zone controls.',
-        text: _a36DetJoin(_plantGroup.text) + '. These sequences adjust the equipment to what the building needs, which lowers energy use.',
+        head: 'Plant and zone sequences are incomplete.',
+        text: 'Plants and zones lack these ASHRAE 36 sequences: ' + _a36DetJoin(_plantGroup.text) + '. These sequences adjust the equipment to what the building needs, which lowers energy use.',
       });
     }
     _findings = _findings
@@ -18608,7 +18610,7 @@ function rptPageASHRAE36Executive(n, d, detailedTitles) {
         head: 'Zone setpoints.',
         text:
           rptCount(_spNeed) + (_spNeed <= p.totalBuildings ? ' of ' + rptCount(p.totalBuildings) : '') + ' ' + (_spNeed === 1 && p.totalBuildings !== 1 ? _nounOne : _noun) +
-          (_spNeed === 1 ? ' has' : ' have') + ' zone setpoints outside the ASHRAE 36 recommended values (Appendix A).',
+          (_spNeed === 1 ? ' has' : ' have') + ' zone setpoints that differ from the recommended setpoints in Appendix A.',
       });
     }
     _findings = _findings.slice(0, 4);
@@ -20186,18 +20188,13 @@ function _a36BuildingContent(d, building, showBuildingInfra) {
   // fix/per-building-sensor-reconcile (2026-07-29): sensorsSum/seqsSum/mpFreq/sqFreq now come
   // from the PRICED catalog (_a36CatRows, see this function's header comment above) instead of
   // the raw eq.compliance.missingPoints/eq.seqReadiness accumulators — see that comment for the
-  // full rationale and the 255-raw-vs-4-priced NC ADC VAV measurement. hasApplicableSeq and
-  // rawSensorsSum stay RAW on purpose: hasApplicableSeq answers "was G36 ever checked against
-  // this category" (an audit fact, not a cost), and rawSensorsSum exists only to distinguish
-  // "0 priced because genuinely compliant" from "0 priced because every raw gap here is
-  // monitoring-only-zone/ioOnly and never entered the priced scope" in the sensorsCell branch
-  // below.
+  // full rationale and the 255-raw-vs-4-priced NC ADC VAV measurement. hasApplicableSeq stays
+  // RAW on purpose: it answers "was G36 ever checked against this category" (an audit fact,
+  // not a cost).
   function _pushCatSummaryRow(cat, catRows) {
     var unitCount = catRows.length;
     var hasApplicableSeq = false;
-    var rawSensorsSum = 0;
     catRows.forEach(function (eq) {
-      rawSensorsSum += (eq.compliance.missingPoints || []).length;
       var sr = eq.seqReadiness || {};
       for (var sk in sr) {
         if (sr.hasOwnProperty(sk) && sr[sk].status !== 'na') hasApplicableSeq = true;
@@ -20253,13 +20250,11 @@ function _a36BuildingContent(d, building, showBuildingInfra) {
 
     // 2026-07-29 fix (per-building-sensor-reconcile): a category can have raw gaps (points the
     // audit found missing) that are ALL monitoring-only-zone/ioOnly and so never enter the
-    // priced scope — "0 — Complete" would falsely read as a compliance pass in that case. Only
-    // use "Complete" when the raw scan found nothing to begin with.
+    // priced scope. The column lists devices to install, so that case and a category with no gap
+    // both read "None needed" (Matt, 2026-11-16 review: the old "None" read as a failure).
     var sensorsCell =
       sensorsSum === 0
-        ? rawSensorsSum === 0
-          ? 'None needed'
-          : 'None'
+        ? 'None needed'
         : sensorsBreakdown
           ? sensorsBreakdown
           : String(sensorsSum);
@@ -27188,10 +27183,14 @@ function _a36DetIsFanSpeedKey(key) {
 }
 
 // "all 5 units", "3 of 25 units", "the unit".
-function _a36DetFraction(qty, total) {
+// noun = what the units are called ('unit', 'plant', 'terminal'); tail = what makes the base ("that need a CO2 sensor"): a count against a
+// base that is smaller than the group says the base ("74 of the 94 terminals that need a CO2 sensor").
+function _a36DetFraction(qty, total, noun, tail) {
+  noun = noun || 'unit';
+  tail = tail || '';
   if (!total) return qty + (qty === 1 ? ' item' : ' items');
-  if (qty >= total) return total === 1 ? 'the unit' : total === 2 ? 'both units' : 'all ' + total + ' units';
-  return qty + ' of ' + total + ' units';
+  if (qty >= total) return total === 1 ? 'the ' + noun + tail : total === 2 ? 'both ' + noun + 's' + tail : 'all ' + total + ' ' + noun + 's' + tail;
+  return qty + ' of ' + (tail ? 'the ' : '') + total + ' ' + noun + 's' + tail;
 }
 
 // The "no control meaning in the body" points (outdoor dewpoint, demand level, air source mode, outdoor humidity and the like) are
@@ -27286,7 +27285,11 @@ function _a36DetModel(d, rowsById, picMap, loaded) {
         pic: null,
         picCands: [],
       };
-      var frac = _a36DetFraction(units, f.total);
+      // What the count is of: a plant is a plant, not a unit; a CO2 count is against the units that need a CO2 sensor (the Executive Summary base).
+      var dcvNarrow = !!g && A36_DET_DCV_KEYS.indexOf(key) > -1 && f.total !== g.units.length;
+      f.fracNoun = g && (g.category === 'hwp' || g.category === 'chwp') ? 'plant' : dcvNarrow && A36_DET_TERMINALS[g.category] ? 'terminal' : 'unit';
+      f.fracTail = dcvNarrow ? ' that need a CO2 sensor' : '';
+      var frac = _a36DetFraction(units, f.total, f.fracNoun, f.fracTail);
       var szGroup = !!(g && g.singleZone);
       // The drive is priced by the one rule _pricingDriveIsPriced (pricing-estimator.js): the supply fan drive on a single-zone unit with no fan
       // speed reading, the hot water pump drive on a plant that shows no pump drive point. The text says "drive" on the same rule.
@@ -27300,6 +27303,14 @@ function _a36DetModel(d, rowsById, picMap, loaded) {
       var pumpDrive = pumpUnits.length > 0;
       // Pricing counts one pump drive per pump (compliance.pumpCount); the text names the pumps when a plant shows more than one.
       var pumpTotal = pumpUnits.reduce(function (n, u) { return n + Math.max(1, (u.compliance && u.compliance.pumpCount) || 1); }, 0);
+      // A missing point that is only a controller point (no device to install): the audit prices it at $0 and the building table does not list it.
+      // The text says so, on the same rules as the price (_pricingDriveIsPriced for the drives, the ioOnly flag of PRICE_POINT_MAP for the rest).
+      var pointIsControllerOnly = function (k) {
+        if (_a36DetIsFanSpeedKey(k)) return !fanDrive;
+        if (k === 'hwPumpSpeed') return !pumpDrive;
+        var me = typeof PRICE_POINT_MAP !== 'undefined' ? PRICE_POINT_MAP[k] : null;
+        return !!(me && me.flags && me.flags.indexOf('ioOnly') !== -1);
+      };
       var pumpPhrase = pumpTotal > pumpUnits.length ? 'each of the ' + pumpTotal + ' hot water pumps' : 'the hot water pump';
       if (kind === 'seq') {
         // extra.keys: one finding that stands for two sequences on the same units (Minimum Outside Air with Occupancy-Based
@@ -27341,10 +27352,15 @@ function _a36DetModel(d, rowsById, picMap, loaded) {
             'Install a variable frequency drive on ' + (fanKeys.length ? 'the supply fan' : pumpPhrase) + (g ? ' of ' + frac : '') +
             (otherText.length ? ' and add the ' + _a36DetJoin(otherText) + ' point' + (otherText.length > 1 ? 's' : '') : '') +
             '. Program the ' + seqNoun + '.';
-        } else
-          f.recommendation =
-            (f.missing.length ? 'Add the ' + _a36DetJoin(f.missingText) + ' point' + plural + (g ? ' on ' + frac : ' (quantity ' + units + ')') + '. Program' : 'Program') +
-            ' the ' + seqNoun + (f.missing.length ? '' : g ? ' on ' + frac : ' (quantity ' + units + ')') + '.';
+        } else if (f.missing.length) {
+          var where = g ? ' on ' + frac : ' (quantity ' + units + ')';
+          var ctlText = f.missingText.filter(function (t, i) { return pointIsControllerOnly((extra.missingKeys || [])[i]); });
+          var devText = f.missingText.filter(function (t, i) { return !pointIsControllerOnly((extra.missingKeys || [])[i]); });
+          var recParts = [];
+          if (devText.length) recParts.push('Add the ' + _a36DetJoin(devText) + ' point' + (devText.length > 1 ? 's' : '') + where + '.');
+          if (ctlText.length) recParts.push('Add the ' + _a36DetJoin(ctlText) + ' point' + (ctlText.length > 1 ? 's' : '') + where + ' (programming only, no device to install).');
+          f.recommendation = recParts.join(' ') + ' Program the ' + seqNoun + '.';
+        } else f.recommendation = 'Program the ' + seqNoun + (g ? ' on ' + frac : ' (quantity ' + units + ')') + '.';
       } else {
         var sensor = _a36DetIsSensorLabel(label);
         f.section = String((row && row.g36Section) || '').replace(/^[§\s]*(Section\s*)?/i, '');
@@ -27997,10 +28013,16 @@ function _a36DetControlSentences(g, f, params, proof) {
   function has(k) {
     return cnt(k) > 0;
   }
-  // " (on 21 of 23 terminals)" when the points of a sentence are not on every unit of the group
-  function part(keys, noun) {
+  // "On 21 of the 23 terminals, " in front of a sentence when its points are not on every unit of the group (a sentence that holds for 21 of 23 never
+  // starts "Each terminal ..."); '' when every unit has them. The sentence that follows starts with a lower case letter.
+  function some(keys, noun) {
     var n = Math.min.apply(null, keys.map(cnt));
-    return n > 0 && n < total ? ' (on ' + n + ' of ' + total + ' ' + noun + 's)' : '';
+    return n > 0 && n < total ? 'On ' + n + ' of the ' + total + ' ' + noun + 's, ' : '';
+  }
+  // The sentence s (starting with a capital letter) behind the lead of some(): "The damper modulates." -> "On 1 of the 35 terminals, the damper modulates."
+  function lead(keys, noun, s) {
+    var l = some(keys, noun);
+    return l ? l + s.charAt(0).toLowerCase() + s.slice(1) : s;
   }
   function val(k) {
     return params[k] || null;
@@ -28162,10 +28184,12 @@ function _a36DetControlSentences(g, f, params, proof) {
     var tz = has('zoneTemp');
     var sps = has('htgSP') && has('coolSP');
     if (sched) add('The occupied schedule is ' + sched + '.');
-    if (has('termFanEnable')) add(BAS + 'enables the terminal fan' + part(['termFanEnable'], 'terminal') + '.');
-    if (flowKey && dampKey) add('The damper of each terminal modulates to hold ' + (flowKey === 'primaryFlow' ? 'its primary airflow setpoint' : 'its airflow setpoint') + part([flowKey, dampKey], 'terminal') + '.');
-    else if (dampKey) add('The damper of each terminal modulates' + part([dampKey], 'terminal') + '.');
-    else if (flowKey) add('Each terminal measures its airflow' + part([flowKey], 'terminal') + '.');
+    if (has('termFanEnable')) add(lead(['termFanEnable'], 'terminal', BAS + 'enables the terminal fan.'));
+    if (flowKey && dampKey) {
+      var holdText = flowKey === 'primaryFlow' ? 'its primary airflow setpoint' : 'its airflow setpoint';
+      add(some([flowKey, dampKey], 'terminal') ? lead([flowKey, dampKey], 'terminal', 'The damper modulates to hold ' + holdText + '.') : 'The damper of each terminal modulates to hold ' + holdText + '.');
+    } else if (dampKey) add(some([dampKey], 'terminal') ? lead([dampKey], 'terminal', 'The damper modulates.') : 'The damper of each terminal modulates.');
+    else if (flowKey) add(some([flowKey], 'terminal') ? lead([flowKey], 'terminal', 'The terminal measures its airflow.') : 'Each terminal measures its airflow.');
     var controlled = !!(dampKey || has('reheatValve'));
     if (flowKey && dampKey && tz && sps && proof.flowReset) {
       add('The airflow setpoint resets between its minimum and maximum to hold the zone temperature.');
@@ -28175,8 +28199,8 @@ function _a36DetControlSentences(g, f, params, proof) {
     } else if (tz && sps) add(zoneHold('occ', true));
     if (has('reheatValve')) {
       var reheat = has('hwPlantStatus') ? 'hot water reheat valve' : 'reheat valve';
-      if (flowKey && dampKey && proof.flowReset) add('The ' + reheat + ' opens after the airflow reaches its minimum' + part(['reheatValve'], 'terminal') + '.');
-      else add('The ' + reheat + ' modulates' + (tz && has('htgSP') ? ' to hold the zone at its heating setpoint' : '') + part(['reheatValve'], 'terminal') + '.');
+      if (flowKey && dampKey && proof.flowReset) add(lead(['reheatValve'], 'terminal', 'The ' + reheat + ' opens after the airflow reaches its minimum.'));
+      else add(lead(['reheatValve'], 'terminal', 'The ' + reheat + ' modulates' + (tz && has('htgSP') ? ' to hold the zone at its heating setpoint' : '') + '.'));
     }
     if (tz && sps) add(zoneHold('unocc', !controlled));
   } else if (cat === 'ahu' || cat === 'rtu' || cat === 'doas') {
@@ -28189,9 +28213,20 @@ function _a36DetControlSentences(g, f, params, proof) {
       });
     // start and stop: the fans
     var fans = [];
-    if (has('sfEnable')) fans.push('supply fan');
-    if (has('rfEnable')) fans.push('return fan');
-    if (fans.length) add(sched ? subject(fans) + ' ' + verb(fans, 'starts', 'start') + ' and ' + verb(fans, 'stops', 'stop') + onSchedule + '.' : BAS + 'enables the ' + _a36DetJoin(fans) + '.', 'start');
+    // "supply fans" when a unit of the group has several of that fan (the unit sentence says "six supply fans"); the verb follows
+    var fanMany = false;
+    [['sfEnable', 'supply'], ['rfEnable', 'return']].forEach(function (fk) {
+      if (!has(fk[0])) return;
+      var several = !!airCfg && airCfg.units.some(function (c) {
+        return c.fans.some(function (fan) {
+          return fan.type === fk[1] && fan.n > 1;
+        });
+      });
+      fans.push(fk[1] + (several ? ' fans' : ' fan'));
+      if (several) fanMany = true;
+    });
+    if (fans.length > 1) fanMany = true;
+    if (fans.length) add(sched ? subject(fans) + ' ' + (fanMany ? 'start and stop' : 'starts and stops') + onSchedule + '.' : BAS + 'enables the ' + _a36DetJoin(fans) + '.', 'start');
     else if (sched) add('The occupied schedule is ' + sched + '.', 'start');
     // temperature: the coil valves hold the supply air temperature at its setpoints
     var coils = [];
@@ -28245,17 +28280,17 @@ function _a36DetControlSentences(g, f, params, proof) {
     if (has('chwValve')) valves.push('cooling valve');
     var fcuControl = valves.length > 0 && has('zoneTemp');
     if (sched) add('The occupied schedule is ' + sched + '.');
-    if (fcuControl) add(subject(valves) + ' ' + verb(valves, 'modulates', 'modulate') + (valves.length > 1 ? ' in sequence' : '') + ' to hold the zone temperature' + part(['zoneTemp'], 'unit') + '.');
+    if (fcuControl) add(lead(['zoneTemp'], 'unit', subject(valves) + ' ' + verb(valves, 'modulates', 'modulate') + (valves.length > 1 ? ' in sequence' : '') + ' to hold the zone temperature.'));
     if (has('zoneTemp') && has('htgSP') && has('coolSP')) {
       add(zoneHold('occ', !fcuControl));
       add(zoneHold('unocc', !fcuControl));
     }
   } else if (cat === 'heater') {
-    if (has('enable')) add(sched ? 'Each heater starts and stops' + onSchedule + part(['enable'], 'heater') + '.' : BAS + 'enables each heater' + part(['enable'], 'heater') + '.');
+    if (has('enable')) add(some(['enable'], 'heater') ? lead(['enable'], 'heater', sched ? 'The heater starts and stops' + onSchedule + '.' : BAS + 'enables the heater.') : sched ? 'Each heater starts and stops' + onSchedule + '.' : BAS + 'enables each heater.');
     else if (sched) add('The occupied schedule is ' + sched + '.');
     if (val('oaEnable')) add('The heaters run when the outdoor air temperature is below ' + val('oaEnable') + '.');
   } else if (cat === 'ef') {
-    if (has('schedule')) add(sched ? 'Each exhaust fan starts and stops' + onSchedule + part(['schedule'], 'fan') + '.' : 'Each exhaust fan starts and stops on a schedule' + part(['schedule'], 'fan') + '.');
+    if (has('schedule')) add(some(['schedule'], 'exhaust fan') ? lead(['schedule'], 'exhaust fan', sched ? 'The exhaust fan starts and stops' + onSchedule + '.' : 'The exhaust fan starts and stops on a schedule.') : sched ? 'Each exhaust fan starts and stops' + onSchedule + '.' : 'Each exhaust fan starts and stops on a schedule.');
     else if (sched) add('The occupied schedule is ' + sched + '.');
   }
   return out;
@@ -28483,7 +28518,7 @@ function _a36DetSummaryIssueHtml(f) {
       var affectedNames = f.affected.length && f.affected.length <= 4 ? f.affected.map(_a36DetEquipNameIn(f.lib)).join(', ') : '';
       if (affectedNames && f.units >= f.total) affects = affectedNames;
       else {
-        affects = _a36DetFraction(f.units, f.total);
+        affects = _a36DetFraction(f.units, f.total, f.fracNoun, f.fracTail);
         if (affectedNames) affects += ': ' + affectedNames;
       }
     }
@@ -28608,6 +28643,9 @@ function _a36DetNormalizeText(html) {
       }
       // spacing: a space before "(" after a word or digit, a space after a comma before a letter
       t = t.replace(/([A-Za-z0-9])\(/g, '$1 (').replace(/,(?=[A-Za-z])/g, ', ');
+      // no line break inside an equipment tag ("UH-1": a non-breaking hyphen) or a time ("7:00 AM-7:00 PM": a non-breaking space and hyphen)
+      t = t.replace(/\b([A-Z]{2,6})-(?=\d)/g, '$1\u2011');
+      t = t.replace(/\b(\d{1,2}:\d{2}) (AM|PM)\b/g, '$1\u00A0$2').replace(/\b(AM|PM)-(?=\d{1,2}:\d{2})/g, '$1\u2011');
       return t;
     })
     .join('');

@@ -2507,6 +2507,12 @@ async function siteResetAllMeterTableSettings() {
    site-ui.js delegates to this array and should NOT maintain its own copy.
 */
 var RELEASE_NOTES = [
+  { v: 'v2026.11.16.301', date: '2026-11-16', title: 'Audit Report: second review corrections',
+    items: [
+      { type: 'fix', text: 'Detailed Audit Report: a finding marks a point that needs only programming (no device to install), so the findings agree with the devices listed for each library.' },
+      { type: 'fix', text: 'Detailed Audit Report: the Executive Summary names the ASHRAE 36 sequences each group of equipment lacks and makes no claim about how the equipment runs today; the setpoint finding points to the recommended setpoints in Appendix A.' },
+      { type: 'fix', text: 'Detailed Audit Report: carbon dioxide sensor counts state their base (terminals that need a sensor), a sentence true for some terminals says how many, plants are called plants, and equipment tags and times do not break across lines.' },
+    ] },
   { v: 'v2026.11.16.300', date: '2026-11-16', title: 'Audit Report: review corrections',
     items: [
       { type: 'fix', text: 'Detailed Audit Report: each library counts the zones without a carbon dioxide sensor the same way as the Executive Summary, so the library numbers add up to the summary.' },

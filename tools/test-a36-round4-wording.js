@@ -70,7 +70,7 @@ check(/_co2Parts\.push\(rptCount\(_dcvZonesMissing\) \+ ' of ' \+ rptCount\(dcv\
 check(!/Glossary/.test(RE.replace(/\/\/[^\n]*/g, '')) &&!/A room or area that one terminal unit controls/.test(RE), 'A2. the Glossary is gone (no Zone row)');
 
 // A6 (a reading and a share join with "for") is gone: a description holds no reading (2026-11-15, no narration).
-check(!/bits\[0\] \+ ' for '/.test(RE) && /function part\(keys, noun\)/.test(RE), 'A6. a description holds no reading; a share of units is "(on 1 of 3 fans)"');
+check(!/bits\[0\] \+ ' for '/.test(RE) && /function some\(keys, noun\)/.test(RE), 'A6. a description holds no reading; a share of units leads the sentence ("On 1 of the 3 fans, ...")');
 
 // P1
 check(!/Alarms and reports that show/.test(RE) && /'Better comfort and efficiency from '/.test(RE), 'P1. Recommended "What you get" makes no alarm or report claim');

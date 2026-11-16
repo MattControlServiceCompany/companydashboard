@@ -34,6 +34,8 @@ var _RPT_PDF_CHAR_MAP = {
   '→': '->',
   '←': '<-',
   '−': '-',
+  '‑': '-', // non-breaking hyphen of an equipment tag ("UH‑1"): the text layer keeps a plain hyphen so search and copy find "UH-1"
+  '‐': '-',
   '✓': 'x',
   '✔': 'x',
   ' ': ' ',

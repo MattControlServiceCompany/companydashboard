@@ -54,6 +54,39 @@ ok(/var _dcvKind = _a36DcvUnitKind\(eq\);/.test(RE) && /_a36DetDcvBase\(g\)/.tes
 const lits = RE.match(/'[^'\n]*(variable speed drive|variable-speed|variable frequency drive \(VFD\))[^'\n]*'/g) || [];
 ok(lits.every((s) => /variable-speed savings/.test(s)), '3. no report string says "variable speed drive" or "variable-speed" (left: ' + lits.join(' | ') + ')');
 
+// Second fix pass (2026-11-16), items 1 to 9. Pure functions are evaluated from the source; no client names.
+{
+  const sandbox = new Function(
+    fnSrc(RE, '_a36DetFraction') + '\n' + fnSrc(RE, '_a36DetNormalizeText') + '\nreturn { f: _a36DetFraction, n: _a36DetNormalizeText };'
+  )();
+  // 2 / 9: the base and the noun of a count
+  ok(sandbox.f(13, 13, 'terminal', ' that need a CO2 sensor') === 'all 13 terminals that need a CO2 sensor', '2. a CO2 count that is all of its base says the base ("all 13 terminals that need a CO2 sensor")');
+  ok(sandbox.f(74, 94, 'terminal', ' that need a CO2 sensor') === '74 of the 94 terminals that need a CO2 sensor', '2. a CO2 count that is part of its base says the base ("74 of the 94 terminals that need a CO2 sensor")');
+  ok(sandbox.f(3, 25) === '3 of 25 units' && sandbox.f(5, 5) === 'all 5 units' && sandbox.f(2, 2) === 'both units' && sandbox.f(1, 1) === 'the unit', '2. a count with no base text keeps the old words');
+  ok(sandbox.f(1, 1, 'plant') === 'the plant' && sandbox.f(2, 2, 'plant') === 'both plants', '9. a plant is a plant, not a unit');
+  ok(/f\.fracNoun = g && \(g\.category === 'hwp' \|\| g\.category === 'chwp'\) \? 'plant'/.test(RE) && /_a36DetFraction\(f\.units, f\.total, f\.fracNoun, f\.fracTail\)/.test(RE), '2/9. the finding and the Findings Summary read the same noun and base text');
+  // 3: the setpoint wording
+  ok(/zone setpoints that differ from the recommended setpoints in Appendix A\./.test(RE) && !/ASHRAE 36 recommended values/.test(RE), '3. Key Findings: setpoints "differ from the recommended setpoints in Appendix A" (they are the company setpoints, not ASHRAE 36 values)');
+  // 4: every Key Findings phrase says only that the full sequence is missing
+  ok(/ahu_economizer: 'economizer',/.test(RE) && /'Air handlers lack these ASHRAE 36 sequences: '/.test(RE) && !/do not use outdoor air for free cooling/.test(RE), '4. the summary names the missing sequences and makes no claim about what a unit does');
+  ok(!/do not use outdoor air for free cooling|hold one supply air temperature at all times|do not control their minimum outdoor air/.test(RE), '4. the three overclaiming phrases are gone');
+  // 7: the PDF text layer writes the non-breaking hyphen of a tag as a plain hyphen, so search and copy find "UH-1"
+  ok(/'‑': '-'/.test(fs.readFileSync(path.join(ROOT, 'app', 'report-pdf.js'), 'utf8')), '7. PDF text layer: non-breaking hyphen reads as a plain hyphen');
+  // 5: one cell text for a category with no device to install
+  ok(!/rawSensorsSum/.test(RE) && /\? 'None needed'\s*:\s*sensorsBreakdown/.test(RE), '5. a category with no device to install reads "None needed" in every row');
+  // 1: a point that is only a controller point reads "programming only, no device to install"
+  ok(/pointIsControllerOnly/.test(RE) && /\(programming only, no device to install\)/.test(RE) && /_a36DetIsFanSpeedKey\(k\)\) return !fanDrive/.test(RE) && /k === 'hwPumpSpeed'\) return !pumpDrive/.test(RE), '1. the finding says "programming only, no device to install" for the points the building table does not list (same rule as the price: _pricingDriveIsPriced, PRICE_POINT_MAP ioOnly)');
+  // 6: a sentence that holds for some terminals leads with the count
+  ok(/function some\(keys, noun\)/.test(RE) && /On ' \+ n \+ ' of the ' \+ total/.test(RE) && !/function part\(keys, noun\)/.test(RE), '6. a sentence about some of the units starts "On 1 of the 35 terminals, ..."');
+  ok(/'The damper modulates to hold ' \+ holdText/.test(RE), '6. the partial damper sentence reads "the damper modulates", never "the damper of each terminal"');
+  // 7: no line break inside an equipment tag or a time
+  const nt = sandbox.n('<p>UH-1 &amp; ERV-2 run 7:00 AM-7:00 PM</p>');
+  ok(nt === '<p>UH\u20111 &amp; ERV\u20112 run 7:00\u00A0AM\u20117:00\u00A0PM</p>', '7. a tag has a non-breaking hyphen, a time a non-breaking space and hyphen: ' + JSON.stringify(nt));
+  ok(!/<[^>]*\u2011/.test(sandbox.n('<td style="x" class="VAV-1">VAV-1</td>')), '7. only the text between tags changes, never an attribute');
+  // 8: the verb and the noun follow the number of fans
+  ok(/fans\.push\(fk\[1\] \+ \(several \? ' fans' : ' fan'\)\)/.test(RE) && /fanMany \? 'start and stop' : 'starts and stops'/.test(RE), '8. "enables the supply fans" when a unit has several supply fans (the verb follows)');
+}
+
 (async () => {
   const ctx = await launchBrowser('a36-final-review-fixes');
   try {
