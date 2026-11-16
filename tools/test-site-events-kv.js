@@ -18,7 +18,7 @@ const ROOT = process.env.APP_ROOT || path.join(__dirname, '..');
 const read = (f) => fs.readFileSync(path.join(ROOT, 'app', f), 'utf8');
 const SRC = { auth: read('ch-auth.js'), cls: read('sync-classification.js'), db: read('db.js'), ev: read('site-events.js'), rm: read('restore-merge.js') };
 
-const NETLIFY = 'cscdashboard.netlify.app';
+const NETLIFY = 'localhost'; // with port 8888 = a sync host (ch-auth.js _isNetlifyHost); no real host name in the repo
 const PAGES = 'example.github.io';
 const tick = (ms) => new Promise((r) => setTimeout(r, ms || 0));
 
@@ -197,7 +197,7 @@ async function boot({ host, signedIn, storedMode, server, idbSeed, lsSeed, reuse
   const ctx = {
     console: { log() {}, warn: process.env.DBG ? console.warn : () => {}, error: console.error, info() {} },
     process,
-    location: { hostname: host },
+    location: { hostname: host, port: host === 'localhost' ? '8888' : '' },
     localStorage,
     sessionStorage,
     indexedDB: idb,

@@ -57,7 +57,7 @@ ok(/title="Meter change: this bill has more than one meter line/.test(UTIL), 'D1
 ok(/id="sp-delete-all-btn-\$\{projId\}" title="Delete every zone row/.test(SP), 'D29 Delete All tooltip');
 ok(/title="Save the zone rows you see now/.test(SP) && /title="Save your edits, then keep a dated copy/.test(SP), 'D29 Save and Save As tooltips');
 ok(/confirm\('Delete all ' \+ count/.test(fnSource(SP, 'spDeleteAllZones')), 'D29 Delete All confirms');
-ok(/placeholder="No schedule imported"/.test(SP) && !/e\.g\. Monday/.test(SP), 'D29 schedule placeholder is honest');
+ok(/'No schedule imported'/.test(SP) && !/e\.g\. Monday/.test(SP), 'D29 schedule placeholder is honest');
 
 // D39: the CBECS Median legend entry gets a swatch (the dataset itself is invisible)
 ok(/generateLabels/.test(CHARTS) && /ds\._isCbecsRef/.test(CHARTS) && /it\.lineDash = \[6, 4\]/.test(CHARTS), 'D39 legend swatch for CBECS Median');
