@@ -3290,6 +3290,7 @@ function renderDocsSubTab(subTab, projId) {
   else if (subTab === 'meetings') _renderDocsMeetings(body, projId);
   else if (subTab === 'approved') _renderDocsApproved(body, projId);
   else if (subTab === 'files') _renderDocsFiles(body, projId);
+  else if (subTab === 'presented') _renderDocsPresented(body, projId);
 }
 
 function _renderDocsContracts(body, projId) {
