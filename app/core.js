@@ -2007,12 +2007,16 @@ function _updateCompactHdrBaseline(projId) {
   let totalCost = 0,
     totalKwh = 0,
     totalTherms = 0,
-    totalPropane = 0;
-  getBaselineEligibleBldgs(projId).forEach((b) =>
+    totalPropane = 0,
+    billedSqft = 0, // floor area of the buildings that have bills (the "est." Site EUI divides by this, not the listed area)
+    billedBldgs = 0;
+  getBaselineEligibleBldgs(projId).forEach((b) => {
+    let _hasBills = false;
     (b.meters || []).forEach((m) => {
       if (isBaselineExcluded(projId, m.id)) return;
       if (!isCalcCommodity(projId, m.commodity)) return;
       (m.bills || []).forEach((bill) => {
+        _hasBills = true;
         totalCost += parseFloat(bill.totalCost) || getBillGasCost(bill) || parseFloat(bill.cost) || 0;
         if (m.commodity === 'Gas') {
           totalTherms += resolveGasUsageTherms(bill);
@@ -2022,8 +2026,12 @@ function _updateCompactHdrBaseline(projId) {
           totalKwh += parseFloat(bill.kwh) || parseFloat(bill.usage) || 0;
         }
       });
-    }),
-  );
+    });
+    if (_hasBills) {
+      billedSqft += parseInt(b.sqft || 0);
+      billedBldgs++;
+    }
+  });
   const useCost = blCost > 0 ? blCost : totalCost;
   const label = blCost > 0 ? 'Baseline' : 'Total Cost';
   // Which months the figure covers (D02): the baseline months, or every bill when no baseline is set.
@@ -2039,8 +2047,8 @@ function _updateCompactHdrBaseline(projId) {
   const eui =
     bt.eui > 0
       ? bt.eui.toFixed(1)
-      : bt.sqft > 0 && computeKBtu(totalKwh, totalTherms, totalPropane) > 0
-        ? computePeriodEUI(computeKBtu(totalKwh, totalTherms, totalPropane), 12, bt.sqft).toFixed(1)
+      : billedSqft > 0 && computeKBtu(totalKwh, totalTherms, totalPropane) > 0
+        ? computePeriodEUI(computeKBtu(totalKwh, totalTherms, totalPropane), 12, billedSqft).toFixed(1)
         : '—';
   const blEl = document.getElementById('phc-baseline-' + projId);
   const euiEl = document.getElementById('phc-eui-' + projId);
@@ -2059,7 +2067,7 @@ function _updateCompactHdrBaseline(projId) {
       bt.eui > 0
         ? 'Site Energy Use Intensity of the baseline: yearly energy use per square foot, in kBtu'
         : eui !== '—'
-          ? 'Estimate with no baseline set: all bills on file counted as 12 months, over all building area. Not a measured EUI.'
+          ? 'Estimate with no baseline set: all bills on file counted as 12 months, over the area of the buildings that have bills (' + billedBldgs + ' of ' + getBaselineEligibleBldgs(projId).length + ' buildings, ' + billedSqft.toLocaleString() + ' sf). Not a measured EUI.'
           : 'Site Energy Use Intensity: needs a baseline or bills and building square feet';
     euiEl.innerHTML = 'Site EUI <span class="phc-val">' + eui + '</span>' + (bt.eui > 0 || eui === '—' ? '' : ' <span style="font-size:10px;color:var(--text3)">est.</span>');
   }
@@ -2443,11 +2451,8 @@ function initDashboardTab(projId) {
       if (sav < 0) {
         status = 'Over Budget';
         statusColor = 'var(--danger)';
-      } else if (estSavings > 0 && sav >= estSavings * 0.8) {
-        status = 'On Track';
-        statusColor = 'var(--green)';
       } else if (sav > 0) {
-        status = 'Below Target';
+        status = 'Below Target'; // upgraded to On Track below, once every building's share of the target is known
         statusColor = 'var(--amber)';
       } else {
         status = 'No Savings';
@@ -2485,6 +2490,21 @@ function initDashboardTab(projId) {
       meterTotal,
       meterDetails,
     };
+  });
+
+  // Each building's own target = its share of the projected savings (the measures' total, the target the quarterly report prints),
+  // split by baseline cost with allocateTargetByBaselineCost (lib/formatting.js, the report's "Allocated target" rule).
+  // Status compares the building's savings with 80% of ITS target.
+  const _bldgTargets = allocateTargetByBaselineCost(
+    projectedAnnual,
+    bldgRows.map((r) => r.blAnnual),
+  );
+  bldgRows.forEach((r, i) => {
+    r.target = _bldgTargets[i];
+    if (r.status === 'Below Target' && r.target > 0 && r.sav >= r.target * 0.8) {
+      r.status = 'On Track';
+      r.statusColor = 'var(--green)';
+    }
   });
 
   // The baseline period the savings compare against (e.g. 'Jan 25 – Dec 25'), read before the table rows take the savings-months label.
@@ -2688,13 +2708,13 @@ function initDashboardTab(projId) {
                 const _blLabel = bldgRows.some((r) => r.blLabel === 'Baseline') ? 'Baseline' : 'Total Cost';
                 // Matt 2026-10-28 rule: internal screens may say EUI with a hover tooltip giving the full words.
                 const _euiTip = 'Site Energy Use Intensity, kBtu per square foot per year';
-                const _tgtTxt = estSavings > 0 ? '$' + Number(estSavings).toLocaleString() + '/yr' : 'not set';
+                const _tgtTxt = projectedAnnual > 0 ? 'projected savings ' + $c(projectedAnnual) + '/yr' : 'no projected savings'; // the target the quarterly report prints
                 const _stTip = {
                   'Not in scope': 'Every meter of this building is left out of the baseline, so nothing is compared. Change this in Utility Data (meter Baseline setting).',
                   'No Data': 'The building has no bills or no baseline yet, so there is nothing to compare.',
                   'Over Budget': 'Current cost is above the baseline cost: savings are below $0.',
-                  'On Track': 'Savings are at least 80% of the project Est. Savings target (' + _tgtTxt + ').',
-                  'Below Target': 'Savings are above $0 but under 80% of the project Est. Savings target (' + _tgtTxt + '). The target is for the whole project, so one building alone usually reads Below Target.',
+                  'On Track': 'Savings are at least 80% of this building\'s share of the project target (' + _tgtTxt + ').',
+                  'Below Target': 'Savings are above $0 but under 80% of this building\'s share of the project target (' + _tgtTxt + ').',
                   'No Savings': 'Savings are $0: current cost equals the baseline cost.',
                 };
                 // Totals row (ui-standards: a performance table has one). Baseline $ and Current $ are the project totals computed above
@@ -2707,7 +2727,7 @@ function initDashboardTab(projId) {
                   ? 'The months of savings. Baseline $ is the baseline cost of these months; Current $ is that less the savings of these months. The Site EUI columns cover 12 months: hover a value for its months.'
                   : 'The baseline months of each building';
                 return `<table class="dtbl bp-tbl" style="width:100%;font-size:12px">
-                <thead><tr><th style="width:30px;white-space:nowrap!important">#</th>${_thSort('name', 'Building', 'left')}<th style="text-align:right;cursor:pointer;user-select:none;white-space:nowrap!important${_srt.col === 'sqft' ? ';color:var(--em)' : ''}" onclick="if(!window._bpSort)window._bpSort={};if(!window._bpSort['${projId}'])window._bpSort['${projId}']={col:'sqft',asc:false};var s=window._bpSort['${projId}'];if(s.col==='sqft'){s.asc=!s.asc;}else{s.col='sqft';s.asc=true;}initDashboardTab(${projId})" title="Sort by Sq Ft">Sq Ft${_srt.col === 'sqft' ? (_srt.asc ? ' ↑' : ' ↓') : ' ↕'}</th><th style="text-align:center;white-space:nowrap!important;cursor:help" title="Meters of the building that count in the baseline, out of all its meters. The icon: filled = all meters count, half = some are left out, empty = none count. Hover a row's icon for each meter.">Baseline</th><th style="text-align:right;white-space:nowrap!important" title="${_perTip}">Period</th>${_thSort('blCost', useNormalized ? _blLabel + ' $' : _blLabel + ' $/yr', 'right')}${_thSort('blEUI', 'Baseline <span class="bp-long">Site </span>EUI', 'right', _euiTip)}${_thSort('curCost', useNormalized ? 'Current $' : 'Current Cost', 'right')}${_thSort('curEUI', 'Current <span class="bp-long">Site </span>EUI', 'right', _euiTip)}${_thSort('sav', 'Savings $', 'right')}${_thSort('savPct', '%', 'right')}<th style="text-align:center;white-space:nowrap!important;cursor:help" title="How the building's savings compare with the project target. Hover a status for its meaning.">Status</th></tr></thead>
+                <thead><tr><th style="width:30px;white-space:nowrap!important">#</th>${_thSort('name', 'Building', 'left')}<th style="text-align:right;cursor:pointer;user-select:none;white-space:nowrap!important${_srt.col === 'sqft' ? ';color:var(--em)' : ''}" onclick="if(!window._bpSort)window._bpSort={};if(!window._bpSort['${projId}'])window._bpSort['${projId}']={col:'sqft',asc:false};var s=window._bpSort['${projId}'];if(s.col==='sqft'){s.asc=!s.asc;}else{s.col='sqft';s.asc=true;}initDashboardTab(${projId})" title="Sort by Sq Ft">Sq Ft${_srt.col === 'sqft' ? (_srt.asc ? ' ↑' : ' ↓') : ' ↕'}</th><th style="text-align:center;white-space:nowrap!important;cursor:help" title="Meters of the building that count in the baseline, out of all its meters. The icon: filled = all meters count, half = some are left out, empty = none count. Hover a row's icon for each meter.">Baseline</th><th style="text-align:right;white-space:nowrap!important" title="${_perTip}">Period</th>${_thSort('blCost', useNormalized ? _blLabel + ' $' : _blLabel + ' $/yr', 'right')}${_thSort('blEUI', 'Baseline <span class="bp-long">Site </span>EUI', 'right', _euiTip)}${_thSort('curCost', useNormalized ? 'Current $' : 'Current Cost', 'right')}${_thSort('curEUI', 'Current <span class="bp-long">Site </span>EUI', 'right', _euiTip)}${_thSort('sav', 'Savings $', 'right')}${_thSort('savPct', '%', 'right')}<th style="text-align:center;white-space:nowrap!important;cursor:help" title="How the building's savings compare with this building\'s share of the project target. Hover a status for its meaning.">Status</th></tr></thead>
                 <tbody>${sortedRows
                   .map((r, _ri) => {
                     const blIcon = r.meterIncl > 0 ? (r.meterExcl > 0 ? '◐' : '●') : '○';
@@ -2737,7 +2757,7 @@ function initDashboardTab(projId) {
                   <td style="text-align:right;font-family:var(--mono);font-size:11px;color:var(--text2);cursor:help" title="${_escHtml(r.curEuiTip)}">${r.curEUI > 0 ? r.curEUI.toFixed(1) : '—'}</td>
                   <td style="text-align:right;font-family:var(--mono);color:${savingsSignColor(r.sav, 0, 'var(--green)', 'var(--danger)', 'var(--text)')}">${r.blCost > 0 ? savingsSign(r.sav, 0, true) + $c(r.sav) : '—'}</td>
                   <td style="text-align:right;font-family:var(--mono)">${r.blCost > 0 ? r.savPct.toFixed(1) + '%' : '—'}</td>
-                  <td style="text-align:center;font-weight:600;color:${r.statusColor};cursor:help" title="${_escHtml(_stTip[r.status] || '')}">${r.status}</td>
+                  <td style="text-align:center;font-weight:600;color:${r.statusColor};cursor:help" title="${_escHtml((_stTip[r.status] || '') + (r.target > 0 && (r.status === 'On Track' || r.status === 'Below Target') ? ' This building\'s target: $' + Math.round(r.target).toLocaleString() + '/yr.' : ''))}">${r.status}</td>
                 </tr>`;
                   })
                   .join('')}</tbody>

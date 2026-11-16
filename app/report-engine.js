@@ -2453,23 +2453,19 @@ function _rptBuildingTarget(d, b) {
     d.period.type === 'quarterly'
       ? (d.contract.quarterlyTargets && d.contract.quarterlyTargets[q - 1]) || 0
       : d.contract.annualTarget || 0;
-  var wt = function (x) {
-    return x.blCost || 0;
-  };
-  var tot =
-    d.buildings.reduce(function (s, x) {
-      return s + wt(x);
-    }, 0) || 1;
   if (!(qT > 0)) return 0;
-  // Whole dollars that add to the target total (_rptApportion), so the building targets sum to the total row.
-  var whole = _rptApportion(
-    d.buildings.map(function (x) {
-      return qT * (wt(x) / tot);
-    }),
-    qT,
-  );
+  // Whole dollars that add to the target total (allocateTargetByBaselineCost, lib/formatting.js), so the building targets sum to the total row.
+  var costs = d.buildings.map(function (x) {
+    return x.blCost || 0;
+  });
+  var whole = allocateTargetByBaselineCost(qT, costs);
   var idx = d.buildings.indexOf(b);
-  return idx >= 0 ? whole[idx] : qT * (wt(b) / tot);
+  if (idx >= 0) return whole[idx];
+  var tot =
+    costs.reduce(function (s, c) {
+      return s + c;
+    }, 0) || 1;
+  return qT * ((b.blCost || 0) / tot);
 }
 
 // _rptMeterLabel(commodity, account) - the ONE name of a meter in the report: "<Utility type>, Acct# <account number>",
