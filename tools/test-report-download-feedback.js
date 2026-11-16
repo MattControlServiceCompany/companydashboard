@@ -88,7 +88,7 @@ const ok = (c, m) => {
     ok(second === 'A PDF is already being built. Please wait.', 'second call during the build: "' + second + '"');
     const download = await downloadPromise;
     const fileName = download.suggestedFilename();
-    ok(/ASHRAE 36 Audit Report .*\.pdf$/.test(fileName), 'the download happens with the report file name: "' + fileName + '"');
+    ok(/ - Audit Report .*\.pdf$/.test(fileName), 'the download happens with the report file name: "' + fileName + '"');
     await page.waitForFunction(() => /^PDF saved/.test(document.getElementById('toastMsg').textContent), null, { timeout: 30000 });
     const after = await page.evaluate(() => {
       const button = document.querySelector('.report-overlay button[onclick="downloadReportPdf()"]');

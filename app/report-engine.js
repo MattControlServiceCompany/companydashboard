@@ -18286,7 +18286,7 @@ function rptPageASHRAE36Cover(n, d, perBuildingIncluded, detailed) {
   // Use rptPage with a data-like object for footer formatting
   // Rule 2.3: reportDate drives the footer date; label is empty (no period range for ASHRAE reports).
   var fakeData = { project: { client: d.project.name }, period: { label: '', reportDate: d.rawDate } };
-  return rptPage(n, 'ASHRAE 36 Audit Report — Cover', bodyHTML, {
+  return rptPage(n, 'Audit Report — Cover', bodyHTML, {
     hero: true,
     data: fakeData,
     label: 'Page ' + n + ' — ASHRAE 36 Cover',
@@ -19269,14 +19269,14 @@ function rptPageASHRAE36Executive(n, d, detailedTitles) {
   if (_pushTableToNextPage) {
     if (_paraSplit) {
       resultPages.push(
-        rptPage(n, 'ASHRAE 36 Audit Report: Executive Summary', execIntro, { hideIntHdr: true, data: fakeData, label: 'Page ' + n + ' — Executive Summary' }),
+        rptPage(n, 'Audit Report: Executive Summary', execIntro, { hideIntHdr: true, data: fakeData, label: 'Page ' + n + ' — Executive Summary' }),
       );
       resultPages.push(
-        rptPage(n + 1, 'ASHRAE 36 Audit Report: Executive Summary', dcvCallout + callout, { hideIntHdr: true, data: fakeData, label: 'Page ' + (n + 1) + ' — Executive Summary' }),
+        rptPage(n + 1, 'Audit Report: Executive Summary', dcvCallout + callout, { hideIntHdr: true, data: fakeData, label: 'Page ' + (n + 1) + ' — Executive Summary' }),
       );
     } else {
       resultPages.push(
-        rptPage(n, 'ASHRAE 36 Audit Report: Executive Summary', execIntro + dcvCallout + callout, {
+        rptPage(n, 'Audit Report: Executive Summary', execIntro + dcvCallout + callout, {
           hideIntHdr: true,
           data: fakeData,
           label: 'Page ' + n + ' — Executive Summary',
@@ -19312,7 +19312,7 @@ function rptPageASHRAE36Executive(n, d, detailedTitles) {
       (isLastChunk ? tableFootnote : '');
 
     resultPages.push(
-      rptPage(pageN, 'ASHRAE 36 Audit Report: Executive Summary', bodyHTML, {
+      rptPage(pageN, 'Audit Report: Executive Summary', bodyHTML, {
         hideIntHdr: true,
         data: fakeData,
         label:
@@ -19830,7 +19830,7 @@ function rptPageASHRAE36CostEstimate(n, d, detailedSectionNo) {
     resultPages.push(
       rptPage(
         currentPageNum,
-        'ASHRAE 36 Audit Report: ' + SEQ_SECTION_TITLE,
+        'Audit Report: ' + SEQ_SECTION_TITLE,
         '<div style="font-size:11px;color:var(--rpt-page-text)">No sequence data available.</div>',
         {
           hideIntHdr: true,
@@ -19854,7 +19854,7 @@ function rptPageASHRAE36CostEstimate(n, d, detailedSectionNo) {
       resultPages.push(
         rptPage(
           currentPageNum,
-          'ASHRAE 36 Audit Report: ' + SEQ_SECTION_TITLE + _seqPartSuffix(chunkIdx, ratChunks.length),
+          'Audit Report: ' + SEQ_SECTION_TITLE + _seqPartSuffix(chunkIdx, ratChunks.length),
           pageBody,
           { hideIntHdr: true, data: fakeData, label: 'Page ' + currentPageNum + ' — ' + SEQ_SECTION_TITLE },
         ),
@@ -20645,7 +20645,7 @@ function rptPageASHRAE36Building(n, d, building, showBuildingInfra) {
     // title bar (rptPage()'s own title param, present on every page including page 1) fixes the
     // asymmetry consistently instead of only patching the continuation's already-correct text.
     var pageTitleWithFraction =
-      'ASHRAE 36 Audit Report: ' +
+      'Audit Report: ' +
       _a36DisplayName(b) +
       (numChunks > 1 ? ' (' + (chunkIndex + 1) + ' of ' + numChunks + ')' : '');
     resultPages.push(
@@ -20849,7 +20849,7 @@ function rptPageASHRAE36Recommendations(n, d) {
     '</table>';
 
   var bodyHTML = table;
-  return rptPage(n, 'ASHRAE 36 Audit Report — Recommendations', bodyHTML, {
+  return rptPage(n, 'Audit Report — Recommendations', bodyHTML, {
     hideIntHdr: true,
     data: fakeData,
     label: 'Page ' + n + ' — Recommendations',
@@ -21225,7 +21225,7 @@ function rptPageASHRAE36SetpointReview(n, d, detailedTitle) {
       'This project has no zone-level equipment with occupied heating and cooling setpoints to review under ASHRAE 36 Section 3.1.1.1.' +
       '</div>';
     return [
-      rptPage(n, 'ASHRAE 36 Audit Report: Setpoint Programming Review', emptyBody, {
+      rptPage(n, 'Audit Report: Setpoint Programming Review', emptyBody, {
         hideIntHdr: true,
         data: fakeData,
         label: 'Page ' + n + ' — Setpoint Programming Review',
@@ -21649,7 +21649,7 @@ function rptPageASHRAE36SetpointReview(n, d, detailedTitle) {
     // Readiness/Per-Building Detail above): append the fraction to the .rpt-int-hdr title bar so
     // page 1 carries its own "(1 of N)" alongside the continuation's existing "(N of N)".
     var _setpointTitle =
-      'ASHRAE 36 Audit Report: Setpoint Programming Review' +
+      'Audit Report: Setpoint Programming Review' +
       (numChunks > 1 ? ' (' + (chunkIndex + 1) + ' of ' + numChunks + ')' : '');
     resultPages.push(
       rptPage(pageN, _setpointTitle, bodyHTML, {
@@ -22707,7 +22707,7 @@ function _rptA36MonthLaborSentence(monthRows, bucketIdx) {
     sentences.push('Ongoing Energy Management labor this month covers ' + _escHtml(_rptA36JoinList(recurring)) + '.');
   }
   if (audit.length) {
-    sentences.push('This month also finishes the ASHRAE 36 Audit Report (' + _escHtml(_rptA36JoinList(audit)) + ').');
+    sentences.push('This month also finishes the Audit Report (' + _escHtml(_rptA36JoinList(audit)) + ').');
   }
   if (setup.length) {
     var verb = bucketIdx === 1 ? 'sets up' : 'continues, at a reduced level as the initial setup tapers off,';
@@ -23823,7 +23823,7 @@ function _rptA36ComplianceScopeInnerHTML(d) {
     rptCount(seqCount) +
     ' control sequence' +
     (seqCount !== 1 ? 's' : '') +
-    ' to program</strong> — the same figures reported in the ASHRAE 36 Audit Report. Reaching ' +
+    ' to program</strong> — the same figures reported in the Audit Report. Reaching ' +
     'compliance requires:</div>' +
     '<ul style="' +
     UL +
@@ -25074,7 +25074,7 @@ function rptPageASHRAE36ProposalPricing(n, d, opts) {
   var nextPageNum = n;
   costPages.forEach(function (pg) {
     resultPages.push(
-      rptPage(nextPageNum, 'ASHRAE 36 Service Proposal: Cost Estimate', pg.body, {
+      rptPage(nextPageNum, 'Service Proposal: Cost Estimate', pg.body, {
         hideIntHdr: true,
         data: fakeData,
         label: 'Page ' + nextPageNum + ' — ' + pg.label,
@@ -25300,7 +25300,7 @@ function rptPageASHRAE36ProposalPricing(n, d, opts) {
           '</div>';
         var body = itTitle + itTable;
         pages.push(
-          rptPage(pageN, 'ASHRAE 36 Service Proposal: Cost Estimate', body, {
+          rptPage(pageN, 'Service Proposal: Cost Estimate', body, {
             hideIntHdr: true,
             data: fakeData,
             label: 'Page ' + pageN + ' — Itemized Measures (' + c.label + ')',
@@ -25799,7 +25799,7 @@ function rptPageASHRAE36PointInventory(n, d) {
     // 2026-07-29 fix (same "(1 of N) missing on page 1" asymmetry — see Building ASHRAE 36
     // Readiness above): append the fraction to the .rpt-int-hdr title bar for page 1 too.
     var _pointInvTitle =
-      'ASHRAE 36 Audit Report: Point Inventory' +
+      'Audit Report: Point Inventory' +
       (numChunks > 1 ? ' (' + (chunkIndex + 1) + ' of ' + numChunks + ')' : '');
     resultPages.push(
       rptPage(pageN, _pointInvTitle, bodyHTML, {
@@ -27011,7 +27011,7 @@ function _a36DetPages(n, d, tokens, label) {
   });
   return chunks.map(function (chunk, i) {
     var pageLabel = label || chunk[0].lib; // a flow of several libraries labels each page with its first library
-    return rptPage(n + i, 'ASHRAE 36 Audit Report: ' + pageLabel, _a36DetBody(chunk, i), {
+    return rptPage(n + i, 'Audit Report: ' + pageLabel, _a36DetBody(chunk, i), {
       hideIntHdr: true,
       data: fakeData,
       label: 'Page ' + (n + i) + ' — ' + pageLabel,
@@ -28834,7 +28834,7 @@ function generateASHRAE36AuditHTML(data, selectedSections) {
             return t.html;
           })
           .join('');
-        var pg = rptPage(pageNum, 'ASHRAE 36 Audit Report: Per-Building Detail', bodyHTML, {
+        var pg = rptPage(pageNum, 'Audit Report: Per-Building Detail', bodyHTML, {
           hideIntHdr: true,
           data: _bldgFakeData,
           label: 'Page ' + pageNum + ' — Per-Building Detail',
@@ -29159,7 +29159,7 @@ function openASHRAE36ReportModal(projId, type) {
     return;
   }
 
-  var title = type === 'proposal' ? 'Generate ASHRAE 36 Service Proposal' : 'Generate ASHRAE 36 Audit Report';
+  var title = type === 'proposal' ? 'Generate Service Proposal' : 'Generate Audit Report';
   var titleEl = modal.querySelector('.modal-title');
   if (titleEl) titleEl.textContent = title;
 
@@ -29460,7 +29460,7 @@ function generateASHRAE36Preview() {
     modal.classList.remove('open');
     var reportTitle =
       type === 'proposal'
-        ? data.project.name + ' — ASHRAE 36 Service Proposal'
+        ? data.project.name + ' — Service Proposal'
         : data.project.name + ' — ' + rptA36AuditTitle(detailedStyle);
 
     // Expose report data so downloadReportPdf() and saveReportToHistory() can use it.

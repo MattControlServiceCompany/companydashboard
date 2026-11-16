@@ -36,7 +36,7 @@ eq(
   'docx extension',
 );
 eq(rptReportFileName({ project: { name: 'Only Name' }, _ashrae: { type: 'proposal' } }, '.pdf', NOW), 'Only Name - Service Proposal 2026.11.03.pdf', 'proposal uses project name when no client');
-eq(rptReportFileName({ project: proj, _ashrae: { type: 'audit' } }, '', NOW), 'Test District - ASHRAE 36 Audit Report 2026.11.03', 'audit, no extension');
+eq(rptReportFileName({ project: proj, _ashrae: { type: 'audit' } }, '', NOW), 'Test District - Audit Report 2026.11.03', 'audit, no extension');
 eq(rptReportFileName({ project: proj, _ashrae: { type: 'audit', detailed: true } }, '.pdf', NOW), 'Test District - Detailed Audit Report 2026.11.03.pdf', 'Detailed audit: the title says Detailed');
 eq(rptReportFileName({ project: proj, _soo: true }, '.pdf', NOW), 'Test District - Sequence of Operations 2026.11.03.pdf', 'sequence of operations');
 eq(rptReportFileName({ project: proj, _agreement: true }, '.pdf', NOW), 'Test District - Energy Management Services Agreement 2026.11.03.pdf', 'agreement');

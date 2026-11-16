@@ -2507,6 +2507,10 @@ async function siteResetAllMeterTableSettings() {
    site-ui.js delegates to this array and should NOT maintain its own copy.
 */
 var RELEASE_NOTES = [
+  { v: 'v2026.11.16.306', date: '2026-11-16', title: 'Report names match the buttons',
+    items: [
+      { type: 'change', text: 'The report names now match the buttons on the Equipment Matrix: "Audit Report" (Simple style), "Detailed Audit Report" (Detailed style) and "Service Proposal", on the cover, the page titles, the Generate window and the file name.' },
+    ] },
   { v: 'v2026.11.16.305', date: '2026-11-16', title: 'Detailed Audit Report title',
     items: [
       { type: 'fix', text: 'Detailed Audit Report: the cover, the report window and the file name say "Detailed Audit Report".' },
