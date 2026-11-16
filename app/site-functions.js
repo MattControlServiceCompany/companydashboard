@@ -2507,6 +2507,12 @@ async function siteResetAllMeterTableSettings() {
    site-ui.js delegates to this array and should NOT maintain its own copy.
 */
 var RELEASE_NOTES = [
+  { v: 'v2026.11.16.324', date: '2026-11-16', title: 'Building status per building, Set Points schedules, Site EUI estimate',
+    items: [
+      { type: 'improved', text: 'Dashboard Status compares each building with its own share of the projected savings target (the same split the quarterly report prints). Hover a status for the building target.' },
+      { type: 'new', text: 'Set Points: a zone with no schedule shows the schedule of its WebCTRL scheduling group, in grey. It is not saved until you type one. Schedules that never run are left out.' },
+      { type: 'fix', text: 'The Site EUI estimate in the project header divides only by the area of the buildings that have bills.' },
+    ] },
   { v: 'v2026.11.16.323', date: '2026-11-16', title: 'Mark a quarter as presented from the PDF the client got',
     items: [ { type: 'new', text: 'Dashboard > Documents > Presented Reports: pick the quarter and the PDF you gave the client. The site reads the figures from that PDF, shows where each one came from, and locks them after you confirm. No report is generated.' } ] },
   { v: 'v2026.11.16.322', date: '2026-11-16', title: 'Small fixes',
