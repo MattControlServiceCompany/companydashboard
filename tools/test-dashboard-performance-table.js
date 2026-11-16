@@ -8,7 +8,9 @@
 //  D  the Unmatched Bills bucket is not a row
 //  E  a building with every meter excluded reads "Not in scope"; a building with in-scope meters and no data keeps "No Data"
 //  F  Period = the savings months; Baseline $ = baseline cost of those months; Current $ = that less the savings; Savings $ and % unchanged
-//  G  the quarter card shows "-$X -> $0" when the quarter floors to $0 (measured value beside the billed value)
+//  G  the quarter card shows the CURRENT calendar quarter to date (clock faked to 2026-11-16 = Q4): "Q4 2026: no bills yet" with no Q4 bill;
+//     with Oct savings, "Q4 2026 savings to date", the months named, a true basis label (no "Normalized"), a Baseline/Current pair labelled
+//     with the same months, and a floored $0 shown as "$0 (actual -$X)"; the cumulative card is labelled with the contract range
 // Run: CH_TMP_ROOT=<scratch> node tools/test-dashboard-performance-table.js   Exit 1 on any FAIL.
 'use strict';
 const path = require('path');
@@ -44,12 +46,15 @@ const srv = http.createServer((q, r) => {
     page.on('pageerror', (e) => console.log('  PAGEERR ' + e.message));
     await page.route(/\/\.netlify\/|supabase\.|netlify\.app/i, (r) => r.abort());
     await ctx.addInitScript((a) => {
+      // Clock fixed to 2026-11-16 (the quarter card follows the calendar quarter).
+      const RD = Date; const off = new RD('2026-11-16T13:00:00').getTime() - RD.now();
+      window.Date = class extends RD { constructor(...x) { if (x.length) super(...x); else super(RD.now() + off); } static now() { return RD.now() + off; } };
       if (localStorage.getItem('__seeded')) return;
       localStorage.setItem('__seeded', '1');
       const cid = 'cust_' + a.pid;
       localStorage.setItem('en_projects', JSON.stringify([{
         id: a.pid, name: 'SYNTHETIC', client: 'S', customerId: cid, addr: '', type: 'Test', status: 'active', phase: '', contacts: [],
-        baselineComparison: 'normalized',
+        baselineComparison: 'normalized', start: '2025-12-17', end: '2028-12-17',
         scope: { buildingIds: ['bAlpha', 'bBeta', 'bMaint', 'bUnm', 'bEmpty'], meterExcludeIds: ['mMaint'] }, savingsData: { measures: [] },
       }]));
       localStorage.setItem('en_customers', JSON.stringify([{ id: cid, name: 'Synth Customer' }]));
@@ -100,7 +105,7 @@ const srv = http.createServer((q, r) => {
       const t = Array.from(document.querySelectorAll('table.dtbl')).find((x) => /Savings/.test(x.textContent) && /Building/.test(x.textContent) && x.querySelectorAll('tbody tr').length);
       const rows = Array.from(t.querySelectorAll('tbody tr')).map((r) => Array.from(r.children).map((c) => ({ t: c.textContent.trim().replace(/\s+/g, ' '), title: c.getAttribute('title') || '' })));
       const ths = Array.from(t.querySelectorAll('thead th')).map((c) => ({ t: c.textContent.trim().replace(/\s+/g, ' '), title: c.getAttribute('title') || '', ws: getComputedStyle(c).whiteSpace, h: c.getBoundingClientRect().height }));
-      const card = Array.from(document.querySelectorAll('.card')).map((c) => c.textContent.replace(/\s+/g, ' ')).find((s) => /Total Cumulative Savings/.test(s)) || '';
+      const card = Array.from(document.querySelectorAll('.card')).filter((c) => !/Building Performance/.test(c.textContent)).map((c) => c.textContent.replace(/\s+/g, ' ')).find((s) => /Total savings since contract start/.test(s)) || '';
       return { rows, ths, card, tw: t.getBoundingClientRect().width, cw: t.parentElement.clientWidth };
     });
     const row = (name) => got.rows.find((r) => r[1].t === name);
@@ -139,7 +144,10 @@ const srv = http.createServer((q, r) => {
     check(a && money(a[iCu].t) === blP - 450, 'F Alpha Current $ = Baseline $ less the savings of those months = ' + (blP - 450) + ' (got ' + (a && a[iCu].t) + ')');
     check(a && money(a[iSv].t) === 450, 'F Alpha Savings $ unchanged = 450 (got ' + (a && a[iSv].t) + ')');
     check(a && a[iPc].t === (450 / blP * 100).toFixed(1) + '%', 'F Alpha % = Savings $ / the Baseline $ shown in the same row (' + (450 / blP * 100).toFixed(1) + '%, got ' + (a && a[iPc].t) + ')');
-    check(/Baseline\s*\$[\d,]+\s*Current\s*\$[\d,]+\s*for Jan 26 – Sep 26/.test(got.card), 'F header card names the period (card text: ' + got.card.slice(got.card.indexOf('Baseline') > 0 ? got.card.indexOf('Baseline') : 0, 260).slice(0, 120) + ')');
+    check(/Q4 2026: no bills yet/.test(got.card) && !/Q4 2026 savings to date/.test(got.card), 'G no Q4 bill yet: the card says "Q4 2026: no bills yet" and nothing else for the quarter (card: ' + got.card.slice(0, 40) + ')');
+    check(!/for Jan 26/.test(got.card) && !/Normalized/.test(got.card), 'G no unlabeled Jan-Sep Baseline/Current pair and no "Normalized" on the card');
+    check(/Total savings since contract start \(Dec 2025 – Sep 2026\) \$640/.test(got.card), 'G cumulative card labelled with the real range and the sum of the floored quarters 340 + 300 + 0 (card: ' + (got.card.match(/Total savings since contract start[^$]{0,45}\$[\d,]+/) || [''])[0] + ')');
+    check(/vs baseline Jan 25 – Dec 25/.test(got.card), 'G the basis line names the baseline months, not "Normalized" (card basis: ' + (got.card.match(/vs baseline[^T]{0,22}/) || [''])[0] + ')');
     // B at 1366: the table fits its card, headers on one line
     await page.setViewportSize({ width: 1366, height: 1080 });
     await page.waitForTimeout(600);
@@ -150,12 +158,35 @@ const srv = http.createServer((q, r) => {
     });
     check(n.sw <= n.cw, 'B at 1366 px no sideways scroll (scrollWidth ' + n.sw + ' <= clientWidth ' + n.cw + ')');
     check(n.h.every((h) => h < 45), 'B at 1366 px every header cell is one line high (' + n.h.join(',') + ')');
-    // G: Q3 net -150, floored to 0
-    check(/\$0 \(actual −\$150\)/.test(got.card), 'G quarter card shows the floored $0 with the actual in brackets (card: ' + (got.card.match(/Q\d 2026 Total Savings[^%]{0,60}/i) || [''])[0] + ')');
+    // G: Oct 2026 bill arrives (+40 for Alpha): the card is Q4 2026 to date
+    const cardText = () => page.evaluate(() => Array.from(document.querySelectorAll('.card')).filter((c) => !/Building Performance/.test(c.textContent)).map((c) => c.textContent.replace(/\s+/g, ' ')).find((s) => /Total savings since contract start/.test(s)) || '');
+    const octStub = (v) => page.evaluate((val) => {
+      window.getMeterSavings = function (m) {
+        const byYM = {};
+        if (m.id === 'mAlpha') { ['01', '02', '03', '04', '05', '06'].forEach((k) => (byYM['2026-' + k] = 100)); ['07', '08', '09'].forEach((k) => (byYM['2026-' + k] = -50)); byYM['2026-10'] = val; }
+        if (m.id === 'mBeta') { byYM['2026-01'] = 20; byYM['2026-02'] = 20; }
+        return { byYM, rows: [], total: 0 };
+      };
+    }, v);
+    await octStub(40);
+    await page.evaluate((id) => initDashboardTab(id), PID);
+    await page.waitForTimeout(800);
+    const c1 = await cardText();
+    check(/Q4 2026 savings to date \$40/.test(c1), 'G Q4 card: "Q4 2026 savings to date $40" (got ' + (c1.match(/Q4 2026 savings to date[^O]{0,12}/) || [''])[0] + ')');
+    check(/Oct bills in; Nov and Dec not in yet/.test(c1), 'G Q4 card names the months with bills and the ones not in yet (got ' + (c1.match(/Oct bills in[^v]{0,40}/) || [''])[0] + ')');
+    check(!/Normalized/.test(c1) && /vs baseline Jan 25 – Dec 25/.test(c1), 'G Q4 card has the true basis label and no "Normalized"');
+    check(/Baseline\s*\$1,090\s*Current\s*\$1,050\s*for Q4 2026 to date \(Oct\)/.test(c1), 'G Baseline/Current pair = Oct baseline $1,090 and $1,090 less $40, labelled "Q4 2026 to date (Oct)" (got ' + (c1.match(/Baseline\s*\$[\d,]+\s*Current\s*\$[\d,]+\s*for[^B]{0,40}/) || [''])[0] + ')');
+    check(/Total savings since contract start \(Dec 2025 – Oct 2026\) \$680/.test(c1), 'G cumulative = floored quarters 340 + 300 + 0 + 40 (got ' + (c1.match(/Total savings since contract start[^$]{0,45}\$[\d,]+/) || [''])[0] + ')');
+    // G floor: Oct -30 -> billable $0, the measured value beside it
+    await octStub(-30);
+    await page.evaluate((id) => initDashboardTab(id), PID);
+    await page.waitForTimeout(800);
+    const c2 = await cardText();
+    check(/Q4 2026 savings to date \$0 \(actual −\$30\)/.test(c2), 'G a floored Q4 to date shows "$0 (actual -$30)" (got ' + (c2.match(/Q4 2026 savings to date[^O]{0,28}/) || [''])[0] + ')');
     // G (source): "bills through" and the shared floored-display call
     const core = fs.readFileSync(path.join(ROOT, 'app', 'core.js'), 'utf8');
-    check(/_curQtrShown = savingsFlooredShown\(/.test(core) && !/function _?quarterFloorText/.test(core), 'G the quarter card reuses savingsFlooredShown (no second formatter)');
-    check(/Bills through /.test(core) && /headQtr\.billsThrough/.test(core), 'G an incomplete quarter prints "Bills through <date>" (nextQuarterToPresent.billsThrough)');
+    check(/_cardShown = cardBill \? savingsFlooredShown\(/.test(core) && !/function _?quarterFloorText/.test(core), 'G the quarter card reuses savingsFlooredShown (no second formatter)');
+    check(/cardBill = cardDataYMs\.length \? billableSavingsWithPresented\(/.test(core), 'G the quarter card value is billableSavingsWithPresented (no second savings sum)');
     check(/isUnmatchedSentinelBldg/.test(fs.readFileSync(path.join(ROOT, 'app', 'utility-data.js'), 'utf8')) && !/b\._unmatchedSentinel === true\) return false/.test(fs.readFileSync(path.join(ROOT, 'app', 'utility-data.js'), 'utf8')), 'D getIncludedBldgs uses the one sentinel helper');
   } finally {
     await ctx.close();

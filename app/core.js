@@ -2134,7 +2134,6 @@ function initDashboardTab(projId) {
   let latestSavYM = null; // full 'YYYY-MM' string of last month with savings data
   let earliestSavYM = null; // first month with savings: with latestSavYM it is the period Baseline $ and Current $ cover
   const headQtr = nextQuarterToPresent(projId); // null = no bills, so no headline quarter
-  const curQtr = headQtr ? headQtr.q : -1;
   const measuredByQtr = [0, 0, 0, 0]; // the same quarters before the $0 floor, shown beside a floored $0
   // The table lists every building the project holds (an excluded one reads "Not in scope") but never the
   // Unmatched Bills bucket (isUnmatchedSentinelBldg, app/utility-data.js: the same test getIncludedBldgs uses).
@@ -2440,6 +2439,8 @@ function initDashboardTab(projId) {
     };
   });
 
+  // The baseline period the savings compare against (e.g. 'Jan 25 – Dec 25'), read before the table rows take the savings-months label.
+  const cardBlPeriod = (bldgRows.find((r) => r.blPeriod && r.blPeriod !== '—' && r.blPeriod !== 'All Bills') || {}).blPeriod || '';
   // Same period for Baseline $ and Current $ (Matt 2026-11-11, normalized mode): the months that carry savings
   // (earliestSavYM to latestSavYM). Baseline $ = the baseline cost of THOSE calendar months; Current $ = that
   // less the savings of those months. Savings $ and % are not touched: they stay what getMeterSavings gave.
@@ -2484,31 +2485,46 @@ function initDashboardTab(projId) {
       maximumFractionDigits: 2,
     });
   finishQuarters();
-  const curQtrLabel = headQtr ? 'Q' + (curQtr + 1) : '';
-  const curQtrTitle = headQtr ? headQtr.label : '';
-  const curQtrThrough = headQtr && headQtr.billsThrough
-    ? 'Bills through ' +
-      new Date(headQtr.billsThrough + 'T12:00:00').toLocaleDateString('en-US', {
-        month: 'short',
-        day: 'numeric',
-        year: 'numeric',
-      })
-    : '';
-  const curQtrActual = headQtr ? actualByQtr[curQtr] : 0;
-  const curQtrMeasured = headQtr ? measuredByQtr[curQtr] : 0;
-  // The quarter card shows the billed value and, when the $0 floor applies, the measured value beside it ("-$X -> $0"): the same call as the cumulative card.
-  const _curQtrShown = savingsFlooredShown(curQtrMeasured, curQtrActual, 0, $c, 'var(--green)', 'var(--danger)', 'var(--text)');
-  const curQtrWeather = headQtr ? qtrWeather[headQtr.year + '-Q' + (curQtr + 1)] || [] : [];
-  const curQtrWaiting = headQtr ? qtrMissing[headQtr.year + '-Q' + (curQtr + 1)] || [] : [];
-  const curQtrProjected = headQtr ? projectedByQtr[curQtr] : 0;
-  const curQtrPct = curQtrProjected > 0 ? ((curQtrActual / curQtrProjected) * 100).toFixed(1) : null;
-  const throughDate =
-    latestSavYM !== null
-      ? new Date(latestSavYM + '-01T12:00:00').toLocaleDateString('en-US', {
-          month: 'long',
-          year: 'numeric',
-        })
-      : null;
+  // Quarter card (Matt 2026-11-16, bdf6f485): the CURRENT calendar quarter, to date. Its value is the existing billable figure
+  // (billableSavingsWithPresented) of the quarter's months that have bills; the months still missing are named, no figure is made up.
+  const _now = new Date();
+  const cardYr = String(_now.getFullYear());
+  const cardQ = Math.floor(_now.getMonth() / 3);
+  const cardLabel = 'Q' + (cardQ + 1) + ' ' + cardYr;
+  const cardYMs = [1, 2, 3].map((k) => cardYr + '-' + String(cardQ * 3 + k).padStart(2, '0'));
+  const cardPer = qtrByYr[cardYr] || {};
+  const cardDataYMs = cardYMs.filter((y) => Object.values(cardPer).some((o) => y in o));
+  const cardWaitYMs = cardYMs.filter((y) => cardDataYMs.indexOf(y) < 0);
+  const _monNames = (yms) => yms.map((y) => _MON[Number(y.slice(5, 7)) - 1]);
+  const cardBill = cardDataYMs.length ? billableSavingsWithPresented(projId, cardDataYMs, cardPer) : null;
+  const cardWeather = cardBill ? [].concat.apply([], Object.values(cardBill.weatherWaiting)).sort() : [];
+  const _cardShown = cardBill ? savingsFlooredShown(cardBill.measured, cardBill.total, 0, $c, 'var(--green)', 'var(--danger)', 'var(--text)') : null;
+  // Bills missing inside the months that do have bills (a month with no bill at all is named in the line above instead).
+  const cardMissing = cardBill
+    ? [].concat.apply([], Object.values(cardBill.missing)).filter((x) => _monNames(cardDataYMs).indexOf(x.split(' ').pop()) >= 0)
+    : [];
+  const cardComplete = cardDataYMs.length === 3;
+  const cardProjected = projectedByQtr[cardQ];
+  const cardPct = cardBill && cardComplete && cardProjected > 0 ? ((cardBill.total / cardProjected) * 100).toFixed(1) : null;
+  // What the savings are measured against, in plain words: the stored baseline months (computations/savings.js getMeterSavings:
+  // baseline use of the same calendar month, at the actual rate of the month). Not a weather-normalized baseline.
+  const cardBasis = useNormalized ? (cardBlPeriod ? 'vs baseline ' + cardBlPeriod : '') : 'Actual';
+  // Baseline $ / Current $ for the same months as the quarter figure: the per-month baseline cost already held in each
+  // building row (moBase), and that less the net savings of those months. No new rate or use math.
+  const cardNet = cardBill ? totalSavingsWithPresented(projId, cardDataYMs, cardPer).total : 0;
+  const cardBase = bldgRows.reduce(
+    (s2, r) => s2 + (r.blAnnual > 0 ? cardDataYMs.reduce((t, y) => t + (r.moBase[Number(y.slice(5, 7)) - 1] || 0), 0) : 0),
+    0,
+  );
+  const cardPairLabel = useNormalized
+    ? cardLabel + ' to date (' + _monNames(cardDataYMs).join(', ') + ')'
+    : 'all bills';
+  const cardPairBl = useNormalized ? cardBase : totalBl;
+  const cardPairCur = useNormalized ? cardBase - cardNet : totalCur;
+  const cardPairShown = useNormalized ? !!cardBill && !cardWeather.length && cardBase > 0 : true;
+  // Cumulative card range: the contract start month (p.start) to the newest month with savings.
+  const cumFromYM = p.start ? String(p.start).slice(0, 7) : earliestSavYM;
+  const cumRange = cumFromYM && latestSavYM ? _ymLong(cumFromYM) + ' – ' + _ymLong(latestSavYM) : '';
 
   // ECM projected savings
   const _ecmResult =
@@ -2558,24 +2574,27 @@ function initDashboardTab(projId) {
                 </div>
               </div>
               <div style="flex:1;min-width:200px;display:flex;flex-direction:column;justify-content:center;gap:16px">
-                ${headQtr ? `                <div>
-                  <div style="font-size:11px;color:var(--text3);text-transform:uppercase;letter-spacing:.6px">${curQtrTitle} Total Savings</div>
-                  ${curQtrThrough ? '<div style="font-size:11px;color:var(--text3)">' + curQtrThrough + '</div>' : ''}
-                  <div style="font-size:28px;font-weight:800;font-family:var(--mono);color:${curQtrWeather.length ? 'var(--green)' : _curQtrShown.color};margin:4px 0">${curQtrWeather.length ? '<span style="font-size:15px">Waiting for weather data: ' + _escHtml(weatherWaitingLabel(curQtrWeather)) + '</span>' : _curQtrShown.text}</div>
-                  ${curQtrWaiting.length ? '<div style="display:inline-block;font-size:11px;color:var(--text2);background:var(--s2);border:1px solid var(--border);border-radius:10px;padding:2px 8px;margin-bottom:4px">Waiting for bills: ' + _escHtml(curQtrWaiting.join(', ')) + '</div>' : ''}
-                  <div style="font-size:12px;color:var(--text2)">${curQtrPct !== null ? '<span style="color:var(--green);font-weight:600">' + curQtrPct + '%</span> of ' + curQtrLabel + ' projected (' + $c2(curQtrProjected) + ')' : _eligBldgs.length + ' building' + (_eligBldgs.length !== 1 ? 's' : '') + ' · <span style="color:var(--text3)">' + (useNormalized ? 'Normalized' : 'Actual') + '</span>'}</div>
-                </div>` : ''}
+                <div>
+                  ${!cardBill
+                    ? '<div style="font-size:11px;color:var(--text3);text-transform:uppercase;letter-spacing:.6px">' + cardLabel + ': no bills yet</div>'
+                    : `<div style="font-size:11px;color:var(--text3);text-transform:uppercase;letter-spacing:.6px">${cardLabel} savings to date</div>
+                  <div style="font-size:28px;font-weight:800;font-family:var(--mono);color:${cardWeather.length ? 'var(--green)' : _cardShown.color};margin:4px 0">${cardWeather.length ? '<span style="font-size:15px">Waiting for weather data: ' + _escHtml(weatherWaitingLabel(cardWeather)) + '</span>' : _cardShown.text}</div>
+                  <div style="font-size:12px;color:var(--text2)">${_monNames(cardDataYMs).join(', ')} bills in${cardWaitYMs.length ? '; ' + _monNames(cardWaitYMs).join(' and ') + ' not in yet' : ''}</div>
+                  ${cardMissing.length ? '<div title="' + _escHtml(cardMissing.join(', ')) + '" style="display:inline-block;font-size:11px;color:var(--text2);background:var(--s2);border:1px solid var(--border);border-radius:10px;padding:2px 8px;margin:4px 0">' + cardMissing.length + ' meter bill' + (cardMissing.length !== 1 ? 's' : '') + ' not in yet (hover for the list)</div>' : ''}
+                  ${cardPct !== null ? '<div style="font-size:12px;color:var(--text2)"><span style="color:var(--green);font-weight:600">' + cardPct + '%</span> of ' + cardLabel + ' projected (' + $c2(cardProjected) + ')</div>' : ''}
+                  ${cardBasis ? '<div style="font-size:11px;color:var(--text3)">' + _escHtml(cardBasis) + '</div>' : ''}`}
+                </div>
                 <div style="border-top:1px solid var(--border);padding-top:12px">
-                  <div style="font-size:11px;color:var(--text3);text-transform:uppercase;letter-spacing:.6px">Total Cumulative Savings</div>
+                  <div style="font-size:11px;color:var(--text3);text-transform:uppercase;letter-spacing:.6px">Total savings since contract start${cumRange ? ' (' + cumRange + ')' : ''}</div>
                   <div style="font-size:28px;font-weight:800;font-family:var(--mono);color:${_totalSavShown.color};margin:4px 0">${_totalSavShown.text}</div>
-                  <div style="font-size:12px;color:var(--text2)">${throughDate ? 'through ' + throughDate : _eligBldgs.length + ' building' + (_eligBldgs.length !== 1 ? 's' : '')} · <span style="color:var(--text3)">${useNormalized ? 'Normalized' : 'Actual'}</span></div>
+                  <div style="font-size:11px;color:var(--text3)">${cardBasis ? _escHtml(cardBasis) + ' · ' : ''}each quarter counted at $0 or more</div>
                   ${cumWeatherWaiting.length ? '<div style="font-size:11px;color:var(--text2);margin-top:4px">Does not include ' + _escHtml(weatherWaitingLabel(cumWeatherWaiting)) + ': waiting for weather data</div>' : ''}
                 </div>
               </div>
               <div style="display:flex;flex-direction:column;gap:12px;justify-content:center">
-                <div style="text-align:center"><div style="font-size:10px;color:var(--text3);text-transform:uppercase" title="${savPeriodLabel ? 'Baseline cost of the savings months, ' + savPeriodLabel : ''}">Baseline</div><div style="font-size:16px;font-weight:700;font-family:var(--mono)">${$c(totalBl)}</div></div>
-                <div style="text-align:center"><div style="font-size:10px;color:var(--text3);text-transform:uppercase" title="${savPeriodLabel ? 'Baseline cost less savings, for the savings months ' + savPeriodLabel : ''}">Current</div><div style="font-size:16px;font-weight:700;font-family:var(--mono)">${$c(totalCur)}</div></div>
-                ${savPeriodLabel ? '<div style="text-align:center;font-size:10px;color:var(--text3)">for ' + savPeriodLabel + '</div>' : ''}
+                ${cardPairShown ? `<div style="text-align:center"><div style="font-size:10px;color:var(--text3);text-transform:uppercase" title="Baseline cost of ${cardPairLabel}">Baseline</div><div style="font-size:16px;font-weight:700;font-family:var(--mono)">${$c(cardPairBl)}</div></div>
+                <div style="text-align:center"><div style="font-size:10px;color:var(--text3);text-transform:uppercase" title="Baseline cost less the savings of ${cardPairLabel}">Current</div><div style="font-size:16px;font-weight:700;font-family:var(--mono)">${$c(cardPairCur)}</div></div>
+                <div style="text-align:center;font-size:10px;color:var(--text3)">for ${cardPairLabel}</div>` : ''}
                 ${estSavings > 0 ? '<div style="text-align:center"><div style="font-size:10px;color:var(--text3);text-transform:uppercase">Target</div><div style="font-size:16px;font-weight:700;font-family:var(--mono)">$' + Number(estSavings).toLocaleString() + '</div></div>' : ''}
                 ${ecmTotal > 0 ? '<div style="text-align:center;border-top:1px solid rgba(167,139,250,0.25);padding-top:8px;margin-top:4px"><div style="font-size:10px;color:var(--violet-label);text-transform:uppercase">ECM Projected</div><div style="font-size:16px;font-weight:700;font-family:var(--mono);color:var(--violet-text)">$' + ecmTotal.toLocaleString() + '/yr</div><div style="font-size:10px;color:var(--text3)">' + ecmCount + ' ECM' + (ecmCount !== 1 ? 's' : '') + ' saved — <button onclick="sv(\'calculators\')" style="font-size:10px;color:var(--violet-label);background:none;border:none;cursor:pointer;padding:0;text-decoration:underline">view</button></div></div>' : ''}
               </div>
