@@ -1,29 +1,44 @@
 // app/site-events.js
 //
 // Site event log (Matt 2026-11-16: "the site records what happens in each open tab, so Claude can read it from the shell").
-// ONE global, window.chLog(event, detail): queues a small JSON event. A batch goes to the Supabase table
-// public.ch_site_events (REST POST /rest/v1/ch_site_events) with the signed-in session token (CH_AUTH.getToken),
-// the URL and the publishable key from app/ch-auth.js. Read it with tools/read-site-events.js (docs/OPERATIONS.md).
+// ONE global, window.chLog(event, detail): queues a small JSON event. A batch is appended to ONE key per month,
+// en_site_events_YYYY-MM (a list, newest first, newest SyncClassification.EVENT_LOG_MAX = 2,000 kept), written with
+// DB.set, the same path as every other synced key (app/db.js: kv-sync function, per-key version check, merge by id when
+// two tabs or users write the same month). Read it with tools/read-site-events.js (docs/OPERATIONS.md).
 //
 // Rules:
-//  - Never blocks the UI and never throws. A failed POST is dropped without a message (no retry loop, no console output).
-//  - ONE timer, only while events wait: a batch is sent 10 s after the first queued event, and on pagehide /
-//    tab hidden (fetch keepalive). Nothing is sent when the queue is empty.
+//  - Never blocks the UI and never throws. A write that cannot be sent is dropped without a message (app/db.js
+//    _enqueueWrite: no queue, no retry, no toast). The local list stays, so the next batch carries those events.
+//  - ONE timer, only while events wait: a batch is written 30 s after the first queued event, never more than one write
+//    per 30 s per tab. A tab that is hidden writes at the same pace; a closing tab (pagehide) writes once more.
+//    Nothing is written when the queue is empty or the data store is not ready.
+//  - Events that wait are also kept in this tab's sessionStorage (ch_event_pending), so a page that is replaced (a version
+//    swap loads a new frame in the same tab) hands them on: the new page adopts them and writes them in its first batch.
 //  - At most 200 events per tab per hour. More are dropped.
 //  - Callers pass facts only: versions, page names, error text, status words. Never bill data, client figures, keys or tokens.
-//  - Events with no sign-in session stay in the queue (at most 200) until a token exists.
 // Also records, from here: uncaught page errors (page-error), unhandled rejections (unhandled-rejection), and one
 // page-load event (trigger first-load | manual-reload | after-version-swap).
 (function () {
   'use strict';
   if (typeof window === 'undefined' || window.chLog) return;
 
-  var FLUSH_MS = 10 * 1000;
+  var FLUSH_MS = 30 * 1000;
   var MAX_PER_HOUR = 200;
   var MAX_QUEUE = 200;
-  var BATCH = 50;
   var TEXT_MAX = 300;
   var _queue = [];
+  var _lastWrite = 0; // epoch ms of the last write of this tab
+  var PENDING_KEY = 'ch_event_pending';
+  function _persist() {
+    try {
+      if (_queue.length) sessionStorage.setItem(PENDING_KEY, JSON.stringify(_queue));
+      else sessionStorage.removeItem(PENDING_KEY);
+    } catch (e) {}
+  }
+  try {
+    var _adopt = JSON.parse(sessionStorage.getItem(PENDING_KEY) || '[]');
+    if (Array.isArray(_adopt)) _queue = _adopt.filter(function (r) { return r && typeof r.id === 'string' && typeof r.ts === 'string'; }).slice(-200);
+  } catch (e) {}
   var _accepted = []; // epoch ms of events accepted in the last hour (rate limit)
   var _timer = null;
   var _errSeen = {}; // same error text and place: at most 3 events per page load
@@ -63,7 +78,7 @@
     try {
       email = (window.CH_AUTH && window.CH_AUTH.getEmail && window.CH_AUTH.getEmail()) || '';
     } catch (e) {}
-    return { ts: new Date().toISOString(), email: email, host: location.host, version: _version(), page: _page(), event: String(event).slice(0, 80), detail: _clean(detail) };
+    return { id: 'ev' + Date.now().toString(36) + Math.random().toString(36).slice(2, 8), ts: new Date().toISOString(), email: email, host: location.host, version: _version(), page: _page(), event: String(event).slice(0, 80), detail: _clean(detail) };
   }
 
   function chLog(event, detail) {
@@ -73,46 +88,55 @@
       if (_accepted.length >= MAX_PER_HOUR || _queue.length >= MAX_QUEUE) return;
       _accepted.push(now);
       _queue.push(_row(event, detail));
+      _persist();
       if (!_timer) _timer = setTimeout(_flush, FLUSH_MS);
     } catch (e) {}
   }
 
-  function _flush(useKeepalive) {
+  // force = true (pagehide): write now, even inside the 30 s gap.
+  function _flush(force) {
+    if (_timer) clearTimeout(_timer);
     _timer = null;
     try {
       if (!_queue.length) return;
-      var A = window.CH_AUTH;
-      var token = A && A.getToken && A.getToken();
-      if (!token || !A.SUPABASE_URL || !A.SUPABASE_ANON_KEY) return; // signed out: keep the events, try at the next flush
-      while (_queue.length) {
-        var rows = _queue.splice(0, BATCH);
-        rows.forEach(function (r) {
-          // The first events are written before the release notes and the sign-in are ready: fill the blanks at send time.
-          r.version = r.version || _version();
-          r.email = r.email || (A.getEmail && A.getEmail()) || '';
-        });
-        fetch(A.SUPABASE_URL + '/rest/v1/ch_site_events', {
-          method: 'POST',
-          headers: { apikey: A.SUPABASE_ANON_KEY, Authorization: 'Bearer ' + token, 'Content-Type': 'application/json', Prefer: 'return=minimal' },
-          body: JSON.stringify(rows),
-          keepalive: useKeepalive === true,
-        }).then(
-          function () {},
-          function () {},
-        );
+      var D = window.DB;
+      var SC = window.SyncClassification;
+      if (!D || !SC || !D.isReady || !D.isReady()) {
+        _timer = setTimeout(_flush, FLUSH_MS); // data store not ready yet: wait
+        return;
       }
+      var gap = FLUSH_MS - (Date.now() - _lastWrite);
+      if (force !== true && gap > 0) {
+        _timer = setTimeout(_flush, gap);
+        return;
+      }
+      var rows = _queue.splice(0);
+      _persist();
+      var byKey = {};
+      rows.forEach(function (r) {
+        // The first events are written before the release notes and the sign-in are ready: fill the blanks at write time.
+        r.version = r.version || _version();
+        r.email = r.email || (window.CH_AUTH && window.CH_AUTH.getEmail && window.CH_AUTH.getEmail()) || '';
+        (byKey[SC.EVENT_LOG_PREFIX + r.ts.slice(0, 7)] = byKey[SC.EVENT_LOG_PREFIX + r.ts.slice(0, 7)] || []).push(r);
+      });
+      _lastWrite = Date.now();
+      Object.keys(byKey).forEach(function (key) {
+        var cur = D.get(key, []);
+        cur = Array.isArray(cur) ? cur : [];
+        var have = {};
+        cur.forEach(function (e) { if (e && e.id) have[e.id] = true; });
+        var add = byKey[key].filter(function (r) { return !have[r.id]; }); // an adopted event may already be in the list
+        var p = D.set(key, SC.capEventList(cur.concat(add)), 'auto: site event log');
+        if (p && p.then) p.then(function () {}, function () {});
+      });
     } catch (e) {}
   }
   function _flushNow() {
-    while (_queue.length) {
-      var before = _queue.length;
-      _flush(true);
-      if (_queue.length >= before) break; // nothing was sent (signed out)
-    }
+    _flush(true);
   }
   window.addEventListener('pagehide', _flushNow);
   document.addEventListener('visibilitychange', function () {
-    if (document.hidden) _flushNow();
+    if (document.hidden) _flush(false);
   });
 
   function _errKey(msg, file, line) {

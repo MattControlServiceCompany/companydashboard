@@ -194,6 +194,17 @@ const DB = (() => {
     }
     return false;
   }
+  // The site event log keys (app/site-events.js, SyncClassification.EVENT_LOG_PREFIX). They sync like any key but are
+  // diagnostic: a failed write is dropped (never queued), a change never redraws a page, they are not in the sync
+  // status, the remote check or an export, and a merge never copies a record to the conflict history.
+  function _isEventKey(key) {
+    return (
+      typeof window !== 'undefined' &&
+      !!window.SyncClassification &&
+      typeof window.SyncClassification.isEventLogKey === 'function' &&
+      window.SyncClassification.isEventLogKey(key)
+    );
+  }
   function _myUserId() {
     if (typeof window !== 'undefined' && window.CH_AUTH && typeof window.CH_AUTH.getUserId === 'function') {
       try {
@@ -748,6 +759,7 @@ const DB = (() => {
     _pullFailDetail = detail ? String(detail) : '';
   }
   function _enqueueWrite(key, payload) {
+    if (_isEventKey(key)) return; // site event log: a write that cannot be sent now is dropped (the next batch carries the whole list)
     // Coalesce to the latest pending write per key. DESIGN DECISION (flagged,
     // not silently guessed — see implementer report): the app's write pattern
     // is whole-value replace via module-global read-modify-write (plan §3),
@@ -937,6 +949,7 @@ const DB = (() => {
     const out = {};
     Object.keys(_cache).forEach((k) => {
       if (k.indexOf(RV_PREFIX) === 0) return; // this browser's sync stamps: never in a backup
+      if (_isEventKey(k)) return; // the site event log is diagnostic data: never in an export
       if (k === SYNC_QUEUE_KEY) return; // unsent edits (may hold another user's values): restore skips it, never in a backup
       if (k === 'en_conflict_archive') {
         // only the entries this user may see (one rule: _archiveEntryVisible)
@@ -1117,6 +1130,11 @@ const DB = (() => {
           .slice(0, 50),
       getLabel: (it) => it && it.at,
     }),
+    // en_site_events_<YYYY-MM>: the site event log, id 'ev...', newest first, capped (SyncClassification.capEventList).
+    siteEvents: Object.assign({ noDeletionRecords: true, requireIds: true }, _bareList, {
+      setItems: (_v, items) => window.SyncClassification.capEventList(items),
+      getLabel: (it) => it && it.event,
+    }),
     pdfBills: Object.assign({ noDeletionRecords: true, requireIds: true }, _bareList, {
       getLabel: (it) => it && (it.id || it.fileName),
     }),
@@ -1138,6 +1156,7 @@ const DB = (() => {
     if (UNION_KEY_CONFIG[key]) return UNION_KEY_CONFIG[key];
     if (key === 'en_utility_audit_log') return MERGE_ONLY_CONFIG.audit;
     if (key === 'en_pdf_bills') return MERGE_ONLY_CONFIG.pdfBills;
+    if (_isEventKey(key)) return MERGE_ONLY_CONFIG.siteEvents;
     if (key.indexOf('en_cal_hist_') === 0 || key.indexOf('en_bas_hist_') === 0 || key.indexOf('en_bas_acthist_') === 0) return MERGE_ONLY_CONFIG.calHist;
     if (_isUtilityKey(key)) return MERGE_ONLY_CONFIG.utility;
     return null;
@@ -1575,6 +1594,7 @@ const DB = (() => {
   // Returns how many were copied.
   function _archiveServerRecordsDropped(key, mergedValue, serverValue, updatedBy) {
     if (serverValue === undefined || serverValue === null) return 0;
+    if (_isEventKey(key)) return 0; // the cap drops the oldest events: no copy to the conflict history
     const kept = _itemIds(key, mergedValue);
     const dropped = [];
     _itemIds(key, _dropTombstoned(key, serverValue).value).forEach((item, id) => {
@@ -1626,7 +1646,7 @@ const DB = (() => {
   }
   function _isBackgroundList(key) {
     const cfg = _collectionCfg(key);
-    return !!cfg && (cfg === MERGE_ONLY_CONFIG.calHist || cfg === MERGE_ONLY_CONFIG.audit);
+    return !!cfg && (cfg === MERGE_ONLY_CONFIG.calHist || cfg === MERGE_ONLY_CONFIG.audit || cfg === MERGE_ONLY_CONFIG.siteEvents);
   }
   // 2026-11-02: after a conflict is resolved the page still holds the old list in memory (the table showed
   // the value the user just discarded until a reload). Announce it like a change from the other user:
@@ -1763,7 +1783,7 @@ const DB = (() => {
     const droppedServer = _archiveServerRecordsDropped(key, value, current.value, current.updatedBy);
     await _rawSet(key, value);
     if (epoch !== _identityEpoch) return true;
-    if (typeof window !== 'undefined') {
+    if (typeof window !== 'undefined' && !_isEventKey(key)) {
       window.dispatchEvent(new CustomEvent('dataUpdated', { detail: { key } }));
     }
     _setSynced(key, { version: current.version, hash: current.hash || null }, current.value);
@@ -2895,6 +2915,7 @@ const DB = (() => {
       const resolved = _resolveManifestKey(m.key); // skips foreign per-user rows entirely
       if (!resolved) continue;
       const localKey = resolved.localKey;
+      if (_isEventKey(localKey)) continue; // the event log is not pulled by the poll (a write merges it; a load pulls it)
       if (_serverRowNeedsRoutinePull(m, localKey)) {
         changed.push({ localKey, version: m.version });
       }
@@ -3428,7 +3449,7 @@ const DB = (() => {
     }
     // Update in-memory cache immediately so the UI stays responsive.
     _cache[key] = value;
-    if (typeof window !== 'undefined') {
+    if (typeof window !== 'undefined' && !_isEventKey(key)) {
       window.dispatchEvent(new CustomEvent('dataUpdated', { detail: { key } }));
     }
 
@@ -3669,6 +3690,7 @@ const DB = (() => {
       const resolved = _resolveManifestKey(m.key);
       if (!resolved) continue;
       const localKey = resolved.localKey;
+      if (_isEventKey(localKey)) continue; // not client data: not in the status list
       const local = _replicaVersions[localKey];
       keys.push({
         key: localKey, // local (unprefixed) name — what sync-ui.js displays
