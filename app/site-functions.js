@@ -2507,6 +2507,14 @@ async function siteResetAllMeterTableSettings() {
    site-ui.js delegates to this array and should NOT maintain its own copy.
 */
 var RELEASE_NOTES = [
+  { v: 'v2026.11.16.299', date: '2026-11-16', title: 'Audit Report: real Executive Summary, system configuration in System Descriptions, Word file matches the PDF',
+    items: [
+      { type: 'improvement', text: 'Detailed Audit Report: the Executive Summary is now a summary: what was audited, the overall result, the libraries that need the most work, the key findings and the recommended work.' },
+      { type: 'improvement', text: 'Detailed Audit Report: each System Description first states how the system is built (number of boilers, chillers and pumps, primary or secondary pumps, variable-speed pumps, air-cooled chiller, dual-duct air handler, compressors, gas heat, pump rotation), then the sequence of operation.' },
+      { type: 'fix', text: 'Audit Report window: the Point Inventory Completeness box no longer shows greyed out for the Detailed style. The Detailed report has no point list, so the box is hidden; it shows again for the Simple style.' },
+      { type: 'fix', text: 'Audit Report Word file: list items have the same text size as the PDF.' },
+      { type: 'fix', text: 'ASHRAE 36 Audit Report Word file: table cells have the same inner spacing as the PDF, the columns have the PDF widths, and a status cell with two lines keeps its orange first line.' },
+    ] },
   { v: 'v2026.11.15.298', date: '2026-11-15', title: 'ASHRAE 36 Audit Report: sequence-of-operation descriptions, tighter pages; faster PDF download',
     items: [
       { type: 'fix', text: 'Detailed Audit Report: each System Description now states the current sequence of operation (how the equipment starts, what it holds, unoccupied operation), with no readings or audit-time notes. Each description is one paragraph and stays on the page with its graphic.' },
