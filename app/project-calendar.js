@@ -130,6 +130,7 @@
       '.pcal-tbl tbody tr:last-child td{border-bottom:none}',
       '.pcal-tbl tbody tr:nth-child(even) td{background:var(--s3)}',
       '.pcal-sum{font-size:15px;font-weight:700;margin-top:12px;color:var(--text)}',
+      '.sact-ok{font-size:14px;font-weight:700;margin-top:12px;padding:8px 12px;color:var(--text);border:1px solid var(--green);border-radius:6px;background:color-mix(in srgb,var(--green) 40%,var(--s1))}',
       '.pcal-feed{font-size:12px;margin-top:4px;color:var(--text)}',
       '.pcal-range{font-size:13px;font-weight:600;color:var(--text);min-width:130px;text-align:center}',
       '.pcal-ev-tbl tbody tr:nth-child(even) td{background:transparent}',
@@ -269,18 +270,16 @@
   // The ONE BAS context for a project's event rows (space map, BAS copies, scheduling groups with members, location schedules).
   function basCtxFor(pid, tz) {
     var bg = DB.get('en_bas_groups_' + pid, null) || {};
-    return { tz: tz, map: DB.get('en_space_map_' + pid, null), snaps: DB.get('en_bas_snap_' + pid, {}), groups: bg.groups || {}, locations: bg.locations || [] };
+    var log = window.BasAuditLog ? window.BasAuditLog.changeList(DB.get('en_bas_auditevents_' + pid, null), {}) : null;
+    return { tz: tz, map: DB.get('en_space_map_' + pid, null), snaps: DB.get('en_bas_snap_' + pid, {}), groups: bg.groups || {}, locations: bg.locations || [], scheduleEdits: window.SchedActions ? SchedActions.scheduleEditsOf(log) : [] };
   }
   function basCell(row, status, ctx) {
     if (status === 'canceled' || !window.BasCoverage) return '';
-    var c = BasCoverage.eventCoverage(row, ctx);
+    var c = BasCoverage.describe(BasCoverage.coverageOf(row, ctx), ctx); // the one coverage answer; the To do card reads the same
     if (c.status === 'allday') return '';
-    var cls = c.status === 'covered' ? ' pcal-new' : c.status === 'short' || c.status === 'suggest' ? ' pcal-changed' : ''; // suggest = a to-do, shown like short
-    var tip = '';
-    if (c.from) {
-      tip = 'Checked against the ' + c.source + (c.program ? '. Least covered: ' + BasDiff.splitKey(c.program).program : '');
-    }
-    return '<span class="pcal-badge' + cls + '"' + (tip ? ' title="' + _escHtml(tip) + '"' : '') + '>' + _escHtml(c.label) + '</span>';
+    var cls = c.covered ? ' pcal-new' : c.state === 'todo' ? ' pcal-changed' : ''; // amber = a to-do row in the To do card; suggest and the others cannot be checked, so no color
+    var label = c.state === 'edited' ? 'Covered, added in WebCTRL' : c.label;
+    return '<span class="pcal-badge' + cls + '"' + (c.hover ? ' title="' + _escHtml(c.hover) + '"' : '') + '>' + _escHtml(label) + '</span>';
   }
   // The events of one project in the shown period, with marks. The one call of CalendarDiff.listView for this tab.
   function viewOf(pid, snap, q, changesOnly) {
@@ -332,6 +331,19 @@
       (onToday ? '' : '<button class="btn btn-ghost btn-sm" title="Go back to the ' + per.view + ' that has today" onclick="pcalToday(' + pid + ')">Today</button>') +
       '</div><div class="pcal-sum" title="Compared with the calendar feed as saved at each sync. A mark stays ' + CalendarDiff.MARK_DAYS + ' days or until the date passes.">' + _escHtml(line) + '</div></div></div>';
   }
+  // The line that says the feed has changes the saved copy does not have: how many events, and when the last automatic read ran.
+  // d = { added, changed, removed } counts (null when unknown), lastReadMs = CalendarDiff.lastRead.
+  function feedChangeText(d, lastReadMs) {
+    var parts = [];
+    if (d && d.added) parts.push(num(d.added) + ' new');
+    if (d && d.changed) parts.push(num(d.changed) + ' changed');
+    if (d && d.removed) parts.push(num(d.removed) + ' canceled');
+    return (
+      'The calendar feed has changes that are not saved yet' + (parts.length ? ': ' + parts.join(', ') : '') + '.' +
+      (isNaN(lastReadMs) ? '' : ' The last automatic read ran ' + stampShort(new Date(lastReadMs).toISOString()) + '.') +
+      ' Choose Sync now to save them.'
+    );
+  }
   function renderList(pid) {
     var host = document.getElementById('pcal-list-' + pid);
     if (!host) return;
@@ -348,10 +360,13 @@
     var v = viewOf(pid, snap, s.q, s.changesOnly);
     var last = hist[0];
     var lc = last && !last.first ? last.counts : null;
+    var check = DB.get('en_cal_check_' + pid, null);
+    var checkedAt = check && check.at && Date.parse(check.at) > Date.parse(snap.fetchedAt) ? check.at : ''; // the daily update read the feed and found no change
     var feedLine =
       'Whole feed: ' + num(snap.count) + (snap.count === 1 ? ' event' : ' events') +
       '; last sync ' + stampShort(snap.fetchedAt) +
-      (lc ? ': ' + num(lc.added) + ' new, ' + num(lc.changed) + ' changed, ' + num(lc.removed) + ' canceled' : '');
+      (lc ? ': ' + num(lc.added) + ' new, ' + num(lc.changed) + ' changed, ' + num(lc.removed) + ' canceled' : '') +
+      (checkedAt ? '; feed last checked ' + stampShort(checkedAt) + ' (no change)' : '');
     var controls =
       '<div class="pcal-nav">' + (v.compared ? btn('Changes only', s.changesOnly, 'pcalChangesOnly(' + pid + ')', 'Show only new, moved and canceled events') : '') + '</div>';
     var basCtx = basCtxFor(pid, tz);
@@ -519,7 +534,9 @@
       summary = '<div style="font-size:13px">No copy of the feed is saved yet. Choose Sync now.</div>';
     } else if (s.feedChanged) {
       summary =
-        '<div class="pcal-msg">The calendar feed has changes that are not saved yet. Choose Sync now to save them.</div>';
+        '<div class="pcal-msg">' +
+        _escHtml(feedChangeText(s.feedDiff, CalendarDiff.lastRead({ snap: snap, check: DB.get('en_cal_check_' + pid, null) }))) +
+        '</div>';
     } else {
       summary = '';
     }
@@ -742,6 +759,7 @@
       if (!snap) return;
       var d = saved ? CalendarDiff.diffSnapshots(saved, snap) : null;
       s.feedChanged = !saved || d.added.length + d.removed.length + d.changed.length > 0;
+      s.feedDiff = d ? { added: d.added.length, changed: d.changed.length, removed: d.removed.length } : null;
     } catch (e) {
       s.feedChanged = false;
     }

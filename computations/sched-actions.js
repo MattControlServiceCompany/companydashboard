@@ -4,6 +4,7 @@
 // Open / Done / Closed status, and finds BAS-side waste. The coverage decision itself is BasCoverage.eventCoverage
 // (computations/bas-coverage.js); nothing here repeats it. app/sched-actions.js only draws the result and saves it.
 // Pure: no DOM, no storage, no network. Works as a browser script and as a CommonJS module.
+// todoView is the To do card of the District Calendar tab: the rows are the events BasCoverage.coverageOf says need a WebCTRL change.
 //
 // Stored (key en_sched_actions_<pid>, class SYNCED):
 //   { actions:{ "<event id>": { id, date, text, program, status:'open'|'done'|'closed', openedAt, doneBy, doneAt, closedAt, note } } }
@@ -13,7 +14,8 @@
 //   reconcile(o)       o = computeActions input + { stored, now, latestImport } -> { stored, changes:[{id,text,what}] }
 //   latestImport(snaps, calFetchedAt) -> newest BAS import or calendar sync time
 //   setStatus(stored, id, status, who, now) -> { stored, changes }
-//   periodUnknown(o) -> events probably covered by a group whose members are not saved (not a to-do)
+//   periodUnknown(o) -> events a group with no saved rooms may cover (not a to-do)
+//   todoView(o)        o = periodView input + { stored, now } -> { todo, done, covered, optional, later, status }
 //   wasteFindings(o)   o = { events, map, snaps, groups, tz, today }          -> [finding]
 //   historyRecord(changes, at, by, id)  -> one en_bas_hist record (kind 'action')
 (function (root) {
@@ -38,8 +40,7 @@
   // en_bas_groups_<pid>. The groups of a program are found by BasCoverage.groupsFor (the one membership rule; coverage uses it too).
   // A program can be in several groups. groupFor returns the name of the first one (a group that lists the program) or ''.
   function groupFor(groups, key) {
-    var g = BC.groupsFor(groups, key)[0];
-    return g ? g.group : '';
+    return BC.groupFor(groups, key);
   }
 
   // The schedules saved for the scheduling groups of a program, as plain text ('' when none was read): 'LRC Volleyball Games, Mon,Tue,Wed,Thu, 4:00 PM-10:00 PM'.
@@ -176,57 +177,25 @@
     var t = uniq(titles);
     return t.length > 3 ? t.slice(0, 3).join(', ') + ' and ' + (t.length - 3) + ' more' : and(t);
   }
-  // A schedule edit in the imported WebCTRL audit log (BasAuditLog.changeList rows with a block, o.scheduleEdits) made AFTER the BAS copy
-  // the check used (c.from) on the event's weekday, at the event's program location or one of its parent areas (a path prefix; a
-  // building-level edit counts for every program of the building, a room-level edit only for programs in that room), with hours that
-  // overlap an uncovered stretch. The edits together must span every uncovered stretch. The log names the location, not the group,
-  // so this says "added in WebCTRL", not "covered". Set point rows have no block and never count.
-  // Returns the newest such edit { ymd, operator } or null.
-  function webctrlEditFor(edits, c, date) {
-    var weekday = dayText(date).split(' ')[0];
-    var building = norm(BD.keyBuilding(c.program));
-    var area = norm(BD.areaOf(BD.splitKey(c.program).location));
-    var atLocation = function (e) {
-      var ea = norm(e.area);
-      return !ea || area === ea || area.indexOf(ea + ' / ') === 0;
-    };
-    var overlaps = function (e) {
-      return e.block.iv.some(function (x) {
-        return c.gaps.some(function (g) { return x[0] < g[1] && x[1] > g[0]; });
-      });
-    };
-    var hits = (edits || []).filter(function (e) {
-      return e.block && e.ymd > c.from && norm(e.building) === building && e.block.days.indexOf(weekday) !== -1 && atLocation(e) && overlaps(e);
-    });
-    if (!hits.length || !c.gaps.length) return null;
-    var occupied = [];
-    hits.forEach(function (e) {
-      e.block.iv.forEach(function (x) { occupied.push([x[0], x[1], 'occ']); });
-    });
-    var spanned = c.gaps.every(function (g) { return BC.minutesShort(occupied, g[0], g[1]) === 0; });
-    if (!spanned) return null;
-    var newest = hits.slice().sort(function (a, b) { return a.iso < b.iso ? 1 : a.iso > b.iso ? -1 : 0; })[0];
-    return { ymd: newest.ymd, operator: newest.operator || '' };
-  }
-  // The status words of a line the audit log shows as added: 'Added in WebCTRL on Fri Nov 13, 2026 by Test Operator - BAS copy not yet re-imported'.
+  // The status words of a line the audit log shows as added: 'Added in WebCTRL on Fri Nov 13, 2026 by Test Operator; the saved BAS schedule does not show it yet'.
   function webctrlText(w) {
-    return 'Added in WebCTRL on ' + BD.dateText(w.ymd) + (w.operator ? ' by ' + w.operator : '') + ' - BAS copy not yet re-imported';
+    return 'Added in WebCTRL on ' + BD.dateText(w.ymd) + (w.operator ? ' by ' + w.operator : '') + '; the saved BAS schedule does not show it yet';
   }
   // One line = one BAS unit (its scheduling group, else its program) x one set of uncovered spans, over every date and event
   // that needs it. Events in one unit on one day merge: overlapping or touching uncovered spans become one span. Days with the
   // same merged spans join into one line.
   function computeActions(o) {
-    var ctx = { tz: o.tz, map: o.map, snaps: o.snaps, groups: o.groups, locations: o.locations };
+    var ctx = { tz: o.tz, map: o.map, snaps: o.snaps, groups: o.groups, locations: o.locations, scheduleEdits: o.scheduleEdits };
     var units = {};
     Object.keys(o.events || {}).forEach(function (id) {
       var row = o.events[id];
       if (!row || !row[1]) return;
       var date = CD.calendarDay(row[1], o.tz);
       if (date < o.today) return;
-      var c = BC.eventCoverage(row, ctx);
+      var c = BC.coverageOf(row, ctx);
       if (c.status !== 'short') return;
       var group = groupFor(o.groups, c.program);
-      var webctrl = webctrlEditFor(o.scheduleEdits, c, date);
+      var webctrl = c.edit;
       var uk = (group ? BD.keyBuilding(c.program) + '|' + group : c.program) + (webctrl ? '|webctrl' : '');
       var u = (units[uk] = units[uk] || { key: uk, group: group, days: {} });
       var d = (u.days[date] = u.days[date] || { spans: [], events: [], programs: [], short: 0 });
@@ -285,52 +254,6 @@
     });
   }
 
-  // 'WebCTRL ends 7:30 PM, event ends 8:30 PM: 1 hour short'. The stretches of the event [from,to] that the occupied blocks of ONE schedule leave out.
-  function durText(min) {
-    var h = Math.floor(min / 60);
-    var m = min % 60;
-    return [h ? h + (h === 1 ? ' hour' : ' hours') : '', m ? m + (m === 1 ? ' minute' : ' minutes') : ''].filter(Boolean).join(' ');
-  }
-  function shortText(blocks, from, to) {
-    return BC.gapsOf(blocks, from, to)
-      .map(function (g) {
-        var len = durText(g[1] - g[0]) + ' short';
-        var end = BD.clock(g[1] >= 1440 ? 0 : g[1]);
-        if (g[0] <= from && g[1] >= to) return 'WebCTRL has no time during the event: ' + len;
-        if (g[1] >= to) return 'WebCTRL ends ' + BD.clock(g[0]) + ', event ends ' + BD.clock(to >= 1440 ? 0 : to) + ': ' + len;
-        if (g[0] <= from) return 'WebCTRL starts ' + end + ', event starts ' + BD.clock(from) + ': ' + len;
-        return 'WebCTRL has no time ' + BD.clock(g[0]) + '-' + end + ': ' + len;
-      })
-      .join('; ');
-  }
-  // For each event of an action line that is named like a WebCTRL schedule: the words the card shows.
-  // -> [{ title, text }]  text = 'In WebCTRL (Group <group>): <name>, <days>, <hours>' + ' (<difference>)'. A schedule that does not run on the event date says so.
-  function namedMatches(o, a, from, to) {
-    var ctx = { tz: o.tz, map: o.map, snaps: o.snaps, groups: o.groups, locations: o.locations };
-    var seen = {};
-    var out = [];
-    a.eventIds.forEach(function (id) {
-      var row = (o.events || {})[id];
-      if (!row) return;
-      var date = CD.calendarDay(row[1], o.tz);
-      if (date < from || date > to) return;
-      var c = BC.eventCoverage(row, ctx);
-      var m = BC.webctrlMatch(o.groups, o.locations, row[0], date, c.program ? BD.keyBuilding(c.program) : '');
-      if (!m) return;
-      var text = 'In WebCTRL' + (m.where ? ' (' + m.where + ')' : '') + ': ' + m.name + ', ' + m.when + ', ' + m.hours; // where = 'Group <name>' or the location path
-      if (!m.applies) text += ' (not active on ' + BD.dateText(date) + ')';
-      else {
-        var d = shortText(m.blocks, c.fromMin, c.toMin);
-        text += d ? ' (' + d + ')' : ' (covers the event time)';
-      }
-      if (!seen[row[0] + '|' + text]) {
-        seen[row[0] + '|' + text] = 1;
-        out.push({ title: row[0], text: text, applies: !!m.applies });
-      }
-    });
-    return out;
-  }
-
   // A schedule of the event's scheduling group that is saved but has no day selected (not active) and whose occupied periods span every
   // uncovered stretch: turning it on is easier than a new schedule. Returns { name, days:'Wed,Thu' } or null. dates = the dates of the line.
   function activateOption(o, a, dates) {
@@ -377,8 +300,7 @@
   // the period, so a one-time need in December is not listed in a November week. A weekly pattern is one line (one repeating
   // schedule to add to the scheduling group), whatever part of it falls in the period.
   // o = computeActions input (+ locations: the location schedules of en_bas_groups) + { from, to }. -> [{ id, change, dates, forText, unit, inBas, where, groupNow, named, repeats, action }]
-  //   named = [{ title, text }]: the events named like a WebCTRL schedule, with 'In WebCTRL: ...' and the time difference.
-  //   where = the place of every BAS program the line's events use (building / area / program; '; ' between them); groupNow = the schedules saved for its scheduling groups.
+    //   where = the place of every BAS program the line's events use (building / area / program; '; ' between them); groupNow = the schedules saved for its scheduling groups.
   //   rooms = ['Room 114 = Area F (Room F114)']: the Area of a room number named in an event title or location.
   // The calendar rows of these event ids whose date is in [o.from, o.to].
   function rowsInPeriod(o, ids) {
@@ -421,39 +343,11 @@
         inBas: inBas,
         where: uniq(a.programs.map(whereText)).join('; '),
         groupNow: groupScheduleText(o.groups, a.program),
-        named: namedMatches(o, a, o.from, o.to),
         rooms: roomLines(o, rowsInPeriod(o, a.eventIds)),
         action: a,
       });
     });
     return out.sort(function (a, b) { return a.action.start < b.action.start ? -1 : a.action.start > b.action.start ? 1 : a.id < b.id ? -1 : 1; });
-  }
-  // "Not covered by a BAS schedule": every open need from today forward, whatever view is shown (all stored dates).
-  // o = computeActions input + { stored, now } (buildInput gives both). -> { open, other, done }, each a list of periodNeeds lines:
-  //   open  = no WebCTRL schedule of that name: the real to-dos. This is the count.
-  //   other = the event is already in a WebCTRL schedule (of another group, n.named) or was added in WebCTRL after the BAS copy (n.webctrl): check the group.
-  //   done  = marked Done by a person, waiting for the next BAS import.
-  // True when EVERY event of the line (from today on) is named like a WebCTRL schedule. A line that also holds a plain uncovered event stays a to-do.
-  function allNamed(o, n) {
-    var named = {};
-    n.named.forEach(function (m) { if (m.applies) named[m.title] = 1; }); // a schedule that does not run on the event date does not cover it
-    var titles = n.action.eventIds
-      .map(function (id) { return (o.events || {})[id]; })
-      .filter(function (row) { return row && CD.calendarDay(row[1], o.tz) >= o.today; })
-      .map(function (row) { return row[0]; });
-    return titles.length > 0 && titles.every(function (t) { return named[t]; });
-  }
-  function notCoveredLists(o) {
-    var v = reconcile(o);
-    var needs = periodNeeds(Object.assign({}, o, { from: o.today, to: '9999-12-31' }));
-    var out = { open: [], other: [], done: [] };
-    needs.forEach(function (n) {
-      var s = v.stored.actions[n.id];
-      if (s && s.status === 'done') out.done.push(n);
-      else if (n.webctrl || allNamed(o, n)) out.other.push(n);
-      else out.open.push(n);
-    });
-    return out;
   }
   // --- opportunities: covered events whose own schedule is longer than the event -------------------
   // Matt 2026-11-12: tell the user when a new schedule could fit better, but do not force it when the event is already covered.
@@ -600,6 +494,126 @@
     };
   }
 
+  // --- the To do card: what to do in WebCTRL in the shown period ------------------------------
+  // The event name without the place the title ends with ('LHS Cross Country Awards- LHS Commons' -> 'LHS Cross Country Awards').
+  function eventName(row) {
+    var p = CD.eventPlace({ title: row[0], location: row[4] });
+    if (!p.fromTitle) return row[0];
+    var i = String(row[0]).lastIndexOf(p.text);
+    var t = i > 0 ? String(row[0]).slice(0, i).replace(/[\s@-]+$/, '').trim() : '';
+    return t || row[0];
+  }
+  function monthDay(ymd) {
+    return dayText(ymd).split(' ').slice(1).join(' ');
+  }
+  // One to-do line (a periodNeeds line n) as plain words for the shown period [o.from, o.to].
+  //   { id, head, doThis, why, count, dates, eventIds }
+  //   head  'Mon Nov 16, 6:30-8:00 PM: LHS Cross Country Awards in LHS Commons'
+  //   doThis  'Do this: in WebCTRL, group HS NewArea F, add a one-day schedule Mon Nov 16, 6:30-8:00 PM.'
+  //   why     the words of BC.describe for the events (rooms, group, where the schedule ends, a schedule of that name in another group).
+  // A weekday that repeats 3 or more times is ONE row with its date count.
+  function todoRow(o, n, ctx) {
+    var a = n.action;
+    var rep = repeatOf(a.dates);
+    var repIn = n.repeats;
+    var inPeriod = function (d) { return d >= o.from && d <= o.to; };
+    var shownDates = repIn ? rep.dates.concat(rep.rest.filter(inPeriod)) : a.dates.filter(inPeriod);
+    var events = [];
+    a.eventIds.forEach(function (id) {
+      var row = (o.events || {})[id];
+      if (!row) return;
+      var d = CD.calendarDay(row[1], o.tz);
+      if (shownDates.indexOf(d) === -1) return;
+      var c = BC.describe(BC.coverageOf(row, ctx), ctx);
+      events.push({ id: id, row: row, c: c, date: d });
+    });
+    var names = uniq(events.map(function (e) { return eventName(e.row); }));
+    var spaces = uniq(events.map(function (e) { return e.c.space; }).filter(Boolean));
+    var times = BC.spansRange(a.spans);
+    var when;
+    var doWhen;
+    if (repIn) {
+      var wd = rep.weekdays.join('/');
+      var span = monthDay(rep.dates[0]) + ' – ' + monthDay(rep.dates[rep.dates.length - 1]);
+      when = 'Every ' + wd + ', ' + times;
+      doWhen = 'a weekly schedule on ' + wd + ', ' + times + ' (' + rep.dates.length + ' dates, ' + span + ')';
+      var more = rep.rest.filter(inPeriod);
+      if (more.length) doWhen += ', and one-day schedules on ' + and(more.map(dayText)) + ', ' + times;
+    } else if (shownDates.length === 1) {
+      when = dayText(shownDates[0]) + ', ' + times;
+      doWhen = 'a one-day schedule ' + dayText(shownDates[0]) + ', ' + times;
+    } else {
+      when = shownDates.map(dayText).join(', ') + ', ' + times;
+      doWhen = 'one-day schedules on ' + and(shownDates.map(dayText)) + ', ' + times;
+    }
+    var head = when + ': ' + (names.length > 3 ? names.slice(0, 3).join(', ') + ' and ' + (names.length - 3) + ' more' : and(names)) + (spaces.length ? ' in ' + (spaces.length > 3 ? spaces.slice(0, 3).join(', ') + ' and ' + (spaces.length - 3) + ' more' : and(spaces)) : '');
+    var base = a.group ? 'in WebCTRL, group ' + a.group : 'in WebCTRL, for ' + a.unit;
+    var act = n.activate ? ' Or turn on the saved schedule ' + n.activate.name + ' in group ' + n.activate.group + ' (select ' + n.activate.days + ').' : '';
+    var whys = uniq(events.map(function (e) { return e.c.why; }).filter(Boolean));
+    var why = whys.slice(0, 2).join(' ') + (whys.length > 2 ? ' ' + (whys.length - 2) + ' more places are checked the same way.' : '');
+    return {
+      id: n.id,
+      head: head,
+      doThis: 'Do this: ' + base + ', add ' + doWhen + '.' + act,
+      why: why ? 'Why: ' + why : '',
+      count: shownDates.length,
+      dates: shownDates,
+      eventIds: events.map(function (e) { return e.id; }),
+    };
+  }
+  // Everything the To do card shows for the period [o.from, o.to] (o = periodView input + stored/now). The default period is this week.
+  //   todo      rows to do (each has a Done button) ; done  rows a person marked Done (waiting for the next BAS import)
+  //   covered   [{ date, when, title, reason }] events of the period that are covered (or were added in WebCTRL), nothing to do
+  //   optional  [{ id, text }] covered events whose own schedule is longer than the event
+  //   later     { count, from } open to-dos dated after the period, or null
+  //   status    BC.checkStatus of the period's events (counts, reasons)
+  function todoView(o) {
+    var ctx = { tz: o.tz, map: o.map, snaps: o.snaps, groups: o.groups, locations: o.locations, scheduleEdits: o.scheduleEdits, effectCache: {} };
+    var pv = periodView(o);
+    var stored = reconcile(o).stored.actions;
+    var out = { todo: [], done: [], covered: [], optional: [], later: null, status: pv.status };
+    var shown = {};
+    pv.needs.forEach(function (n) {
+      var r = todoRow(o, n, ctx);
+      var s = stored[n.id];
+      r.note = s && s.note ? s.note : '';
+      if (s && s.status === 'done') {
+        r.doneBy = s.doneBy || '';
+        r.doneAt = s.doneAt || '';
+        out.done.push(r);
+      } else if (!n.webctrl) out.todo.push(r); // a line added in WebCTRL (audit log) is in covered, with the events
+      r.eventIds.forEach(function (id) { shown[id] = 1; });
+    });
+    (o.rows || []).forEach(function (row) {
+      if (!row || !row[1]) return;
+      var c = BC.describe(BC.coverageOf(row, ctx), ctx);
+      if (c.state !== 'covered' && c.state !== 'edited') return;
+      out.covered.push({ date: c.date, from: c.fromMin, when: dayText(c.date) + ', ' + BC.timeRange(c.fromMin, c.toMin), title: eventName(row), reason: c.hover });
+    });
+    out.covered.sort(function (a, b) { return a.date < b.date ? -1 : a.date > b.date ? 1 : a.from - b.from || (a.title < b.title ? -1 : a.title > b.title ? 1 : 0); });
+    pv.opportunities.forEach(function (op) {
+      out.optional.push({
+        id: op.id,
+        text: op.title + ' (' + op.dates.map(function (d) { return monthDay(d); }).join(', ') + '): the schedule ' + op.schedule + ' runs about ' + op.hours + ' h longer than the event' + (op.weekly ? ' each week' : '') + '.',
+      });
+    });
+    var laterIds = [];
+    var laterFrom = '';
+    computeActions(o).forEach(function (a) {
+      var s = stored[a.id];
+      if ((s && s.status === 'done') || a.webctrl) return;
+      a.eventIds.forEach(function (id) {
+        var row = (o.events || {})[id];
+        var d = row && CD.calendarDay(row[1], o.tz);
+        if (!d || d <= o.to || shown[id]) return;
+        laterIds.push(id);
+        if (!laterFrom || d < laterFrom) laterFrom = d;
+      });
+    });
+    if (laterIds.length) out.later = { count: laterIds.length, from: laterFrom };
+    return out;
+  }
+
   // The newest time the data changed: the newest BAS import or the calendar sync (ISO text), '' when unknown.
   function latestImport(snaps, calFetchedAt) {
     var t = calFetchedAt || '';
@@ -611,7 +625,7 @@
   }
 
   // Which saved copies the list is built from, in plain words, so the reader knows how old the data is.
-  // o = { snapFetchedAt (ISO or ''), snaps, tz, today, auditLastDay, scheduleEdits }. 'Calendar copy: Nov 3, 2026 (7 days old). BAS copies: Oct 29, 2026, Oct 30, 2026.'
+  // o = { snapFetchedAt (ISO or ''), snaps, tz, today, auditLastDay, scheduleEdits }. 'Saved calendar: Nov 3, 2026 (7 days old). Saved BAS schedules: Oct 29, 2026, Oct 30, 2026.'
   function copyNote(o) {
     var out = [];
     if (o.snapFetchedAt) {
@@ -619,16 +633,16 @@
       // Whole calendar days from the copy day to today, counted with CD.addDays (no millisecond math; the day-count gate allows only calcDays).
       var age = 0;
       for (var c = d; c < o.today && age < 3660; age++) c = CD.addDays(c, 1);
-      out.push('Calendar copy: ' + BD.dateText(d) + ' (' + (age <= 0 ? 'today' : age + (age === 1 ? ' day' : ' days') + ' old') + ').');
-    } else out.push('No calendar copy saved.');
+      out.push('Saved calendar: ' + BD.dateText(d) + ' (' + (age <= 0 ? 'today' : age + (age === 1 ? ' day' : ' days') + ' old') + ').');
+    } else out.push('No calendar saved.');
     var days = Object.keys(o.snaps || {}).filter(function (x) { return BD.isDate(x) && o.snaps[x] && o.snaps[x].rows; }).sort();
-    out.push(days.length ? 'BAS copies: ' + days.map(BD.dateText).join(', ') + '.' : 'No BAS copy saved.');
+    out.push(days.length ? 'Saved BAS schedules: ' + days.map(BD.dateText).join(', ') + '.' : 'No BAS schedule saved.');
     // The audit log is the only record of edits made in WebCTRL after the newest BAS copy.
     // o.auditLastDay = the newest day of the imported audit log ('' when none); o.scheduleEdits = its schedule rows (changeList rows with a type of Schedule added, changed or deleted).
     var newest = days.length ? days[days.length - 1] : '';
     if (o.auditLastDay) {
       var since = (o.scheduleEdits || []).filter(function (e) { return !newest || e.ymd > newest; }).length;
-      out.push('Newest BAS copy: ' + (newest ? BD.dateText(newest) : 'none') + '. Newest audit log day: ' + BD.dateText(o.auditLastDay) + '. Schedule edits in the audit log since the BAS copy: ' + since + '.');
+      out.push('Newest saved BAS schedule: ' + (newest ? BD.dateText(newest) : 'none') + '. Newest audit log day: ' + BD.dateText(o.auditLastDay) + '. Schedule edits in the audit log since that BAS schedule: ' + since + '.');
     }
     return out.join(' ');
   }
@@ -797,6 +811,10 @@
   // --- the input of the check, and the save plan (one copy, used by the page and by the daily update) ---------
   // io = { get(key, fallback), matrixRows(pid) -> rows, manualRows(pid) -> event rows, auditList(store) -> BasAuditLog.changeList result, now (ISO) }.
   // The page (app/sched-actions.js) and scripts/calendar-daily-sync.js each pass their own io; the rules are here only.
+  // The schedule rows (type Schedule added, changed or deleted) of a BasAuditLog.changeList result: the edits coverageOf reads (ctx.scheduleEdits).
+  function scheduleEditsOf(log) {
+    return ((log && log.rows) || []).filter(function (r) { return /^Schedule/.test(r.type); });
+  }
   function buildInput(io, pid) {
     var cfg = io.get('en_cal_cfg_' + pid, null);
     var snap = io.get('en_cal_snap_' + pid, null);
@@ -806,7 +824,7 @@
     var g = io.get('en_bas_groups_' + pid, null);
     var log = io.auditList(io.get('en_bas_auditevents_' + pid, null));
     return {
-      scheduleEdits: log.rows.filter(function (r) { return /^Schedule/.test(r.type); }),
+      scheduleEdits: scheduleEditsOf(log),
       auditLastDay: log.lastDay,
       events: Object.assign({}, (snap && snap.events) || {}, io.manualRows(pid)),
       map: io.get('en_space_map_' + pid, null),
@@ -840,13 +858,13 @@
 
   var api = {
     buildInput: buildInput,
+    scheduleEditsOf: scheduleEditsOf,
     appendHistory: appendHistory,
     persistPlan: persistPlan,
     computeActions: computeActions,
     periodNeeds: periodNeeds,
     periodView: periodView,
-    notCoveredLists: notCoveredLists,
-    allNamed: allNamed,
+    todoView: todoView,
     periodOpportunities: periodOpportunities,
     periodUnknown: periodUnknown,
     roomLines: roomLines,

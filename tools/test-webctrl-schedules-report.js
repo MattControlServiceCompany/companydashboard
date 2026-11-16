@@ -86,23 +86,22 @@ t('coverage: unoccupied periods and schedules with no day selected never cover',
   assert.strictEqual(cover(ev('Club', '2026-11-11', 18, 19), only(['Spring Practice'])).status, 'covered', 'weekdays selected');
 });
 
-t('card: an event named like a WebCTRL schedule shows the schedule and the time it falls short', () => {
+t('card: an event named like a WebCTRL schedule in the group that runs its rooms says the schedule does not cover the whole event', () => {
   const events = ev('Spring Practice', '2026-11-11', 15, 20, 30); // 3:00 PM - 8:30 PM, WebCTRL ends 7:30 PM
-  const pn = SA.periodNeeds(input(events, only(['Spring Practice'])));
-  assert.strictEqual(pn.length, 1);
-  assert.strictEqual(pn[0].named.length, 1);
-  assert.strictEqual(
-    pn[0].named[0].text,
-    'In WebCTRL (Group Test Gyms): Spring Practice, Mon,Tue,Wed,Thu,Fri, 3:00 PM-7:30 PM (WebCTRL ends 7:30 PM, event ends 8:30 PM: 1 hour short)',
-  );
+  const g = only(['Spring Practice']);
+  assert.strictEqual(SA.periodNeeds(input(events, g)).length, 1);
+  const c = BC.describe(BC.coverageOf(events.e1, { tz: TZ, map, snaps, groups: g }), { tz: TZ, map, snaps, groups: g });
+  assert.strictEqual(c.state, 'todo');
+  assert.strictEqual(c.named, "A schedule with this event's name is in group Test Gyms (3:00 PM-7:30 PM), but it does not cover the whole event.");
+  assert(/The schedule ends 7:30 PM; the event ends 8:30 PM \(60 min uncovered\)/.test(c.why), c.why);
 });
 
-t('card: a name match that does not run on the event date says so; an unnamed event has no WebCTRL line', () => {
-  const pn = SA.periodNeeds(input(ev('Awards Night', '2026-11-13', 18, 20), only(['Awards Night'])));
-  assert.strictEqual(pn[0].named.length, 1);
-  assert(/not active on Fri Nov 13, 2026/.test(pn[0].named[0].text), pn[0].named[0].text);
-  const none = SA.periodNeeds(input(ev('Other Event', '2026-11-13', 18, 20), only(['Awards Night'])));
-  assert.strictEqual(none[0].named.length, 0);
+t('card: a name match that does not run on the event date says so; an unnamed event has no such line', () => {
+  const why = (events, g) => BC.describe(BC.coverageOf(events.e1, { tz: TZ, map, snaps, groups: g }), { tz: TZ, map, snaps, groups: g });
+  const g = only(['Awards Night']);
+  const a = why(ev('Awards Night', '2026-11-13', 18, 20), g);
+  assert(/but it does not run on Fri Nov 13/.test(a.named), a.named);
+  assert.strictEqual(why(ev('Other Event', '2026-11-13', 18, 20), g).named, '');
 });
 
 t('card: name compare ignores case, spaces and punctuation', () => {
