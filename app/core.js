@@ -1765,7 +1765,7 @@ function renderDetail(p) {
             </div>
             <div id="ptab-district" class="ptab" style="padding:16px">
               <div id="ptab-district-inner-${p.id}" style="padding:16px">
-                <div style="font-size:12px;color:var(--text2);margin-bottom:12px">School events that need a WebCTRL schedule change are listed first. The full event feed is below.</div>
+                <div style="font-size:12px;color:var(--text2);margin-bottom:12px">Check that each school event has a matching BAS schedule. Events that need a WebCTRL schedule change are listed first. The full event feed is below.</div>
                 <div id="pcal-top-${p.id}"></div>
                 <div id="sact-panel-${p.id}"></div>
                 <div id="pcal-panel-${p.id}"></div>
@@ -2570,7 +2570,8 @@ function initDashboardTab(projId) {
   const cardPairCur = useNormalized ? cardBase - cardNet : totalCur;
   const cardPairShown = useNormalized ? !!cardBill && !cardWeather.length && cardBase > 0 : true;
   // Cumulative card range: the contract start month (p.start) to the newest month with savings.
-  const cumFromYM = p.start ? String(p.start).slice(0, 7) : earliestSavYM;
+  // _ymLong reads the year and month of a 'YYYY-MM-DD' or 'YYYY-MM' string, so the start date goes in whole (no second month cut).
+  const cumFromYM = p.start ? String(p.start) : earliestSavYM;
   const cumRange = cumFromYM && latestSavYM ? _ymLong(cumFromYM) + ' – ' + _ymLong(latestSavYM) : '';
 
   // ECM projected savings

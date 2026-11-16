@@ -85,7 +85,7 @@ check(/<th title="Share of the time/.test(html), 'Projects list Progress column 
 check(/_yrsWithBars/.test(gfx), 'Year-over-year charts leave a year with no bar out of the legend');
 check(/\(v < 0 \? '-\$' : '\$'\) \+ Math\.abs\(v\)\.toLocaleString\(\)/.test(gfx), 'dollar axis writes negatives as -$5,000');
 check(/_blNote/.test(gfx) && /qInBl/.test(gfx), 'baseline months are not compared with the baseline ("0.0% vs BL")');
-check(/title="Eligible: the current Site EUI is at or below/.test(gfx), 'EnergyStar column header explains Eligible / Above');
+check(/title="Eligible: the current Site Energy Use Intensity is at or below/.test(gfx), 'EnergyStar column header explains Eligible / Above');
 
 // the negative-dollar callback, run for real
 const axis = (v) => (v < 0 ? '-$' : '$') + Math.abs(v).toLocaleString();

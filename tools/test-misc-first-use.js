@@ -71,7 +71,7 @@ const fakeInput = { files: [{ name: 'a.csv', text: () => Promise.resolve('x') }]
 
   // #5, #8 text on the District Calendar tab
   const core = rd('app/core.js');
-  t('5 tab says what to do', core.indexOf('Check that each school event has a matching BAS schedule: compare the feed (top) with BAS schedules (below).') >= 0);
+  t('5 tab says what to do', core.indexOf('Check that each school event has a matching BAS schedule. Events that need a WebCTRL schedule change are listed first.') >= 0);
   t('8 manual card subtitle', core.indexOf('Only for events that are not in the feed') >= 0);
   t('8 no CORS wording', core.indexOf('If blocked by CORS') < 0 && core.indexOf('If the link does not load, use PDF Upload') >= 0);
 

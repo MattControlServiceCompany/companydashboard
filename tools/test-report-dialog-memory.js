@@ -77,7 +77,7 @@ const B = 991102;
     ok(re.style === 'detailed', 'reopen: style Detailed');
     ok(re.blds.join() === 'Alpha,Beta', 'reopen: Alpha and Beta only: ' + re.blds);
     ok(flip.every((k) => def.secs.includes(k) !== re.secs.includes(k)), 'reopen: the two flipped sections kept');
-    await page.screenshot({ path: process.env.SHOT || path.join(process.env.CH_TMP_ROOT || '.', '2026-11-16-dialog.png') });
+    if (process.env.SHOT) await page.screenshot({ path: process.env.SHOT }); // only when asked: the gate temp folder must stay empty
 
     const propAfter = await state(A, 'proposal');
     ok(JSON.stringify(propAfter) === JSON.stringify(defP), 'proposal dialog of the same project is still at its defaults');

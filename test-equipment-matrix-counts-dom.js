@@ -124,7 +124,7 @@ function buildMatrix() {
     const ahu = d.type.rows.find((r) => /Air Handling/.test(r[0]));
     // Equipment, Variable, Single, Not known, CO2 yes, no, Humidity yes, no, HP
     assertEqual(ahu.slice(1, 9).join('|'), '3|1|1|1|1|2|1|2', 'air handling row: 3 units, 1/1/1 motor speed, CO2 1/2, humidity 1/2');
-    assertTrue(/^~\d/.test(ahu[9]), 'air handling row has an estimated HP (~ prefix)');
+    assertTrue(/^about \d/.test(ahu[9]), 'air handling row has an estimated HP (about prefix)');
     const vav = d.type.rows.find((r) => /Variable Air Volume/.test(r[0]));
     assertEqual(vav.slice(1, 9).join('|'), '1,200|—|—|—|1,000|200|0|1,200', 'VAV row: thousands separators, dashes for motor speed, CO2 1,000 / 200');
     assertEqual(vav[9], '—', 'VAV has a dash for HP');

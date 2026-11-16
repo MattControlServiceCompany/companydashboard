@@ -275,13 +275,14 @@ function buildSyntheticMatrix() {
       'Average', // Summary has no <tbody> — wait for the tfoot's "Filtered/Total Average" text
     );
     const summaryFooterRows = await page.evaluate(() => document.querySelectorAll('#em-table-wrap tfoot tr').length);
-    assertTrue(summaryFooterRows === 2, 'Summary View: 2 footer rows (Filtered Average + Total Average)');
+    // v318: the Filtered Average row is left out when it equals the Total Average row (no filter set = a duplicate).
+    assertTrue(summaryFooterRows === 1, 'Summary View: 1 footer row (Total Average; Filtered Average only when a filter makes it differ)');
     const summaryFooterLabel = await page.evaluate(
       () => (document.querySelector('#em-table-wrap tfoot tr') || {}).textContent || '',
     );
     assertTrue(
-      summaryFooterLabel.indexOf('Filtered Average') !== -1,
-      'Summary View: footer row is labeled "Filtered Average" (got "' + summaryFooterLabel.slice(0, 60) + '")',
+      summaryFooterLabel.indexOf('Total Average') !== -1 && summaryFooterLabel.indexOf('Filtered Average') === -1,
+      'Summary View: the one footer row is labeled "Total Average" (got "' + summaryFooterLabel.slice(0, 60) + '")',
     );
     assertTrue(
       summaryFooterLabel.indexOf('Page Average') === -1,
@@ -291,14 +292,14 @@ function buildSyntheticMatrix() {
     await timeAction(
       'Sequence View',
       () => page.evaluate(() => document.getElementById('em-sequence-btn').click()),
-      'Select a building', // Sequence has no <tbody> by default — wait for the picker placeholder
+      'Generate Sequence', // Sequence has no <tbody>; v318 made it work with All Buildings, so wait for its Generate Sequence bar
     );
     const seqPlaceholder = await page.evaluate(
       () => (document.getElementById('em-table-wrap') || {}).textContent || '',
     );
     assertTrue(
-      seqPlaceholder.indexOf('Select a building') !== -1,
-      'Sequence View: shows the building-picker placeholder (no building filter set)',
+      seqPlaceholder.indexOf('Generate Sequence') !== -1 && seqPlaceholder.indexOf('Select a building') === -1,
+      'Sequence View: with no building filter set it covers All Buildings (equipment checklist and Generate Sequence button, no picker placeholder)',
     );
 
     // Back to Raw View, then time Edit Mode toggle (also funnels through emLoadMatrix).

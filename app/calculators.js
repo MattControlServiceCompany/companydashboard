@@ -951,7 +951,7 @@ function _buildBaselineDataHtml(b, projId, opts) {
                     (totKwh / sqft).toFixed(1) +
                     '</strong></span>'
                   : '') +
-                (rpt ? '<span>kBtu/sf: ' : '<span title="Weather-normalized baseline. The Site EUI on the Dashboard uses the kWh and therms on the bills, so it can differ.">kBtu/sf (normalized): ') + '<strong style="color:var(--em)">' +
+                (rpt ? '<span>kBtu/sf: ' : '<span title="Weather-normalized baseline. The Site Energy Use Intensity on the Dashboard uses the kWh and therms on the bills, so it can differ.">kBtu/sf (normalized): ') + '<strong style="color:var(--em)">' +
                 (computeKBtu(totKwh, totTherms, totPropGal) / sqft).toFixed(1) +
                 '</strong></span>' +
                 '<span>$/sf: <strong style="color:var(--green)">' +

@@ -30,8 +30,10 @@ if (!psBlock) fail('Projected Savings card not found in app/core.js');
 else if (/color:#(c084fc|a78bfa)/i.test(psBlock) || !/color:var\(--violet-text\)/.test(psBlock)) fail('Projected Savings card text does not use var(--violet-text) / var(--violet-label)');
 else ok('Projected Savings card text uses tokens');
 const em = fs.readFileSync(path.join(ROOT, 'app', 'equipment-matrix.js'), 'utf8');
-const pick = em.split('\n').filter((l) => /var (covColor|seqColor|pctColor|_seqPctColor) =/.test(l));
-if (pick.length < 7) fail('expected 7 coverage/readiness color pickers in equipment-matrix.js, found ' + pick.length);
+// v318: the score pills (emAuditScorePills) and the footers read a36ComputeScores; the duplicate pickers were removed,
+// so 4 pickers remain: pill (color), footer coverage (covColor), Audit View KPI pct (pctColor), sequence pct (_seqPctColor).
+const pick = em.split('\n').filter((l) => /var (covColor|seqColor|pctColor|_seqPctColor|color) = \w+ >= 75/.test(l));
+if (pick.length < 4) fail('expected 4 coverage/readiness color pickers in equipment-matrix.js, found ' + pick.length);
 pick.forEach((l) => { if (/#27ae60|#e67e22/i.test(l)) fail('hard-coded green/amber text color: ' + l.trim()); });
 if (/color:#(27ae60|e67e22);font-weight:700/i.test(em)) fail('matrix cell text still uses color:#27ae60 / #e67e22');
 else ok('matrix cell text uses tokens');

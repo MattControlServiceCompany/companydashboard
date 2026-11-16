@@ -2392,12 +2392,12 @@ function egfxRefresh(projId) {
                     <th style="text-align:right">Square Feet</th>
                     <th style="text-align:right" title="Baseline Site Energy Use Intensity: yearly energy use per square foot, in kBtu">Baseline Site EUI</th>
                     <th style="text-align:right" title="Current Site Energy Use Intensity: yearly energy use per square foot, in kBtu">Current Site EUI</th>
-                    <th style="text-align:right" title="National median Site EUI for this building type (DOE CBECS survey)">CBECS Median</th>
-                    <th style="text-align:right" title="Current Site EUI above (+) or below (-) the CBECS median">vs CBECS</th>
-                    <th style="text-align:center" title="Where the current Site EUI falls in the CBECS spread for this building type: Top 25% is the best, Bottom 25% the worst">Percentile</th>
-                    <th style="text-align:center" title="Eligible: the current Site EUI is at or below the EnergyStar score-75 level for this building type (the minimum for certification). Above: it is higher.">EnergyStar</th>
+                    <th style="text-align:right" title="National median Site Energy Use Intensity for this building type (DOE CBECS survey)">CBECS Median</th>
+                    <th style="text-align:right" title="Current Site Energy Use Intensity above (+) or below (-) the CBECS median">vs CBECS</th>
+                    <th style="text-align:center" title="Where the current Site Energy Use Intensity falls in the CBECS spread for this building type: Top 25% is the best, Bottom 25% the worst">Percentile</th>
+                    <th style="text-align:center" title="Eligible: the current Site Energy Use Intensity is at or below the EnergyStar score-75 level for this building type (the minimum for certification). Above: it is higher.">EnergyStar</th>
                     <th style="text-align:right" title="Annual energy cost per square foot">$/ft²</th>
-                    <th style="text-align:center" title="Rolling 12-month Site EUI against the baseline Site EUI: an arrow down is lower use">Trend</th>
+                    <th style="text-align:center" title="Rolling 12-month Site Energy Use Intensity against the baseline Site Energy Use Intensity: an arrow down is lower use">Trend</th>
                   </tr></thead>
                   <tbody>
                     ${bRows

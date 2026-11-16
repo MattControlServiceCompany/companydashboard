@@ -481,7 +481,7 @@ function baRenderView(projId) {
       ' rows &bull; ' +
       new Date(data.importedAt).toLocaleDateString() +
       (function () {
-        var d = Math.floor((Date.now() - new Date(data.importedAt).getTime()) / 86400000);
+        var d = calcDays(new Date(data.importedAt), new Date(), false); // the one day-count function (calendar days)
         return d >= 2 ? ' (' + d + ' days ago)' : '';
       })() +
       '</span>'
