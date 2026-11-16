@@ -2507,6 +2507,8 @@ async function siteResetAllMeterTableSettings() {
    site-ui.js delegates to this array and should NOT maintain its own copy.
 */
 var RELEASE_NOTES = [
+  { v: 'v2026.11.16.321', date: '2026-11-16', title: 'Clearer buttons and tooltips',
+    items: [ { type: 'fix', text: 'Meeting and report rows have Word, PDF, To Minutes and Delete buttons with names. Estimated bills, meter changes, Set Points buttons, the CSC share field and the CBECS legend explain themselves. HVAC Load Estimate counts 7 buildings, the same as the Dashboard.' } ] },
   { v: 'v2026.11.16.320', date: '2026-11-16', title: 'Savings card: back to the 11/9 layout',
     items: [ { type: 'fix', text: 'The savings card uses the 11/9 layout again: the quarter and total savings in the middle, Baseline and Current on the right. Only the wording is new.' } ] },
   { v: 'v2026.11.16.319', date: '2026-11-16', title: 'Savings card: all facts back, in labeled rows',
