@@ -2854,6 +2854,7 @@ function renderSetpointsTab(projId) {
       tableRows ||
       `<tr><td colspan="6" style="padding:24px;text-align:center;color:var(--text3);font-style:italic">No zones in this snapshot.</td></tr>`;
   } else {
+    _spGroupSchedules = _spGroupScheduleMap(projId, activeBldgId);
     const tableRows = zones.map((z, i) => _spZoneRow(projId, activeBldgId, z, i)).join('');
     tableContent =
       tableRows ||
@@ -2942,8 +2943,57 @@ function _spParseSpField(raw) {
   var n = parseFloat(s);
   return isNaN(n) ? null : n;
 }
+// Schedule text of the WebCTRL scheduling groups, for the zones of one building. DISPLAY ONLY: it is never written to the saved record.
+// A zone is the Equipment Matrix row(s) of the building with that name (row.location || row.equipName, as the export names them).
+// The groups of a row come from BasCoverage.groupsFor (the one membership rule), key = BACnet path + '|' + program name (as the
+// schedule import keys it). Each group's text is BasDiff.scheduleText (the one writer). -> { zoneName: { text, hover } }
+var _spGroupSchedules = {};
+function _spGroupScheduleMap(pid, bldgId) {
+  var out = {};
+  try {
+    if (typeof BasCoverage === 'undefined' || typeof BasDiff === 'undefined' || typeof DB === 'undefined') return out;
+    var bg = DB.get('en_bas_groups_' + pid, null);
+    var groups = (bg && bg.groups) || {};
+    if (!Object.keys(groups).length) return out;
+    var b = (typeof getUDBldgs === 'function' ? getUDBldgs(pid) : []).filter((x) => x.id === bldgId)[0];
+    if (!b) return out;
+    var bn = _emNormBldgNameForJoin(b.name);
+    var found = {}; // zone name -> { gk: group entry }
+    ((emLoadMatrix(pid) || {}).rows || []).forEach((row) => {
+      if (_emNormBldgNameForJoin(row.building || '') !== bn) return;
+      var name = row.location || row.equipName || '?';
+      BasCoverage.groupsFor(groups, (row.bacnetLocation || '') + '|' + (row.equipName || '')).forEach((g) => {
+        (found[name] = found[name] || {})[g.building + '|' + g.group] = g;
+      });
+    });
+    var stamp = bg.importedAt ? String(bg.importedAt).slice(0, 10) : 'unknown date';
+    Object.keys(found).forEach((name) => {
+      // a schedule that never runs is not shown (BasDiff.scheduleActive, the one rule); a group with no active schedule is left out
+      var txt = (g) => (g.schedules || []).filter(BasDiff.scheduleActive).map(BasDiff.scheduleText).join('; ');
+      var gs = Object.keys(found[name]).map((k) => found[name][k]).filter((g) => txt(g));
+      var texts = gs.map(txt);
+      var names = gs.map((g) => g.group).join(', ');
+      var distinct = texts.filter((t, i) => texts.indexOf(t) === i);
+      if (distinct.length > 1) {
+        out[name] = {
+          text: 'Several schedules',
+          hover: 'Several WebCTRL scheduling groups (imported ' + stamp + '): ' + gs.map((g, i) => g.group + ': ' + (texts[i] || 'no schedules')).join(' | '),
+        };
+      } else if (distinct[0]) {
+        out[name] = {
+          text: '(from WebCTRL group ' + names + ') ' + distinct[0], // the marker first: the column is narrow and the end of a long text is cut off
+          hover: 'WebCTRL scheduling group ' + names + ', imported ' + stamp + '. Shown because this zone has no schedule of its own. It is not saved. Type a schedule to replace it.',
+        };
+      }
+    });
+  } catch (e) {
+    return {};
+  }
+  return out;
+}
 function _spZoneRow(projId, bldgId, z, idx) {
   const v = (val) => (val !== undefined && val !== null ? val : '');
+  const gsch = _spGroupSchedules[z.name || '?'];
   return `<tr style="border-bottom:1px solid var(--border)" data-sp-idx="${idx}">
           <td style="padding:4px 6px"><input class="fi" style="width:100%;font-size:12px" type="text"
             value="${_escHtml(z.name || '')}" placeholder="Zone or system name"
@@ -2961,7 +3011,7 @@ function _spZoneRow(projId, bldgId, z, idx) {
             value="${v(z.unoccCool)}" placeholder="${EM_SP_PLACEHOLDER.unoccCool}"
             oninput="spUpdateField('${projId}','${bldgId}',${idx},'unoccCool',_spParseSpField(this.value))"></td>
           <td style="padding:4px 6px"><input class="fi" style="width:100%;font-size:12px" type="text"
-            value="${_escHtml(z.schedule || '')}" placeholder="No schedule imported" title="Occupied schedule of this zone. It is empty when no WebCTRL program schedule was imported for this equipment. Type one, or import schedules on the Calendar tab and use Pull from Equipment Matrix."
+            value="${_escHtml(z.schedule || '')}" placeholder="${_escHtml(gsch ? gsch.text : 'No schedule imported')}" title="${_escHtml(gsch ? gsch.hover : 'Occupied schedule of this zone. It is empty when no WebCTRL program schedule was imported for this equipment. Type one, or import schedules on the Calendar tab and use Pull from Equipment Matrix.')}"
             oninput="spUpdateField('${projId}','${bldgId}',${idx},'schedule',this.value)"></td>
           <td style="padding:4px 6px;text-align:center">
             <button class="btn btn-ghost btn-sm" style="padding:2px 6px;color:var(--red);border-color:rgba(244,63,94,.3);font-size:11px"
