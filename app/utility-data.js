@@ -4259,7 +4259,7 @@ function renderBillsPane(pane, m, bills, incl) {
     if (row.Meter1_ReadStart) {
       rowHtml = rowHtml.replace(
         /(<td class="norm-mon-cell[^"]*"[^>]*>)/,
-        '$1<span title="Meter change" style="font-size:10px;margin-right:3px">⚡</span>',
+        '$1<span title="Meter change: this bill has more than one meter line (Meter 1 and Meter 2 reads), for example when a meter was replaced. Click the row to see each line." style="font-size:10px;margin-right:3px;cursor:help">⚡</span>',
       );
     }
     // Fix 8dade129: removed 💲 emoji injection from the Normalized Month cell —

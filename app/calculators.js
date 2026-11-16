@@ -216,8 +216,9 @@ const _HVL_ROLLUP_FIELDS = [
 function hvacLoadProjectRollup(projId) {
   const out = { buildings: 0, saved: 0, of: 0 };
   _HVL_ROLLUP_FIELDS.forEach((f) => (out[f] = 0));
-  const bldgs = typeof getUDBldgs === 'function' ? getUDBldgs(projId) : [];
-  out.of = bldgs.length;
+  // "of" is the one project building count (getProjectBuildingCounts, app/utility-data.js): the Unmatched Bills bucket is not a building.
+  const bldgs = typeof getUDBldgs === 'function' ? getUDBldgs(projId).filter((b) => !isUnmatchedSentinelBldg(b)) : [];
+  out.of = getProjectBuildingCounts(projId).listed;
   bldgs.forEach((b) => {
     const r = hvacEstimateForBuilding(projId, b.id);
     if (!r) return;

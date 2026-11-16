@@ -1871,8 +1871,8 @@ function renderDetail(p) {
                       </select>
                     </label>
                     <label style="display:flex;flex-direction:column;gap:4px">
-                      <span style="font-size:11px;font-weight:600;color:var(--text2);text-transform:uppercase;letter-spacing:.5px">CSC Share of Savings % (Shared savings only)</span>
-                      <input class="fi" type="number" min="0" max="100" step="0.1" value="${p.cscCompensation || 0}"${getProjectContract(p).type === 'sharedSavings' ? '' : ' disabled'} onchange="updateProjPerfSetting(${p.id},'cscCompensation',parseFloat(this.value)||0)" style="width:120px;font-family:var(--mono)">
+                      <span title="CSC share: the percent of the verified energy savings that CSC bills the client under a shared-savings contract. The client keeps the rest. Reports use it to split the billed savings into the CSC amount and the client amount. Enter 0 to 100. The field is on only when the contract type is Shared savings." style="font-size:11px;font-weight:600;color:var(--text2);text-transform:uppercase;letter-spacing:.5px;cursor:help">CSC Share of Savings % (Shared savings only)</span>
+                      <input class="fi" type="number" min="0" max="100" step="0.1" title="CSC share of the verified savings, in percent (0 to 100). Saves when you leave the field." value="${p.cscCompensation || 0}"${getProjectContract(p).type === 'sharedSavings' ? '' : ' disabled'} onchange="updateProjPerfSetting(${p.id},'cscCompensation',parseFloat(this.value)||0)" style="width:120px;font-family:var(--mono)">
                       ${getProjectContract(p).needsPct ? '<span style="font-size:11px;color:var(--text2)">Enter the CSC share. Reports and agreements stay blocked until you do.</span>' : ''}
                     </label>
                     <label style="display:flex;flex-direction:column;gap:4px">
@@ -3676,15 +3676,18 @@ function updateProjPerfSetting(projId, field, value) {
       }
     }
   }
-  showToast(
+  // Visible save feedback: name the setting and the value that was saved.
+  const _savedMsg =
     field === 'cscCompensation'
-      ? 'CSC Compensation'
+      ? 'CSC share of savings saved: ' + value + '%'
       : field === 'contractType'
-        ? 'Contract Type'
+        ? 'Contract type saved'
         : field === 'escalation'
-          ? 'Utility Escalation'
-          : 'Contract Years' + ' updated ✓',
-  );
+          ? 'Utility escalation saved: ' + value + '% per year'
+          : field === 'contractYears'
+            ? 'Contract years saved: ' + value
+            : 'Setting saved';
+  showToast(_savedMsg);
 }
 
 // ── Embedded Project Utility Data tab ──

@@ -29632,7 +29632,7 @@ function generateASHRAE36Preview() {
   // equipment, device and control sequence counts printed on page 1 are the same numbers the Audit Report prints.
   var data = collectASHRAE36Data(projId, reportDate, buildingNames);
   if (!data) {
-    showToast('No equipment matrix data found. Import a BAS point list on the Equipment tab first.', 'error');
+    showToast('No equipment matrix data found. Import a BAS point list on the Equipment Matrix tab first.', 'error');
     return;
   }
   if (data._noAuditableEquip) {
@@ -29963,7 +29963,7 @@ function generateAuditProposalHTML(data) {
 function generateAuditProposalPreview(projId, auditType) {
   var data = collectAuditProposalData(projId, auditType);
   if (!data) {
-    showToast('No Equipment Matrix data found. Import a BAS point list on the Equipment tab first.', 'error');
+    showToast('No Equipment Matrix data found. Import a BAS point list on the Equipment Matrix tab first.', 'error');
     return;
   }
   var copy = AUDIT_PROPOSAL_COPY[auditType] || AUDIT_PROPOSAL_COPY.bas;
