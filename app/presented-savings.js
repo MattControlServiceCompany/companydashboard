@@ -203,6 +203,9 @@ function _rptPresentedFmt(v) {
 function _rptOpenPresentedForm(ctx) {
   _rptPresentedFormCtx = ctx;
   _rptPresentedFormPrinted = {};
+  document.querySelector('#presentedModal .modal-title').textContent = 'Mark as presented to client';
+  document.querySelector('#presentedModal .modal').style.width = '900px';
+  _ppSetFooter(true);
   var d = ctx.data;
   var today = new Date().toISOString().slice(0, 10);
   var cellCss = 'border:1px solid var(--border);padding:4px 8px;';
@@ -234,23 +237,17 @@ function _rptOpenPresentedForm(ctx) {
         'text-align:right" class="pf-diff">—</td>' +
         '<td style="' +
         cellCss +
-        '"><input type="number" step="any" class="pf-kwh" placeholder="' +
-        Math.round(b.electric.kwhSaved) +
-        '" style="' +
+        '"><input type="number" step="any" class="pf-kwh" style="' +
         inCss +
         '"></td>' +
         '<td style="' +
         cellCss +
-        '"><input type="number" step="any" class="pf-therms" placeholder="' +
-        Math.round(b.gas.thermsSaved) +
-        '" style="' +
+        '"><input type="number" step="any" class="pf-therms" style="' +
         inCss +
         '"></td>' +
         '<td style="' +
         cellCss +
-        '"><input type="number" step="any" class="pf-gal" placeholder="' +
-        Math.round(b.propane.galSaved) +
-        '" style="' +
+        '"><input type="number" step="any" class="pf-gal" style="' +
         inCss +
         '"></td>' +
         '<td style="' + cellCss + '"><input type="number" step="any" class="pf-elec" style="' + inCss + '"></td>' +
@@ -385,7 +382,7 @@ function _rptClosePresentedForm() {
 }
 
 // The only writer: the confirm button of the form.
-function _rptConfirmPresentedForm() {
+async function _rptConfirmPresentedForm() {
   var ctx = _rptPresentedFormCtx;
   if (!ctx) return;
   var buildings = {};
@@ -410,14 +407,37 @@ function _rptConfirmPresentedForm() {
   var dateVal = document.getElementById('pfDate').value;
   var total = _rptPresentedNum(document.getElementById('pfTotal').value);
   var label = ctx.data.period.label || 'this period';
+  var pdfKey = '';
+  if (ctx.fromPdf) {
+    var pp = ctx.pdfPeriod;
+    if (pp && (pp.start !== ctx.yms[0] || pp.end !== ctx.yms[ctx.yms.length - 1])) {
+      document.getElementById('pfMsg').textContent = 'The PDF says "' + pp.src + '". That is not ' + label + '. Close this window and pick the matching quarter.';
+      return;
+    }
+    if (!dateVal) {
+      document.getElementById('pfMsg').textContent = 'Enter the date the report was presented.';
+      return;
+    }
+  }
+  var without = ctx.fromPdf ? ctx.nBldgs - Object.keys(buildings).length : 0;
   if (
     !confirm(
       'Lock these figures for ' +
         label +
-        '? They will not change when bills or settings change. You can remove the mark later.',
+        '? They will not change when bills or settings change. You can remove the mark later.' +
+        (without ? ' ' + without + ' building(s) have no savings figure and keep the calculated value.' : ''),
     )
   )
     return;
+  if (ctx.fromPdf) {
+    // The PDF is stored first. When it cannot be stored, nothing is saved.
+    var blob = await bpaStoreBlob(ctx.pdfB64, { hash: _bpaSha256Hex, load: pdfLoad, store: pdfStore, ensureUploaded: pdfEnsureUploaded });
+    if (!blob) {
+      document.getElementById('pfMsg').textContent = 'Could not store the PDF. Nothing was changed.';
+      return;
+    }
+    pdfKey = blob.key;
+  }
   var res = savePresentedRecord({
     projectId: ctx.projId,
     periodStart: ctx.yms[0],
@@ -427,6 +447,8 @@ function _rptConfirmPresentedForm() {
     totalDollars: total == null ? null : total,
     buildings: buildings,
     printed: _rptPresentedFormPrinted,
+    pdfKey: pdfKey,
+    pdfName: ctx.fromPdf ? ctx.pdfName : '',
   });
   if (!res.ok) {
     document.getElementById('pfMsg').textContent = res.reason;
@@ -434,5 +456,423 @@ function _rptConfirmPresentedForm() {
   }
   _rptClosePresentedForm();
   showToast('Marked as presented to client');
-  refreshReportPreview();
+  if (ctx.fromPdf) renderDocsSubTab('presented', ctx.projId);
+  else refreshReportPreview();
+}
+
+// ── Mark a quarter as presented from the PDF the client received (Matt 2026-11-16) ──────────────────
+// No report is generated. The figures come from the text of the delivered PDF only. A figure that the
+// PDF text does not hold stays empty and is marked "not found". Nothing here reads a current site
+// calculation. The one writer is still savePresentedRecord (computations/savings.js), called from
+// _rptConfirmPresentedForm.
+
+var _PP_MONTHS = { january: 1, february: 2, march: 3, april: 4, may: 5, june: 6, july: 7, august: 8, september: 9, october: 10, november: 11, december: 12 };
+var _PP_MONEY = '[-−–]?\\s?\\$\\s?[\\d,]+(?:\\.\\d+)?';
+
+// "-$4,421", "−$49", "+33,182", "- 3" -> number, or null.
+function _ppNum(s) {
+  if (s == null) return null;
+  var t = String(s).replace(/[−–—]/g, '-').replace(/[\s$,+]/g, '');
+  return /^-?\d+(\.\d+)?$/.test(t) ? parseFloat(t) : null;
+}
+
+function _ppRegexEsc(s) {
+  return String(s).trim().replace(/[.*+?^${}()|[\]\\]/g, '\\$&').replace(/\s+/g, '\\s+');
+}
+
+// Text lines of a loaded pdf.js document: pages -> lines (the cells of one visual row joined with a
+// space, rows from top to bottom).
+async function presentedPdfPages(pdf) {
+  var pages = [];
+  for (var p = 1; p <= pdf.numPages; p++) {
+    var content = await (await pdf.getPage(p)).getTextContent();
+    var rows = [];
+    content.items.forEach(function (it) {
+      if (!it.str || !it.str.trim()) return;
+      var y = it.transform[5];
+      var row = rows.find(function (r) {
+        return Math.abs(r.y - y) < 3;
+      });
+      if (!row) {
+        row = { y: y, items: [] };
+        rows.push(row);
+      }
+      row.items.push({ x: it.transform[4], s: it.str });
+    });
+    rows.sort(function (a, b) {
+      return b.y - a.y;
+    });
+    pages.push(
+      rows.map(function (r) {
+        return r.items
+          .sort(function (a, b) {
+            return a.x - b.x;
+          })
+          .map(function (i) {
+            return i.s;
+          })
+          .join(' ')
+          .replace(/\s+/g, ' ')
+          .trim();
+      }),
+    );
+  }
+  return pages;
+}
+
+// Read the printed figures out of the text of a delivered report.
+//   pages = [[line, ...], ...] (see presentedPdfPages); bldgs = [{ id, name }] of the project.
+// Returns { period: { start, end, src } | null, totalDollars: { value, src } | null,
+//           buildings: { <id>: { dollars, kwhSaved, thermsSaved, gallonsSaved, elecDollars, gasDollars,
+//           propaneDollars } } }. Each figure is { value, src } (src = the text it was read from).
+// A figure that is not in the text has no key. Nothing is computed, estimated or taken from the site.
+function parsePresentedPdfText(pages, bldgs) {
+  var text = pages
+    .map(function (l) {
+      return l.join(' ');
+    })
+    .join(' ')
+    .replace(/\s+/g, ' ');
+  var out = { period: null, totalDollars: null, buildings: {} };
+  var pm = text.match(/([A-Z][a-z]+) (\d{4}) through ([A-Z][a-z]+) (\d{4})/);
+  if (pm && _PP_MONTHS[pm[1].toLowerCase()] && _PP_MONTHS[pm[3].toLowerCase()]) {
+    var two = function (n) {
+      return (n < 10 ? '0' : '') + n;
+    };
+    out.period = {
+      start: pm[2] + '-' + two(_PP_MONTHS[pm[1].toLowerCase()]),
+      end: pm[4] + '-' + two(_PP_MONTHS[pm[3].toLowerCase()]),
+      src: pm[0],
+    };
+  }
+  [
+    new RegExp('savings measured (?:were|was) (' + _PP_MONEY + ')', 'i'),
+    new RegExp('achieved (' + _PP_MONEY + ') in verified', 'i'),
+  ].some(function (re) {
+    var m = text.match(re);
+    var v = m ? _ppNum(m[1]) : null;
+    if (v == null) return false;
+    out.totalDollars = { value: v, src: m[0] };
+    return true;
+  });
+
+  var UNIT = { electricity: 'kwhSaved', 'natural gas': 'thermsSaved', propane: 'gallonsSaved' };
+  var COMM = [
+    ['Electricity', 'elecDollars'],
+    ['Natural gas', 'gasDollars'],
+    ['Propane', 'propaneDollars'],
+  ];
+  // Units: the Total row of each meter table, under its building heading.
+  var meters = {};
+  var curB = null;
+  var curC = null;
+  pages.forEach(function (lines) {
+    lines.forEach(function (ln) {
+      var nb = (bldgs || []).find(function (b) {
+        return new RegExp('^' + _ppRegexEsc(b.name) + '(\\s+Meter Performance.*)?$', 'i').test(ln);
+      });
+      if (nb) {
+        curB = nb;
+        curC = null;
+        return;
+      }
+      var hm = ln.match(/^(Electricity|Natural gas|Propane)\b/i);
+      if (hm) {
+        curC = /\bPerformance\b/i.test(ln) ? UNIT[hm[1].toLowerCase()] : null;
+        return;
+      }
+      // Total <days> <baseline> <actual> <saved> <percent or dash> ... The saved cell can reach us as split pieces ("- 7 6").
+      var tm = curB && curC && ln.match(/^Total\s+(\d+)\s+[\d,.]+\s+[\d,.]+\s+([-+−–]?[\d,\s]*\d)\s+(?:[-+−–]?[\d.]+%|—)(?:\s|$)/);
+      if (!tm) return;
+      var v = _ppNum(tm[2]);
+      if (v == null) return;
+      var k = curB.id + '|' + curC;
+      (meters[k] = meters[k] || []).push({ v: v, src: ln });
+    });
+  });
+
+  (bldgs || []).forEach(function (b) {
+    var f = {};
+    var nm = _ppRegexEsc(b.name);
+    var ma = new RegExp(nm + ':\\s*savings measured\\s+(' + _PP_MONEY + ')', 'i').exec(text);
+    var mb = ma ? null : new RegExp(nm + '\\b[^$]{0,160}?\\(\\s*(' + _PP_MONEY + ')\\s+saved\\s*\\)', 'i').exec(text);
+    var m = ma || mb;
+    if (m && _ppNum(m[1]) != null) {
+      var src = m[0];
+      if (mb) src = src.slice(src.toLowerCase().lastIndexOf(b.name.toLowerCase()));
+      f.dollars = { value: _ppNum(m[1]), src: src };
+    }
+    if (ma) {
+      // The commodity dollars printed under this building's line, up to the next building line.
+      var seg = text.slice(ma.index + ma[0].length, ma.index + ma[0].length + 600);
+      var cut = seg.search(/savings measured|\bWeather\b/i);
+      if (cut >= 0) seg = seg.slice(0, cut);
+      COMM.forEach(function (c) {
+        var cm = new RegExp(c[0] + ':\\s*(' + _PP_MONEY + ')', 'i').exec(seg);
+        if (cm && _ppNum(cm[1]) != null) f[c[1]] = { value: _ppNum(cm[1]), src: cm[0] };
+      });
+    }
+    Object.keys(UNIT).forEach(function (u) {
+      var rows = meters[b.id + '|' + UNIT[u]];
+      if (!rows || !rows.length) return;
+      f[UNIT[u]] = {
+        value: rows.reduce(function (s, r) {
+          return s + r.v;
+        }, 0),
+        src:
+          rows
+            .map(function (r) {
+              return r.src;
+            })
+            .join(' | ') + (rows.length > 1 ? ' (sum of ' + rows.length + ' meter totals)' : ''),
+      };
+    });
+    out.buildings[b.id] = f;
+  });
+  return out;
+}
+
+// pdf.js is loaded by energy-department.html (pdfjsLib). Same options as the bill reader.
+async function _ppReadPdfPages(b64) {
+  if (typeof pdfjsLib === 'undefined') throw new Error('The PDF reader is not loaded.');
+  pdfjsLib.GlobalWorkerOptions.workerSrc = '';
+  var bin = atob(b64);
+  var bytes = new Uint8Array(bin.length);
+  for (var i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+  var pdf = await pdfjsLib.getDocument({ data: bytes, useWorkerFetch: false, isEvalSupported: false, useSystemFonts: true }).promise;
+  return presentedPdfPages(pdf);
+}
+
+// "Q3 2026" for one whole calendar quarter, else "July 2026 through August 2026".
+function _ppPeriodLabel(start, end) {
+  var sm = Number(start.slice(5, 7));
+  if (presentedMonthRange(start, end).length === 3 && sm % 3 === 1) return 'Q' + ((sm - 1) / 3 + 1) + ' ' + start.slice(0, 4);
+  return _presentedMonthLabel(start) + ' through ' + _presentedMonthLabel(end);
+}
+
+// ── Documents > Presented Reports ──
+function _renderDocsPresented(body, projId) {
+  var cellCss = 'border:1px solid var(--border);padding:6px 8px;';
+  var thCss = 'border:1px solid var(--border);padding:6px 8px;background:var(--s1);text-align:left;font-size:11px;color:var(--text2)';
+  var recs = getPresentedRecords(projId)
+    .slice()
+    .sort(function (a, b) {
+      return b.periodStart.localeCompare(a.periodStart);
+    });
+  var rows = recs
+    .map(function (r) {
+      var pdf = r.pdfKey
+        ? '<button class="btn btn-ghost btn-sm" onclick="rptOpenPresentedPdf(' + projId + ",['" + r.periodStart + "','" + r.periodEnd + '\'])">Open the PDF</button> ' + _escHtml(r.pdfName || '')
+        : 'No PDF stored';
+      return (
+        '<tr><td style="' + cellCss + '">' + _escHtml(_ppPeriodLabel(r.periodStart, r.periodEnd)) + '</td>' +
+        '<td style="' + cellCss + '">' + _escHtml(r.documentName || '') + '</td>' +
+        '<td style="' + cellCss + '">' + _escHtml(_presentedDateLabel(r)) + '</td>' +
+        '<td style="' + cellCss + '">' + pdf + '</td></tr>'
+      );
+    })
+    .join('');
+  body.innerHTML =
+    '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px">' +
+    '<div style="font-size:14px;font-weight:600">Presented Reports</div>' +
+    '<button class="btn btn-em btn-sm" id="ppMarkBtn" onclick="_ppOpenMark(' + projId + ')">Mark a quarter as presented</button></div>' +
+    '<div style="font-size:12px;color:var(--text2);margin-bottom:10px">A presented quarter keeps the figures printed in the PDF that the client received. To add one, pick the quarter and choose that PDF. The site makes no report.</div>' +
+    (recs.length
+      ? '<table style="border-collapse:collapse;width:100%;font-size:12px;color:var(--text)"><thead><tr>' +
+        '<th style="' + thCss + '">Period</th><th style="' + thCss + '">Document</th><th style="' + thCss + '">Presented on</th><th style="' + thCss + '">PDF</th>' +
+        '</tr></thead><tbody>' + rows + '</tbody></table>'
+      : '<div style="text-align:center;color:var(--text3);padding:40px;font-size:13px">No quarter is marked as presented yet.</div>');
+}
+
+// The quarters the project can mark: each quarter with a savings month, and the next quarter to present.
+// Oldest first: the first one is the earliest quarter not yet marked.
+function _ppQuarterOptions(projId) {
+  var seen = {};
+  getUDBldgs(projId).forEach(function (b) {
+    Object.keys(getBuildingSavingsByYM(b, projId)).forEach(function (y) {
+      seen[quarterKeyOfYM(y)] = true;
+    });
+  });
+  var nq = nextQuarterToPresent(projId);
+  if (nq) seen[quarterKeyOfYM(nq.yms[0])] = true;
+  var done = {};
+  getPresentedRecords(projId).forEach(function (r) {
+    presentedMonthRange(r.periodStart, r.periodEnd).forEach(function (y) {
+      done[quarterKeyOfYM(y)] = true;
+    });
+  });
+  return Object.keys(seen)
+    .filter(function (k) {
+      return !done[k];
+    })
+    .sort()
+    .map(function (k) {
+      var y = k.slice(0, 4);
+      var q = Number(k.slice(6)) - 1;
+      return {
+        key: k,
+        label: 'Q' + (q + 1) + ' ' + y,
+        yms: [1, 2, 3].map(function (n) {
+          return y + '-' + String(q * 3 + n).padStart(2, '0');
+        }),
+      };
+    });
+}
+
+function _ppSetFooter(showConfirm) {
+  var b = document.querySelector('#presentedModal .modal-ftr .btn-em');
+  if (b) b.style.display = showConfirm ? '' : 'none';
+}
+
+var _ppOptions = [];
+// Step 1: pick the quarter and the delivered PDF.
+function _ppOpenMark(projId) {
+  _ppOptions = _ppQuarterOptions(projId);
+  _rptPresentedFormCtx = null;
+  _rptPresentedFormPrinted = {};
+  var inCss = 'padding:5px 8px;border:1px solid var(--border);border-radius:4px;background:var(--s1);color:var(--text);font-size:12px';
+  document.querySelector('#presentedModal .modal-title').textContent = 'Mark a quarter as presented';
+  _ppSetFooter(false);
+  document.querySelector('#presentedModal .modal').style.width = '900px';
+  document.getElementById('presentedModalBody').innerHTML =
+    '<div style="font-size:12px;color:var(--text2);margin-bottom:12px">Pick the quarter. Then choose the PDF file that the client received. The site reads the figures from the PDF text. You check them before they are saved.</div>' +
+    '<div style="display:flex;gap:16px;align-items:flex-end;flex-wrap:wrap">' +
+    '<label style="font-size:12px;color:var(--text2)">Quarter<br><select id="ppQuarter" style="' + inCss + ';margin-top:3px">' +
+    _ppOptions
+      .map(function (o, i) {
+        return '<option value="' + i + '">' + _escHtml(o.label) + '</option>';
+      })
+      .join('') +
+    '</select></label>' +
+    '<label style="font-size:12px;color:var(--text2)">PDF file<br><input id="ppFile" type="file" accept="application/pdf,.pdf" style="' + inCss + ';margin-top:3px" onchange="_ppFilePicked(' + projId + ',this)"></label></div>' +
+    '<div id="pfMsg" style="font-size:12px;color:var(--text2);margin-top:12px">' +
+    (_ppOptions.length ? '' : 'Every quarter of this project is already marked as presented.') +
+    '</div>';
+  document.getElementById('presentedModal').classList.add('open');
+}
+
+// Step 2: read the PDF and show every figure with the text it came from.
+async function _ppFilePicked(projId, input) {
+  var file = input.files && input.files[0];
+  var msg = document.getElementById('pfMsg');
+  var opt = _ppOptions[Number(document.getElementById('ppQuarter').value)];
+  if (!file || !opt) return;
+  msg.textContent = 'Reading the PDF...';
+  try {
+    var b64 = await _rptPresentedFileToB64(file);
+    if (atob(b64.slice(0, 8)).slice(0, 4) !== '%PDF') {
+      msg.textContent = 'That file is not a PDF.';
+      return;
+    }
+    var pages = await _ppReadPdfPages(b64);
+    var all = getUDBldgs(projId);
+    var parsed = parsePresentedPdfText(
+      pages,
+      all.map(function (b) {
+        return { id: b.id, name: b.name };
+      }),
+    );
+    // The buildings the document names. When it names none, the buildings that have savings in the quarter.
+    var text = pages
+      .map(function (l) {
+        return l.join(' ');
+      })
+      .join(' ')
+      .toLowerCase();
+    var listed = all.filter(function (b) {
+      return text.indexOf(String(b.name).toLowerCase()) >= 0;
+    });
+    if (!listed.length)
+      listed = all.filter(function (b) {
+        var sv = getBuildingSavingsByYM(b, projId);
+        return opt.yms.some(function (y) {
+          return y in sv;
+        });
+      });
+    _ppRenderForm(
+      projId,
+      opt,
+      file,
+      b64,
+      parsed,
+      listed.map(function (b) {
+        return { id: b.id, name: b.name };
+      }),
+    );
+  } catch (e) {
+    msg.textContent = 'The PDF could not be read: ' + (e && e.message ? e.message : e) + ' Nothing was changed.';
+  }
+}
+
+var _PP_FIELDS = [
+  ['dollars', 'pf-dollars', 'Savings ($)'],
+  ['kwhSaved', 'pf-kwh', 'kWh saved'],
+  ['thermsSaved', 'pf-therms', 'Therms saved'],
+  ['gallonsSaved', 'pf-gal', 'Gallons saved'],
+  ['elecDollars', 'pf-elec', 'Electric ($)'],
+  ['gasDollars', 'pf-gas', 'Gas ($)'],
+  ['propaneDollars', 'pf-prop', 'Propane ($)'],
+];
+
+function _ppCell(figure, idAttr, inCss, cellCss) {
+  return (
+    '<td style="' + cellCss + 'vertical-align:top"><input type="number" step="any" ' + idAttr + ' style="' + inCss + '"' +
+    (figure ? ' value="' + figure.value + '"' : '') + '>' +
+    '<div class="pf-src" style="font-size:10px;margin-top:3px;word-break:break-word;color:' + (figure ? 'var(--text2)' : 'var(--amber)') + '">' +
+    (figure ? 'Read from the PDF: ' + _escHtml(figure.src) : 'Not found in the PDF. Type it.') + '</div></td>'
+  );
+}
+
+function _ppRenderForm(projId, opt, file, b64, parsed, bldgs) {
+  _rptPresentedFormCtx = {
+    projId: projId,
+    yms: opt.yms,
+    data: { period: { label: opt.label } },
+    fromPdf: true,
+    pdfName: file.name,
+    pdfB64: b64,
+    pdfPeriod: parsed.period,
+    nBldgs: bldgs.length,
+  };
+  _rptPresentedFormPrinted = {};
+  var cellCss = 'border:1px solid var(--border);padding:4px 8px;';
+  var inCss = 'width:100%;box-sizing:border-box;padding:4px 6px;border:1px solid var(--border);border-radius:4px;background:var(--s1);color:var(--text);font-size:12px;text-align:right';
+  var thCss = 'border:1px solid var(--border);padding:5px 8px;background:var(--s1);text-align:left;font-size:11px';
+  var fm = file.name.match(/(\d{4})[.\-_](\d{2})[.\-_](\d{2})/);
+  var period = parsed.period;
+  var mismatch = !!(period && (period.start !== opt.yms[0] || period.end !== opt.yms[2]));
+  var periodNote;
+  if (!period) periodNote = 'The PDF text does not name its period. Check that this PDF is for ' + opt.label + '.';
+  else if (mismatch) periodNote = 'Warning: the PDF says "' + period.src + '". That is not ' + opt.label + '. Close this window and pick the matching quarter.';
+  else periodNote = 'Period read from the PDF: "' + period.src + '". It matches ' + opt.label + '.';
+  var rows = bldgs
+    .map(function (b) {
+      var f = parsed.buildings[b.id] || {};
+      return (
+        '<tr data-bldg="' + _escHtml(b.id) + '"><td style="' + cellCss + 'vertical-align:top">' + _escHtml(b.name) + '</td>' +
+        _PP_FIELDS.map(function (x) {
+          return _ppCell(f[x[0]], 'class="' + x[1] + '"', inCss, cellCss);
+        }).join('') +
+        '</tr>'
+      );
+    })
+    .join('');
+  var body =
+    '<div style="font-size:12px;color:var(--text2);margin-bottom:8px">Period: <strong style="color:var(--text)">' + _escHtml(opt.label) + '</strong>. File: <strong style="color:var(--text)">' + _escHtml(file.name) + '</strong>. Each figure was read from the PDF text. The text it came from is under the figure. Check each one. Type any figure that was not found. A figure you leave empty is not locked.</div>' +
+    '<div id="pfPeriodNote" style="font-size:12px;margin-bottom:10px;color:' + (mismatch ? 'var(--amber)' : 'var(--text2)') + '">' + _escHtml(periodNote) + '</div>' +
+    '<div style="display:flex;gap:12px;margin-bottom:10px">' +
+    '<label style="flex:2;font-size:12px;color:var(--text2)">Document name (from the file name)<input id="pfDocName" type="text" value="' + _escHtml(file.name.replace(/\.pdf$/i, '')) + '" style="' + inCss + ';text-align:left;margin-top:3px"></label>' +
+    '<label style="flex:1;font-size:12px;color:var(--text2)">Presented on' + (fm ? ' (read from the file name: ' + _escHtml(fm[0]) + ')' : ' (not found in the file name. Type it.)') +
+    '<input id="pfDate" type="date" value="' + (fm ? fm[1] + '-' + fm[2] + '-' + fm[3] : '') + '" style="' + inCss + ';text-align:left;margin-top:3px"></label></div>' +
+    '<div id="pfMsg" style="font-size:12px;color:var(--text2);margin-bottom:8px"></div>' +
+    '<table style="border-collapse:collapse;width:100%;font-size:12px;color:var(--text)"><thead><tr><th style="' + thCss + '">Building</th>' +
+    _PP_FIELDS.map(function (x) {
+      return '<th style="' + thCss + 'text-align:right">' + x[2] + '</th>';
+    }).join('') +
+    '</tr></thead><tbody>' + rows + '</tbody><tfoot><tr style="font-weight:600;background:var(--s1)"><td style="' + cellCss + 'vertical-align:top">Portfolio total</td>' +
+    _ppCell(parsed.totalDollars, 'id="pfTotal"', inCss, cellCss) +
+    '<td colspan="6" style="' + cellCss + '"></td></tr></tfoot></table>';
+  document.querySelector('#presentedModal .modal').style.width = '1240px';
+  document.getElementById('presentedModalBody').innerHTML = body;
+  _ppSetFooter(true);
 }

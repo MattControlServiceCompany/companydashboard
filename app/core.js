@@ -1580,6 +1580,7 @@ function renderDetail(p) {
                   <button class="ptpill sel" data-dsub="meetings" onclick="renderDocsSubTab('meetings',${p.id})">📋 Meetings</button>
                   <button class="ptpill" data-dsub="approved" onclick="renderDocsSubTab('approved',${p.id})">✅ Approved Changes</button>
                   <button class="ptpill" data-dsub="files" onclick="renderDocsSubTab('files',${p.id})">📁 Files</button>
+                  <button class="ptpill" data-dsub="presented" onclick="renderDocsSubTab('presented',${p.id})">🧾 Presented Reports</button>
                 </div>
                 <div id="ptab-docs-body-${p.id}"></div>
               </div>
