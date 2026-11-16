@@ -2507,6 +2507,8 @@ async function siteResetAllMeterTableSettings() {
    site-ui.js delegates to this array and should NOT maintain its own copy.
 */
 var RELEASE_NOTES = [
+  { v: 'v2026.11.16.314', date: '2026-11-16', title: 'The report dialog remembers your choices',
+    items: [ { type: 'fix', text: 'Generate Audit Report and Generate Service Proposal now open with the style, buildings and sections you used last time for that project. "Reset to defaults" clears them.' } ] },
   { v: 'v2026.11.16.313', date: '2026-11-16', title: 'One score everywhere; clearer savings card',
     items: [
       { type: 'fix', text: 'The Equipment Matrix Sensor Coverage, Sequence Readiness and new Overall Score now come from the same calculation as the Audit Report (JOCO Libraries: 88% / 72% / 84%). Lighting, plumbing and monitoring rows show a dash instead of 0%.' },
