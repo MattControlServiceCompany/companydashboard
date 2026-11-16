@@ -5315,11 +5315,6 @@ function showReportOverlay(html, title) {
   // getComputedStyle() reports 0px for every element in a display:none subtree and the pass is a
   // silent no-op.
   _rptApplyMinFontFloor(pagesEl);
-  // Kept as the pre-floor source string deliberately: nothing in the codebase reads
-  // document._currentReportHTML today (grep-verified), and re-serializing the live DOM here would
-  // add a multi-megabyte innerHTML round-trip to every preview open on a 26-building Audit. Any
-  // future consumer must read the LIVE #reportPages DOM (which carries the floor), not this.
-  document._currentReportHTML = html;
   document.body.style.overflow = 'hidden';
 }
 
@@ -5348,6 +5343,13 @@ function _updateOverlayPageNumbers() {
 function closeReportOverlay() {
   document.getElementById('reportOverlay').style.display = 'none';
   document.getElementById('reportPages').innerHTML = '';
+  // Release the picture data of a Detailed ASHRAE 36 report (data: URLs of every picture and front photo). The pages are built; the PDF
+  // and Word exports read the page DOM, and the next report reads its pictures again.
+  var openData = window._currentReportData;
+  if (openData) {
+    delete openData._a36Pictures;
+    delete openData._a36LibraryPhotos;
+  }
   document.body.style.overflow = '';
 }
 
@@ -26159,7 +26161,6 @@ function _a36DetPickPictures(picMap, buildingNames, equipNames, loaded, opts) {
   var seen = {};
   var list = (picMap || []).filter(function (p) {
     if (!libs[_a36DetNorm(p.building)] || !eqs[_a36DetNorm(p.equipName)]) return false;
-    if (loaded && (!loaded[p.file] || loaded[p.file].bad)) return false; // not read, or a graphic that cannot be used (no connection, error icon, empty)
     if (opts.skip && opts.skip[p.file]) return false;
     if (opts.page && !opts.page(p.page || '')) return false;
     if (seen[p.file]) return false;
@@ -26170,7 +26171,7 @@ function _a36DetPickPictures(picMap, buildingNames, equipNames, loaded, opts) {
   function rank(p) {
     return (/graphic/i.test(p.page || '') ? 0 : 2) + (p.cited ? 0 : 1);
   }
-  return list
+  var ranked = list
     .map(function (p, i) {
       return { p: p, i: i };
     })
@@ -26179,8 +26180,17 @@ function _a36DetPickPictures(picMap, buildingNames, equipNames, loaded, opts) {
     })
     .map(function (x) {
       return x.p;
-    })
-    .slice(0, opts.limit || 1);
+    });
+  var limit = opts.limit || 1;
+  if (!loaded) return ranked.slice(0, limit);
+  // Only a file that was read and is not bad qualifies (a bad one: no connection, error icon, empty). The ranked list is walked only
+  // as far as the limit needs, so _a36DetLoadShownPictures reads the pictures that are shown and no others.
+  var picked = [];
+  for (var k = 0; k < ranked.length && picked.length < limit; k++) {
+    var got = loaded[ranked[k].file];
+    if (got && !got.bad) picked.push(ranked[k]);
+  }
+  return picked;
 }
 
 // Picture files the report needs, so only those are read from the chosen folder: the files the model places when every listed
@@ -26549,7 +26559,9 @@ function _a36DetScalePicture(file, minPrintScale) {
       cx.fillStyle = '#fff';
       cx.fillRect(0, 0, cw, ch);
       cx.drawImage(img, rect.x, rect.y, rect.w, rect.h, 0, 0, cw, ch);
-      return { canvas: cv, w: cw, h: ch, url: cv.toDataURL('image/jpeg', A36_DET_PICTURE_QUALITY) };
+      var url = cv.toDataURL('image/jpeg', A36_DET_PICTURE_QUALITY);
+      cv.width = cv.height = 0; // free the pixel memory now, not when the garbage collector runs
+      return { w: cw, h: ch, url: url };
     }
     img.onload = function () {
       var w = img.naturalWidth;
@@ -26559,25 +26571,31 @@ function _a36DetScalePicture(file, minPrintScale) {
       src.height = h;
       var sx = src.getContext('2d');
       sx.drawImage(img, 0, 0);
-      var data = sx.getImageData(0, 0, w, h).data;
+      // Only the red channel is read: keep it alone (1 byte a pixel) and free the canvas and the RGBA buffer at once.
+      var rgba = sx.getImageData(0, 0, w, h).data;
+      var data = new Uint8Array(w * h);
+      for (var di = 0; di < data.length; di++) data[di] = rgba[di * 4];
+      rgba = null;
+      src.width = src.height = 0;
       var rect = _a36DetPaneRect(w, h, function (x, y) {
-        return data[(y * w + x) * 4];
+        return data[y * w + x];
       });
       var r = rect || { x: 0, y: 0, w: w, h: h };
       var cut = _a36DetTrimTop(r.w, r.h, function (x, y) {
-        return data[((r.y + y) * w + r.x + x) * 4];
+        return data[(r.y + y) * w + r.x + x];
       });
       if (cut) r = { x: r.x, y: r.y + cut, w: r.w, h: r.h - cut };
       var keep = _a36DetTrimDark(r.w, r.h, function (x, y) {
-        return data[((r.y + y) * w + r.x + x) * 4];
+        return data[(r.y + y) * w + r.x + x];
       });
       r = { x: r.x, y: r.y, w: keep.w, h: keep.h };
       var paneCrop = render(r);
       var back = new Image();
       function finish(bad) {
         var tight = _a36DetCropGraphic(r.w, r.h, function (x, y) {
-          return data[((r.y + y) * w + r.x + x) * 4];
+          return data[(r.y + y) * w + r.x + x];
         });
+        data = null;
         var drawing = { x: r.x + tight.x, y: r.y + tight.y, w: tight.w, h: tight.h };
         var printScale = Math.min(A36_DET_FIG_SHOW_W / drawing.w, A36_DET_FIG_SHOW_H / drawing.h);
         if (!bad && printScale < (minPrintScale || A36_DET_FIG_MIN_PRINT_SCALE)) bad = 'too small to read';
@@ -26592,6 +26610,7 @@ function _a36DetScalePicture(file, minPrintScale) {
         var x2 = c2.getContext('2d');
         x2.drawImage(back, 0, 0);
         var d2 = x2.getImageData(0, 0, paneCrop.w, paneCrop.h).data;
+        c2.width = c2.height = 0;
         finish(
           _a36DetPictureProblem(paneCrop.w, paneCrop.h, function (x, y) {
             var o = (y * paneCrop.w + x) * 4;
@@ -26640,6 +26659,63 @@ function _a36DetLoadPictures(files, needed, picMap) {
   });
   return chain.then(function () {
     return out;
+  });
+}
+
+// Reads the picture files the report shows and no others. needed (_a36DetNeededPictureFiles) is every file that could be shown (up to
+// A36_DET_CANDIDATES per group, in case the first is bad). The model (_a36DetModel) is run with a stand-in for each file not yet read
+// (a usable picture); every stand-in that the model asks for is a file it would show, so those files are read, and the model is run
+// again, until it asks for no unread file. The model then picks from real data, as it does when every needed file is read (the same
+// picks: a pick takes the first usable file in rank order). Resolves { fileName: {url,w,h} } for the picked files only.
+function _a36DetLoadShownPictures(files, needed, picMap, d, rowsById) {
+  var allowed = {};
+  needed.forEach(function (n) {
+    allowed[n] = true;
+  });
+  var out = {};
+  var tried = {};
+  var standIn = { bad: '' };
+  function round() {
+    var missing = {};
+    var view = new Proxy(out, {
+      get: function (t, k) {
+        if (typeof k !== 'string') return undefined;
+        if (Object.prototype.hasOwnProperty.call(t, k)) return t[k];
+        if (!allowed[k] || tried[k]) return undefined; // not listed, or read and not readable
+        missing[k] = true;
+        return standIn;
+      },
+    });
+    var model = _a36DetModel(d, rowsById, picMap, view);
+    var names = Object.keys(missing);
+    if (!names.length) return Promise.resolve(model);
+    names.forEach(function (n) {
+      tried[n] = true;
+    });
+    return _a36DetLoadPictures(files, names, picMap).then(function (got) {
+      Object.keys(got).forEach(function (n) {
+        out[n] = got[n];
+      });
+      return round();
+    });
+  }
+  if (!needed.length) return Promise.resolve(out);
+  return round().then(function (model) {
+    // Keep the pictures the model shows; a picture read and not shown (a bad one, a fallback) is dropped.
+    var shown = {};
+    model.libs.forEach(function (lib) {
+      lib.descPics.forEach(function (list) {
+        if (list[0]) shown[list[0].file] = true;
+      });
+      lib.findings.forEach(function (f) {
+        if (f.pic) shown[f.pic.file] = true;
+      });
+    });
+    var kept = {};
+    Object.keys(shown).forEach(function (n) {
+      kept[n] = out[n];
+    });
+    return kept;
   });
 }
 
@@ -26704,7 +26780,9 @@ function _a36DetCropPhoto(file) {
       cx.fillStyle = '#fff';
       cx.fillRect(0, 0, outW, outH);
       cx.drawImage(img, (w - cw) / 2, (h - ch) / 2, cw, ch, 0, 0, outW, outH);
-      return { url: cv.toDataURL('image/jpeg', A36_DET_PICTURE_QUALITY), w: outW, h: outH };
+      var url = cv.toDataURL('image/jpeg', A36_DET_PICTURE_QUALITY);
+      cv.width = cv.height = 0; // free the pixel memory now, not when the garbage collector runs
+      return { url: url, w: outW, h: outH };
     }
     img.onerror = function () {
       URL.revokeObjectURL(objUrl);
@@ -29404,7 +29482,7 @@ function generateASHRAE36Preview() {
         .then(function (pictureFiles) {
           var libraryNames = (data.buildings || []).map(_a36DisplayName);
           var needed = picMap.length ? _a36DetNeededPictureFiles(data, picMap, _a36DetRowsById(projId)) : [];
-          return _a36DetLoadPictures(pictureFiles, needed, picMap)
+          return _a36DetLoadShownPictures(pictureFiles, needed, picMap, data, _a36DetRowsById(projId))
             .then(function (pics) {
               data._a36Pictures = pics;
               return _a36DetLoadLibraryPhotos(pictureFiles, libraryNames);
