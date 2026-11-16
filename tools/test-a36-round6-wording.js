@@ -1,6 +1,6 @@
 // tools/test-a36-round6-wording.js - round 6 report wording and layout fixes F1-F8 (2026-11-14). SYNTHETIC data only, headless bundled Chromium.
 //   F1 the Order of Work table has a row for every step of the plan; a step whose groups all began earlier reads "Finish ...".
-//   F2 a single-zone unit with no fan speed point: the finding says "variable speed drive" (point finding and sequence finding).
+//   F2 a single-zone unit with no fan speed point: the finding says "variable frequency drive" (point finding and sequence finding).
 //   F3 the single-zone supply fan speed command finding cites ASHRAE 36 Section 5.18.4.
 //   F4 Control Sequences cites the sections of the equipment it counts: single-zone 5.18, mixed both, multi-zone 5.16.
 //   F5 the Recommended Work step table clears the page footer (the page-fit probe measures at the width a table really gets).
@@ -99,11 +99,11 @@ const RE = fs.readFileSync(path.join(ROOT, 'app', 'report-engine.js'), 'utf8');
     // ---- F2 and F3: findings ----
     const sz = scen.sz.findings;
     const cmd = sz.find((f) => f.kind === 'sensor' && f.key === 'sfSpeedCmd');
-    ok(cmd && /^Install a variable speed drive on the supply fan of both units\.$/.test(cmd.rec), 'F2. single-zone point finding: drive recommendation: ' + (cmd && cmd.rec));
-    ok(cmd && cmd.impact === 'Lets the system change the fan speed. Without a variable speed drive the fan runs at full speed all the time.', 'F2. single-zone point finding: plain Impact line: ' + (cmd && cmd.impact));
+    ok(cmd && /^Install a variable frequency drive on the supply fan of both units\.$/.test(cmd.rec), 'F2. single-zone point finding: drive recommendation: ' + (cmd && cmd.rec));
+    ok(cmd && cmd.impact === 'Lets the system change the fan speed. Without a variable frequency drive the fan runs at full speed all the time.', 'F2. single-zone point finding: plain Impact line: ' + (cmd && cmd.impact));
     ok(cmd && cmd.section === '5.18.4' && /ASHRAE 36, Section 5\.18\.4/.test(cmd.observed), 'F3. the single-zone supply fan speed command finding cites Section 5.18.4: ' + (cmd && cmd.section + ' | ' + cmd.observed));
     const sat = sz.find((f) => f.kind === 'seq' && f.key === 'ahu_sat_reset');
-    ok(sat && /^Install a variable speed drive on the supply fan of both units and add the Outdoor Air Temp point\. Program the Supply Air Temperature Reset sequence\.$/.test(sat.rec), 'F2. single-zone sequence finding: drive first, other missing points kept: ' + (sat && sat.rec));
+    ok(sat && /^Install a variable frequency drive on the supply fan of both units and add the Outdoor Air Temp point\. Program the Supply Air Temperature Reset sequence\.$/.test(sat.rec), 'F2. single-zone sequence finding: drive first, other missing points kept: ' + (sat && sat.rec));
     ok(sz.every((f) => f.kind !== 'seq' || !/Supply Fan Speed( Command)? point/.test(f.rec)), 'F2. no single-zone sequence finding asks to add the Supply Fan Speed point');
     const mzSeq = scen.mixed.findings.find((f) => f.kind === 'seq' && f.key === 'ahu_sat_reset' && f.section === '5.16.2');
     ok(mzSeq && /^Add the Outdoor Air Temp and Supply Fan Speed points on the unit\. Program the Supply Air Temperature Reset sequence\.$/.test(mzSeq.rec), 'F2. a multi-zone unit keeps the old text: ' + (mzSeq && mzSeq.rec));
@@ -111,7 +111,7 @@ const RE = fs.readFileSync(path.join(ROOT, 'app', 'report-engine.js'), 'utf8');
 
     // ---- F2 (drive wording follows the price): units that cover sfSpeed but miss sfSpeedCmd ----
     const sp = scen.szSpeed.findings;
-    ok(sp.length > 0 && sp.every((f) => !/variable speed drive/i.test(f.rec + ' ' + f.impact)), 'F2. a single-zone group that reads its fan speed but has no speed command: no finding says "variable speed drive" (the speed command is a $0 controller point): ' + sp.map((f) => f.key + ': ' + f.rec));
+    ok(sp.length > 0 && sp.every((f) => !/variable frequency drive/i.test(f.rec + ' ' + f.impact)), 'F2. a single-zone group that reads its fan speed but has no speed command: no finding says "variable frequency drive" (the speed command is a $0 controller point): ' + sp.map((f) => f.key + ': ' + f.rec));
     ok(sp.filter((f) => f.kind === 'seq').every((f) => /^Add the .* point/.test(f.rec)), 'F2. its sequence findings keep the plain "Add the ... point" text: ' + sp.filter((f) => f.kind === 'seq').map((f) => f.rec));
 
     // ---- F4: Control Sequences sections ----

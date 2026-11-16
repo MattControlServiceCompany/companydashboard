@@ -16443,7 +16443,7 @@ var ASHRAE36_GAP_DESCRIPTIONS = {
  */
 var ASHRAE36_SEQUENCE_PLAIN = {
   ahu_sat_reset:
-    'Adjusts how warm or cool the air the air handler delivers is, based on what the building actually needs, instead of holding one fixed setting at all times. This reduces energy use in mild weather.',
+    'Adjusts the supply air temperature to what the building needs, instead of holding one fixed setting at all times. This reduces energy use in mild weather.',
   ahu_dsp_reset:
     'Allows the supply fan to slow down when the building does not need full airflow, instead of pushing air at full force at all times. This reduces fan energy use.',
   ahu_economizer:
@@ -16485,7 +16485,7 @@ var ASHRAE36_SEQUENCE_PLAIN = {
  */
 var ASHRAE36_SEQUENCE_EXEC_PHRASE = {
   ahu_sat_reset: { many: 'hold one supply air temperature at all times', one: 'holds one supply air temperature at all times' },
-  ahu_dsp_reset: { many: 'run the supply fan at one fixed pressure', one: 'runs the supply fan at one fixed pressure' },
+  ahu_dsp_reset: { many: 'hold one fixed duct static pressure', one: 'holds one fixed duct static pressure' },
   ahu_economizer: { many: 'do not use outdoor air for free cooling', one: 'does not use outdoor air for free cooling' },
   ahu_freeze_prot: { many: 'have no automatic freeze protection', one: 'has no automatic freeze protection' },
   ahu_min_oa: { many: 'do not control their minimum outdoor air', one: 'does not control its minimum outdoor air' },
@@ -16937,6 +16937,24 @@ function _a36DisplayName(b) {
 // buildingNames (optional): the ASHRAE 36 modal's building selection. Equipment rows carry a
 // building NAME (row.building), not an id, so the filter keys on the exact string the grouping
 // below uses. null/empty = every building (all non-modal callers: agreement, pricing estimator).
+// The ONE rule of the carbon dioxide (CO2) counts: which units need a CO2 sensor. Returns 'ahu' (an air handling unit or rooftop unit: the
+// equipment types of the occupancy-based ventilation sequence), 'zone' (a variable air volume, fan-powered or dual-duct terminal) or '' (the
+// unit is not counted). A unit whose occupancy-based ventilation sequence does not apply (status na: a single-zone unit with no outdoor air
+// damper or CO2 point) is not counted, and a monitoring-only zone unit is not counted (the rule of the Cost Estimate,
+// _pricingIsMonitoringOnlyZoneUnit, one owner). The Executive Summary and the per-library findings both read this, so the per-library
+// numbers add up to the Executive Summary numbers (Matt, 2026-11-16).
+var A36_DCV_ZONE_CATS = ['vav', 'fpb', 'ddvav'];
+function _a36DcvUnitKind(eq) {
+  if (!eq) return '';
+  var isAir = eq.category === 'ahu' || eq.category === 'rtu';
+  var seq = (eq.seqReadiness || {})[isAir ? 'demandCtrl' : 'vav_dcv'];
+  if (seq && seq.status === 'na') return '';
+  if (isAir) return 'ahu';
+  if (A36_DCV_ZONE_CATS.indexOf(eq.category) === -1) return '';
+  if (typeof _pricingIsMonitoringOnlyZoneUnit === 'function' && _pricingIsMonitoringOnlyZoneUnit(eq)) return '';
+  return 'zone';
+}
+
 function collectASHRAE36Data(projId, reportDate, buildingNames) {
   if (typeof emLoadMatrix !== 'function') return null;
   var matData = emLoadMatrix(projId);
@@ -17652,7 +17670,6 @@ function collectASHRAE36Data(projId, reportDate, buildingNames) {
 
   // DCV readiness: count air handlers (ahu, rtu) and VAV-type zones (not monitoring-only) with/without a CO2 point.
   // Uses coveredPoints from real point data — no config flag dependency.
-  var VAV_CATS = ['vav', 'fpb', 'ddvav'];
   var dcvTotalAHU = 0,
     dcvAHUWithCO2 = 0;
   var dcvTotalZones = 0,
@@ -17662,17 +17679,13 @@ function collectASHRAE36Data(projId, reportDate, buildingNames) {
       var hasCO2Point = eq.compliance.coveredPoints.some(function (cp) {
         return cp.categoryKey === 'co2';
       });
-      // Air handlers = the equipment types of the occupancy-based ventilation sequence (air handling units and rooftop units).
-      // Zones leave out monitoring-only zone units: the rule of the Cost Estimate (_pricingIsMonitoringOnlyZoneUnit), one owner.
-      // Item (Executive Summary tie, 2026-11-14): a unit whose occupancy-based ventilation sequence does not apply (status na: a
-      // single-zone unit with no outdoor air damper or CO2 point) is not counted, so these counts equal the findings.
-      var _dcvSeq = (eq.seqReadiness || {})[eq.category === 'ahu' || eq.category === 'rtu' ? 'demandCtrl' : 'vav_dcv'];
-      if (_dcvSeq && _dcvSeq.status === 'na') return;
-      if (eq.category === 'ahu' || eq.category === 'rtu') {
+      // The units that count (air handlers, zones) are the ones of _a36DcvUnitKind, the one rule of the carbon dioxide counts: the same units
+      // are the base of the per-library carbon dioxide findings of the Detailed report.
+      var _dcvKind = _a36DcvUnitKind(eq);
+      if (_dcvKind === 'ahu') {
         dcvTotalAHU++;
         if (hasCO2Point) dcvAHUWithCO2++;
-      } else if (VAV_CATS.indexOf(eq.category) !== -1) {
-        if (typeof _pricingIsMonitoringOnlyZoneUnit === 'function' && _pricingIsMonitoringOnlyZoneUnit(eq)) return;
+      } else if (_dcvKind === 'zone') {
         dcvTotalZones++;
         if (hasCO2Point) dcvZonesWithCO2++;
       }
@@ -17806,7 +17819,9 @@ function collectASHRAE36Data(projId, reportDate, buildingNames) {
 function _a36GaugeSVG(pct, color, label, size, suppressBottomLabel) {
   size = size || 90;
   var r = size * 0.38;
-  var cx = size / 2;
+  // A long bottom label ("Overall Score") is wider than the ring at the 10 pt text floor: the picture is made wider, the ring stays centred.
+  var svgW = !suppressBottomLabel && String(label).length > 8 ? size + 28 : size;
+  var cx = svgW / 2;
   var cy = size / 2;
   var svgH = size * 1.16;
   var circumference = 2 * Math.PI * r;
@@ -17814,11 +17829,11 @@ function _a36GaugeSVG(pct, color, label, size, suppressBottomLabel) {
   var empty = circumference - filled;
   return (
     '<svg width="' +
-    size +
+    svgW +
     '" height="' +
     svgH.toFixed(1) +
     '" viewBox="0 0 ' +
-    size +
+    svgW +
     ' ' +
     svgH.toFixed(1) +
     '" style="display:block">' +
@@ -18083,6 +18098,13 @@ function _a36ConsolidatedCounts(d) {
  * Cover page: three gauge rings (overall/sensor/sequence), one-paragraph finding.
  * Hero page — no interior header, uses CSC letterhead.
  */
+// The word for the buildings of a report, from the data: "library" / "libraries" when every building is a library, else "building" / "buildings".
+// The ONE source of the word: the cover and the Executive Summary both read it (one word for one idea, Matt 2026-11-16).
+function _a36BuildingNouns(d) {
+  var allLib = !!d && Array.isArray(d.buildings) && d.buildings.length > 0 && d.buildings.every(function (b) { return /librar/i.test((b && b.name) || ''); });
+  return allLib ? { one: 'library', many: 'libraries' } : { one: 'building', many: 'buildings' };
+}
+
 function rptPageASHRAE36Cover(n, d, perBuildingIncluded, detailed) {
   var p = d.portfolio;
   // Consolidated sensor/sequence counts (2026-07-29 fix) — the cover previously printed
@@ -18145,7 +18167,7 @@ function rptPageASHRAE36Cover(n, d, perBuildingIncluded, detailed) {
     (_a36ConsolidatedSequences !== 1 ? 's' : '') +
     ' programmed</strong> and <strong>' +
     rptCount(_a36ConsolidatedSensors) +
-    (_a36ConsolidatedSensors === 1 ? ' sensor or actuator' : ' sensors and actuators') +
+    (_a36ConsolidatedSensors === 1 ? ' sensor or device' : ' sensors and devices') +
     ' installed</strong>. ' +
     // a562fd67: the cover's forward-looking promise must match whether the report actually
     // includes per-building detail pages. perBuildingIncluded is passed true only when the
@@ -18164,8 +18186,8 @@ function rptPageASHRAE36Cover(n, d, perBuildingIncluded, detailed) {
   var gauges =
     '<div style="display:flex;justify-content:center;gap:36px;margin:24px 0 8px">' +
     '<div style="text-align:center">' +
-    _a36GaugeSVG(p.composite, 'var(--rpt-blue)', 'Overall', 110, true) +
-    '<div style="font-size:11px;color:var(--rpt-page-text);margin-top:4px">Composite Score</div></div>' +
+    _a36GaugeSVG(p.composite, 'var(--rpt-blue)', 'Overall Score', 110, true) +
+    '<div style="font-size:11px;color:var(--rpt-page-text);margin-top:4px">Overall Score</div></div>' +
     '<div style="text-align:center">' +
     _a36GaugeSVG(p.pointPct, 'var(--rpt-green)', 'Sensors', 110, true) +
     '<div style="font-size:11px;color:var(--rpt-page-text);margin-top:4px">Sensor Coverage</div></div>' +
@@ -18206,8 +18228,12 @@ function rptPageASHRAE36Cover(n, d, perBuildingIncluded, detailed) {
     // explicit and survives any future margin consolidation.
     '<div style="height:16px"></div>' +
     '<div style="font-size:14px;color:var(--rpt-page-text);line-height:1.6;margin-bottom:8px">' +
-    'This report evaluates the facility’s building automation system against ASHRAE 36, the industry standard for high-performance heating and cooling control. ' +
-    'It identifies the specific sensors to install and control sequences to program to bring the facility into full alignment with ASHRAE 36.' +
+    'This report evaluates ' +
+    (p.totalBuildings === 1 ? 'the ' + _a36BuildingNouns(d).one + '’s building automation system' : 'the ' + _a36BuildingNouns(d).many + '’ building automation systems') +
+    ' against ASHRAE 36, the industry standard for high-performance heating and cooling control. ' +
+    'It identifies the specific sensors to install and control sequences to program to bring ' +
+    (p.totalBuildings === 1 ? 'the ' + _a36BuildingNouns(d).one : 'the ' + _a36BuildingNouns(d).many) +
+    ' into full alignment with ASHRAE 36.' +
     (detailed ? '' : ' Use it to scope the recommended upgrades.') +
     '</div>' +
     gauges +
@@ -18455,9 +18481,8 @@ function rptPageASHRAE36Executive(n, d, detailedTitles) {
   // _a36SetpointNeedsChangeCount (the same as the Setpoint Programming Review, Appendix A). A value of 0 or a missing value drops its sentence or bullet.
   if (detailed) {
     var _sumCounts = _a36ConsolidatedCounts(d);
-    var _allLib = d.buildings.length > 0 && d.buildings.every(function (b) { return /librar/i.test(b.name || ''); });
-    var _nounOne = _allLib ? 'library' : 'building';
-    var _nounMany = _allLib ? 'libraries' : 'buildings';
+    var _nounOne = _a36BuildingNouns(d).one;
+    var _nounMany = _a36BuildingNouns(d).many;
     var _noun = p.totalBuildings === 1 ? _nounOne : _nounMany;
     var _inv = d.pointInventory && d.pointInventory.totalAll ? d.pointInventory.totalAll : 0;
     var _plural = function (n, one, many) { return rptCount(n) + ' ' + (n === 1 ? one : many); };
@@ -18916,7 +18941,7 @@ function rptPageASHRAE36Executive(n, d, detailedTitles) {
     ';text-align:center">Sequence Readiness</th>' +
     '<th style="' +
     thStyle +
-    '">Score</th>' +
+    '">Overall Score</th>' +
     '<th style="' +
     thStyle +
     '">Status</th>' +
@@ -19915,7 +19940,7 @@ function _a36BuildingContent(d, building, showBuildingInfra) {
   var gauges =
     '<div style="display:flex;gap:14px;margin-bottom:12px;align-items:center">' +
     '<div style="text-align:center">' +
-    _a36GaugeSVG(b.composite, a36ReadinessColor(b.composite), 'Overall', 70) +
+    _a36GaugeSVG(b.composite, a36ReadinessColor(b.composite), 'Overall Score', 70) +
     '</div>' +
     '<div style="text-align:center">' +
     _a36GaugeSVG(b.pointPct, a36ReadinessColor(b.pointPct), 'Sensors', 70) +
@@ -21216,6 +21241,12 @@ function rptPageASHRAE36SetpointReview(n, d, detailedTitle) {
     if (v === null || v === undefined) return '—';
     return parseFloat(v).toFixed(1) + '°F';
   }
+  // The printed deadband is the printed cooling average minus the printed heating average (each rounded to 0.1 first), so the row reads right
+  // ("73.5 cooling, 67.9 heating, 5.6 deadband"). A building with no heating or no cooling average prints the stored deadband average.
+  function _fmtDeadband(r) {
+    if (r.avgHeat === null || r.avgHeat === undefined || r.avgCool === null || r.avgCool === undefined) return _fmtAvg(r.avgDb);
+    return _fmtAvg(Math.round((parseFloat(parseFloat(r.avgCool).toFixed(1)) - parseFloat(parseFloat(r.avgHeat).toFixed(1))) * 10) / 10);
+  }
   function _fmtDefaultVal(v) {
     if (v === null || v === undefined) return '—';
     return parseFloat(v).toFixed(0) + '°F';
@@ -21268,7 +21299,7 @@ function rptPageASHRAE36SetpointReview(n, d, detailedTitle) {
   // are the same for most buildings, so they print once in a box above the table; a building whose recommendation differs from the box
   // says so in its own row. A temperature pair always names the two setpoints: "70°F heating / 74°F cooling".
   function _pairText(heat, cool, fmt, pairHeatOnly) {
-    if (heat !== null && heat !== undefined && (cool === null || cool === undefined) && pairHeatOnly) return fmt(heat) + ' heating' + (_detailedReview ? ' / None cooling' : '');
+    if (heat !== null && heat !== undefined && (cool === null || cool === undefined) && pairHeatOnly) return fmt(heat) + ' heating' + (_detailedReview ? ' / No cooling' : '');
     return heat === null || heat === undefined || cool === null || cool === undefined ? '—' : fmt(heat) + ' heating / ' + fmt(cool) + ' cooling';
   }
   function _recFieldsFor(row) {
@@ -21343,7 +21374,7 @@ function rptPageASHRAE36SetpointReview(n, d, detailedTitle) {
     { w: _detailedReview ? 15 : 17, th: 'Occupied' + thSub + 'Existing average</span>', td: tdCenter, cell: function (r) { return _pairText(r.avgHeat, r.avgCool, _fmtAvg, r.heatOnly); } },
     { w: _detailedReview ? 15 : 17, th: 'Unoccupied' + thSub + 'Existing average</span>', td: tdCenter, cell: function (r) { return _pairText(r.avgUnoccHeat, r.avgUnoccCool, _fmtAvg, r.heatOnly); } },
     { w: 17, th: 'ASHRAE 36<br>Default', td: tdCenter, zoneOnly: true, cell: function (r) { return r.singleZone ? '—' : _refCellFor(r); }, uniformNote: function (h) { var p = h.split('<br>'); return '<strong>ASHRAE 36 default:</strong> ' + p[0].replace(/^Occupied/, 'occupied') + '; ' + p[1].replace(/^Unoccupied/, 'unoccupied'); } },
-    { w: _detailedReview ? 12 : 10, th: 'Deadband' + thSub + 'Existing average</span>', td: tdCenter, cell: function (r) { return r.heatOnly ? (_detailedReview ? 'None' : '—') : _fmtAvg(r.avgDb); } },
+    { w: _detailedReview ? 12 : 10, th: 'Deadband' + thSub + 'Existing average</span>', td: tdCenter, cell: function (r) { return r.heatOnly ? (_detailedReview ? 'No cooling' : '—') : _fmtDeadband(r); } },
     { w: _detailedReview ? 17 : 14, th: 'Existing<br>Schedule' + thSub + (_detailedReview ? 'Mon–Fri' : 'Mon–Fri, Sat &amp; Sun') + '</span>', td: tdCenter, cell: _eschCellFor, uniformNote: function (h) { return h === 'Not part of this review' ? '' : '<strong>Existing schedule for every building:</strong> ' + h.replace(/<br>/g, '; '); }, dropIf: function (h) { return h === 'Not part of this review'; } },
     { w: _detailedReview ? 26 : 25, th: 'Status', td: tdBase, keep: true, cell: function (r) { return _statusLine(r) + _recDifferenceFor(r); } },
   ];
@@ -21536,7 +21567,7 @@ function rptPageASHRAE36SetpointReview(n, d, detailedTitle) {
     : []; // only single-zone rows: no recommendation
   // Item 16: a library whose setpoint averages cover fewer zones than it has says so, and names the zones left out.
   Object.keys(_leftOut).forEach(function (bn) {
-    if (_detailedReview) return; // the Detailed review prints no data caveats (the unit is a Findings entry: Unit Offline)
+    if (_detailedReview) return; // the Detailed review prints no data caveats (an offline unit is no finding of this report either)
     var inTable = buildingRows.some(function (r) { return r.name === bn && !r.singleZone; });
     if (!inTable) return;
     var gone = _leftOut[bn].filter(function (z) { return z.offline; });
@@ -25842,11 +25873,13 @@ var A36_DET_PAGE_SAFETY_H = 12; // px kept free at the bottom of every page
 var A36_DET_TITLE_H = 44; // px, the title block (one line, 21.34 px type) with the space under it
 var A36_DET_TITLE_STYLE = 'margin:0 0 14px 0;font-size:21.34px;line-height:1.2;font-weight:700;color:var(--rpt-blue)';
 // "4. North Library", "Appendix A: Setpoint Programming Review", "16. Findings Summary (2 of 7)": sectionNo = the number (printed with a period) or the appendix label.
-// The part label "(2 of 7)" prints smaller than the title (A36_DET_PART_SIZE of its size) in the PDF and in Word; the title text keeps its size.
-var A36_DET_PART_SIZE = '85%';
+// The part label "(2 of 7)" prints small (A36_DET_PART_SIZE of the title size), in normal weight and the body text colour (not the blue
+// heading colour), in the PDF and in Word; the title text keeps its size (Matt, 2026-11-16).
+var A36_DET_PART_SIZE = '70%';
+var A36_DET_PART_STYLE = 'font-size:' + A36_DET_PART_SIZE + ';font-weight:400;color:var(--rpt-page-text)';
 function _a36DetSectionTitle(sectionNo, name, suffix) {
   var no = typeof sectionNo === 'number' ? sectionNo + '.' : sectionNo;
-  var part = suffix ? '<span style="font-size:' + A36_DET_PART_SIZE + '">' + _escHtml(String(suffix).replace(/(\d) of (\d)/, '$1\u00a0of\u00a0$2')) + '</span>' : '';
+  var part = suffix ? '<span style="' + A36_DET_PART_STYLE + '">' + _escHtml(String(suffix).replace(/(\d) of (\d)/, '$1\u00a0of\u00a0$2')) + '</span>' : '';
   return '<h1 style="' + A36_DET_TITLE_STYLE + '">' + _escHtml(no + ' ' + name) + part + '</h1>';
 }
 // " (2 of 7)" when a section or table runs onto more than one page, else ''.
@@ -25917,6 +25950,7 @@ function _a36DetEquipName(name, libName) {
 // underscore), first letter capital.
 function _a36DetCaptionPage(page) {
   var t = String(page == null ? '' : page)
+    .replace(/\s*(\(|\s-\s|\s\/\s|:).*$/, '') // only the page type word; a description of the picture contents never prints (Matt, 2026-11-16)
     .replace(/\s*\b\w*_\w*\b/g, '')
     .replace(/\(\s*\)/g, '')
     .replace(/\s+/g, ' ')
@@ -25929,6 +25963,15 @@ function _a36DetNames(names, max) {
   max = max || A36_DET_NAMES_MAX;
   if (names.length <= max) return names.join(', ');
   return names.slice(0, max).join(', ') + ' and ' + (names.length - max) + ' more';
+}
+
+// The carbon dioxide findings (the CO2 sensor point and the occupancy-based ventilation sequence) count against the units that need a CO2
+// sensor: the base of the Executive Summary (_a36DcvUnitKind), not every terminal of the group. When no unit of the group counts the group
+// keeps its own unit count.
+var A36_DET_DCV_KEYS = ['co2_zone_standalone', 'co2_zone', 'co2_ahu', 'vav_dcv', 'demandCtrl'];
+function _a36DetDcvBase(g) {
+  var n = g.units.filter(function (u) { return _a36DcvUnitKind(u) !== ''; }).length;
+  return n || g.units.length;
 }
 
 function _a36DetUnits(n) {
@@ -27234,8 +27277,8 @@ function _a36DetModel(d, rowsById, picMap, loaded) {
         kind: kind,
         key: key,
         label: label,
-        units: units,
-        total: g ? g.units.length : 0,
+        units: g && A36_DET_DCV_KEYS.indexOf(key) > -1 ? Math.min(units, _a36DetDcvBase(g)) : units,
+        total: g ? (A36_DET_DCV_KEYS.indexOf(key) > -1 ? _a36DetDcvBase(g) : g.units.length) : 0,
         affected: extra.affected || [],
         missing: extra.missing || [],
         missingText: extra.missingText || extra.missing || [],
@@ -27295,7 +27338,7 @@ function _a36DetModel(d, rowsById, picMap, loaded) {
         });
         if (fanKeys.length || pumpKeys.length) {
           f.recommendation =
-            'Install a variable speed drive on ' + (fanKeys.length ? 'the supply fan' : pumpPhrase) + (g ? ' of ' + frac : '') +
+            'Install a variable frequency drive on ' + (fanKeys.length ? 'the supply fan' : pumpPhrase) + (g ? ' of ' + frac : '') +
             (otherText.length ? ' and add the ' + _a36DetJoin(otherText) + ' point' + (otherText.length > 1 ? 's' : '') : '') +
             '. Program the ' + seqNoun + '.';
         } else
@@ -27308,8 +27351,8 @@ function _a36DetModel(d, rowsById, picMap, loaded) {
         if (szGroup && emSingleZoneSection(key)) f.section = emSingleZoneSection(key);
         f.impact = _a36DetImpactText(ASHRAE36_GAP_DESCRIPTIONS[key] && ASHRAE36_GAP_DESCRIPTIONS[key].plain);
         // A single-zone fan with no speed point has a constant-speed fan: the Impact line says what the missing drive means.
-        if (fanDrive && _a36DetIsFanSpeedKey(key)) f.impact = 'Lets the system change the fan speed. Without a variable speed drive the fan runs at full speed all the time.';
-        if (pumpDrive && key === 'hwPumpSpeed') f.impact = 'Lets the system change the pump speed. Without a variable speed drive the pump runs at full speed all the time.';
+        if (fanDrive && _a36DetIsFanSpeedKey(key)) f.impact = 'Lets the system change the fan speed. Without a variable frequency drive the fan runs at full speed all the time.';
+        if (pumpDrive && key === 'hwPumpSpeed') f.impact = 'Lets the system change the pump speed. Without a variable frequency drive the pump runs at full speed all the time.';
         f.effect = 'Equipment control';
         var names = '';
         if (g && f.affected.length === units && units > 1 && units < f.total && units <= 6) names = ' (' + f.affected.map(_a36DetEquipNameIn(_a36DisplayName(b))).join(', ') + ')';
@@ -27320,11 +27363,11 @@ function _a36DetModel(d, rowsById, picMap, loaded) {
         f.recommendation = sensor ? 'Install the ' + label + (/ sensor$/i.test(label) ? '' : ' sensor') + (g ? ' on ' + frac : ' (quantity ' + units + ')') + '.' : 'Add the ' + label + ' point' + (g ? ' on ' + frac : ' (quantity ' + units + ')') + '.';
         // Item 6: a fan speed point on a constant-speed fan means a variable speed drive. A single-zone unit is priced as a drive.
         if (fanDrive && _a36DetIsFanSpeedKey(key))
-          f.recommendation = 'Install a variable speed drive on the supply fan of ' + frac + '.';
+          f.recommendation = 'Install a variable frequency drive on the supply fan of ' + frac + '.';
         else if (pumpDrive && key === 'hwPumpSpeed')
-          f.recommendation = 'Install a variable speed drive on ' + pumpPhrase + ' of ' + frac + '.';
+          f.recommendation = 'Install a variable frequency drive on ' + pumpPhrase + ' of ' + frac + '.';
         else if (_a36DetIsFanSpeedKey(key))
-          f.recommendation = 'Add a variable frequency drive (VFD) to the supply fan where it runs at constant speed, for the ' + label + (g ? ' on ' + frac : ' (quantity ' + units + ')') + '.';
+          f.recommendation = 'Add a variable frequency drive to the supply fan where it runs at constant speed, for the ' + label + (g ? ' on ' + frac : ' (quantity ' + units + ')') + '.';
       }
       // A picture only when the listed page text names the topic of this finding, on a non-graphic page of an affected unit.
       var wordList = (extra.keys || [key]).map(function (k) { return A36_DET_FINDING_PAGE_WORDS[k]; }).filter(Boolean);
@@ -27494,6 +27537,8 @@ function _a36DetModel(d, rowsById, picMap, loaded) {
       return !hit;
     });
     mine.forEach(function (df) {
+      // An offline unit is a status reading of the equipment snapshot, not an ASHRAE 36 gap: it is no finding of this report (Matt, 2026-11-16).
+      if (_a36DetIsOfflineDeficiency(df)) return;
       var unitName = _a36DetEquipName(df.equipment || '', _a36DisplayName(b));
       var gMatch = null;
       groups.forEach(function (g) {
@@ -27504,14 +27549,12 @@ function _a36DetModel(d, rowsById, picMap, loaded) {
         )
           gMatch = g;
       });
-      // C4: the unit that reports no readings is titled "Unit Offline"; the full sentence stays in the Observed line.
-      var isOffline = /did not report any readings during the review/i.test(df.issue || '');
       var f = {
         lib: _a36DisplayName(b),
         groupLabel: gMatch ? gMatch.label : df.type || 'Equipment',
         kind: 'deficiency',
         key: 'deficiency',
-        label: isOffline ? 'Unit Offline' : df.issue || '',
+        label: df.issue || '',
         units: 0,
         total: 0,
         affected: [df.equipment || ''],
@@ -27521,8 +27564,8 @@ function _a36DetModel(d, rowsById, picMap, loaded) {
         section: '',
         impact: '',
         effect: 'Equipment control',
-        observed: isOffline ? (unitName || 'The unit') + ' is offline.' : (unitName ? unitName + ': ' : '') + (df.issue || ''),
-        issueShort: (unitName ? unitName + ': ' : '') + (isOffline ? 'Unit Offline' : df.issue || ''),
+        observed: (unitName ? unitName + ': ' : '') + (df.issue || ''),
+        issueShort: (unitName ? unitName + ': ' : '') + (df.issue || ''),
         recommendation: df.change || df.how || '',
       };
       lib.findings.push(f);
@@ -27717,17 +27760,16 @@ function _a36DetFactSentences(preds, subject, noun) {
   });
 }
 
-// ["two variable-speed secondary hot water pumps"] or ["one chilled water pump with a variable frequency drive", "one variable-speed secondary ..."]: the pumps of one plant by role
-// (the word primary or secondary only when the point names say it) and by speed (variable-speed only where a speed point exists; a drive point
-// with no speed point is a drive).
+// ["two secondary hot water pumps with variable frequency drives"]: the pumps of one plant by role (the word primary or secondary only when
+// the point names say it). A pump with a speed point or a drive point has a variable frequency drive: one term (Matt, 2026-11-16).
 function _a36DetPumpPhrase(c, water) {
   var parts = [];
   ['primary', 'secondary', 'plain'].forEach(function (r) {
     var n = c.pumps[r];
     if (!n) return;
     var speed = c.pumpSpeed[r];
-    var text = _a36DetCountWord(n) + ' ' + (speed === 'variable' ? 'variable-speed ' : '') + (r === 'plain' ? '' : r + ' ') + water + ' pump' + (n > 1 ? 's' : '');
-    if (speed === 'drive') text += n > 1 ? ' with variable frequency drives' : ' with a variable frequency drive';
+    var text = _a36DetCountWord(n) + ' ' + (r === 'plain' ? '' : r + ' ') + water + ' pump' + (n > 1 ? 's' : '');
+    if (speed === 'drive' || speed === 'variable') text += n > 1 ? ' with variable frequency drives' : ' with a variable frequency drive';
     parts.push(text);
   });
   return parts;
@@ -27811,7 +27853,16 @@ function _a36DetFansPhrase(c) {
   var shared = c.fans.some(function (f) {
     return !f.each;
   });
-  var tail = shared ? (c.fans.length === 1 ? ' with a variable frequency drive' : ' with variable frequency drives') : c.fans.length === 1 && c.fans[0].n === 1 ? ' with a variable frequency drive' : ', each with a variable frequency drive';
+  // Drive points are counted against the fans: fans that share drives print the drive count ("six supply fans and one variable frequency drive"),
+  // never "six fans with a drive" (Matt, 2026-11-16).
+  if (shared) {
+    var clauses = c.fans.map(function (f, i) {
+      if (f.each) return items[i] + (f.n === 1 ? ' with a variable frequency drive' : ', each with a variable frequency drive');
+      return items[i] + (c.fans.length === 1 ? ' and ' : ' with ') + (f.drives === 1 ? 'one variable frequency drive' : _a36DetCountWord(f.drives) + ' variable frequency drives');
+    });
+    return 'has ' + _a36DetJoin(clauses);
+  }
+  var tail = c.fans.length === 1 && c.fans[0].n === 1 ? ' with a variable frequency drive' : ', each with a variable frequency drive';
   return 'has ' + _a36DetJoin(items) + tail;
 }
 
@@ -27911,10 +27962,15 @@ function _a36DetGroupParams(g, rowsById) {
     });
   });
   var out = {};
+  var counts = {};
   Object.keys(seen).forEach(function (k) {
     var t = _a36DetParamText(seen[k]);
-    if (t) out[k] = t;
+    if (t) {
+      out[k] = t;
+      counts[k] = seen[k].length; // the units of the group that have the point: a value prints only for those units
+    }
   });
+  out.counts = counts;
   if (zoneGroup) out.zone = zone;
   return out;
 }
@@ -27948,6 +28004,10 @@ function _a36DetControlSentences(g, f, params, proof) {
   }
   function val(k) {
     return params[k] || null;
+  }
+  // The number of units of the group that have the point of a parameter (all units when the caller gives no counts).
+  function valN(k) {
+    return params.counts && params.counts[k] ? params.counts[k] : total;
   }
   function add(s, fn) {
     if (s) out.push({ fn: fn || '', text: s.replace(/\.\.$/, '.') }); // a unit that ends in a full stop ("in. w.c.") ends the sentence
@@ -28145,14 +28205,23 @@ function _a36DetControlSentences(g, f, params, proof) {
     if (has('htgValve')) coils.push(htgName);
     if (has('clgValve')) coils.push('cooling coil valve');
     var satSps = [val('satCoolSp') ? val('satCoolSp') + ' for cooling' : '', val('satHtgSp') ? val('satHtgSp') + ' for heating' : ''].filter(Boolean);
-    var satAt = satSps.length ? ' at ' + _a36DetJoin(satSps) : '';
-    if (coils.length && has('sat'))
+    // A setpoint value prints only for the units that have the point: when only some units of the group have it, the value moves to its own
+    // sentence about those units ("One of the two units holds ...").
+    var satN = satSps.length ? Math.min.apply(null, ['satCoolSp', 'satHtgSp'].filter(val).map(valN)) : 0;
+    var satSome = satSps.length > 0 && satN < total;
+    var satAt = satSps.length && !satSome ? ' at ' + _a36DetJoin(satSps) : '';
+    var satSomeText = satSome ? _a36DetSomeUnits(satN, total) + ' ' + (satN > 1 ? 'hold' : 'holds') + ' the supply air temperature at ' + _a36DetJoin(satSps) + '.' : '';
+    if (coils.length && has('sat')) {
       add(subject(coils) + ' ' + verb(coils, 'modulates', 'modulate') + (coils.length > 1 ? ' in sequence' : '') + ' to hold the supply air temperature' + satAt + '.', 'temp');
-    else if (has('sat') && satSps.length) add('The unit holds the supply air temperature' + satAt + '.', 'temp');
+      add(satSomeText, 'temp');
+    } else if (has('sat') && satSps.length) add(satSome ? satSomeText : 'The unit holds the supply air temperature' + satAt + '.', 'temp');
     else if (coils.length) add(BAS + 'modulates the ' + _a36DetJoin(coils) + '.', 'temp');
     // airflow and static pressure
-    if (has('sfSpeedCmd') && has('dsp') && multi) add('The supply fan speed modulates to hold the duct static pressure' + (val('dspSp') ? ' at ' + val('dspSp') : '') + '.', 'air');
-    else if (has('sfSpeedCmd')) add(BAS + 'varies the supply fan speed.', 'air');
+    var dspSome = !!val('dspSp') && valN('dspSp') < total;
+    if (has('sfSpeedCmd') && has('dsp') && multi) {
+      add('The supply fan speed modulates to hold the duct static pressure' + (val('dspSp') && !dspSome ? ' at ' + val('dspSp') : '') + '.', 'air');
+      if (dspSome) add(_a36DetSomeUnits(valN('dspSp'), total) + ' ' + (valN('dspSp') > 1 ? 'hold' : 'holds') + ' the duct static pressure at ' + val('dspSp') + '.', 'air');
+    } else if (has('sfSpeedCmd')) add(BAS + 'varies the supply fan speed.', 'air');
     if (has('rfSpeedCmd')) add(BAS + 'varies the return fan speed.', 'air');
     // outdoor air: the dampers, the economizer
     if (has('oaDampCmd') && has('oaFlow')) add('The outdoor air damper modulates to hold the outdoor airflow.', 'oa');
@@ -28190,6 +28259,12 @@ function _a36DetControlSentences(g, f, params, proof) {
     else if (sched) add('The occupied schedule is ' + sched + '.');
   }
   return out;
+}
+
+// "One of the two units" / "Two of the three units": the subject of a sentence about some units of a group.
+function _a36DetSomeUnits(n, total) {
+  var lead = _a36DetCountWord(n);
+  return lead.charAt(0).toUpperCase() + lead.slice(1) + ' of the ' + _a36DetCountWord(total) + ' units';
 }
 
 // A count as a word for 1 to 9 ("three"), else the number.
@@ -28474,6 +28549,11 @@ function _a36DetAppendixTitle(appendixLabel, name) {
       return measured !== null ? Math.max(A36_DET_TITLE_H, measured + 6) : A36_DET_TITLE_H;
     })(),
   };
+}
+
+// True for a Facility Audit deficiency that only states a unit reported no readings (offline): a status, not an ASHRAE 36 gap.
+function _a36DetIsOfflineDeficiency(df) {
+  return /did not report any readings during the review/i.test((df && df.issue) || '');
 }
 
 // Deficiency findings of the Facility Audit tab for the libraries in this report (the same list the tab shows).

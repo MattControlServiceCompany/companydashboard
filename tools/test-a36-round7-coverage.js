@@ -6,7 +6,7 @@
 //   R3 the Building Readiness note says the portfolio scores weight each building by its amount of equipment.
 //   R4 a hot water plant with no pump drive point gets a priced pump drive ($3,000 covering price + 5.0 h install labor) per plant unit, in every
 //      tier that programs the differential pressure reset; a plant with a drive status or speed point stays $0; the audit text says
-//      "Install a variable speed drive on the hot water pump" exactly where the price is a drive.
+//      "Install a variable frequency drive on the hot water pump" exactly where the price is a drive.
 // Run: CH_TMP_ROOT=<scratch> node tools/test-a36-round7-coverage.js   (exit 0 = all pass)
 'use strict';
 const path = require('path');
@@ -169,14 +169,14 @@ const RE = fs.readFileSync(path.join(ROOT, 'app', 'report-engine.js'), 'utf8');
     const blk = await page.evaluate(() => SEQUENCE_BLOCKING_SENSORS.hwp_pump_dp_reset);
     ok(blk.indexOf('hwPumpSpeed') > -1, 'R4. the pump speed point blocks the sequence: ' + blk);
     const pf = (lib) => out.r4.findings.filter((f) => f.lib === lib && (f.key === 'hwp_pump_dp_reset' || f.key === 'hwPumpSpeed'));
-    const drvText = (f) => /Install a variable speed drive on the hot water pump of/.test(f.rec);
+    const drvText = (f) => /Install a variable frequency drive on the hot water pump of/.test(f.rec);
     ok(pf('Delta Hall').length > 0 && pf('Delta Hall').some((f) => /each of the 2 hot water pumps/.test(f.rec)), 'R4. a plant row with two pumps: the text says "each of the 2 hot water pumps": ' + pf('Delta Hall').map((f) => f.rec));
-    ok(pf('Alpha Hall').length > 0 && pf('Alpha Hall').every(drvText), 'R4. the no-drive plant: the text says "Install a variable speed drive on the hot water pump": ' + pf('Alpha Hall').map((f) => f.rec));
+    ok(pf('Alpha Hall').length > 0 && pf('Alpha Hall').every(drvText), 'R4. the no-drive plant: the text says "Install a variable frequency drive on the hot water pump": ' + pf('Alpha Hall').map((f) => f.rec));
     ok(pf('Beta Hall').length > 0 && pf('Beta Hall').every((f) => !drvText(f) && /^Add the .* point/.test(f.rec)), 'R4. the plant with a drive status point: the plain "Add the ... point" text: ' + pf('Beta Hall').map((f) => f.rec));
 
     // ---- extra: the fan drive wording follows the price ----
     const szf = out.szSpeed.findings;
-    ok(szf.length > 0 && szf.every((f) => !/variable speed drive/i.test(f.rec + ' ' + f.impact)) && szf.filter((f) => f.kind === 'seq').every((f) => /^Add the .* point/.test(f.rec)), 'EXTRA. a single-zone group that reads its fan speed (sfSpeed) but has no speed command: no finding says "variable speed drive", sequence findings say "Add the ... point": ' + szf.map((f) => f.key + ': ' + f.rec));
+    ok(szf.length > 0 && szf.every((f) => !/variable frequency drive/i.test(f.rec + ' ' + f.impact)) && szf.filter((f) => f.kind === 'seq').every((f) => /^Add the .* point/.test(f.rec)), 'EXTRA. a single-zone group that reads its fan speed (sfSpeed) but has no speed command: no finding says "variable frequency drive", sequence findings say "Add the ... point": ' + szf.map((f) => f.key + ': ' + f.rec));
     ok(out.szSpeed.tiers.compliance.filter((r) => r.pk === 'sfSpeedCmd').every((r) => r.total === 0), 'EXTRA. and the speed command is $0 in the price: ' + out.szSpeed.tiers.compliance.filter((r) => r.pk === 'sfSpeedCmd').map((r) => r.total));
 
     ok(errs.length === 0, 'no page errors' + (errs.length ? ': ' + errs[0] : ''));

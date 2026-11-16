@@ -2507,6 +2507,13 @@ async function siteResetAllMeterTableSettings() {
    site-ui.js delegates to this array and should NOT maintain its own copy.
 */
 var RELEASE_NOTES = [
+  { v: 'v2026.11.16.300', date: '2026-11-16', title: 'Audit Report: review corrections',
+    items: [
+      { type: 'fix', text: 'Detailed Audit Report: each library counts the zones without a carbon dioxide sensor the same way as the Executive Summary, so the library numbers add up to the summary.' },
+      { type: 'fix', text: 'Detailed Audit Report: a setpoint value is stated only for a unit that has that setpoint, and a group of fans that share one variable frequency drive says so.' },
+      { type: 'fix', text: 'Detailed Audit Report: an offline unit is no longer listed as a finding, picture captions name only the graphic, and the report uses one name for each item (variable frequency drive, sensors and devices, Overall Score).' },
+      { type: 'fix', text: 'Audit Report: the (1 of 2) labels are small, the zone setpoint deadband matches the printed averages, a heating-only unit reads No cooling, and words in the PDF copy and search with their spaces.' },
+    ] },
   { v: 'v2026.11.16.299', date: '2026-11-16', title: 'Audit Report: real Executive Summary, system configuration in System Descriptions, Word file matches the PDF',
     items: [
       { type: 'improvement', text: 'Detailed Audit Report: the Executive Summary is now a summary: what was audited, the overall result, the libraries that need the most work, the key findings and the recommended work.' },

@@ -100,7 +100,8 @@ function _rptPdfCollectWords(page) {
       if (x + w < 0 || y + h < 0 || x > origin.width / sx || y > origin.height / sy) continue;
       var t = _rptPdfSafeText(_rptPdfApplyTextTransform(m[0], cs.textTransform));
       if (!t) continue;
-      words.push({ t: t, x: x, y: y, w: w, h: h });
+      // sp: the text of the page has a space after this word (inside the same text node): the text layer keeps that space.
+      words.push({ t: t, x: x, y: y, w: w, h: h, sp: m.index + m[0].length < text.length });
     }
   }
   return words;
@@ -393,10 +394,22 @@ async function downloadReportPdf() {
             doc.setFontSize(sizePt);
             var natural = doc.getTextWidth(wd.t);
             var space = wd.t.length ? (wd.w * RPT_PDF_PT_PER_PX - natural) / wd.t.length : 0;
-            doc.text(wd.t, wd.x * RPT_PDF_PT_PER_PX, (wd.y - c0 + wd.h * 0.8) * RPT_PDF_PT_PER_PX, {
+            // A word that is followed by a space on the page is drawn up to 4% narrower (the letter spacing is never made negative by this), so the
+            // gap to the next word is wide enough for any text extractor to see the space between two words that sit close together
+            // ("Terminal Airflow") (Matt, 2026-11-16).
+            if (wd.sp && wd.t.length) space = Math.max(space - (wd.w * 0.04 * RPT_PDF_PT_PER_PX) / wd.t.length, Math.min(space, 0));
+            var textY = (wd.y - c0 + wd.h * 0.8) * RPT_PDF_PT_PER_PX;
+            doc.text(wd.t, wd.x * RPT_PDF_PT_PER_PX, textY, {
               renderingMode: 'invisible',
               charSpace: space,
             });
+            // A real space follows a word that the page text has a space after, in a 1 pt font so it never reaches the next word: a text
+            // reader (copy, search, a PDF text extractor) then keeps the space between two words that sit close together ("Terminal
+            // Airflow", "VAV-20 (Telecom 123)") and does not join them. A word with no space after it (a comma, a bracket) gets none.
+            if (wd.sp) {
+              doc.setFontSize(1);
+              doc.text(' ', (wd.x + wd.w) * RPT_PDF_PT_PER_PX + 0.2, textY, { renderingMode: 'invisible' });
+            }
           }
         }
       }

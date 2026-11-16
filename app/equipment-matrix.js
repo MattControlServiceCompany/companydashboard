@@ -22417,7 +22417,7 @@ function emPlantConfig(points) {
   return out;
 }
 // Air unit (air handler, rooftop unit, DOAS) configuration from the stored points { name: value }:
-// { dualDuct, fans: [{ type: 'supply'|'return'|'relief'|'exhaust', n, each }] (only fans that show a drive point; n = fans; each = every fan shows its own drive),
+// { dualDuct, fans: [{ type: 'supply'|'return'|'relief'|'exhaust', n, drives, each }] (only fans that show a drive point; n = fans; drives = the drives the points show; each = every fan shows its own drive),
 //   erv: { present, driveFans: ['supply', 'exhaust'] }, condensingUnits, cuStages (stages of each condensing unit, 0 when not shown), compressors, circuits,
 //   condenserFans, gasHeat, coolingStages, heatingStages }
 // A "Cooling Stage" does not prove DX and a "Heating Stage" does not prove gas or electric heat: only counts are given.
@@ -22469,7 +22469,8 @@ function emAirConfig(points) {
       return k.charAt(0) === 'p';
     });
     var n = numbered.length > 1 ? numbered.length : prefixes.length || 1;
-    out.fans.push({ type: type, n: n, each: n === 1 || ids(withDrive).length === n });
+    // drives = the distinct drives the points show (a drive point that names no fan number is one drive); each = every fan has its own drive.
+    out.fans.push({ type: type, n: n, drives: Math.min(n, ids(withDrive).length), each: n === 1 || ids(withDrive).length === n });
   });
   // Cooling: condensing units, compressors, circuits, condenser fans, stages.
   var cuIds = _emCfgDistinct(E, /\bcu[\s-]*(\d+)\b/i);

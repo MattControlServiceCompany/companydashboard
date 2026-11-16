@@ -1662,11 +1662,12 @@ function _docxStyleFmtFromEl(el, baseFmt, ctx) {
   if (!el || !el.style) return fmt;
   var fw = el.style.fontWeight;
   if (fw === 'bold' || fw === '700' || fw === '800' || fw === '900' || parseInt(fw, 10) >= 600) fmt.bold = true;
+  else if (fw === 'normal' || (fw && parseInt(fw, 10) < 600)) fmt.bold = false; // a normal-weight part label inside a bold heading ("(2 of 7)")
   if (el.style.fontStyle === 'italic') fmt.italic = true;
   if (el.style.textTransform === 'none') fmt.caps = false; // a unit (kWh, kW) keeps its case inside a capitalised header
   var fs = el.style.fontSize;
   if (fs) {
-    // A percent size ("85%": the part label of a section title) is a share of the size it inherits.
+    // A percent size ("70%": the part label of a section title) is a share of the size it inherits.
     var hp = /%$/.test(fs) ? (baseFmt && baseFmt.sizeHalfPt ? Math.round((baseFmt.sizeHalfPt * parseFloat(fs)) / 100) : null) : _docxPxToHalfPt(fs);
     if (hp) fmt.sizeHalfPt = hp;
   }
