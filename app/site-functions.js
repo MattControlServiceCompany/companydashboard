@@ -2507,6 +2507,11 @@ async function siteResetAllMeterTableSettings() {
    site-ui.js delegates to this array and should NOT maintain its own copy.
 */
 var RELEASE_NOTES = [
+  { v: 'v2026.11.16.308', date: '2026-11-16', title: 'The site updates itself',
+    items: [
+      { type: 'fix', text: 'An open tab now checks for a new version every minute and changes to it by itself when nobody has used the page for 30 seconds, also while the tab stays on screen. Before, it checked only when you clicked into or out of the window or changed page.' },
+      { type: 'fix', text: 'Typing in the "Where is it?" box no longer holds back an update (it is a search box, not an edit).' },
+    ] },
   { v: 'v2026.11.16.307', date: '2026-11-16', title: 'Audit Report title for clients',
     items: [
       { type: 'change', text: 'The report cover and the file name say "Audit Report" for both the Simple and the Detailed style. The style shows only in the report window of the site.' },

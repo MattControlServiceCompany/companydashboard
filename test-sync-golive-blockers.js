@@ -3984,7 +3984,7 @@ await t(
   },
 );
 await t(
-  "CREDIT7 version check: no timer, one small Range GET of site-ui.js, compares CH_VERSION, 60 s limit, the swap runs only while the user is away or changing page",
+  "CREDIT7 version check: one 60 s timer (Matt 2026-11-16: update with no user action), one small Range GET of site-ui.js, compares CH_VERSION, 60 s limit, the swap runs only while the user is away or changing page",
   async () => {
     const src = fs.readFileSync(path.join(__dirname, "app", "report-engine.js"), "utf8");
     const a = src.indexOf("let _chVerLastCheck");
@@ -3992,7 +3992,8 @@ await t(
     const block = src.slice(a, b);
     const init = src.slice(src.indexOf("_checkForVersionUpdate();"), src.indexOf("_restorePageStateAfterVersionUpdate();"));
     assert.ok(a > 0 && b > a, "version check block found");
-    assert.ok(!/setInterval/.test(block + init), "no timer loop for the version check");
+    assert.ok((init.match(/setInterval\(/g) || []).length === 1 && /setInterval\(_verRecheck, _CH_VER_MIN_GAP_MS\)/.test(init), "one 60 s timer runs the version check");
+    assert.ok(/Date\.now\(\) - _chLastInputAt >= _CH_IDLE_MS/.test(src) && /_CH_IDLE_MS = 30 \* 1000/.test(src), "a visible tab with no input for 30 s counts as away");
     assert.ok(!/setTimeout\([^)]*,\s*[1-9]\d{3,}/.test(init), "the page-load init sets no long timer");
     assert.ok(/Range:\s*'bytes=0-4095'/.test(block) && /cache:\s*'no-store'/.test(block), "small no-store Range GET");
     assert.ok(!/ETag|HEAD/.test(block.replace(/\/\*[\s\S]*?\*\//g, "")), "no ETag compare");

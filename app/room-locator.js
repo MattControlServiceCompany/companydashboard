@@ -145,7 +145,7 @@
     return (
       '<div style="display:flex;align-items:center;gap:8px;padding:8px 20px;border-bottom:1px solid var(--border);flex-shrink:0;flex-wrap:wrap">' +
       '<label for="rl-search" style="font-size:12px;font-weight:700;color:var(--text)">Where is it?</label>' +
-      '<input id="rl-search" type="text" autocomplete="off" placeholder="Room or equipment name, for example gym, library or 114" oninput="roomLocatorInput(this.value)" ' +
+      '<input data-ch-filter id="rl-search" type="text" autocomplete="off" placeholder="Room or equipment name, for example gym, library or 114" oninput="roomLocatorInput(this.value)" ' +
       'style="font-size:12px;padding:4px 8px;background:var(--s2);border:1px solid var(--border);color:var(--text);border-radius:4px;height:28px;flex:1;min-width:240px;max-width:520px">' +
       '</div>'
     );

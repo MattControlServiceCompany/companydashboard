@@ -80,6 +80,16 @@ function eq(a, b, l) {
     await page.waitForTimeout(2000);
     const plain = await app().evaluate(appState);
     eq([plain.detail, plain.proj, plain.tab, plain.sub, plain.whatsNewOpen], [true, PID, 'eq-matrix', 'setpoints', false], 'plain reload: same place, dialog closed');
+    // 5. Matt 2026-11-16: the tab is open on screen, has focus and nobody touches it: the new version arrives with no user
+    // action and no event (the 60 s timer finds it; 30 s with no input counts as away).
+    await markOld();
+    srv.liveVer = 'v9999.01.01.2';
+    const focusedIdle = await app().evaluate(() => {
+      _chLastInputAt = Date.now() - 31000;
+      return document.hasFocus() && !document.hidden;
+    });
+    eq(focusedIdle, true, 'idle tab: visible and focused (no away event)');
+    eq(await waitSwap(80000), true, 'idle tab on screen: the timer finds the new version and the new frame takes its place with no user action');
     eq(errs, [], 'no console or page errors');
   } finally {
     await ctx.close();

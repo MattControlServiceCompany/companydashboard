@@ -15096,6 +15096,9 @@ function initUtilityTool() {
     if (Date.now() - _chVerLastCheck < _CH_VER_MIN_GAP_MS) return;
     _checkForVersionUpdate();
   };
+  // Matt 2026-11-16: "make the site load the newest version without any user action". A tab left open on screen gets no
+  // focus or page-change event, so a timer checks every 60 s (one 4 KB Range GET; no build credits) and swaps when safe.
+  setInterval(_verRecheck, _CH_VER_MIN_GAP_MS);
   document.addEventListener('visibilitychange', _verRecheck);
   window.addEventListener('focus', _verRecheck);
   // Focus moved into a frame of this page (a PDF view) is not "away": only another program or tab counts.
@@ -15179,6 +15182,8 @@ function chSafeToReload() {
    Once per version per tab session (sessionStorage), so a server that never matches cannot cause a swap loop. */
 let _chPendingVer = null;
 let _chLastNavAt = 0;
+let _chLastInputAt = Date.now(); // last real user input; no input for _CH_IDLE_MS counts as away
+const _CH_IDLE_MS = 30 * 1000;
 let _chInputSeq = 0; // counts real user input; a swap is dropped when it changed since the page state was saved
 let _chSwap = null; // the swap in progress: { nav, input, manual }
 const _CH_NAV_WINDOW_MS = 3000; // a version found by the check that a page change started still counts as that page change
@@ -15186,7 +15191,10 @@ const _CH_NAV_WINDOW_MS = 3000; // a version found by the check that a page chan
   window.addEventListener(
     n,
     (e) => {
-      if (e.isTrusted) _chInputSeq++;
+      if (e.isTrusted) {
+        _chInputSeq++;
+        _chLastInputAt = Date.now();
+      }
     },
     { capture: true, passive: true },
   ),
@@ -15196,6 +15204,7 @@ function _userJustNavigated() {
 }
 function _userIsAway() {
   if (document.hidden) return true;
+  if (Date.now() - _chLastInputAt >= _CH_IDLE_MS) return true; // a visible tab nobody has used for 30 s (Matt 2026-11-16)
   return typeof document.hasFocus === 'function' && !document.hasFocus() && !(document.activeElement && document.activeElement.tagName === 'IFRAME');
 }
 function _chFrameShell() {
