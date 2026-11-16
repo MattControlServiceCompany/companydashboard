@@ -2626,11 +2626,13 @@ function _docxTranslateList(listEl, ctx, numId, ilvl, inheritedFmt) {
   liEls.forEach(function (li) {
     var nestedLists = [];
     var entries = [];
+    // The item's own inline style (font size, colour, weight) applies to its text, as on the PDF page.
+    var liFmt = _docxStyleFmtFromEl(li, _docxStyleFmtFromEl(listEl, baseFmt, ctx), ctx);
     Array.prototype.slice.call(li.childNodes).forEach(function (node) {
       if (node.nodeType === 1 && (node.tagName === 'UL' || node.tagName === 'OL')) {
         nestedLists.push(node);
       } else {
-        _docxWalkInline(node, baseFmt, entries, ctx);
+        _docxWalkInline(node, liFmt, entries, ctx);
       }
     });
     var directRuns = _docxFinalizeRuns(entries);

@@ -52,6 +52,18 @@ const { launchBrowser } = require(path.join(ROOT, 'tools', 'launch-browser.js'))
       return { centered: p.indexOf('<w:jc w:val="center"/>') > -1 && p.indexOf('<w:jc w:val="center"/>') < p.indexOf('<w:drawing'), found: !!p };
     });
     ok(fig.found && fig.centered, 'a figure picture is centered in Word (found ' + fig.found + ')');
+    // A list item keeps its own font size in Word (the Executive Summary bullets are body size, as on the PDF page).
+    const li = await page.evaluate(() => {
+      const host = document.createElement('div');
+      host.innerHTML = '<div class="rpt-page"><div class="rpt-body"><p style="font-size:16px">Para</p><ul><li style="font-size:16px">Item</li></ul></div></div>';
+      document.body.appendChild(host);
+      const clone = host.firstChild.cloneNode(true);
+      _docxStampLiveStyles(host.firstChild, clone);
+      const xml = _docxTranslatePages([clone]).xml;
+      const sz = (word) => { const run = xml.split('<w:r>').find((x) => x.indexOf('>' + word + '</w:t>') > -1); const m = run && /<w:sz w:val="(\d+)"/.exec(run); return m ? m[1] : null; };
+      return { para: sz('Para'), item: sz('Item') };
+    });
+    ok(li.para && li.item === li.para, 'a list item has the same Word size as a paragraph of the same px size: ' + li.item + ' / ' + li.para);
   } finally { await ctx.close(); }
   console.log(fails ? fails + ' FAILED' : 'ALL PASS');
   process.exit(fails ? 1 : 0);
