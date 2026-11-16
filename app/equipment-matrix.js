@@ -22253,6 +22253,266 @@ function emPumpCount(pointNames) {
   }
   return Math.max(1, Object.keys(ids).length);
 }
+// ---------------------------------------------------------------------------------------------------------------------------------------
+// System Description configuration readers (2026-11-15). READ ONLY: the facts about how a plant or an air unit is built, read from the
+// point names (and, for a setting, the stored value of a named setpoint point). The Detailed ASHRAE 36 audit report prints them in the
+// System Description (report-engine.js _a36DetConfig). A name that does not show a fact gives no fact: nothing is guessed.
+// emPumpCount (pricing) does NOT use emPlantConfig yet: it counts pump numbers only. emPumpCount should later share the pump counting of
+// emPlantConfig so the price and the text read one count; until then the pricing lines must not move.
+// The twin of a point (the name ends in ANI, BNI, ANO or BNO) is the same point and is not counted twice.
+function _emCfgEntries(points) {
+  var out = [];
+  Object.keys(points || {}).forEach(function (k) {
+    if (/\s(ANI|BNI|ANO|BNO)$/.test(k)) return;
+    var raw = points[k];
+    if (raw && typeof raw === 'object') raw = raw.value;
+    out.push({ name: String(k), value: raw == null ? '' : String(raw).trim() });
+  });
+  return out;
+}
+// { n: 57, unit: 'F' | 'psi' | '' } from a stored value ("57.0", "120.0 F", "10.0 psi"), or null.
+function _emCfgNumber(value) {
+  var m = /^(-?\d+(?:\.\d+)?)\s*(\S.*)?$/.exec(String(value == null ? '' : value).trim());
+  return m ? { n: parseFloat(m[1]), unit: (m[2] || '').trim() } : null;
+}
+// The distinct ids a pattern finds in the names (pick(match) = the id; default the first group, lower case).
+function _emCfgDistinct(entries, re, pick) {
+  var ids = {};
+  entries.forEach(function (e) {
+    var m = re.exec(e.name);
+    if (m) ids[pick ? pick(m) : m[1].toLowerCase()] = true;
+  });
+  return Object.keys(ids);
+}
+// Plant (hot water or chilled water) configuration from the stored points { name: value }:
+// { boilers, chillers, pumps: { primary, secondary, plain } (distinct numbers by role: the name says "primary" or "secondary", else plain), pumpTotal,
+//   pumpSpeed: { primary|secondary|plain: 'variable' | 'drive' | 'none' } for the roles that have pumps ('drive' = a drive point and no speed point),
+//   noPumpDrive: true when NO point of the plant shows a pump drive (the one rule of _pricingDriveIsPriced: emPumpDriveEvidence),
+//   rotation: { frequency: 'weekly', day: 'Tuesdays', role: 'secondary' | 'primary' | '' } | null (only from a rotation SETTING point of the pumps),
+//   bypassValve, boilerIsolation (every boiler shows an isolation valve point), circuits, compressors, condenserFans, coolingTower,
+//   chillerType: 'air' (condenser fan points, no tower point) | 'water' (cooling tower or condenser water pump points, no condenser fan) | '' (not shown),
+//   hwSetpoint / chwSetpoint / dpSetpoint: { n, unit } of a named setpoint SETTING point, or null (a reset signal, an active value or a loop output is not a setting) }
+function emPlantConfig(points) {
+  var E = _emCfgEntries(points);
+  var out = { boilers: 0, chillers: 0, pumps: { primary: 0, secondary: 0, plain: 0 }, pumpTotal: 0, pumpSpeed: {}, noPumpDrive: false, rotation: null, bypassValve: false, boilerIsolation: false, circuits: 0, compressors: 0, condenserFans: false, coolingTower: false, chillerType: '', hwSetpoint: null, chwSetpoint: null, dpSetpoint: null };
+  out.boilers = _emCfgDistinct(E, /\bboiler\s*-?\s*(\d+)\b|^b\s*-?\s*(\d+)\s+(?:fire|firing|hws|hot\s*water|status|enable)/i, function (m) {
+    return m[1] || m[2];
+  }).length;
+  out.chillers = _emCfgDistinct(E, /\bchiller\s*-?\s*(\d+)\b/i).length;
+  // Pumps: a role and a number. A bare "Pump 1 ..." name (no water word, no role word) is dropped when a named pump exists.
+  var idRe = /(?:\b(?:hhwp|hwp|chwp|pump)\s*-?\s*(?:p\s*-?\s*)?)(\d+[a-z]?)\b/i;
+  var pumpIds = { primary: {}, secondary: {}, plain: {} };
+  var bareIds = {};
+  var named = false;
+  var roleOf = function (name) {
+    return /\bsecondary\b/i.test(name) ? 'secondary' : /\bprimary\b/i.test(name) ? 'primary' : 'plain';
+  };
+  E.forEach(function (e) {
+    var m = idRe.exec(e.name);
+    if (!m) return;
+    var role = roleOf(e.name);
+    if (role === 'plain' && !/\b(?:hhwp|hwp|chwp|chw|hw)\b|water/i.test(e.name)) bareIds[m[1].toLowerCase()] = true;
+    else {
+      pumpIds[role][m[1].toLowerCase()] = true;
+      named = true;
+    }
+  });
+  if (!named) pumpIds.plain = bareIds;
+  ['primary', 'secondary', 'plain'].forEach(function (r) {
+    out.pumps[r] = Object.keys(pumpIds[r]).length;
+    out.pumpTotal += out.pumps[r];
+  });
+  // Pump speed by role: the names of the pumps of that role. A drive name that names no pump (VFD 1 Output Speed) belongs to the role only when the plant has one role.
+  var roles = ['primary', 'secondary', 'plain'].filter(function (r) {
+    return out.pumps[r] > 0;
+  });
+  out.noPumpDrive =
+    out.pumpTotal > 0 &&
+    !emPumpDriveEvidence(
+      E.map(function (e) {
+        return e.name;
+      }),
+    );
+  roles.forEach(function (r) {
+    var names = [];
+    E.forEach(function (e) {
+      if (/fan/i.test(e.name)) return;
+      if (/\bpump\b|\b(?:hhwp|hwp|chwp)\b/i.test(e.name)) {
+        if (roleOf(e.name) === r) names.push(e.name);
+      } else if (roles.length === 1 && /\bvfd\b/i.test(e.name)) names.push(e.name);
+    });
+    var speed = names.some(function (n) {
+      return /speed|frequency|\bhz\b/i.test(n) && !/fault|alarm|warning|trip/i.test(n);
+    });
+    out.pumpSpeed[r] = speed ? 'variable' : emPumpDriveEvidence(names) ? 'drive' : 'none';
+  });
+  // Rotation: a setting point of the pumps ("Rotation Frequency: Secondary Pumps" = "Auto - Weekly"). A status or a run-hours point is never a rotation.
+  var freq = '';
+  var day = '';
+  var rrole = '';
+  E.forEach(function (e) {
+    if (!/rotat/i.test(e.name) || !/pump/i.test(e.name)) return;
+    var f = /\b(hourly|daily|weekly|bi-?weekly|monthly|quarterly|annually|yearly)\b/i.exec(e.value);
+    var d = /\b(sun|mon|tues|wednes|thurs|fri|satur)days?\b/i.exec(e.value);
+    if (f && !/\bday\b/i.test(e.name)) {
+      freq = f[1].toLowerCase();
+      rrole = roleOf(e.name) === 'plain' ? '' : roleOf(e.name);
+    }
+    if (d && /\bday\b/i.test(e.name)) day = d[1].charAt(0).toUpperCase() + d[1].slice(1).toLowerCase() + 'days';
+  });
+  if (freq) out.rotation = { frequency: freq, day: day, role: rrole };
+  // Valves.
+  out.bypassValve = E.some(function (e) {
+    return /\bbypass\s*valve\b/i.test(e.name) && !/commanded|alarm|fault/i.test(e.name);
+  });
+  out.boilerIsolation = out.boilers > 0 && _emCfgDistinct(E, /\bboiler\s*(\d+)\s*isolation\s*valve\b/i).length === out.boilers;
+  // Refrigerant circuits and compressors: "Circuit 1 - Compressor Starts", "Sys 1 Compressor 2 Run".
+  var circ = _emCfgDistinct(E, /\bcircuit\s*(\d+|[a-z])\b/i);
+  var sys = _emCfgDistinct(
+    E.filter(function (e) {
+      return /compressor|suction|discharge|condenser/i.test(e.name);
+    }),
+    /\bsys\s*(\d+)\b/i,
+  );
+  out.circuits = circ.length || sys.length;
+  out.compressors = _emCfgDistinct(E, /\b(?:circuit|sys)\s*(\d+)[\s-]*compressor\s*(\d+)\b/i, function (m) {
+    return m[1] + '/' + m[2];
+  }).length;
+  // Chiller type: condenser fan points = air-cooled; cooling tower or condenser water pump points = water-cooled with a cooling tower; both or neither = not stated.
+  out.condenserFans = E.some(function (e) {
+    return /\bcondenser\s*fan\b/i.test(e.name);
+  });
+  out.coolingTower = E.some(function (e) {
+    return /cooling\s*tower|condenser\s*water|\bcwp\b|\btower\b/i.test(e.name);
+  });
+  out.chillerType = out.chillers > 0 && out.coolingTower && !out.condenserFans ? 'water' : out.chillers > 0 && out.condenserFans && !out.coolingTower ? 'air' : '';
+  // Named setpoint settings. A plant that also shows a reset or an active setpoint point does not prove a fixed setting: no value.
+  var tempReset = E.some(function (e) {
+    var setpoint = /set\s*-?\s*point/i.test(e.name);
+    return (setpoint && /\b(reset|active)\b/i.test(e.name)) || (/\b(water|supply)\b.*\breset\b|\breset\b.*\b(water|supply)\b/i.test(e.name) && !/fault|alarm/i.test(e.name));
+  });
+  var temp = function (re) {
+    if (tempReset) return null;
+    var hit = null;
+    E.forEach(function (e) {
+      if (hit || !re.test(e.name)) return;
+      var v = _emCfgNumber(e.value);
+      if (v && (v.unit === '' || /^°?\s*F$/i.test(v.unit))) hit = { n: v.n, unit: 'F' };
+    });
+    return hit;
+  };
+  // Supply water temperature setpoints: a point named "Hot Water Set Point" is often the output of a reset (it changes with the
+  // weather), so its value is not a fixed setting. The description says "at its setpoint" (Manager, 2026-11-15). temp() stays for a
+  // later named fixed setting.
+  out.hwSetpoint = null;
+  out.chwSetpoint = null;
+  var dpReset = E.some(function (e) {
+    return /pressure/i.test(e.name) && /\breset\b/i.test(e.name);
+  });
+  E.forEach(function (e) {
+    if (out.dpSetpoint || dpReset || !/differential\s*pressure\s*set\s*-?\s*point(?:\s+av)?$/i.test(e.name)) return;
+    var v = _emCfgNumber(e.value);
+    if (v && /^psi$/i.test(v.unit)) out.dpSetpoint = { n: v.n, unit: 'psi' };
+  });
+  return out;
+}
+// Air unit (air handler, rooftop unit, DOAS) configuration from the stored points { name: value }:
+// { dualDuct, fans: [{ type: 'supply'|'return'|'relief'|'exhaust', n, each }] (only fans that show a drive point; n = fans; each = every fan shows its own drive),
+//   erv: { present, driveFans: ['supply', 'exhaust'] }, condensingUnits, cuStages (stages of each condensing unit, 0 when not shown), compressors, circuits,
+//   condenserFans, gasHeat, coolingStages, heatingStages }
+// A "Cooling Stage" does not prove DX and a "Heating Stage" does not prove gas or electric heat: only counts are given.
+function emAirConfig(points) {
+  var E = _emCfgEntries(points);
+  var out = { dualDuct: false, fans: [], erv: { present: false, driveFans: [] }, condensingUnits: 0, cuStages: 0, compressors: 0, circuits: 0, condenserFans: 0, gasHeat: false, coolingStages: 0, heatingStages: 0 };
+  // Dual duct: a hot deck marker and a cold deck marker together (HD and CD as whole words, or the words hot deck and cold deck).
+  var hot = E.some(function (e) {
+    return /\bhot\s*deck\b/i.test(e.name) || /\bHD\b/.test(e.name);
+  });
+  var cold = E.some(function (e) {
+    return /\bcold\s*deck\b/i.test(e.name) || /\bCD\b/.test(e.name);
+  });
+  out.dualDuct = hot && cold;
+  // Fans with a drive point. The fans of an energy recovery ventilator (ERV) are its own.
+  var ervRe = /\berv\b/i;
+  var driveRe = /\b(?:vfd|vsd)\b|\bdrive\b/i;
+  out.erv.present = E.some(function (e) {
+    return ervRe.test(e.name) && /\bfan\b/i.test(e.name);
+  });
+  ['supply', 'return', 'relief', 'exhaust'].forEach(function (type) {
+    var fanRe = new RegExp('\\b' + type + '\\s*fan\\b', 'i');
+    var mine = E.filter(function (e) {
+      return fanRe.test(e.name) && !ervRe.test(e.name);
+    });
+    var withDrive = mine.filter(function (e) {
+      return driveRe.test(e.name);
+    });
+    var ervDrive = E.some(function (e) {
+      return fanRe.test(e.name) && ervRe.test(e.name) && driveRe.test(e.name);
+    });
+    if (ervDrive) out.erv.driveFans.push(type);
+    if (!withDrive.length) return;
+    // The fans: numbered ("Supply Fan 1A", "Supply Fan 1 VFD Speed") or told apart by the words before the fan name (deck names).
+    var ids = function (list) {
+      var o = {};
+      list.forEach(function (e) {
+        var m = new RegExp('\\b' + type + '\\s*fan\\s*(\\d+[a-z]?)\\b', 'i').exec(e.name);
+        var p = new RegExp('^(.*?)\\b' + type + '\\s*fan\\b', 'i').exec(e.name);
+        o[m ? 'n' + m[1].toLowerCase() : 'p' + String(p[1]).trim().toLowerCase()] = true;
+      });
+      return Object.keys(o);
+    };
+    var all = ids(mine);
+    var numbered = all.filter(function (k) {
+      return k.charAt(0) === 'n';
+    });
+    var prefixes = all.filter(function (k) {
+      return k.charAt(0) === 'p';
+    });
+    var n = numbered.length > 1 ? numbered.length : prefixes.length || 1;
+    out.fans.push({ type: type, n: n, each: n === 1 || ids(withDrive).length === n });
+  });
+  // Cooling: condensing units, compressors, circuits, condenser fans, stages.
+  var cuIds = _emCfgDistinct(E, /\bcu[\s-]*(\d+)\b/i);
+  out.condensingUnits =
+    cuIds.length ||
+    (E.some(function (e) {
+      return /\bcondensing\s*unit\b/i.test(e.name);
+    })
+      ? 1
+      : 0);
+  var stagesPer = {};
+  E.forEach(function (e) {
+    var m = /\bcu[\s-]*(\d+)\s*-?\s*stage\s*(\d+)\b/i.exec(e.name);
+    if (m) stagesPer[m[1]] = Math.max(stagesPer[m[1]] || 0, parseInt(m[2], 10));
+  });
+  var per = Object.keys(stagesPer).map(function (k) {
+    return stagesPer[k];
+  });
+  out.cuStages =
+    per.length &&
+    per.every(function (x) {
+      return x === per[0];
+    })
+      ? per[0]
+      : 0;
+  out.compressors = _emCfgDistinct(E, /\bcompressor[\s-]*([a-z]?\d+)\b/i).length;
+  out.circuits = _emCfgDistinct(E, /\bcircuit\s*(\d+|[a-z])\b/i).length;
+  out.condenserFans = _emCfgDistinct(E, /\bcondenser\s*fan\s*(\d+)\b/i).length;
+  var stageMax = function (re) {
+    var best = 0;
+    E.forEach(function (e) {
+      var m = re.exec(e.name);
+      if (m) best = Math.max(best, parseInt(m[1], 10));
+    });
+    return best;
+  };
+  out.coolingStages = stageMax(/\bcooling\s*stage\s*(\d+)\b/i);
+  out.heatingStages = stageMax(/\bheating\s*stage\s*(\d+)\b/i);
+  out.gasHeat = E.some(function (e) {
+    return /\bgas\s*valve\b|\bgas\s*heat/i.test(e.name);
+  });
+  return out;
+}
 // Round 7 R1 (2026-11-14): the heating side of a zone terminal (vav, fpb), read from its point names.
 //   'device'  a heating device or heat source the terminal itself controls (valve, heat source, electric, stage, baseboard, hot water).
 //   'airOnly' the terminal is fed hot air (hot deck points, a heating air source, a heat request to its air source) and shows no device of its own.
