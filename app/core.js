@@ -857,7 +857,8 @@ function chViewChanged() {
 
 function updateHomeStats() {
   document.getElementById('h-proj').textContent = projects.filter((p) => p.status === 'active').length;
-  document.getElementById('h-equip').textContent = equipment.length;
+  // Equipment records = the Equipment Matrix rows of every project (the stored matrix, one count per project).
+  document.getElementById('h-equip').textContent = projects.reduce((s, p) => s + ((sget('en_eqmatrix_' + p.id, null) || {}).rows || []).length, 0).toLocaleString();
   const ws = new Date(NOW);
   ws.setDate(NOW.getDate() - NOW.getDay());
   const we = new Date(ws);
@@ -875,6 +876,8 @@ function updateHomeStats() {
     return projBldgs.some((b) => (b.meters || []).some((m) => m.baseline?.months?.length > 0));
   }).length;
   document.getElementById('h-base').textContent = baselineCount;
+  const _hbMeta = document.getElementById('h-base-meta');
+  if (_hbMeta) _hbMeta.textContent = 'of ' + projects.length + ' project' + (projects.length !== 1 ? 's' : '');
   // Sum estimated savings/yr by computing from meter-level savings (byCalMo).
   // Bug fix: old code read p.savings from the project object which is always 0.
   // Actual savings are computed by getMeterSavings() and never written back to p.savings.
@@ -1396,7 +1399,7 @@ function renderProjTable() {
             <td style="font-size:12px">${p.pm || '—'}</td>
             <td style="font-family:var(--mono);font-size:12px;color:var(--em)">${cv}</td>
             <td style="font-size:12px;color:var(--text2)">${sd}</td>
-            <td><div class="tpbar"><div class="tpbar-track"><div class="tpbar-fill" style="width:${projectProgress(p)}%"></div></div><span class="tpbar-pct">${projectProgress(p)}%</span></div></td>
+            <td title="${p.start && p.end ? 'Time passed between ' + p.start + ' and ' + p.end : 'No start and end date set, so no time has been counted'}"><div class="tpbar"><div class="tpbar-track"><div class="tpbar-fill" style="width:${projectProgress(p)}%"></div></div><span class="tpbar-pct">${projectProgress(p)}%</span></div></td>
             <td style="text-align:center;font-size:12px;color:${pt > 0 ? 'var(--warn)' : 'var(--text2)'}">${pt}</td>
             <td><div style="display:flex;gap:5px">
               <button class="btn btn-ghost btn-sm" onclick="event.stopPropagation();editProj(${p.id})">Edit</button>
@@ -1558,10 +1561,12 @@ function renderDetail(p) {
               </div>
               </div>
               <div id="ptab-contacts" class="ptab-sub${_projSubOn(p.id, 'dashboard', 'contacts')}" style="padding:16px">
-                <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px">
-                  <div style="font-size:12px;color:var(--text2)">${p.contacts && p.contacts.length ? p.contacts.length + ' contact' + (p.contacts.length !== 1 ? 's' : '') : 'No contacts yet'}</div>
-                  <button class="btn btn-em btn-sm" onclick="editProj(${p.id})">✏️ Edit Contacts</button>
-                </div>
+                ${p.contacts && p.contacts.length
+                  ? `<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px">
+                  <div style="font-size:12px;color:var(--text2)">${p.contacts.length} contact${p.contacts.length !== 1 ? 's' : ''}</div>
+                  <button class="btn btn-em btn-sm" onclick="editProj(${p.id})" title="Edit the project details and contacts">✏️ Edit Contacts</button>
+                </div>`
+                  : ''}
                 ${buildContactsDetailHTML(p.contacts || [], p.id)}
               </div>
               <div id="ptab-hours" class="ptab-sub${_projSubOn(p.id, 'dashboard', 'hours')}" style="padding:0">
@@ -1938,16 +1943,16 @@ function renderDetail(p) {
             <span class="phc-name phc-first">${_escHtml(p.name)}</span>
             ${_saLabel(p.sa) ? `<span class="phc-item" title="Service Agreement Number"><span class="phc-val">${_saLabel(p.sa)}</span></span>` : ''}
             ${p.savings && projHasContract(p.id) ? `<span class="phc-item">Savings <span class="phc-val">$${Number(p.savings).toLocaleString()}/yr</span></span>` : ''}
-            <span class="phc-item"><span class="phc-val">${p.start ? _parseISO(p.start).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) : '—'}</span> → <span class="phc-val">${p.end ? _parseISO(p.end).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) : '—'}</span></span>
+            ${_phcDatesHtml(p)}
             <span class="phc-item" id="phc-baseline-${p.id}">Baseline <span class="phc-val">—</span></span>
             <span class="phc-item" id="phc-eui-${p.id}" title="Site Energy Use Intensity: yearly energy use per square foot, in kBtu">Site EUI <span class="phc-val">—</span></span>
             <span class="phc-item">Tasks <span class="phc-val" style="${openTasks > 0 ? 'color:var(--warn)' : ''}">${openTasks}</span></span>
             </span>
             <span class="phc-btns">
-            <button class="btn btn-ghost btn-sm" style="padding:3px 5px;font-size:12px;flex-shrink:0" id="pd-proj-baseline-btn-${p.id}" onclick="toggleProjDetailPanel(${p.id},'baseline')">Project Baseline</button>
-            <button class="btn btn-ghost btn-sm" style="padding:3px 5px;font-size:12px;flex-shrink:0" id="pd-proj-savproj-btn-${p.id}" onclick="toggleProjDetailPanel(${p.id},'savproj')">Projected Savings</button>
-            <button class="btn btn-ghost btn-sm" style="padding:3px 5px;font-size:12px;flex-shrink:0" id="pd-proj-perf-btn-${p.id}" onclick="toggleProjDetailPanel(${p.id},'perf')">Project Performance</button>
-            <button class="btn btn-ghost btn-sm" style="padding:3px 5px;font-size:12px" onclick="openProjModal();editProj(${p.id})">Edit Project</button>
+            <button class="btn btn-ghost btn-sm" style="padding:3px 5px;font-size:12px;flex-shrink:0" id="pd-proj-baseline-btn-${p.id}" onclick="toggleProjDetailPanel(${p.id},'baseline')" title="Open the project baseline: the 12 baseline months by month, summed over all meters. Click again to close.">Project Baseline</button>
+            <button class="btn btn-ghost btn-sm" style="padding:3px 5px;font-size:12px;flex-shrink:0" id="pd-proj-savproj-btn-${p.id}" onclick="toggleProjDetailPanel(${p.id},'savproj')" title="Open the projected savings by month (from the Energy Savings measures) next to the baseline. Click again to close.">Projected Savings</button>
+            <button class="btn btn-ghost btn-sm" style="padding:3px 5px;font-size:12px;flex-shrink:0" id="pd-proj-perf-btn-${p.id}" onclick="toggleProjDetailPanel(${p.id},'perf')" title="Open the project performance: current savings by month and by quarter for each building. Click again to close.">Project Performance</button>
+            <button class="btn btn-ghost btn-sm" style="padding:3px 5px;font-size:12px" onclick="openProjModal();editProj(${p.id})" title="Edit the project details: name, client, dates, contract, contacts">Edit Project</button>
           </span>
           </div>`;
   _phcFullTitle(p.id);
@@ -1973,6 +1978,16 @@ function renderDetail(p) {
     const _tabBtn = document.querySelector(`.pdt[data-tab="${window._activeProjTab}"]`);
     if (_tabBtn) sPTab(window._activeProjTab, _tabBtn);
   }
+}
+
+// Contract dates in the header (D09/D12/D15): both dates, one date with "From"/"Until", or "No contract dates set" (never "— → —").
+function _phcDatesHtml(p) {
+  const fmt = (d) => _parseISO(d).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+  if (p.start && p.end)
+    return `<span class="phc-item" title="Contract start and end dates"><span class="phc-val">${fmt(p.start)}</span> → <span class="phc-val">${fmt(p.end)}</span></span>`;
+  if (p.start) return `<span class="phc-item" title="Contract start date. No end date is set (Edit Project)">From <span class="phc-val">${fmt(p.start)}</span></span>`;
+  if (p.end) return `<span class="phc-item" title="Contract end date. No start date is set (Edit Project)">Until <span class="phc-val">${fmt(p.end)}</span></span>`;
+  return `<span class="phc-item" title="No contract start or end date is set (Edit Project)">No contract dates</span>`;
 }
 
 // Service agreement number as shown in the header: always "SA# <number>", never "SA# SA<number>". Empty string when the project has none.
@@ -2010,6 +2025,16 @@ function _updateCompactHdrBaseline(projId) {
   );
   const useCost = blCost > 0 ? blCost : totalCost;
   const label = blCost > 0 ? 'Baseline' : 'Total Cost';
+  // Which months the figure covers (D02): the baseline months, or every bill when no baseline is set.
+  const _MONS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+  const _ym = (ym) => _MONS[Number(ym.slice(5, 7)) - 1] + ' ' + ym.slice(2, 4);
+  const blPeriod = blCost > 0 && bt.firstYM ? _ym(bt.firstYM) + ' – ' + _ym(bt.lastYM) : '';
+  const blTitle =
+    blCost > 0
+      ? 'Baseline cost of the baseline months' +
+        (blPeriod ? ' (' + blPeriod + ')' : '') +
+        ', all baseline meters. The Dashboard cards compare other months with it.'
+      : 'Total cost of every bill on file (no baseline is set yet). It is not a baseline.';
   const eui =
     bt.eui > 0
       ? bt.eui.toFixed(1)
@@ -2018,10 +2043,25 @@ function _updateCompactHdrBaseline(projId) {
         : '—';
   const blEl = document.getElementById('phc-baseline-' + projId);
   const euiEl = document.getElementById('phc-eui-' + projId);
-  if (blEl)
+  if (blEl) {
+    blEl.title = blTitle;
     blEl.innerHTML =
-      label + ' <span class="phc-val">' + (useCost > 0 ? '$' + Math.round(useCost).toLocaleString() : '—') + '</span>';
-  if (euiEl) euiEl.innerHTML = 'Site EUI <span class="phc-val">' + eui + '</span>';
+      label +
+      ' <span class="phc-val">' +
+      (useCost > 0 ? '$' + Math.round(useCost).toLocaleString() : '—') +
+      '</span>' +
+      (blPeriod ? ' <span style="font-size:10px;color:var(--text3)">' + blPeriod + '</span>' : '') +
+      (blCost > 0 ? '' : useCost > 0 ? ' <span style="font-size:10px;color:var(--text3)">all bills</span>' : '');
+  }
+  if (euiEl) {
+    euiEl.title =
+      bt.eui > 0
+        ? 'Site Energy Use Intensity of the baseline: yearly energy use per square foot, in kBtu'
+        : eui !== '—'
+          ? 'Estimate with no baseline set: all bills on file counted as 12 months, over all building area. Not a measured EUI.'
+          : 'Site Energy Use Intensity: needs a baseline or bills and building square feet';
+    euiEl.innerHTML = 'Site EUI <span class="phc-val">' + eui + '</span>' + (bt.eui > 0 || eui === '—' ? '' : ' <span style="font-size:10px;color:var(--text3)">est.</span>');
+  }
   _phcFullTitle(projId);
   // Progress is computed at render time (projectProgress), never saved on load.
 }
@@ -2047,6 +2087,7 @@ function initDashboardTab(projId) {
   if (!perfWrap) return;
   const bldgs = getUDBldgs(projId);
   const _eligBldgs = getIncludedBldgs(projId); // the one building list the Dashboard counts and sizes (no sqft test)
+  const _bCounts = getProjectBuildingCounts(projId); // listed vs in baseline (app/utility-data.js, the one building count)
     // 2026-09-15 (SA-gate fix): the project-form "Est. Savings $/yr" target and the ECM
   // projected $ are savings dollars — hidden for a project with no Service Agreement.
   const _hasContract = projHasContract(projId);
@@ -2067,15 +2108,21 @@ function initDashboardTab(projId) {
     hdrWrap.innerHTML = `<div style="padding:12px 16px;border-bottom:1px solid var(--border);display:flex;align-items:center;gap:12px;flex-wrap:wrap;flex-shrink:0">
             <span style="font-size:13px;font-weight:700;color:var(--text)">📊 Project Dashboard</span>
             <span style="font-size:11px;color:var(--text3)">
-              ${_eligBldgs.length} building${_eligBldgs.length !== 1 ? 's' : ''}${totalSqft ? ' · ' + Number(totalSqft).toLocaleString() + ' sf' : ''} · ${_totalMeterCount} meter${_totalMeterCount !== 1 ? 's' : ''} · ${billCount} bill${billCount !== 1 ? 's' : ''}
+              <span title="${_bCounts.listed} building${_bCounts.listed !== 1 ? 's' : ''} in this project. ${_eligBldgs.length} count in the baseline; the rest have every meter left out of it.">${_eligBldgs.length} building${_eligBldgs.length !== 1 ? 's' : ''}${_bCounts.listed > _eligBldgs.length ? ' in baseline (' + _bCounts.listed + ' listed)' : ''}</span>${totalSqft ? ' · ' + Number(totalSqft).toLocaleString() + ' sf' : ''} · ${_totalMeterCount} meter${_totalMeterCount !== 1 ? 's' : ''} · ${billCount} bill${billCount !== 1 ? 's' : ''}
             </span>
             ${_blInclCount === 0 ? '' : blMeterCount < _blInclCount ? '<span style="font-size:11px;color:var(--amber);font-weight:600">⚠ ' + blMeterCount + '/' + _blInclCount + ' baseline meters have baselines set</span>' : '<span style="font-size:11px;color:var(--green)">✓ All baseline meters have baselines</span>'}
           </div>`;
   }
 
   if (!bldgs.length || !bldgs.some((b) => (b.meters || []).some((m) => (m.bills || []).length > 0))) {
+    const _noBldg = !bldgs.length;
     perfWrap.innerHTML =
-      '<div class="card"><div style="padding:40px;text-align:center;color:var(--text3);font-size:13px">Add buildings and utility data to see performance summary.<br><span style="font-size:11px">Use the <strong style="color:var(--accent)">Utility Data</strong> tab to get started.</span></div></div>';
+      '<div class="card"><div style="padding:40px;text-align:center;color:var(--text3);font-size:13px">' +
+      (_noBldg
+        ? 'Add buildings and utility data to see performance summary.'
+        : _bCounts.listed + ' building' + (_bCounts.listed !== 1 ? 's' : '') + ' in this project, but no bills yet. Add bills to see the performance summary.') +
+      '<br><span style="font-size:11px">Use the <strong style="color:var(--accent)">Utility Data</strong> tab to get started.</span></div></div>';
+    if (typeof renderDashCalendar === 'function') renderDashCalendar(projId); // the calendar panel must not stay on "Loading..."
     return;
   }
 
@@ -2642,11 +2689,26 @@ function initDashboardTab(projId) {
                 const _blLabel = bldgRows.some((r) => r.blLabel === 'Baseline') ? 'Baseline' : 'Total Cost';
                 // Matt 2026-10-28 rule: internal screens may say EUI with a hover tooltip giving the full words.
                 const _euiTip = 'Site Energy Use Intensity, kBtu per square foot per year';
+                const _tgtTxt = estSavings > 0 ? '$' + Number(estSavings).toLocaleString() + '/yr' : 'not set';
+                const _stTip = {
+                  'Not in scope': 'Every meter of this building is left out of the baseline, so nothing is compared. Change this in Utility Data (meter Baseline setting).',
+                  'No Data': 'The building has no bills or no baseline yet, so there is nothing to compare.',
+                  'Over Budget': 'Current cost is above the baseline cost: savings are below $0.',
+                  'On Track': 'Savings are at least 80% of the project Est. Savings target (' + _tgtTxt + ').',
+                  'Below Target': 'Savings are above $0 but under 80% of the project Est. Savings target (' + _tgtTxt + '). The target is for the whole project, so one building alone usually reads Below Target.',
+                  'No Savings': 'Savings are $0: current cost equals the baseline cost.',
+                };
+                // Totals row (ui-standards: a performance table has one). Baseline $ and Current $ are the project totals computed above
+                // (totalBl, totalCur); Savings $ is the sum of the rows shown, nothing re-computed.
+                const _totRows = sortedRows.filter((r) => r.blCost > 0);
+                const _totSav = _totRows.reduce((s, r) => s + r.sav, 0);
+                const _totSqft = sortedRows.reduce((s, r) => s + (r.sqft || 0), 0);
+                const _totCell = 'text-align:right;font-family:var(--mono);font-weight:700;background:var(--s1);border-top:2px solid var(--border2)';
                 const _perTip = savPeriodLabel
                   ? 'The months of savings. Baseline $ is the baseline cost of these months; Current $ is that less the savings of these months. The Site EUI columns cover 12 months: hover a value for its months.'
                   : 'The baseline months of each building';
                 return `<table class="dtbl bp-tbl" style="width:100%;font-size:12px">
-                <thead><tr><th style="width:30px;white-space:nowrap!important">#</th>${_thSort('name', 'Building', 'left')}<th style="text-align:right;cursor:pointer;user-select:none;white-space:nowrap!important${_srt.col === 'sqft' ? ';color:var(--em)' : ''}" onclick="if(!window._bpSort)window._bpSort={};if(!window._bpSort['${projId}'])window._bpSort['${projId}']={col:'sqft',asc:false};var s=window._bpSort['${projId}'];if(s.col==='sqft'){s.asc=!s.asc;}else{s.col='sqft';s.asc=true;}initDashboardTab(${projId})" title="Sort by Sq Ft">Sq Ft${_srt.col === 'sqft' ? (_srt.asc ? ' ↑' : ' ↓') : ' ↕'}</th><th style="text-align:center;white-space:nowrap!important">Baseline</th><th style="text-align:right;white-space:nowrap!important" title="${_perTip}">Period</th>${_thSort('blCost', useNormalized ? _blLabel + ' $' : _blLabel + ' $/yr', 'right')}${_thSort('blEUI', 'Baseline <span class="bp-long">Site </span>EUI', 'right', _euiTip)}${_thSort('curCost', useNormalized ? 'Current $' : 'Current Cost', 'right')}${_thSort('curEUI', 'Current <span class="bp-long">Site </span>EUI', 'right', _euiTip)}${_thSort('sav', 'Savings $', 'right')}${_thSort('savPct', '%', 'right')}<th style="text-align:center;white-space:nowrap!important">Status</th></tr></thead>
+                <thead><tr><th style="width:30px;white-space:nowrap!important">#</th>${_thSort('name', 'Building', 'left')}<th style="text-align:right;cursor:pointer;user-select:none;white-space:nowrap!important${_srt.col === 'sqft' ? ';color:var(--em)' : ''}" onclick="if(!window._bpSort)window._bpSort={};if(!window._bpSort['${projId}'])window._bpSort['${projId}']={col:'sqft',asc:false};var s=window._bpSort['${projId}'];if(s.col==='sqft'){s.asc=!s.asc;}else{s.col='sqft';s.asc=true;}initDashboardTab(${projId})" title="Sort by Sq Ft">Sq Ft${_srt.col === 'sqft' ? (_srt.asc ? ' ↑' : ' ↓') : ' ↕'}</th><th style="text-align:center;white-space:nowrap!important;cursor:help" title="Meters of the building that count in the baseline, out of all its meters. The icon: filled = all meters count, half = some are left out, empty = none count. Hover a row's icon for each meter.">Baseline</th><th style="text-align:right;white-space:nowrap!important" title="${_perTip}">Period</th>${_thSort('blCost', useNormalized ? _blLabel + ' $' : _blLabel + ' $/yr', 'right')}${_thSort('blEUI', 'Baseline <span class="bp-long">Site </span>EUI', 'right', _euiTip)}${_thSort('curCost', useNormalized ? 'Current $' : 'Current Cost', 'right')}${_thSort('curEUI', 'Current <span class="bp-long">Site </span>EUI', 'right', _euiTip)}${_thSort('sav', 'Savings $', 'right')}${_thSort('savPct', '%', 'right')}<th style="text-align:center;white-space:nowrap!important;cursor:help" title="How the building's savings compare with the project target. Hover a status for its meaning.">Status</th></tr></thead>
                 <tbody>${sortedRows
                   .map((r, _ri) => {
                     const blIcon = r.meterIncl > 0 ? (r.meterExcl > 0 ? '◐' : '●') : '○';
@@ -2676,11 +2738,25 @@ function initDashboardTab(projId) {
                   <td style="text-align:right;font-family:var(--mono);font-size:11px;color:var(--text2);cursor:help" title="${_escHtml(r.curEuiTip)}">${r.curEUI > 0 ? r.curEUI.toFixed(1) : '—'}</td>
                   <td style="text-align:right;font-family:var(--mono);color:${savingsSignColor(r.sav, 0, 'var(--green)', 'var(--danger)', 'var(--text)')}">${r.blCost > 0 ? savingsSign(r.sav, 0, true) + $c(r.sav) : '—'}</td>
                   <td style="text-align:right;font-family:var(--mono)">${r.blCost > 0 ? r.savPct.toFixed(1) + '%' : '—'}</td>
-                  <td style="text-align:center;font-weight:600;color:${r.statusColor}">${r.status}</td>
+                  <td style="text-align:center;font-weight:600;color:${r.statusColor};cursor:help" title="${_escHtml(_stTip[r.status] || '')}">${r.status}</td>
                 </tr>`;
                   })
                   .join('')}</tbody>
-              </table>`;
+                <tfoot><tr>
+                  <td style="${_totCell}"></td>
+                  <td style="${_totCell};text-align:left">Total</td>
+                  <td style="${_totCell};font-size:11px">${_totSqft ? Number(_totSqft).toLocaleString() : '—'}</td>
+                  <td style="${_totCell}"></td><td style="${_totCell}"></td>
+                  <td style="${_totCell}">${totalBl > 0 ? $c(totalBl) : '—'}</td>
+                  <td style="${_totCell}">—</td>
+                  <td style="${_totCell}">${totalCur > 0 ? $c(totalCur) : '—'}</td>
+                  <td style="${_totCell}">—</td>
+                  <td style="${_totCell};color:${savingsSignColor(_totSav, 0, 'var(--green)', 'var(--danger)', 'var(--text)')};cursor:help" title="Sum of the building rows above. The card at the top counts each quarter at $0 or more, so its total can differ.">${_totRows.length ? savingsSign(_totSav, 0, true) + $c(_totSav) : '—'}</td>
+                  <td style="${_totCell}">${_totRows.length && totalBl > 0 ? ((_totSav / totalBl) * 100).toFixed(1) + '%' : '—'}</td>
+                  <td style="${_totCell}"></td>
+                </tr></tfoot>
+              </table>
+              <div style="padding:8px 12px;font-size:11px;color:var(--text3);border-top:1px solid var(--border)">Baseline column: <span style="color:var(--green)">●</span> every meter counts in the baseline · <span style="color:var(--amber)">◐</span> some meters are left out · <span>○</span> none count. "2/6" = meters in the baseline / all meters of the building. Hover a status or an icon for its meaning. Total Savings $ adds the rows (a quarter below $0 lowers it); the card above counts each quarter at $0 or more, so the two can differ.</div>`;
               })()}
             </div>
           </div>`;
@@ -3423,6 +3499,7 @@ function toggleProjDetailPanel(projId, panelKey) {
   const tabsCard = document.getElementById('pd-tabs-card-' + projId);
   if (!content) return;
   if (!_pdProjPanel[projId]) {
+    _syncProjPanelTabs(projId);
     content.style.display = 'none';
     content.innerHTML = '';
     // Restore tab content visibility when panel closes
@@ -3436,6 +3513,7 @@ function toggleProjDetailPanel(projId, panelKey) {
   content.style.display = 'block';
   content.style.maxHeight = 'none';
   content.innerHTML = '<div style="padding:20px;font-size:12px;color:var(--text2)">Aggregating project data...</div>';
+  _syncProjPanelTabs(projId);
   // Reuse the same rendering logic as Utility Data page project panels
   const savedProjId = udSelProjId;
   const savedPanel = _udProjPanel;
@@ -3444,6 +3522,17 @@ function toggleProjDetailPanel(projId, panelKey) {
   renderUDProjAggPanel(content);
   udSelProjId = savedProjId;
   _udProjPanel = savedPanel;
+  // A close bar on top: the panel replaces the tab page, so say so and give a way back (D55).
+  const _pnLabel = { baseline: 'Project Baseline', savproj: 'Projected Savings', perf: 'Project Performance' }[_pdProjPanel[projId]] || 'panel';
+  content.insertAdjacentHTML(
+    'afterbegin',
+    `<div style="display:flex;align-items:center;gap:10px;padding:8px 14px;border-bottom:1px solid var(--border);background:var(--s1)"><button class="btn btn-ghost btn-sm" onclick="toggleProjDetailPanel(${projId},'${_pdProjPanel[projId]}')" title="Close this panel and go back to the tab you were on">\u2190 Back to tabs</button><span style="font-size:11px;color:var(--text3)">Showing the ${_pnLabel} panel in place of the tab page. Click a tab above to leave it.</span></div>`,
+  );
+}
+// While a header panel (Project Baseline / Projected Savings / Project Performance) covers the tab page, no project tab looks active.
+function _syncProjPanelTabs(projId) {
+  const bar = document.getElementById('pdTabBar');
+  if (bar) bar.classList.toggle('panel-open', !!_pdProjPanel[projId]);
 }
 
 const FULLWIN_TABS = ['savings', 'hvacload', 'utility', 'energygfx'];
@@ -3611,7 +3700,8 @@ function initProjUDTab(projId) {
   // Auto-select first building
   const bldgs = getUDBldgs(projId) || [];
   if (bldgs.length && !projUDSelBldg[projId]) {
-    projUDSelectBldg(projId, bldgs[0].id);
+    // Open on the first building that has meters, not an empty one (D11).
+    projUDSelectBldg(projId, (bldgs.find((b) => (b.meters || []).length) || bldgs[0]).id);
   } else if (projUDSelBldg[projId]) {
     projUDSelectBldg(projId, projUDSelBldg[projId]);
   } else {

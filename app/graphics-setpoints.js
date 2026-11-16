@@ -1114,6 +1114,7 @@ function egfxRefresh(projId) {
   // Quarterly EUI: most recent complete quarter (3 consecutive months)
   let qEui = 0,
     qBlEui = 0,
+    qInBl = false,
     qLabel = '';
   const qNames = ['Q1', 'Q2', 'Q3', 'Q4'];
   const qMonthRanges = [
@@ -1142,6 +1143,8 @@ function egfxRefresh(projId) {
         qEui = sqft > 0 ? ((qKbtu / 3) * 12) / sqft : 0;
         qBlEui = sqft > 0 && qBlKbtu > 0 ? ((qBlKbtu / 3) * 12) / sqft : 0;
         qLabel = qNames[qi] + ' ' + y;
+        // every month of this quarter is itself a baseline month: it cannot be compared with the baseline (D40)
+        qInBl = blEui > 0 && ms.every((mi) => blYmAll.has(y + '-' + String(mi + 1).padStart(2, '0')));
         break;
       }
     }
@@ -1164,7 +1167,10 @@ function egfxRefresh(projId) {
   const blEl = document.getElementById(`egfx-blEui-${projId}`);
   const curEl = document.getElementById(`egfx-curEui-${projId}`);
   const curSubEl = document.getElementById(`egfx-curEuiSub-${projId}`);
-  if (blEl) blEl.textContent = blEui > 0 ? blEui.toFixed(1) : 'No baseline data';
+  if (blEl) {
+    blEl.textContent = blEui > 0 ? blEui.toFixed(1) : 'No baseline data';
+    blEl.title = blEui > 0 ? '' : 'No meter counts in the baseline: set a baseline on the meters in Utility Data';
+  }
   if (blEl && blEui === 0) blEl.style.fontSize = '14px';
   if (curEl) curEl.textContent = r12Eui > 0 ? r12Eui.toFixed(1) : '—';
   if (curSubEl) curSubEl.textContent = r12Eui > 0 ? 'kBtu/ft² · ' + r12Label : 'kBtu/ft²';
@@ -1199,6 +1205,7 @@ function egfxRefresh(projId) {
       if (estarScoreSubEl) {
         estarScoreSubEl.style.color = 'var(--text2)';
         estarScoreSubEl.innerHTML =
+          (blEui > 0 ? '' : 'no baseline set; ') +
           'source Energy Use Intensity ' +
           srcEui.toFixed(0) +
           ' kBtu/ft²' +
@@ -1524,12 +1531,17 @@ function egfxRefresh(projId) {
   const euiDetailEl = document.getElementById(`egfx-eui-detail-${projId}`);
   if (euiDetailEl) {
     const items = [];
+    // A figure for months that are baseline months compares the baseline with itself: say so instead of "0.0% vs BL" (D40).
+    const _blNote = ' <span style="color:var(--text3)" title="These months are baseline months, so there is no change to show">baseline period</span>';
+    const _isBlYm = (m) => blYmAll.has(m.y + '-' + String(m.mi + 1).padStart(2, '0'));
+    const moInBl = blEui > 0 && !!latestMo && _isBlYm(latestMo);
+    const r12InBl = blEui > 0 && r12.length > 0 && r12.every(_isBlYm);
     if (moEui > 0)
       items.push(
         '<span style="font-family:var(--mono);color:var(--text)"><strong>Monthly:</strong> ' +
           moEui.toFixed(1) +
           ' kBtu/ft²' +
-          _euiDelta(moEui, moBlEui) +
+          (moInBl ? _blNote : _euiDelta(moEui, moBlEui)) +
           ' <span style="color:var(--text3)">(' +
           moLabel +
           ')</span></span>',
@@ -1539,7 +1551,7 @@ function egfxRefresh(projId) {
         '<span style="font-family:var(--mono);color:var(--text)"><strong>Quarterly:</strong> ' +
           qEui.toFixed(1) +
           ' kBtu/ft²' +
-          _euiDelta(qEui, qBlEui) +
+          (qInBl ? _blNote : _euiDelta(qEui, qBlEui)) +
           ' <span style="color:var(--text3)">(' +
           qLabel +
           ')</span></span>',
@@ -1549,7 +1561,7 @@ function egfxRefresh(projId) {
         '<span style="font-family:var(--mono);color:var(--text)"><strong>12-Month:</strong> ' +
           r12Eui.toFixed(1) +
           ' kBtu/ft²' +
-          _euiDelta(r12Eui, blEui) +
+          (r12InBl ? _blNote : _euiDelta(r12Eui, blEui)) +
           ' <span style="color:var(--text3)">(' +
           r12Label +
           ')</span></span>',
@@ -1559,7 +1571,7 @@ function egfxRefresh(projId) {
         '<span style="font-family:var(--mono);color:var(--text)"><strong>12-Month:</strong> ' +
           r12Eui.toFixed(1) +
           '* kBtu/ft²' +
-          _euiDelta(r12Eui, blEui) +
+          (r12InBl ? _blNote : _euiDelta(r12Eui, blEui)) +
           ' <span style="color:var(--text3)">(' +
           r12Label +
           ', annualized)</span></span>',
@@ -1571,8 +1583,13 @@ function egfxRefresh(projId) {
   const prePollCalcEl = document.getElementById(`egfx-pre-pollcalc-${projId}`);
   if (!chartsEl) return;
   if (totalBlKwh === 0 && totalBlGas === 0 && totalBlPropane === 0) {
+    const _billN = bldgs.reduce((s, b) => s + (b.meters || []).reduce((s2, m) => s2 + (m.bills || []).length, 0), 0);
     chartsEl.innerHTML =
-      '<div style="font-size:13px;color:var(--text3);text-align:center;padding:40px">Add utility data to buildings and set a baseline to see energy graphics.</div>';
+      '<div style="font-size:13px;color:var(--text3);text-align:center;padding:40px">' +
+      (_billN > 0
+        ? _billN.toLocaleString() + ' bills are on file, but none counts in a baseline (meters are left out of it, no baseline is set, or the bills have no dates), so there is nothing to compare. Set a baseline on the meters in Utility Data to see energy graphics.'
+        : 'Add utility data to buildings and set a baseline to see energy graphics.') +
+      '</div>';
     return;
   }
 
@@ -1678,13 +1695,23 @@ function egfxRefresh(projId) {
   }
 
   function _drawYoyChart(canvasId, field, unit, blAvgArr) {
+    // The chart leaves out a month that is a baseline month of its year (it is the dashed line). A year whose every month with
+    // data is one of those has no bar, so it must not get a legend entry or a color of its own (D39).
+    const _yrsWithBars = yrsToShow.filter((y) =>
+      [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11].some((mi) => {
+        const v = yearData[y] && yearData[y][field] && yearData[y][field][mi];
+        if (!v) return false;
+        const ym = y + '-' + String(mi + 1).padStart(2, '0');
+        return !(blYmPerMo[mi] && blYmPerMo[mi].has(ym));
+      }),
+    );
     SharedCharts.renderYearOverYearChart(
       canvasId,
       {
         field: field,
         unit: unit,
         yearData: yearData,
-        yrsToShow: yrsToShow,
+        yrsToShow: _yrsWithBars.length ? _yrsWithBars : yrsToShow,
         blYears: blYears,
         blYmPerMo: blYmPerMo,
         blAvgArr: blAvgArr,
@@ -2365,12 +2392,12 @@ function egfxRefresh(projId) {
                     <th style="text-align:right">Square Feet</th>
                     <th style="text-align:right" title="Baseline Site Energy Use Intensity: yearly energy use per square foot, in kBtu">Baseline Site EUI</th>
                     <th style="text-align:right" title="Current Site Energy Use Intensity: yearly energy use per square foot, in kBtu">Current Site EUI</th>
-                    <th style="text-align:right">CBECS Median</th>
-                    <th style="text-align:right">vs CBECS</th>
-                    <th style="text-align:center">Percentile</th>
-                    <th style="text-align:center">EnergyStar</th>
-                    <th style="text-align:right">$/ft²</th>
-                    <th style="text-align:center">Trend</th>
+                    <th style="text-align:right" title="National median Site EUI for this building type (DOE CBECS survey)">CBECS Median</th>
+                    <th style="text-align:right" title="Current Site EUI above (+) or below (-) the CBECS median">vs CBECS</th>
+                    <th style="text-align:center" title="Where the current Site EUI falls in the CBECS spread for this building type: Top 25% is the best, Bottom 25% the worst">Percentile</th>
+                    <th style="text-align:center" title="Eligible: the current Site EUI is at or below the EnergyStar score-75 level for this building type (the minimum for certification). Above: it is higher.">EnergyStar</th>
+                    <th style="text-align:right" title="Annual energy cost per square foot">$/ft²</th>
+                    <th style="text-align:center" title="Rolling 12-month Site EUI against the baseline Site EUI: an arrow down is lower use">Trend</th>
                   </tr></thead>
                   <tbody>
                     ${bRows
@@ -2653,7 +2680,7 @@ function egfxRefresh(projId) {
               ticks: {
                 color: SharedCharts.textColor(),
                 font: { size: 10 },
-                callback: (v) => '$' + v.toLocaleString(),
+                callback: (v) => (v < 0 ? '-$' : '$') + Math.abs(v).toLocaleString(),
               },
               grid: { color: 'rgba(255,255,255,.12)' },
             },
