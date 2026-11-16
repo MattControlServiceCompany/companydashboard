@@ -73,7 +73,7 @@ eq(eventCover.status, 'covered', 'B: eventCoverage itself says covered (the even
 const withAdd = auditEdits([addThuEvening]);
 let a = SA.computeActions(input(thuEvent, groupWith([]), withAdd.edits));
 eq(a.length, 1, 'A1: one line');
-eq(a[0].webctrl && a[0].webctrl.text, 'Added in WebCTRL on Mon Nov 2, 2026 by Test Operator - BAS copy not yet re-imported', 'A1: status words');
+eq(a[0].webctrl && a[0].webctrl.text, 'Added in WebCTRL on Mon Nov 2, 2026 by Test Operator; the saved BAS schedule does not show it yet', 'A1: status words');
 eq(a[0].webctrl && a[0].webctrl.ymd, '2026-11-02', 'A1: audit date');
 eq(SA.periodNeeds(Object.assign(input(thuEvent, groupWith([]), withAdd.edits), { from: '2026-11-09', to: '2026-11-15' }))[0].webctrl.operator, 'Test Operator', 'A1: the period line carries it');
 // an edit that does not span the whole event is not enough
@@ -101,11 +101,11 @@ eq(Object.keys(stored.stored.actions).length, 1, 'reconcile stores one open acti
 // (C) the copy note
 const noteOf = (extra) => SA.copyNote(Object.assign({ snapFetchedAt: '2026-11-03T15:00:00Z', snaps, tz: TZ, today }, extra));
 eq(
-  noteOf({ auditLastDay: withAdd.store.lastDay, scheduleEdits: withAdd.edits }).split('BAS copies: ')[1],
-  'Thu Oct 29, 2026. Newest BAS copy: Thu Oct 29, 2026. Newest audit log day: Mon Nov 2, 2026. Schedule edits in the audit log since the BAS copy: 1.',
+  noteOf({ auditLastDay: withAdd.store.lastDay, scheduleEdits: withAdd.edits }).split('Saved BAS schedules: ')[1],
+  'Thu Oct 29, 2026. Newest saved BAS schedule: Thu Oct 29, 2026. Newest audit log day: Mon Nov 2, 2026. Schedule edits in the audit log since that BAS schedule: 1.',
   'C: copy note names the newest BAS copy, the newest audit log day and the edits since',
 );
-eq(noteOf({ auditLastDay: beforeCopy.store.lastDay, scheduleEdits: beforeCopy.edits }).endsWith(' Schedule edits in the audit log since the BAS copy: 0.'), true, 'C: an edit before the BAS copy is not counted');
+eq(noteOf({ auditLastDay: beforeCopy.store.lastDay, scheduleEdits: beforeCopy.edits }).endsWith(' Schedule edits in the audit log since that BAS schedule: 0.'), true, 'C: an edit before the BAS copy is not counted');
 eq(/Newest audit log day/.test(noteOf({})), false, 'C: with no audit log the line is left out');
 
 console.log(passes + ' passed, ' + fails + ' failed');

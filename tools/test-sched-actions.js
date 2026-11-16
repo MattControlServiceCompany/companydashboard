@@ -91,10 +91,10 @@ eq(SA.periodNeeds(o(1080, { groups: gs2, from: '2026-10-30', to: '2026-10-31' })
 eq(SA.periodNeeds(o(1080, { from: '2026-10-30', to: '2026-10-31' }))[0].groupNow, '', 'no group schedules saved: empty text');
 eq(
   SA.copyNote({ snapFetchedAt: '2026-10-23T15:00:00Z', snaps: mkSnaps(1080, ''), tz: TZ, today: '2026-10-30' }),
-  'Calendar copy: Fri Oct 23, 2026 (7 days old). BAS copies: Fri Oct 30, 2026, Sat Oct 31, 2026.',
-  'copy note: calendar age and BAS copy dates',
+  'Saved calendar: Fri Oct 23, 2026 (7 days old). Saved BAS schedules: Fri Oct 30, 2026, Sat Oct 31, 2026.',
+  'copy note: calendar age and BAS schedule dates',
 );
-eq(SA.copyNote({ snapFetchedAt: '', snaps: {}, tz: TZ, today: '2026-10-30' }), 'No calendar copy saved. No BAS copy saved.', 'copy note: nothing saved');
+eq(SA.copyNote({ snapFetchedAt: '', snaps: {}, tz: TZ, today: '2026-10-30' }), 'No calendar saved. No BAS schedule saved.', 'copy note: nothing saved');
 
 // nothing new
 eq(SA.reconcile(o(1080, { stored: r.stored, now: t1, latestImport: '2026-10-29T20:00:00Z' })).changes, [], 'second look changes nothing');

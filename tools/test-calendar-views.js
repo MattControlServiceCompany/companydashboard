@@ -71,7 +71,7 @@ const rows = (o) => Object.keys(o).map((k) => o[k]);
 const real = { a: ev('Game - Gym A', '', '2026-11-02', 18, 20), b: ev('Game - Gym B', '', '2026-11-03', 18, 20), c: ev('Game - Gym B', '', '2026-11-05', 18, 20), d: ['Holiday', '2026-11-06', '2026-11-07', 1, ''] };
 let st = BC.checkStatus(rows(real), { tz: TZ, map: null, snaps: {} });
 eq([st.total, st.checked, st.uncheckable, st.copies], [4, 0, 3, 0], 'no map and no copy: nothing checked');
-eq(st.reasons.some((r) => /^No BAS schedule copy is imported/.test(r)), true, 'reason: no BAS copy imported');
+eq(st.reasons.some((r) => /^No BAS schedule is saved/.test(r)), true, 'reason: no BAS schedule saved');
 eq(st.reasons.some((r) => /^2 places are not matched to a BAS space \(3 events\)/.test(r)), true, 'reason: 2 places not mapped: ' + st.reasons.join(' | '));
 eq(st.unmappedPlaces.map((u) => u.name + ':' + u.count), ['Gym B:2', 'Gym A:1'], 'unmapped places, most events first');
 // copies for Thu and Fri only, a mapped place
@@ -79,7 +79,7 @@ const ctx = { tz: TZ, map, snaps };
 const week2 = { m: ev('Mon - TAH Gym', '', '2026-11-02', 17, 19), t: ev('Thu - TAH Gym', '', '2026-11-05', 17, 19), f: ev('Fri - TAH Gym', '', '2026-11-06', 17, 19), s: ev('Sat - TAH Gym', '', '2026-11-07', 9, 11) };
 st = BC.checkStatus(rows(week2), ctx);
 eq([st.total, st.checked, st.noCopyDay, st.copyWeekdays], [4, 3, 1, ['Thu', 'Fri']], 'copies for Thu and Fri: Mon uses the Mon-Thu copy, Sat cannot be checked');
-eq(st.reasons, ['Days with no BAS copy (Sat): 1 event cannot be checked. BAS copies exist for Thu, Fri (one copy covers Mon-Thu).'], 'reason: days with no BAS copy');
+eq(st.reasons, ['Days with no saved BAS schedule (Sat): 1 event cannot be checked. BAS schedules are saved for Thu, Fri (one saved schedule covers Mon-Thu).'], 'reason: days with no saved BAS schedule');
 const sn = BC.snapshotForDate(snaps, '2026-11-03'); // a Tuesday, only Thu and Fri copies
 eq([sn.date, sn.kind, BC.sourceText(sn)], ['2026-10-29', 'monthu', 'Mon-Thu schedule (Thu Oct 29, 2026 BAS copy)'], 'a Tuesday borrows the Thu copy and names it');
 eq(BC.snapshotForDate({ '2026-10-29': snaps['2026-10-29'] }, '2026-11-06'), null, 'a Friday never borrows a Thursday copy');
@@ -93,9 +93,9 @@ eq(pv.status.uncheckable > 0 || pv.status.noCopyDay > 0, true, 'periodView carri
 // the cards never claim "Nothing needs to change" without a check: the UI text rule lives in app/sched-actions.js headline()
 const fs = require('fs');
 const ui = fs.readFileSync(__dirname + '/../app/sched-actions.js', 'utf8');
-eq(/Nothing needs to change ' \+ where \+ '\. All/.test(ui), true, 'the all-clear text is built only after the checked count');
-eq(/if \(!st\.checked\) return 'Cannot tell yet/.test(ui), true, 'nothing checked gives "Cannot tell yet"');
-eq(ui.indexOf("if (!st.checked) return") < ui.indexOf("return 'Nothing needs to change"), true, 'the cannot-tell test runs before the all-clear text');
+eq(/Nothing to change in WebCTRL for ' \+ per\.label \+ '\. All/.test(ui), true, 'the all-clear text is built only after the checked count');
+eq(/if \(!st\.checked\) return \{ text: 'Cannot tell yet/.test(ui), true, 'nothing checked gives "Cannot tell yet"');
+eq(ui.indexOf("if (!st.checked) return") < ui.indexOf("return { text: 'Nothing to change"), true, 'the cannot-tell test runs before the all-clear text');
 
 console.log(fails ? fails + ' FAILED' : 'ALL PASSED');
 process.exit(fails ? 1 : 0);

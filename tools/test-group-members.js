@@ -228,7 +228,7 @@ t('unknown: a group with no saved members and a schedule that spans the event ->
   const g = mapOf([grp('No List', [mk('Late Club', WK, 600, 1260)], [])]);
   const c = cov(g, [], 17, 20);
   assert.strictEqual(c.status, 'unknown');
-  assert.strictEqual(c.label, 'Probably covered by No List: Late Club, Mon,Tue,Wed,Thu,Fri, 10:00 AM-9:00 PM. Group members are not saved; import them to confirm.');
+  assert.strictEqual(c.label, 'Not confirmed: group No List may cover this (Late Club, Mon,Tue,Wed,Thu,Fri, 10:00 AM-9:00 PM). Its rooms are not saved.');
   const input = { events: { e1: ['Club', at(DAY, 17), at(DAY, 20), 0, 'Test Room Q1'] }, map, snaps, groups: g, locations: [], tz: TZ, today: DAY, from: DAY, to: DAY };
   assert.strictEqual(SA.periodNeeds(input).length, 0, 'no to-do');
   const u = SA.periodUnknown(input);

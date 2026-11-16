@@ -153,7 +153,7 @@ eq(st2(ev('Debate', '2026-10-31', 9, 0, 10, 0, 'TAH Gym')).status, 'nocopy', 'Sa
 
 // one coverage function: the events list and the space map card do not repeat the rules
 const read = (f) => fs.readFileSync(path.join(__dirname, '..', f), 'utf8');
-eq(/eventCoverage\(/.test(read('app/project-calendar.js')) && !/minutesShort|isServingProgram/.test(read('app/project-calendar.js')), true, 'events list calls eventCoverage only');
+eq(/coverageOf\(/.test(read('app/project-calendar.js')) && !/minutesShort|isServingProgram/.test(read('app/project-calendar.js')), true, 'events list calls coverageOf (the one decision) only');
 eq(/suggestPrograms\(/.test(read('app/space-map.js')) && !/function suggest|function minutesShort/.test(read('app/space-map.js')), true, 'space map calls the shared suggestions');
 eq(/https?:\/\/|fetch\(/.test(read('app/space-map.js')) || /fetch\(/.test(read('computations/bas-coverage.js')), false, 'no network call');
 

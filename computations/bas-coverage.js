@@ -650,7 +650,7 @@
 //   fromMin/toMin = the event as minutes of that day.
   function eventCoverage(row, ctx) {
     var place = CD.eventPlace({ title: row[0], location: row[4] }).text;
-    var res = { status: '', label: '', space: place, short: 0, program: '', from: '', exact: true, source: '', fromMin: 0, toMin: 0, gaps: [], keys: [] };
+    var res = { status: '', label: '', space: place, title: row[0], short: 0, program: '', from: '', exact: true, source: '', fromMin: 0, toMin: 0, gaps: [], keys: [], blocks: [], blocksByKey: {} };
     var done = function (status, label) {
       res.status = status;
       res.label = label;
@@ -703,7 +703,7 @@
     if (!snap) {
       // no BAS copy for the matched parts: the unmatched parts of the place can still be read against the building main schedule
       var sg3 = unmatched.length ? checkUnmatched() : null;
-      return sg3 ? done('suggest', sg3) : done('nocopy', 'No BAS copy for this weekday');
+      return sg3 ? done('suggest', sg3) : done('nocopy', 'No saved BAS schedule for this weekday');
     }
     res.from = snap.date;
     res.exact = snap.exact;
@@ -720,10 +720,12 @@
     keys.forEach(function (k) {
       var eff = groupEffectOn(ctx.groups, ctx.locations, k, date, ctx.effectCache);
       var blocks = withoutRanges(snap.rows[k] || [], eff.forced).concat(eff.occ); // a Holiday or Override unoccupied period removes what the BAS copy shows
+      res.blocksByKey[k] = blocks;
       var m = minutesShort(blocks, from, to);
       if (m > res.short) {
         res.short = m;
         res.program = k;
+        res.blocks = blocks;
         res.gaps = gapsOf(blocks, from, to);
       }
     });
@@ -736,7 +738,7 @@
     var maybe = probableGroup(ctx.groups, BD.keyBuilding(res.program), date, from, to);
     if (maybe) {
       res.probable = maybe;
-      return done('unknown', 'Probably covered by ' + maybe.group + ': ' + maybe.text + '. Group members are not saved; import them to confirm.');
+      return done('unknown', 'Not confirmed: group ' + maybe.group + ' may cover this (' + maybe.text + '). Its rooms are not saved.');
     }
     return done('short', 'Not covered, ' + res.short + ' min short');
   }
@@ -762,7 +764,8 @@
     (rows || []).forEach(function (row) {
       if (!row || !row[1]) return;
       out.total++;
-      var c = eventCoverage(row, ctx);
+      var c = coverageOf(row, ctx);
+      if (c.state === 'edited') c.status = 'covered'; // the audit log shows the schedule was added
       if (c.status === 'notmapped') {
         out.notmapped++;
         if (c.space) {
@@ -785,22 +788,220 @@
     out.skipped = out.allday + out.offsite;
     out.uncheckable = out.total - out.checked - out.skipped;
     if (out.uncheckable > 0 || out.noCopyDay > 0) {
-      if (!out.copies) out.reasons.push('No BAS schedule copy is imported. Import one in the BAS schedules card.');
+      if (!out.copies) out.reasons.push('No BAS schedule is saved. Import one in the BAS schedules card.');
       if (out.unmappedPlaces.length) {
         out.reasons.push(out.unmappedPlaces.length + (out.unmappedPlaces.length === 1 ? ' place is' : ' places are') + ' not matched to a BAS space (' + out.notmapped + (out.notmapped === 1 ? ' event' : ' events') + '). Match them in the Space map card.');
       }
       if (out.noPlace) out.reasons.push(out.noPlace + (out.noPlace === 1 ? ' event has' : ' events have') + ' no place, so it cannot be matched.');
       if (out.copies && out.noCopyDay) {
-        out.reasons.push('Days with no BAS copy (' + out.noCopyDays.join(', ') + '): ' + out.noCopyDay + (out.noCopyDay === 1 ? ' event cannot' : ' events cannot') + ' be checked. BAS copies exist for ' + out.copyWeekdays.join(', ') + (out.copyWeekdays.some(function (w) { return ['Mon', 'Tue', 'Wed', 'Thu'].indexOf(w) !== -1; }) ? ' (one copy covers Mon-Thu)' : '') + '.');
+        out.reasons.push('Days with no saved BAS schedule (' + out.noCopyDays.join(', ') + '): ' + out.noCopyDay + (out.noCopyDay === 1 ? ' event cannot' : ' events cannot') + ' be checked. BAS schedules are saved for ' + out.copyWeekdays.join(', ') + (out.copyWeekdays.some(function (w) { return ['Mon', 'Tue', 'Wed', 'Thu'].indexOf(w) !== -1; }) ? ' (one saved schedule covers Mon-Thu)' : '') + '.');
       }
       if (out.suggest) out.reasons.push(out.suggest + (out.suggest === 1 ? ' event has' : ' events have') + ' a place (or a part of it) that is not matched to a BAS space, in a building whose main schedule does not cover the event. Match it in the Space map card, or schedule the whole building.');
-      if (out.unknown) out.reasons.push(out.unknown + (out.unknown === 1 ? ' event is' : ' events are') + ' probably covered by a scheduling group whose members are not saved. Import the group members to confirm.');
+      if (out.unknown) out.reasons.push(out.unknown + (out.unknown === 1 ? ' event is' : ' events are') + ' possibly covered by a scheduling group whose rooms are not saved. Import the group members to confirm.');
       if (out.nobas) out.reasons.push(out.nobas + (out.nobas === 1 ? ' event is' : ' events are') + ' in a space with no BAS schedule.');
     }
     return out;
   }
 
+  // --- the one decision: is this event covered? ----------------------------------------------
+  // coverageOf(row, ctx) is the ONE answer to "does WebCTRL run the event's rooms for the whole event?". The event badge, its hover, the
+  // To do card, the counts and the saved actions all read it (eventCoverage is its calculation; nothing else decides).
+  //   ctx = eventCoverage ctx + optional scheduleEdits (the schedule rows of the imported WebCTRL audit log).
+  //   Returns eventCoverage's fields plus: date, covered (true when the rooms run for the whole event, or a schedule edit made in WebCTRL
+  //   after the saved BAS schedule spans every uncovered stretch), state, edit.
+  //   state: 'covered' | 'todo' (a change is needed) | 'edited' (needed, but the audit log shows it was added) | 'unknown' (a group with
+  //   no saved rooms may cover it) | 'suggest' | 'unchecked' (cannot be compared) | 'allday'.
+  // The groups and locations are the ones the rooms are IN (groupsFor, locationsFor). A schedule that has the event's name but sits in a
+  // group that does not run these rooms does not cover it.
+  function dayName(ymd) {
+    return CD.dayLabel(ymd).replace(',', '');
+  }
+  // The name of the first scheduling group that holds the program of a row key, '' when none.
+  function groupFor(groups, key) {
+    var g = groupsFor(groups, key)[0];
+    return g ? g.group : '';
+  }
+  // A schedule edit in the imported WebCTRL audit log (rows with a block, ctx.scheduleEdits) made AFTER the saved BAS schedule the check
+  // used (c.from) on the event's weekday, at the event's program location or one of its parent areas (a path prefix; a building-level edit
+  // counts for every program of the building, a room-level edit only for programs in that room), with hours that overlap an uncovered
+  // stretch. The edits together must span every uncovered stretch. The log names the location, not the group.
+  // Returns the newest such edit { ymd, operator } or null.
+  function webctrlEditFor(edits, c, date) {
+    var weekday = dayName(date).split(' ')[0];
+    var building = norm(BD.keyBuilding(c.program));
+    var area = norm(BD.areaOf(BD.splitKey(c.program).location));
+    var atLocation = function (e) {
+      var ea = norm(e.area);
+      return !ea || area === ea || area.indexOf(ea + ' / ') === 0;
+    };
+    var overlaps = function (e) {
+      return e.block.iv.some(function (x) {
+        return c.gaps.some(function (g) { return x[0] < g[1] && x[1] > g[0]; });
+      });
+    };
+    var hits = (edits || []).filter(function (e) {
+      return e.block && e.ymd > c.from && norm(e.building) === building && e.block.days.indexOf(weekday) !== -1 && atLocation(e) && overlaps(e);
+    });
+    if (!hits.length || !c.gaps.length) return null;
+    var occupied = [];
+    hits.forEach(function (e) {
+      e.block.iv.forEach(function (x) { occupied.push([x[0], x[1], 'occ']); });
+    });
+    var spanned = c.gaps.every(function (g) { return minutesShort(occupied, g[0], g[1]) === 0; });
+    if (!spanned) return null;
+    var newest = hits.slice().sort(function (a, b) { return a.iso < b.iso ? 1 : a.iso > b.iso ? -1 : 0; })[0];
+    return { ymd: newest.ymd, operator: newest.operator || '' };
+  }
+  function coverageOf(row, ctx) {
+    var c = eventCoverage(row, ctx);
+    c.date = row[1] ? CD.calendarDay(row[1], ctx.tz) : '';
+    c.edit = null;
+    c.covered = c.status === 'covered';
+    if (c.status === 'covered') c.state = 'covered';
+    else if (c.status === 'short') {
+      c.edit = webctrlEditFor(ctx.scheduleEdits, c, c.date);
+      c.covered = !!c.edit;
+      c.state = c.edit ? 'edited' : 'todo';
+    } else if (c.status === 'unknown' || c.status === 'suggest' || c.status === 'allday') c.state = c.status;
+    else c.state = 'unchecked';
+    return c;
+  }
+
+  // --- the words of a coverage result ----------------------------------------------------------
+  // describe(c, ctx) adds the plain words to a coverageOf result and returns it: c.hover, and for a to-do c.why, c.runBy, c.endsText,
+  // c.doGroup, c.named. Kept apart from coverageOf so counting thousands of events builds no text.
+  //   hover  Covered -> 'Covered by <schedule> in group <group>, <times>.'
+  //          Not covered -> 'Not covered. <Space> is run by rooms <range> (<n> rooms, group <group>). The schedule ends <time>; the event
+  //          ends <time> (<min> min uncovered). Change: in WebCTRL, group <group>, add <date>, <times>.'  Never one room of several.
+  function timeRange(a, b) {
+    var ca = BD.clock(a);
+    var cb = BD.clock(b >= 1440 ? 0 : b);
+    return (ca.slice(-2) === cb.slice(-2) ? ca.slice(0, -3) : ca) + '–' + cb;
+  }
+  function spansRange(spans) {
+    return spans.map(function (g) { return timeRange(g[0], g[1]); }).join(', ');
+  }
+  function programLabel(key) {
+    return BD.splitKey(key).program.replace(/ #\d+$/, '');
+  }
+  function natural(a, b) {
+    return String(a).localeCompare(String(b), 'en', { numeric: true });
+  }
+  // The rooms an event's space is run by: 'rooms F101A–F102C (6 rooms)', 'room F114', or the program name ('AHU-9 Auditorium').
+  function roomsLabel(keys) {
+    var names = [];
+    keys.forEach(function (k) {
+      var n = programLabel(k);
+      if (names.indexOf(n) === -1) names.push(n);
+    });
+    var rooms = names.every(function (n) { return /^room\s+\S/i.test(n); });
+    if (rooms) names = names.map(function (n) { return n.replace(/^room\s+/i, ''); });
+    names.sort(natural);
+    var list = names.length > 3 ? names[0] + '–' + names[names.length - 1] : names.join(', ');
+    if (rooms) return { text: (names.length === 1 ? 'room ' : 'rooms ') + list, count: names.length > 1 ? names.length + ' rooms' : '', rooms: true };
+    return { text: list, count: names.length > 3 ? names.length + ' programs' : '', rooms: false };
+  }
+  function mergeTouching(blocks) {
+    var out = [];
+    (blocks || [])
+      .filter(function (b) { return b[2] === 'occ'; })
+      .map(function (b) { return b[1] <= b[0] ? [b[0], 1440] : [b[0], b[1]]; })
+      .sort(function (a, b) { return a[0] - b[0]; })
+      .forEach(function (b) {
+        var last = out[out.length - 1];
+        if (last && b[0] <= last[1]) last[1] = Math.max(last[1], b[1]);
+        else out.push([b[0], b[1]]);
+      });
+    return out;
+  }
+  function holding(blocks, from, to) {
+    return mergeTouching(blocks).filter(function (b) { return b[0] <= from && b[1] >= to; })[0] || null;
+  }
+  function clk(m) {
+    return BD.clock(m >= 1440 ? 0 : m);
+  }
+  // 'The schedule ends 4:00 PM; the event ends 8:00 PM (90 min uncovered)' from the uncovered stretches of the least covered room.
+  function endsText(c) {
+    var occ = mergeTouching(c.blocks);
+    return c.gaps
+      .map(function (g) {
+        var tail = ' (' + (g[1] - g[0]) + ' min uncovered)';
+        if (g[1] >= c.toMin) {
+          var prev = occ.filter(function (b) { return b[1] <= g[0]; }).map(function (b) { return b[1]; });
+          if (!prev.length) return 'No schedule is on before the event ends at ' + clk(c.toMin) + tail;
+          return 'The schedule ends ' + clk(Math.max.apply(null, prev)) + '; the event ends ' + clk(c.toMin) + tail;
+        }
+        if (g[0] <= c.fromMin) return 'The schedule starts ' + clk(g[1]) + '; the event starts ' + clk(c.fromMin) + tail;
+        return 'The schedule is off ' + timeRange(g[0], g[1]) + ' during the event' + tail;
+      })
+      .join('. ');
+  }
+  function describe(c, ctx) {
+    var space = c.space || 'This place';
+    if (c.state === 'covered' && c.keys.length) {
+      var key = c.keys[0];
+      var hit = null;
+      groupsFor(ctx.groups, key).some(function (g) {
+        return (g.schedules || []).some(function (s) {
+          var b = holding(BD.scheduleBlocksOn(s, c.date), c.fromMin, c.toMin);
+          if (b) hit = { name: s.name, group: g.group, b: b };
+          return !!b;
+        });
+      });
+      if (hit) c.hover = 'Covered by ' + hit.name + ' in group ' + hit.group + ', ' + timeRange(hit.b[0], hit.b[1]) + '.';
+      else {
+        var own = holding(c.blocksByKey[key], c.fromMin, c.toMin);
+        c.hover = 'Covered by the BAS schedule' + (own ? ', ' + timeRange(own[0], own[1]) : '') + '.';
+      }
+    } else if (c.state === 'covered') c.hover = 'Covered by the main schedule of the building.';
+    else if (c.state === 'edited') {
+      c.hover = 'Covered. A schedule was added in WebCTRL on ' + BD.dateText(c.edit.ymd) + (c.edit.operator ? ' by ' + c.edit.operator : '') + '. The saved BAS schedule does not show it yet.';
+    } else if (c.state === 'todo') {
+      var groups = [];
+      c.keys.forEach(function (k) {
+        var g = groupFor(ctx.groups, k);
+        if (g && groups.indexOf(g) === -1) groups.push(g);
+      });
+      c.doGroup = groupFor(ctx.groups, c.program);
+      var rl = roomsLabel(c.keys);
+      var extra = [rl.count, groups.length ? (groups.length === 1 ? 'group ' : 'groups ') + groups.join(', ') : ''].filter(Boolean).join(', ');
+      c.runBy = space + ' is run by ' + rl.text + (extra ? ' (' + extra + ')' : '');
+      c.endsText = endsText(c);
+      c.named = '';
+      var m = webctrlMatch(ctx.groups, ctx.locations, c.title || '', c.date, BD.keyBuilding(c.program));
+      var in_ = m ? (/^Group /.test(m.where) ? 'group ' + m.where.slice(6) : m.where) : '';
+      var running = {};
+      c.keys.forEach(function (k) {
+        groupsFor(ctx.groups, k).forEach(function (g) { running['Group ' + g.group] = 1; });
+        locationsFor(ctx.locations, k).forEach(function (i) { running[ctx.locations[i].location] = 1; });
+      });
+      if (m && m.applies && running[m.where]) {
+        c.named = "A schedule with this event's name is in " + in_ + ' (' + m.hours + '), but it does not cover the whole event.';
+      } else if (m && m.applies) {
+        c.named = "A schedule with this event's name is in " + in_ + ', which does not run ' + (rl.rooms ? (c.keys.length > 1 ? 'these rooms' : 'this room') : 'this space') + '.';
+      } else if (m && !m.applies) {
+        c.named = "A schedule with this event's name is in " + in_ + ', but it does not run on ' + dayName(c.date) + '.';
+      }
+      c.why = c.runBy + '. ' + c.endsText + '.' + (c.named ? ' ' + c.named : '');
+      c.hover = 'Not covered. ' + c.runBy + '. ' + c.endsText + '. Change: in WebCTRL, ' + (c.doGroup ? 'group ' + c.doGroup : 'the schedule of ' + programLabel(c.program)) + ', add ' + dayName(c.date) + ', ' + spansRange(c.gaps) + '.';
+    } else if (c.state === 'unknown') {
+      c.hover = 'Not confirmed. Group ' + c.probable.group + ' has a schedule (' + c.probable.text + ') that would cover it, but the rooms of that group are not saved. Import the group members to confirm.';
+    } else if (c.state === 'suggest') c.hover = c.label;
+    else if (c.status === 'notmapped') c.hover = space + ' is not matched to a BAS space, so it cannot be checked. Match it in the Space map card.';
+    else if (c.status === 'nocopy') c.hover = 'No BAS schedule is saved for this weekday, so it cannot be checked.';
+    else if (c.status === 'nobas') c.hover = space + ' has no BAS schedule.';
+    else if (c.status === 'offsite') c.hover = 'This place is off-site. It is not checked.';
+    else c.hover = '';
+    return c;
+  }
+
   var api = {
+    coverageOf: coverageOf,
+    describe: describe,
+    groupFor: groupFor,
+    timeRange: timeRange,
+    spansRange: spansRange,
+    dayName: dayName,
     checkStatus: checkStatus,
     spaceKey: spaceKey,
     findSpace: findSpace,
