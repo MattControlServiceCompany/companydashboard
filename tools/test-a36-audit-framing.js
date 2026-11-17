@@ -107,7 +107,7 @@ const ok = (c, m) => {
     ['simple_off', 'simple_on', 'det_off', 'det_on'].forEach((k) => {
       const cover = out[k][0];
       ok(cover && !/Report date/i.test(cover.text) && !/(January|February|March|April|May|June|July|August|September|October|November|December) \d{1,2}, \d{4}/.test(cover.text), k + ': the cover has no Report date and no date line');
-      ok(/Audit Report/.test(cover.text) && /2 buildings/.test(cover.text) && /findings/.test(cover.text) && /Air Handlers/.test(cover.text), k + ': the cover names the buildings, the equipment types and the findings count');
+      ok(/Audit Report/.test(cover.text) && /in 2 buildings/.test(cover.text) && /recorded \d+ findings?/.test(cover.text) && /Equipment Units/.test(cover.text) && !/Across /.test(cover.text), k + ': the cover states units, buildings and findings plainly and has the building table; no "Across" sentence; the equipment types and the findings count');
       const bp = out[k].filter((p) => p.section === 'building');
       ok(bp.length >= 2, k + ': the base Per-Building Detail pages print (' + bp.length + ')');
       ['Alpha Library', 'Beta Library'].forEach((n) => ok(bp.some((p) => p.photos.indexOf('Photo of ' + n) >= 0), k + ': the per-building page of ' + n + ' has the library front photo'));

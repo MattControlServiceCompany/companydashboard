@@ -18309,19 +18309,42 @@ function _a36ExecScopeSentence(d) {
  * audited by type and the number of findings of the audit. The ASHRAE 36 scores are on the first page of the ASHRAE 36 Sequences section
  * (rptPageASHRAE36Scores). Hero page: no interior header, uses CSC letterhead. No date line: the report date prints in the footer.
  */
+// Cover table of the buildings audited: Building | Equipment Units | Findings, with a total row. Findings per building come from the same
+// findings model as the building pages (_a36AuditFindingInfo byLib).
+function _a36CoverBuildingTable(d, info) {
+  if (!d.buildings || d.buildings.length < 2) return '';
+  var list = d.buildings.slice().sort(function (a, c) {
+    return rptBuildingNameSort(_a36DisplayName(a), _a36DisplayName(c));
+  });
+  var rows = list.map(function (b) {
+    var name = _a36DisplayName(b);
+    var cells = [_escHtml(name), { html: rptCount(b.equipCount || 0), center: true }];
+    if (info) cells.push({ html: rptCount((info.byLib && info.byLib[name]) || 0), center: true });
+    return _a36DetRow(cells);
+  });
+  var totalTd = A36_DET_TD + ';font-weight:700;border-top:2px solid var(--rpt-table-tot-bdr)';
+  rows.push(
+    '<tr><td style="' + totalTd + '">Total</td><td style="' + totalTd + ';text-align:center">' + rptCount(d.portfolio.totalEquip) + '</td>' +
+      (info ? '<td style="' + totalTd + ';text-align:center">' + rptCount(info.total) + '</td>' : '') + '</tr>',
+  );
+  return (
+    '<div style="margin-top:20px">' +
+    _a36DetTableOpen(info ? [56, 24, 20] : [70, 30], info ? ['Building', 'Equipment Units', 'Findings'] : ['Building', 'Equipment Units']) +
+    '<tbody>' + rows.join('') + '</tbody></table></div>'
+  );
+}
+
 function rptPageASHRAE36Cover(n, d, perBuildingIncluded, detailed) {
   var p = d.portfolio;
   var info = _a36AuditFindingInfo(d);
   var types = _a36AuditEquipTypes(d);
   // Every count goes through rptCount, the one thousands-separator formatter (D-22: "1,594", never "1594").
+  // Plain statement of what was audited and what a finding is (Matt 2026-11-17: no "Across N buildings ... has N findings").
   var finding =
-    'Across <strong>' + rptCount(p.totalBuildings) + ' building' + (p.totalBuildings !== 1 ? 's' : '') + '</strong> and <strong>' +
-    rptCount(p.totalEquip) + ' piece' + (p.totalEquip !== 1 ? 's' : '') + ' of equipment</strong>, <strong>' + _escHtml(d.project.name) + '</strong> ' +
-    (info ? (info.total ? 'has <strong>' + _a36FindingsCount(info.total) + '</strong>' : 'has <strong>no findings</strong>') : 'was audited') + '. ' +
-    (types.length ? 'The equipment audited is ' + _a36DetJoin(types) + '. ' : '') +
-    (perBuildingIncluded === true
-      ? 'The sections that follow describe, for each building, the equipment audited and what the audit found.'
-      : 'The sections that follow describe the equipment audited and what the audit found across the facilities in scope.');
+    'The audit covered ' + rptCount(p.totalEquip) + ' equipment unit' + (p.totalEquip !== 1 ? 's' : '') +
+    (p.totalBuildings > 1 ? ' in ' + rptCount(p.totalBuildings) + ' buildings' : '') +
+    (info ? (info.total ? ' and recorded ' + _a36FindingsCount(info.total) + '. Each finding is a sensor, device, control point or control sequence that the system does not have.' : ' and recorded no findings.') : '.') +
+    (perBuildingIncluded === true && p.totalBuildings > 1 ? ' The table below lists the units and findings of each building.' : '');
 
   var statCard = function (value, label) {
     return (
@@ -18355,6 +18378,7 @@ function rptPageASHRAE36Cover(n, d, perBuildingIncluded, detailed) {
     statCard(rptCount(p.totalEquip), 'Equipment Units Audited') +
     (info ? statCard(rptCount(info.total), 'Findings') : '') +
     '</div>' +
+    _a36CoverBuildingTable(d, info) +
     '</div>';
 
   // Rule 2.3: reportDate drives the footer date; label is empty (no period range for audit reports).
@@ -20605,13 +20629,13 @@ function _a36BuildingContent(d, building, showBuildingInfra) {
     '<span style="font-weight:600">Dedicated building automation system power monitoring meter:</span> ' +
     (b.hasPowerMonitoring
       ? '<span style="color:var(--rpt-page-text)">Installed</span>'
-      : '<span style="color:var(--rpt-page-text)">Not installed. Installation recommended.</span>') +
+      : '<span style="color:var(--rpt-page-text)">Not installed</span>') +
     '</div>' +
     '<div style="font-size:10px;color:var(--rpt-page-text)">' +
     '<span style="font-weight:600">Dedicated outdoor air sensors:</span> ' +
     (b.hasOAConditions
       ? '<span style="color:var(--rpt-page-text)">Installed</span>'
-      : '<span style="color:var(--rpt-page-text)">Not installed. Installation recommended.</span>') +
+      : '<span style="color:var(--rpt-page-text)">Not installed</span>') +
     '</div>' +
     '</div>' +
     '</div>';
@@ -27629,14 +27653,14 @@ function _a36DetHeadline(f, g, units, kind, o) {
   var sentence;
   if (kind === 'deficiency') return '';
   if (o.fanDrive && f.missingKeys && f.missingKeys.some(_a36DetIsFanSpeedKey)) {
-    sentence = subject + ' ' + have + ' no variable frequency drive on ' + (plural ? 'their' : 'its') + ' supply fan' + (plural ? 's' : '') + '.';
+    sentence = subject + ' ' + have + ' no variable frequency drive on ' + (plural ? 'their' : 'its') + ' supply fan' + (plural ? 's' : '') + (kind === 'seq' && labelText ? ', so ' + labelText + ' cannot run' : '') + '.';
   } else if (o.pumpDrive && f.missingKeys && f.missingKeys.indexOf('hwPumpSpeed') > -1) {
-    sentence = subject + ' ' + have + ' no variable frequency drive on ' + (plural ? 'their' : 'its') + ' pumps.';
+    sentence = subject + ' ' + have + ' no variable frequency drive on ' + (plural ? 'their' : 'its') + ' pumps' + (kind === 'seq' && labelText ? ', so ' + labelText + ' cannot run' : '') + '.';
   } else if (kind === 'seq') {
     if (points.length) {
       sentence = subject + ' ' + lack + ' the ' + _a36DetJoin(points) + ' point' + (points.length > 1 ? 's' : '') + ' for ' + labelText + '.';
-      if (!g) sentence = 'The building lacks the ' + _a36DetJoin(points) + ' point' + (points.length > 1 ? 's' : '') + ' for ' + labelText + ' (' + units + ' needed).';
-    } else if (!g) sentence = 'The building needs ' + labelText + ' programmed (' + units + ' needed).';
+      if (!g) sentence = 'The building lacks the ' + _a36DetJoin(points) + ' point' + (points.length > 1 ? 's' : '') + ' for ' + labelText + '.';
+    } else if (!g) sentence = 'The building automation system does not have ' + labelText + ' programmed.';
     else sentence = subject + ' ' + (plural ? 'do not have ' : 'does not have ') + labelText + ' programmed.';
   } else {
     var noun = _a36DetPlainNoun(f.label);
@@ -29538,7 +29562,7 @@ function _a36DetPhotoHtml(photo, libraryName, scale) {
 // d._a36LibraryPhotos, printed at 75 percent so the table fits under it on an 8.5 x 11 in page), the equipment audited by type with the findings of
 // each type, and the total. A library with no photo prints no picture. No ASHRAE 36 text: the scores and the devices to install and sequences to
 // program of the building are in the ASHRAE 36 Sequences section.
-var A36_AUDIT_PHOTO_SCALE = 0.75;
+var A36_AUDIT_PHOTO_SCALE = 0.6;
 function _a36AuditBuildingTokens(d, b, ctx, showBuildingInfra) {
   var name = _a36DisplayName(b);
   var lib = ctx.model.libs.filter(function (l) {
@@ -29553,22 +29577,10 @@ function _a36AuditBuildingTokens(d, b, ctx, showBuildingInfra) {
     if (ci === -1) ci = 99;
     return ai - ci;
   });
-  var typeText = cats.map(function (cat) {
-    return rptCount(counts[cat]) + ' ' + _a36CatCountLabel(cat, counts[cat]);
-  });
   var tokens = [];
   tokens.push(_a36DetTok('<h2 style="margin:0 0 6px 0">' + _escHtml(name) + '</h2>', true));
   var photo = d._a36LibraryPhotos && d._a36LibraryPhotos[name];
   if (photo) tokens.push(_a36DetTok(_a36DetPhotoHtml(photo, name, A36_AUDIT_PHOTO_SCALE), true));
-  tokens.push(
-    _a36DetTok(
-      '<p style="' + A36_DET_P + '">' +
-        _escHtml(rptCount(b.equipCount) + ' equipment unit' + (b.equipCount !== 1 ? 's' : '') + ' audited' + (typeText.length ? ': ' + _a36DetJoin(typeText) : '') + '. ' +
-          (findings.length ? 'The audit recorded ' + _a36FindingsCount(findings.length) + '.' : 'The audit recorded no findings.')) +
-        '</p>',
-      true,
-    ),
-  );
   // One row per equipment type; a finding is listed on the row of its type. A finding of no listed type goes on the Building-wide row.
   var byCat = {};
   var wide = [];
@@ -29607,7 +29619,12 @@ function _a36AuditBuildingTokens(d, b, ctx, showBuildingInfra) {
       t.keepNext = false;
     });
   }
-  if (showBuildingInfra) tokens.push(_a36DetTok(_a36BuildingContent(d, b, true).infraCallout));
+  if (showBuildingInfra) {
+    var infraTok = _a36DetTok(_a36BuildingContent(d, b, true).infraCallout);
+    // The infrastructure lines stay on the page of the table end: never a page that holds only them.
+    tableToks[tableToks.length - 1].keepNext = true;
+    tokens.push(infraTok);
+  }
   tokens.forEach(function (t) {
     t.lib = name;
   });
