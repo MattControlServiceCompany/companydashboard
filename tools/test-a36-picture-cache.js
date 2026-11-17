@@ -18,7 +18,7 @@ const fs = require('fs');
 const http = require('http');
 const ROOT = path.resolve(process.env.APP_ROOT || path.join(__dirname, '..'));
 const pw = require('playwright');
-const { profilePath } = require(path.join(__dirname, 'tmp-root.js'));
+const { profilePath, rmTmp } = require(path.join(__dirname, 'tmp-root.js'));
 let fails = 0;
 const ok = (c, m) => {
   console.log((c ? 'PASS ' : 'FAIL ') + m);
@@ -260,6 +260,7 @@ async function run(browserName) {
   } finally {
     await ctx.close();
     srv.server.close();
+    rmTmp(dir);
   }
 }
 
