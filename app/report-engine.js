@@ -26831,7 +26831,11 @@ function _a36DetLoadPictures(files, needed, picMap) {
   var chain = Promise.resolve();
   todo.forEach(function (f) {
     chain = chain.then(function () {
-      return _a36DetScalePicture(f, picMap && !graphicFile[f.name] ? A36_DET_FIG_MIN_PRINT_SCALE_PAGE : A36_DET_FIG_MIN_PRINT_SCALE).then(function (r) {
+      // f is a File from the folder or an item of the site picture store (app/picture-folder.js): pictureFileOpen gives the File.
+      return (typeof pictureFileOpen === 'function' ? pictureFileOpen(f) : Promise.resolve(f)).then(function (file) {
+        if (!file) return null; // no file can be read (the store download failed and the folder has no copy)
+        return _a36DetScalePicture(file, picMap && !graphicFile[f.name] ? A36_DET_FIG_MIN_PRINT_SCALE_PAGE : A36_DET_FIG_MIN_PRINT_SCALE);
+      }).then(function (r) {
         if (r) {
           r.modified = f.lastModified || 0; // the time the graphic file was saved: the capture time stated in the chapter
           out[f.name] = r;
@@ -26988,7 +26992,10 @@ function _a36DetLoadLibraryPhotos(files, libraryNames) {
     var file = _a36DetLibraryPhotoFile(files, name, libraryNames);
     if (!file) return;
     chain = chain.then(function () {
-      return _a36DetCropPhoto(file).then(function (r) {
+      var f = file;
+      return (typeof pictureFileOpen === 'function' ? pictureFileOpen(f) : Promise.resolve(f)).then(function (real) {
+        return real ? _a36DetCropPhoto(real) : null;
+      }).then(function (r) {
         if (r) out[name] = r;
         else unreadable.push(file.name);
       });
@@ -29963,7 +29970,7 @@ function openASHRAE36ReportModal(projId, type, skipRestore) {
       '<div id="a36PictureBox" style="display:none;margin-top:8px;padding:12px;border:1px solid var(--s3);border-radius:6px;background:var(--s1)">' +
       '<div style="font-size:13px;font-weight:600;color:var(--text);margin-bottom:4px">Add pictures to the report</div>' +
       '<div style="font-size:12px;color:var(--text);margin-bottom:8px">Choose the folder that holds this project\'s site pictures. Each picture becomes a numbered figure under its equipment.</div>' +
-      '<input type="file" id="a36PictureDir" webkitdirectory multiple style="display:none" onchange="_a36PictureStatus()">' +
+      '<input type="file" id="a36PictureDir" webkitdirectory multiple style="display:none" onchange="_a36PictureChosen()">' +
       '<input type="file" id="a36PictureCsv" accept=".csv" style="display:none" onchange="_a36PictureCsvChosen(this)">' +
       '<button type="button" id="a36PictureBtn" class="btn btn-em btn-sm" onclick="_a36PictureOpen(1)">Choose picture folder</button>' +
       '<div id="a36PictureStatus" style="font-size:12px;color:var(--text);margin-top:8px"></div>' +
@@ -30130,11 +30137,15 @@ function _a36PictureStatus() {
   var map = typeof faLoad === 'function' ? faLoad(window._a36PicPid).pictureMap || [] : [];
   var dir = document.getElementById('a36PictureDir');
   var inputFiles = dir && dir.files ? dir.files : [];
+  var suffix = typeof pictureStoreProgress === 'function' ? pictureStoreProgress(window._a36PicPid) : ''; // upload progress, when one runs
   // Files on the input win over the remembered folder (app/picture-folder.js).
   var remembered = typeof pictureFolderCurrent === 'function' ? pictureFolderCurrent(window._a36PicPid) : { name: '', permission: 'none', files: [], saved: [] };
   var useInput = inputFiles.length > 0;
   // No folder to read: the saved pictures (this browser's IndexedDB, app/picture-folder.js) are what the report uses.
-  var useSaved = !useInput && remembered.files.length === 0 && remembered.saved.length > 0;
+  // The site picture store (app/picture-folder.js) holds pictures of this project: the report uses them with no folder pick.
+  var storeNames = !useInput && remembered.files.length === 0 && typeof pictureStoreHasPictures === 'function' && pictureStoreHasPictures(window._a36PicPid) ? pictureStoreNames(window._a36PicPid) : null;
+  var useStore = !!storeNames;
+  var useSaved = !useInput && !useStore && remembered.files.length === 0 && remembered.saved.length > 0;
   var files = useInput ? inputFiles : remembered.files;
   var needsAllow = !useInput && remembered.permission === 'prompt';
   var allowBox = document.getElementById('a36PictureAllowBox');
@@ -30142,11 +30153,11 @@ function _a36PictureStatus() {
   if (allowBox) allowBox.style.display = needsAllow ? '' : 'none';
   if (allowBtn) allowBtn.textContent = 'Allow access to ' + remembered.name;
   var chooseBtn = document.getElementById('a36PictureBtn');
-  if (chooseBtn) chooseBtn.textContent = !useInput && (remembered.name || useSaved) ? 'Change folder' : 'Choose picture folder';
+  if (chooseBtn) chooseBtn.textContent = !useInput && (remembered.name || useSaved || useStore) ? 'Change folder' : 'Choose picture folder';
   var noList = document.getElementById('a36PictureNoList');
   if (noList) noList.style.display = map.length ? 'none' : '';
   if (!map.length) {
-    st.textContent = '';
+    st.textContent = suffix.trim();
     return;
   }
   var listed = {};
@@ -30154,6 +30165,29 @@ function _a36PictureStatus() {
     listed[p.file] = true;
   });
   var total = Object.keys(listed).length;
+  if (useStore) {
+    var storeLibs = scopeTreeChecked(document.getElementById('a36Scope'), 'bldg').map(_a36DisplayName);
+    var inStore = {};
+    storeNames.forEach(function (n) {
+      inStore[n] = true;
+    });
+    var storeFound = Object.keys(listed).filter(function (f) {
+      return inStore[f];
+    }).length;
+    var storeMissFront = _a36DetMissingLibraryPhotos(
+      storeNames.map(function (n) {
+        return { name: n };
+      }),
+      storeLibs
+    ).length;
+    var storeMissing = total - storeFound;
+    st.textContent =
+      (!storeMissing && !storeMissFront
+        ? total + (total === 1 ? ' picture' : ' pictures') + ' from the site store (all ' + storeLibs.length + ' library front ' + (storeLibs.length === 1 ? 'photo' : 'photos') + ').'
+        : storeFound + ' of ' + total + ' listed pictures and ' + (storeLibs.length - storeMissFront) + ' of ' + storeLibs.length + ' library front photos are in the site store. ' +
+          (storeMissing + storeMissFront) + ' missing: they upload when you pick the picture folder or by the automatic sync.') + suffix;
+    return;
+  }
   if (useSaved) {
     var libNames = scopeTreeChecked(document.getElementById('a36Scope'), 'bldg').map(_a36DisplayName);
     var frontCount = libNames.length - _a36DetMissingLibraryPhotos(remembered.saved, libNames).length;
@@ -30162,12 +30196,12 @@ function _a36PictureStatus() {
       total + (total === 1 ? ' picture' : ' pictures') + ' in the picture list. The report uses the ' + remembered.saved.length + ' pictures this browser saved' +
       (missingFront > 0
         ? '; ' + frontCount + ' of ' + libNames.length + ' library front photos are saved. Click "Change folder" and select the picture folder to add them.'
-        : ' (all ' + libNames.length + ' library front photos). "Change folder" selects the folder again.');
+        : ' (all ' + libNames.length + ' library front photos). "Change folder" selects the folder again.') + suffix;
     return;
   }
   if (!files.length) {
     st.textContent =
-      total + (total === 1 ? ' picture' : ' pictures') + ' in the picture list' + (needsAllow ? ' (remembered folder: ' + remembered.name + ')' : '');
+      total + (total === 1 ? ' picture' : ' pictures') + ' in the picture list' + (needsAllow ? ' (remembered folder: ' + remembered.name + ')' : '') + suffix;
     return;
   }
   var found = 0;
@@ -30179,7 +30213,8 @@ function _a36PictureStatus() {
   var folder = useInput ? (files[0].webkitRelativePath ? files[0].webkitRelativePath.split('/')[0] : '') : remembered.name;
   st.textContent =
     (found === 0 ? 'No listed pictures found in this folder' : found + ' of ' + total + ' pictures found in the folder') +
-    (folder ? ' (folder: ' + folder + ')' : '');
+    (folder ? ' (folder: ' + folder + ')' : '') +
+    suffix;
 }
 window._a36PictureStatus = _a36PictureStatus;
 
@@ -30188,8 +30223,9 @@ window._a36PictureStatus = _a36PictureStatus;
 function _a36PictureOpen(folder) {
   if (folder && typeof pictureFolderPickerSupported === 'function' && pictureFolderPickerSupported()) {
     pictureFolderPick(window._a36PicPid)
-      .then(function () {
+      .then(function (state) {
         _a36PictureStatus();
+        if (state) _a36PictureUpload(state.files);
       })
       .catch(function (err) {
         showToast('Could not use the picture folder: ' + (err && err.message ? err.message : err), 'error', 8000);
@@ -30200,6 +30236,24 @@ function _a36PictureOpen(folder) {
   if (el) el.click();
 }
 window._a36PictureOpen = _a36PictureOpen;
+
+// A folder was chosen: send the pictures the site store lacks, in the background (Generate never waits for it). The progress shows in the
+// picture status line. pictureStoreUpload (app/picture-folder.js) is the one owner of the store write.
+function _a36PictureUpload(files) {
+  if (typeof pictureStoreUpload !== 'function') return;
+  pictureStoreUpload(window._a36PicPid, files, _a36PictureStatus).then(null, function (err) {
+    showToast('Could not send the pictures to the site store: ' + (err && err.message ? err.message : err), 'error', 8000);
+  });
+  _a36PictureStatus();
+}
+
+// The hidden folder input (the Firefox path) changed.
+function _a36PictureChosen() {
+  _a36PictureStatus();
+  var dir = document.getElementById('a36PictureDir');
+  if (dir && dir.files && dir.files.length) _a36PictureUpload(Array.prototype.slice.call(dir.files));
+}
+window._a36PictureChosen = _a36PictureChosen;
 
 // "Allow access to <folder>" button: one click asks the browser for read access to the remembered folder, no picker.
 function _a36PictureAllow() {
@@ -30328,7 +30382,9 @@ function generateASHRAE36Preview() {
     if (typeof pictureFolderHasChoice === 'function' && pictureFolderHasChoice(projId, dirEl)) {
       showToast('Reading pictures...', 'info');
       pictureFolderFiles(projId, dirEl)
-        .then(function (pictureFiles) {
+        .then(function (folderFiles) {
+          // The site picture store first (no folder pick), then the folder or the saved set for every file the store lacks.
+          var pictureFiles = typeof pictureStoreMerge === 'function' ? pictureStoreMerge(projId, folderFiles) : folderFiles;
           var libraryNames = (data.buildings || []).map(_a36DisplayName);
           var needed = picMap.length ? _a36DetNeededPictureFiles(data, picMap, _a36DetRowsById(projId)) : [];
           return _a36DetLoadShownPictures(pictureFiles, needed, picMap, data, _a36DetRowsById(projId))
@@ -30339,8 +30395,8 @@ function generateASHRAE36Preview() {
             .then(function (photos) {
               _a36DetWarnMissingLibraryPhotos(pictureFiles, libraryNames);
               // Keep only the files this report needs for the next export (no folder pick then); files read again replace saved files of the same name.
-              var keep = pictureFolderSelectToSave(pictureFiles, needed, libraryNames, _a36DetLibraryPhotoFile);
-              return pictureFolderRemember(projId, pictureFiles, keep).then(
+              var keep = pictureFolderSelectToSave(folderFiles, needed, libraryNames, _a36DetLibraryPhotoFile);
+              return pictureFolderRemember(projId, folderFiles, keep).then(
                 function () {
                   return photos;
                 },

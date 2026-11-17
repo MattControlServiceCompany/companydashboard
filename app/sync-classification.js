@@ -111,6 +111,11 @@ const SyncClassification = (() => {
       prefix: true,
       note: 'report-engine.js _a36DetSequenceIds: en_auditseq_<pid> = { rows: [{ library, equipName, id, status, source }], updated }, the control sequences read from the WebCTRL control program pages (canonical ids, no setpoint values). Written by tools 2026-11-17-import-audit-sequences.py through kv-sync; the Detailed Audit Report System Descriptions read it. Shared by both users.',
     },
+    {
+      pattern: 'en_auditpics_',
+      prefix: true,
+      note: 'picture-folder.js: en_auditpics_<pid> = the index of the audit pictures kept in the site file store (pdf_blobs through pdf-sync, key pictures/<pid>/<sha256>): { files: { "<file name>": { key, sha256, size, mtime } }, updated }. Written by the audit report dialog (folder pick) and by _context/tools/2026-11-17-sync-audit-pictures.py. Separate from en_audit_<pid> (not matched by that prefix). Shared by both users.',
+    },
     { pattern: 'en_hours_', prefix: true, note: 'hours.js: en_hours_<pid>' },
     {
       pattern: 'en_cal_',
