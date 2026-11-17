@@ -767,33 +767,52 @@ const ok = (c, m) => {
       return out;
     });
     const allText = (a) => a.join(' ');
-    ok(!/ \./.test(allText(r3.doas)) && /The unit holds the supply air temperature at 55°F for cooling\./.test(allText(r3.doas)) && !/58\.5|70\.1|monitors/.test(allText(r3.doas)),
-      '1: a DOAS gives its set point and no empty clause and no reading: ' + allText(r3.doas));
-    ok(!/Normal|monitors/.test(allText(r3.chwSp)) && /holds the chilled water supply temperature at its setpoint\./.test(allText(r3.chwSp)) && !/44°F/.test(allText(r3.chwSp)), 'a chilled water plant names its setpoint without the stored (often reset) value, no status word (' + allText(r3.chwSp) + ')');
-    ok(!/\d|monitors/.test(allText(r3.hw)) && allText(r3.hw) === '', '1: a plant with no setpoint and no enable prints no sentence and no "monitors" list (' + allText(r3.hw) + ')');
-    ok(/The plant runs when the outdoor air temperature is below 55°F\./.test(allText(r3.hwLockout)) && /hot water supply temperature at its setpoint\./.test(allText(r3.hwLockout)) && !/120°F/.test(allText(r3.hwLockout)), 'b: a hot water plant with an outdoor air lockout setpoint gives the enable sentence with that setpoint, no stored water setpoint value (' + allText(r3.hwLockout) + ')');
-    ok(/The plant locks out on outdoor air temperature\./.test(allText(r3.hwLockoutStatus)) && !/Lockout|was off|At the time/.test(allText(r3.hwLockoutStatus)), 'b: a plant with a lockout status point says it has the lockout, not that it was off (' + allText(r3.hwLockoutStatus) + ')');
-    ok(allText(r3.vavSp).indexOf('Zones hold 70°F heating / 75°F cooling when occupied.') >= 0 && !/ons an?d|monitors|by command/.test(allText(r3.vavSp)), 'c: a VAV group whose zones agree gives "70°F heating / 75°F cooling" (' + allText(r3.vavSp) + ')');
-    ok(/Most zones hold 70°F heating \/ 74°F cooling when occupied; some zones use other setpoints \(Appendix A\)\./.test(allText(r3.vavMost)) && !/66|80/.test(allText(r3.vavMost)) && /Zones hold 60°F heating \/ 84°F cooling when unoccupied\./.test(allText(r3.vavMost)), 'c: when most zones agree the common value is printed and an odd value is never a range end (' + allText(r3.vavMost) + ')');
-    ok(/Heating setpoints differ from zone to zone \(Appendix A\)\./.test(allText(r3.vavVary)) && !/66|68°F|72/.test(allText(r3.vavVary)) && /Zones hold 74°F cooling when occupied\./.test(allText(r3.vavVary)), 'c: when no value reaches half of the zones no value is printed (' + allText(r3.vavVary) + ')');
-    ok(!/Appendix A/.test(allText(r3.vavNoAppendix)) && /some zones use other setpoints\./.test(allText(r3.vavNoAppendix)), 'c: the Appendix A reference prints only when Appendix A is in the report (' + allText(r3.vavNoAppendix) + ')');
+    ok(!/ \./.test(allText(r3.doas)) && /The unit holds the supply air temperature at its setpoint\./.test(allText(r3.doas)) && !/\d°F|monitors/.test(allText(r3.doas)),
+      '1: a DOAS with a supply air setpoint point says so, no empty clause and no number: ' + allText(r3.doas));
+    ok(!/Normal|monitors|setpoint|44/.test(allText(r3.chwSp)), 'a chilled water plant with only a supply sensor and a setpoint point makes no setpoint claim and prints no value, no status word (' + allText(r3.chwSp) + ')');
+    ok(!/\d|monitors/.test(allText(r3.hw)) && /^The plant has a hot water supply temperature sensor and a hot water return temperature sensor\.$/.test(allText(r3.hw)), '1: a plant with no setpoint and no enable prints its sensors only, no "monitors" list (' + allText(r3.hw) + ')');
+    ok(/starts and stops each boiler/.test(allText(r3.hwLockout)) && !/\d|setpoint|hold/.test(allText(r3.hwLockout)), 'b: a hot water plant with an outdoor air lockout setpoint point and a water setpoint point: no value and no setpoint claim (' + allText(r3.hwLockout) + ')');
+    ok(/The plant has an outdoor air temperature lockout/.test(allText(r3.hwLockoutStatus)) && !/Lockout|was off|At the time|\d/.test(allText(r3.hwLockoutStatus)), 'b: a plant with a lockout status point says it has the lockout, not that it was off (' + allText(r3.hwLockoutStatus) + ')');
+    ok(/heating setpoint, below which it adds heat, and a cooling setpoint/.test(allText(r3.vavSp)) && !/\d|ons an?d|monitors|by command/.test(allText(r3.vavSp)), 'c: a VAV group describes its zone heating and cooling setpoints with no number (' + allText(r3.vavSp) + ')');
+    ok(/A separate pair of setpoints applies when the building is unoccupied\./.test(allText(r3.vavMost)) && /listed in Appendix A\./.test(allText(r3.vavMost)) && !/\d/.test(allText(r3.vavMost)), 'c: unoccupied setpoints are named, the values point to Appendix A, no number is printed (' + allText(r3.vavMost) + ')');
+    ok(/listed in Appendix A\./.test(allText(r3.vavVary)) && !/\d/.test(allText(r3.vavVary)), 'c: the zone setpoint values are never printed in the description (' + allText(r3.vavVary) + ')');
+    ok(!/Appendix A/.test(allText(r3.vavNoAppendix)), 'c: the Appendix A reference prints only when Appendix A is in the report (' + allText(r3.vavNoAppendix) + ')');
     ok(allText(r3.vavSched).indexOf('6:00 AM-9:00 PM on 2 units and 7:00 AM-6:00 PM on 1 unit') >= 0, 'c: the schedule is part of the start sentence (' + allText(r3.vavSched) + ')');
-    ok(/start and stop on the occupied schedule \(5:00 AM-9:00 PM\)/.test(allText(r3.ahuSched.map((s) => s.text))) && /heating coil valve and cooling coil valve modulate in sequence to hold the supply air temperature at 55°F for cooling/.test(allText(r3.ahuSched.map((s) => s.text))) && /fan speed modulates to hold the duct static pressure at 1\.1 in\. w\.c\./.test(allText(r3.ahuSched.map((s) => s.text))) && !/monitors|by command|positioned/.test(allText(r3.ahuSched.map((s) => s.text))), 'c: an air handler gives start and stop, each loop with its setpoint, no "monitors" list and no "by command" (' + allText(r3.ahuSched.map((s) => s.text)) + ')');
-    ok(!/\d°F/.test(allText(r3.vavNoSp)) && /held between the heating setpoint and the cooling setpoint/.test(allText(r3.vavNoSp)), 'c: no setpoint value, no number printed (' + allText(r3.vavNoSp) + ')');
+    ok(/start and stop on the occupied schedule \(5:00 AM-9:00 PM\)/.test(allText(r3.ahuSched.map((s) => s.text))) && /heating coil valve and cooling coil valve modulate in sequence to hold the supply air temperature\./.test(allText(r3.ahuSched.map((s) => s.text))) && /fan speed is varied to hold the duct static pressure/.test(allText(r3.ahuSched.map((s) => s.text))) && !/monitors|by command|positioned|1\.1|55°F/.test(allText(r3.ahuSched.map((s) => s.text))), 'c: an air handler gives start and stop, each loop without its setpoint value, no "monitors" list and no "by command" (' + allText(r3.ahuSched.map((s) => s.text)) + ')');
+    ok(!/\d/.test(allText(r3.vavNoSp)) && !/held between/.test(allText(r3.vavNoSp)), 'c: no setpoint value, no number printed (' + allText(r3.vavNoSp) + ')');
     ok(r3.counts.join(' / ') === 'Air Handler / Air Handlers / Heater / Exhaust Fan / Dedicated Outdoor Air System Unit / Variable Air Volume Terminals / Hot Water Plant', 'd: the type count line is singular for one unit (' + r3.counts.join(' / ') + ')');
     ok(!/adjust|0\.0/.test(allText(r3.adjZero)), '2: no adjustment sentence and no adjustment value is printed: ' + allText(r3.adjZero));
     ok(!/adjust|1\.5/.test(allText(r3.adjSome)), '2: a stored adjustment is a reading, not printed: ' + allText(r3.adjSome));
     ok(!/resets between/.test(allText(r3.noProof)) && /resets between its minimum and maximum/.test(allText(r3.proof)), '7: "airflow setpoint resets between minimum and maximum" only with the stored minimum and maximum airflow setpoints');
     ok(r3.proofRows.join(',') === 'true,false,true', '7: proof = a minimum and a maximum airflow point of the unit; the Air Source Minimum point does not count (' + r3.proofRows.join(',') + ')');
-    ok(!/monitors|speed command|by command|duct static pressure/.test(allText(r3.fanReading.map((s) => s.text))) && /enables the supply fan/.test(allText(r3.fanReading.map((s) => s.text))), 'A: a supply fan with no speed command point has no speed sentence and no "monitors" list: ' + r3.fanReading.map((s) => s.text).filter((x) => /fan/.test(x)).join(' '));
-    ok(/The supply fan speed modulates to hold the duct static pressure at 1\.1 in\. w\.c\./.test(allText(r3.fanCmd.map((s) => s.text))), 'A: with a speed command point the supply fan speed modulates to hold the duct static pressure at its setpoint');
+    ok(!/monitors|speed command|by command|varied/.test(allText(r3.fanReading.map((s) => s.text))) && /enables the supply fan/.test(allText(r3.fanReading.map((s) => s.text))), 'A: a supply fan with no speed command point has no speed sentence and no "monitors" list: ' + r3.fanReading.map((s) => s.text).filter((x) => /fan/.test(x)).join(' '));
+    ok(/The supply fan speed is varied to hold the duct static pressure/.test(allText(r3.fanCmd.map((s) => s.text))) && !/1\.1/.test(allText(r3.fanCmd.map((s) => s.text))), 'A: with a speed command point the supply fan speed is varied to hold the duct static pressure, no value');
     const fns = r3.fanReading.map((s) => s.fn);
-    const FN_ORDER = ['start', 'temp', 'air', 'oa', 'zone', 'safety'];
+    const FN_ORDER = ['config', 'start', 'air', 'temp', 'oa', 'zone', 'requests', 'safety', 'sensors'];
     ok(fns.join(',') === fns.slice().sort((a, b) => FN_ORDER.indexOf(a) - FN_ORDER.indexOf(b)).join(',') && new Set(fns).size >= 4, '6: air handler sentences are in operating order (start and stop, temperature, airflow and static pressure, outdoor air, zone, safety): ' + fns.join(','));
     ok(r3.th.length >= 5 && r3.th.length % 5 === 0 && r3.th.every((x) => x.over <= 1 && x.inside), '3: every Findings Summary header cell holds its text (ATTRIBUTE inside the table): ' + JSON.stringify(r3.th));
     ok(r3.heater === 'sparse' && r3.light === 'light page' && r3.busy === '', '4: figure rule: a sparse graphic (a heater tile) and a light property page are not printed, a graphic with many readouts is: ' + [r3.heater, r3.light, r3.busy].join(' / '));
     ok(r3.trimHalf.w < 700 && r3.trimHalf.w > 500 && r3.trimHalf.h === 660 && r3.trimFull.w === 1200 && r3.trimFull.h === 660 && r3.trimLight.w === 300 && r3.trimLight.h === 200, '4: a dark crop with a wide empty black margin is cut to its content; others are not: ' + JSON.stringify([r3.trimHalf, r3.trimFull, r3.trimLight]));
     ok(r3.keep.join('|') === '900|30+120', '5: a heading goes to the next page together with its first paragraph: ' + r3.keep.join('|'));
+
+    // ---- 4e. 2026-11-17: group labels come from the points (dual duct), descriptions have no ASHRAE word ----
+    const dd = await page.evaluate(() => {
+      const rows = {
+        t1: { id: 't1', pointsRaw: { 'Hot Deck Flow Control': '1', 'Cold Deck Flow Control': '2', 'Zone Temp': '70' } },
+        t2: { id: 't2', pointsRaw: { 'Flow Control': '1', 'Air Source Hot Deck': '1', 'Air Source Cold Deck': '2', 'Zone Temp': '70' } },
+        t3: { id: 't3', pointsRaw: { 'Flow Control': '1', 'Zone Temp': '70' } },
+        a1: { id: 'a1', subtype: 'mtz', pointsRaw: { 'HD Supply Air Temp': '90', 'CD Supply Air Temp': '55', 'Supply Fan Status': 'On' } },
+        a2: { id: 'a2', pointsRaw: { 'Supply Air Temp': '55', 'Supply Fan Status': 'On' } },
+      };
+      const eq = (id, category, label) => ({ id, name: id, category, categoryLabel: label, compliance: { coveredPoints: [], missingPoints: [] } });
+      const b = { name: 'Test Library', equipResults: [eq('t1', 'vav', 'Variable Air Volume Terminal'), eq('t2', 'vav', 'Variable Air Volume Terminal'), eq('t3', 'vav', 'Variable Air Volume Terminal'), eq('a1', 'ahu', 'Air Handling Unit'), eq('a2', 'ahu', 'Air Handling Unit')] };
+      const groups = _a36DetGroups(b, rows);
+      const texts = groups.map((g) => _a36DetDescriptionParas(g, { rowsById: rows, setpointAppendix: false, libGroups: groups }, 0).join(' ')).join(' ');
+      return { labels: groups.map((g) => g.label + ':' + g.category + ':' + g.units.length), texts };
+    });
+    ok(dd.labels.some((l) => /^Dual-Duct Terminal:ddvav:2$/.test(l)) && dd.labels.some((l) => /^Variable Air Volume Terminal:vav:1$/.test(l)), 'dual-duct terminals (hot deck and cold deck points, also a single Flow Control with Air Source Hot Deck and Cold Deck points) are one dual-duct group, the plain one is not: ' + dd.labels.join(' | '));
+    ok(dd.labels.some((l) => /^Dual-Duct .*Air Handling Unit:ahu:1$/.test(l)) && !dd.labels.some((l) => /Multi-Zone.*:ahu:1/.test(l) && /Dual/.test(l)), 'an air handler whose points show a hot deck and a cold deck is labeled dual-duct, not multi-zone: ' + dd.labels.join(' | '));
+    ok(!/ASHRAE/.test(dd.texts) && !/\d\s?(°F|%|in\.)/.test(dd.texts), 'the descriptions hold no ASHRAE word and no digits followed by °F, % or in.: ' + dd.texts.slice(0, 300));
 
     // ---- 7b. a large project: many libraries, long tables, long deficiency list; every page still fits ----
     const big = await page.evaluate(async () => {
@@ -924,8 +943,8 @@ const ok = (c, m) => {
     ok(fStart > 0 && fEnd > fStart && /Chilled Water Plant/.test(findPlants) && /Hot Water Plant/.test(findPlants), 'D4: Findings has a Chilled Water Plant block and a Hot Water Plant block');
     ok(!/schedul/i.test(findPlants) && !/Occupied schedule/.test(pt), 'D4: plants get no schedule finding and no schedule line');
     ok(/Chilled Water Supply Temperature Reset/.test(findPlants) && /Hot Water Supply Temperature Reset/.test(findPlants), 'D4: plant findings include the supply temperature reset sequence of each plant (same treatment as the plants Detailed already printed)');
-    ok(/The hot water plant serves the building heating system\. The plant has one boiler and one hot water pump\. The building automation system enables the hot water pump\. The plant holds the hot water supply temperature at its setpoint\./.test(pt) && !/At the time of the audit|150\.2|130\.0|by an enable command|primary hot water pump/.test(pt), 'item 2 (2026-11-15): a plant description is what the plant has (one boiler, one pump, no speed claim without a drive point, no word primary), then the sequence (what starts it, its setpoint; a supply setpoint value can be a reset output), no reading');
-    ok(!/primary hot water pump (has|has a)|status point|monitors/.test(pt), 'item 2: no "has an enable command", "status point" or "monitors" wording');
+    ok(/The hot water plant consists of one boiler and one hot water pump\./.test(pt) && /starts and stops|enables the hot water pump/.test(pt) && !/At the time of the audit|150\.2|130\.0|by an enable command|primary hot water pump|holds the hot water supply temperature at its setpoint/.test(pt), 'item 2 (2026-11-17): a plant description is what the plant has (one boiler, one pump) and how the system controls it, no setpoint claim without a proving point, no reading');
+    ok(!/primary hot water pump (has|has a)|status point/.test(pt), 'item 2: no "has an enable command", "status point" or "monitors" wording');
 
     // ---- 12. Round 4 (2026-11-11): figure crop, picture rank, carbon dioxide counts, power meter wording ----
     const round4 = await page.evaluate(async () => {

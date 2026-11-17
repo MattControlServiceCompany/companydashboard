@@ -22288,7 +22288,7 @@ function _emCfgDistinct(entries, re, pick) {
 //   hwSetpoint / chwSetpoint / dpSetpoint: { n, unit } of a named setpoint SETTING point, or null (a reset signal, an active value or a loop output is not a setting) }
 function emPlantConfig(points) {
   var E = _emCfgEntries(points);
-  var out = { boilers: 0, chillers: 0, pumps: { primary: 0, secondary: 0, plain: 0 }, pumpTotal: 0, pumpSpeed: {}, noPumpDrive: false, rotation: null, bypassValve: false, boilerIsolation: false, circuits: 0, compressors: 0, condenserFans: false, coolingTower: false, chillerType: '', hwSetpoint: null, chwSetpoint: null, dpSetpoint: null };
+  var out = { boilers: 0, chillers: 0, pumps: { primary: 0, secondary: 0, plain: 0 }, pumpTotal: 0, pumpSpeed: {}, noPumpDrive: false, rotation: null, bypassValve: false, boilerIsolation: false, circuits: 0, compressors: 0, condenserFans: false, coolingTower: false, chillerType: '', hwSetpoint: null, chwSetpoint: null, dpSetpoint: null, boilerScope: '', boilerSends: [], boilerReads: [], chillerScope: '', chillerSends: [], condensing: false, heatRequests: 0, pumpCurrent: false, pumpFailAlarm: false, boilerFault: false, variablePrimary: false, pumpDpControl: false };
   out.boilers = _emCfgDistinct(E, /\bboiler\s*-?\s*(\d+)\b|^b\s*-?\s*(\d+)\s+(?:fire|firing|hws|hot\s*water|status|enable)/i, function (m) {
     return m[1] || m[2];
   }).length;
@@ -22408,7 +22408,83 @@ function emPlantConfig(points) {
     var v = _emCfgNumber(e.value);
     if (v && /^psi$/i.test(v.unit)) out.dpSetpoint = { n: v.n, unit: 'psi' };
   });
+  // Control scope, monitoring and pumping arrangement (System Description, 2026-11-17). Point names only; a fact the names do not show stays
+  // empty (unknown, never a guess). No value of a point is read here: a setpoint or a reading is a snapshot of the audit day.
+  //   boilerScope: 'bas' (a PID loop of the building automation system with a firing rate point) | 'integration' (the boiler controllers share data
+  //     with the building automation system over a network: two kinds of boiler-internal data, or a signal the system sends together with a firing
+  //     rate the boiler reports) | 'enable' (boiler enable and status only: no firing rate, setpoint or PID point) | ''.
+  //   boilerSends: what the system sends ('enable', 'setpoint'); boilerReads: what a boiler controller reports back (words).
+  //   chillerScope: 'integration' (a BACnet chiller enable, a BAS chilled water setpoint or a capacity limit) | 'enable' (chiller enable only) | ''.
+  //   condensing: only when a point name says the boiler is condensing (a vendor name alone does not prove it).
+  //   heatRequests: distinct Heat Request n inputs; pumpCurrent: a pump amperage or current point; pumpFailAlarm: a pump alarm (enabled and status
+  //   off, disabled and status on); boilerFault: a boiler fault or lockout point; pumpDpControl: variable speed pumps with a pump speed PID or a
+  //   differential pressure point; variablePrimary: plain pumps with speed, a differential pressure point, a bypass valve and an isolation valve
+  //   on each boiler (one set of pumps serves the boilers and the building).
+  var has = function (re) {
+    return E.some(function (e) {
+      return re.test(e.name);
+    });
+  };
+  var firing = has(/fir(?:e|ing)\s*-?\s*rate/i);
+  var notVendorTag = function (re) {
+    return E.some(function (e) {
+      return re.test(e.name) && !/vfd|pump|chiller|fan|compressor/i.test(e.name);
+    });
+  };
+  if (out.boilers > 0) {
+    var classes = [];
+    if (has(/flame\s*(?:strength|signal)/i)) classes.push('flame signal strength');
+    if (has(/\boxygen\b|\bo2\b/i)) classes.push('oxygen level');
+    if (has(/exhaust\s*temp|\bflue\b/i)) classes.push('exhaust temperature');
+    if (notVendorTag(/fault\s*code/i)) classes.push('fault codes');
+    if (notVendorTag(/\bstatus\s*(?:msv|code)\b|\bunit\s*status\b/i)) classes.push('operating status');
+    if (has(/master\s*address/i)) classes.push('master address');
+    var sends = [];
+    if (has(/boiler\s*system\s*enable|bacnet[^]*enable/i)) sends.push('enable');
+    if (has(/\bboiler\s*\d+\s*set\s*-?\s*point\b|net\s*remote\s*set|remote\s*set\s*-?\s*pt|set\s*-?\s*point\s*reset\s*signal|\bsystem\s*set\s*-?\s*point\b/i)) sends.push('setpoint');
+    var pidLoop = has(/boiler\s*control\s*pid\s*\/\s*input/i) && has(/boiler\s*control\s*pid\s*\/\s*set\s*-?\s*point/i) && has(/boiler\s*control\s*pid\s*\/\s*pid\s*out/i);
+    var reads = classes.slice();
+    if (firing) reads.unshift('firing rate');
+    out.boilerSends = sends;
+    out.boilerReads = reads;
+    if (pidLoop && firing) out.boilerScope = 'bas';
+    else if (classes.length >= 2 || (sends.length > 0 && firing)) out.boilerScope = 'integration';
+    else if (!firing && !sends.length && has(/\bboiler\s*(?:\d+\s*)?enable\b/i) && has(/\bboiler\s*\d+\s*status\b/i)) out.boilerScope = 'enable';
+    out.condensing = has(/\bcondensing\s*boiler|\bboiler\b[^]*\bcondensing\b/i);
+  }
+  if (out.chillers > 0) {
+    var csends = [];
+    if (has(/bacnet\s*chiller\s*enable/i)) csends.push('enable');
+    if (has(/\bbas\s*chilled\s*water\s*set\s*-?\s*point/i)) csends.push('setpoint');
+    if (has(/capacity\s*limit/i)) csends.push('capacity limit');
+    out.chillerSends = csends;
+    if (csends.length) out.chillerScope = 'integration';
+    else if (has(/\bchiller\s*\d*\s*enable\b/i)) out.chillerScope = 'enable';
+  }
+  out.heatRequests = _emCfgDistinct(E, /\bheat\s*request\s*(\d+)\b/i).length;
+  out.pumpCurrent = has(/\b(?:pump|hwp|chwp)[^]*\b(?:amperage|current)\b/i);
+  out.pumpFailAlarm = has(/\b(?:pump|hwp|chwp)[^]*(?:enabled,?\s*status\s*is\s*off|disabled,?\s*status\s*is\s*on|status\s*failure)/i);
+  out.boilerFault = has(/\bboiler[^]*\b(?:fault|lockout)\b/i);
+  var dpPoint = E.some(function (e) {
+    return /differential\s*pressure/i.test(e.name) && !/alarm|\blow\b|\bhigh\b|set\s*-?\s*point/i.test(e.name);
+  });
+  var speedVar = ['primary', 'secondary', 'plain'].some(function (r) {
+    return out.pumpSpeed[r] === 'variable';
+  });
+  out.pumpDpControl = speedVar && (has(/pump\s*speed\s*pid/i) || dpPoint);
+  out.variablePrimary = out.pumps.plain > 0 && out.pumps.primary === 0 && out.pumps.secondary === 0 && out.pumpSpeed.plain === 'variable' && dpPoint && out.bypassValve && out.boilerIsolation;
   return out;
+}
+// The ONE rule for "dual duct" (an air handler or a terminal): a hot deck marker and a cold deck marker together (HD and CD as whole words, or
+// the words hot deck and cold deck) in the point names. emAirConfig and emTerminalConfig both read it.
+function _emCfgDualDuct(E) {
+  var hot = E.some(function (e) {
+    return /\bhot\s*deck\b/i.test(e.name) || /\bHD\b/.test(e.name);
+  });
+  var cold = E.some(function (e) {
+    return /\bcold\s*deck\b/i.test(e.name) || /\bCD\b/.test(e.name);
+  });
+  return hot && cold;
 }
 // Air unit (air handler, rooftop unit, DOAS) configuration from the stored points { name: value }:
 // { dualDuct, fans: [{ type: 'supply'|'return'|'relief'|'exhaust', n, drives, each }] (only fans that show a drive point; n = fans; drives = the drives the points show; each = every fan shows its own drive),
@@ -22417,15 +22493,9 @@ function emPlantConfig(points) {
 // A "Cooling Stage" does not prove DX and a "Heating Stage" does not prove gas or electric heat: only counts are given.
 function emAirConfig(points) {
   var E = _emCfgEntries(points);
-  var out = { dualDuct: false, fans: [], erv: { present: false, driveFans: [] }, condensingUnits: 0, cuStages: 0, compressors: 0, circuits: 0, condenserFans: 0, gasHeat: false, coolingStages: 0, heatingStages: 0 };
-  // Dual duct: a hot deck marker and a cold deck marker together (HD and CD as whole words, or the words hot deck and cold deck).
-  var hot = E.some(function (e) {
-    return /\bhot\s*deck\b/i.test(e.name) || /\bHD\b/.test(e.name);
-  });
-  var cold = E.some(function (e) {
-    return /\bcold\s*deck\b/i.test(e.name) || /\bCD\b/.test(e.name);
-  });
-  out.dualDuct = hot && cold;
+  var out = { dualDuct: false, fans: [], erv: { present: false, driveFans: [] }, condensingUnits: 0, cuStages: 0, compressors: 0, circuits: 0, condenserFans: 0, gasHeat: false, coolingStages: 0, heatingStages: 0, staticReset: '', staticControl: '', safeties: { freeze: false, lowLimit: false, smoke: false, highStatic: false, filter: false }, alarms: { fanFailure: false, runtime: false, ductPressure: false, supplyTemp: false }, requestsIn: { air: false, heat: false, cool: false }, requestOut: { heat: false, cool: false } };
+  // Dual duct: a hot deck marker and a cold deck marker together (_emCfgDualDuct).
+  out.dualDuct = _emCfgDualDuct(E);
   // Fans with a drive point. The fans of an energy recovery ventilator (ERV) are its own.
   var ervRe = /\berv\b/i;
   var driveRe = /\b(?:vfd|vsd)\b|\bdrive\b/i;
@@ -22506,7 +22576,80 @@ function emAirConfig(points) {
   out.gasHeat = E.some(function (e) {
     return /\bgas\s*valve\b|\bgas\s*heat/i.test(e.name);
   });
+  // Sequences and protection the point names prove (System Description, 2026-11-17). A setting is read only as a word (Airflow Requests, Average), never printed as a value.
+  //   staticReset: 'requests' (Static Reset Selection = a request value, with Air Request n inputs). staticControl: 'average' | 'highest' | 'lowest'
+  //   (Control Selection on a dual-duct unit that shows a static pressure point on each deck). requestsIn: numbered Air/Heat/Cool Request n inputs;
+  //   requestOut: the unit's own Heat Request or Cool Request output (to a plant). safeties and alarms: the protection and alarm points.
+  var hasA = function (re) {
+    return E.some(function (e) {
+      return re.test(e.name);
+    });
+  };
+  E.forEach(function (e) {
+    if (/static\s*reset\s*selection/i.test(e.name) && /request/i.test(e.value) && hasA(/\bair\s*request\s*\d/i)) out.staticReset = 'requests';
+    if (/^control\s*selection$/i.test(e.name) && out.dualDuct && hasA(/\b(?:hd|hot\s*deck)\b[^]*static/i) && hasA(/\b(?:cd|cold\s*deck)\b[^]*static/i)) {
+      out.staticControl = /average|mean/i.test(e.value) ? 'average' : /\bmax|high/i.test(e.value) ? 'highest' : /\bmin|low/i.test(e.value) ? 'lowest' : '';
+    }
+  });
+  out.safeties = {
+    freeze: hasA(/freeze\s*-?\s*stat/i),
+    lowLimit: hasA(/\blow\s*limit\s*(?:safety|trip)|mixed\s*air[^]*low\s*limit/i),
+    smoke: hasA(/\bsmoke\b/i),
+    highStatic: hasA(/high\s*static\s*safety|static[^]*\bsafety\b/i),
+    filter: hasA(/^filter\b|filter\s*(?:dirty|differential|status)/i),
+  };
+  out.alarms = {
+    fanFailure: hasA(/fan[^]*(?:enabled,?\s*status\s*is\s*off|disabled,?\s*status\s*is\s*on)/i),
+    runtime: hasA(/runtime\s*hours\s*exceeded/i),
+    ductPressure: hasA(/(?:high|low)[^]*static\s*pressure\s*alarm/i),
+    supplyTemp: hasA(/(?:high|low)[^]*supply\s*air\s*temperature\s*alarm/i),
+  };
+  out.requestsIn = { air: hasA(/\bair\s*request\s*\d/i), heat: hasA(/\bheat\s*request\s*\d/i), cool: hasA(/\bcool\s*request\s*\d/i) };
+  out.requestOut = { heat: hasA(/^heat\s*request$/i), cool: hasA(/^cool\s*request$/i) };
   return out;
+}
+// Zone terminal configuration (System Description, 2026-11-17) from the stored points { name: value }: { dualDuct (_emCfgDualDuct),
+// deckSensors: 2 (a flow control on the hot deck and one on the cold deck) | 1 (one flow control for both decks) | 0, requests: { air, heat, cool }
+// (the terminal's own request points to its air source), heating: emTerminalHeating(names), electricReheat: emElectricReheat(names) }.
+function emTerminalConfig(points) {
+  var E = _emCfgEntries(points);
+  var names = E.map(function (e) {
+    return e.name;
+  });
+  var has = function (re) {
+    return names.some(function (n) {
+      return re.test(n);
+    });
+  };
+  var both = has(/hot\s*deck\s*flow\s*control/i) && has(/cold\s*deck\s*flow\s*control/i);
+  return {
+    dualDuct: _emCfgDualDuct(E),
+    deckSensors: both ? 2 : has(/^flow\s*control\b/i) ? 1 : 0,
+    requests: { air: has(/i\s*need\s*air\s*request/i), heat: has(/heat\s*request/i), cool: has(/cool\s*request/i) },
+    heating: emTerminalHeating(names),
+    electricReheat: emElectricReheat(names),
+  };
+}
+// Exhaust fan configuration (System Description, 2026-11-17) from the stored points: { enable, status, current, interlock (an "Associated
+// Equipment Running" point), failureAlarm (enabled and status off, disabled and status on), runtimeAlarm, schedulePoint }.
+function emExhaustFanConfig(points) {
+  var names = _emCfgEntries(points).map(function (e) {
+    return e.name;
+  });
+  var has = function (re) {
+    return names.some(function (n) {
+      return re.test(n);
+    });
+  };
+  return {
+    enable: has(/\benable\b/i),
+    status: has(/fan\s*\d*\s*status\b/i),
+    current: has(/\bamperage\b|\bcurrent\b/i),
+    interlock: has(/associated\s*equipment\s*running/i),
+    failureAlarm: has(/enabled,?\s*status\s*is\s*off|disabled,?\s*status\s*is\s*on/i),
+    runtimeAlarm: has(/runtime\s*hours\s*exceeded/i),
+    schedulePoint: has(/^schedule$/i),
+  };
 }
 // Round 7 R1 (2026-11-14): the heating side of a zone terminal (vav, fpb), read from its point names.
 //   'device'  a heating device or heat source the terminal itself controls (valve, heat source, electric, stage, baseboard, hot water).

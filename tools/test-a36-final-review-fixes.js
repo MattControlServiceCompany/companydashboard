@@ -156,10 +156,10 @@ ok(lits.every((s) => /variable-speed savings/.test(s)), '3. no report string say
     ok(r.off[0] === true && r.off[1] === false && r.off[2] === false, '13. only the offline deficiency is recognised: ' + r.off.join(','));
     ok(r.kinds.join(',') === ',zone,zone,zone,ahu,,ahu,,', '15. the unit kinds (na, monitoring rule, ahu, zone, none): ' + r.kinds.join(','));
     ok(r.base === 3 && r.baseNone === 2, '15. the base of a group is the units that need a CO2 sensor (3 of 5; a group with none keeps its count): ' + r.base + ', ' + r.baseNone);
-    ok(r.spSome.some((t) => t === 'One of the two units holds the supply air temperature at 55°F for cooling.') && !r.spSome.some((t) => /^The cooling coil valve modulates to hold the supply air temperature at 55/.test(t)), '10. a setpoint on one unit of two: its own sentence about that unit: ' + JSON.stringify(r.spSome));
-    ok(r.spAll.some((t) => /to hold the supply air temperature at 55°F for cooling\.$/.test(t)) && !r.spAll.some((t) => /One of/.test(t)), '10. a setpoint on every unit prints in the main sentence: ' + JSON.stringify(r.spAll));
-    ok(r.spNoCounts.some((t) => /at 55°F for cooling\.$/.test(t)), '10. no counts given = every unit (callers that pass plain params)');
-    ok(r.dspSome.some((t) => t === 'The supply fan speed modulates to hold the duct static pressure.') && r.dspSome.some((t) => t === 'Two of the three units hold the duct static pressure at 1.5 in. w.c.'), '10. the static pressure value follows the same rule: ' + JSON.stringify(r.dspSome));
+    ok(![].concat(r.spSome, r.spAll, r.spNoCounts, r.dspSome).some((x) => /\d/.test(x)), '10. (2026-11-17) no setpoint value is printed in any description sentence: ' + JSON.stringify([r.spSome, r.spAll, r.dspSome]));
+
+
+
     ok(errs.length === 0, 'no page errors: ' + errs.join(' | '));
   } finally {
     await ctx.close();

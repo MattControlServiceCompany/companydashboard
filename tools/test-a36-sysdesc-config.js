@@ -89,15 +89,18 @@ const ok = (c, m) => {
 
       // ---- sentences: a hand built group of units through _a36DetDescriptionParas ----
       const cp = (key) => ({ categoryKey: key, ashrae36PointName: key, categoryLabel: key, pointName: key });
-      const mk = (cat, label, units, keys) => {
+      const lens = [];
+      const mk = (cat, label, units, keys, missing) => {
         const rowsById = {};
         const eqs = units.map((pts, i) => {
           const id = 'u' + i;
           rowsById[id] = { id, pointsRaw: pts, points: pts };
           const nm = Object.keys(pts);
-          return { id, name: 'Unit ' + (i + 1), compliance: { coveredPoints: keys.map(cp), pumpDrive: emPumpDriveEvidence(nm) } };
+          return { id, name: 'Unit ' + (i + 1), compliance: { coveredPoints: keys.map(cp), missingPoints: (missing || []).map((k) => ({ categoryKey: k })), pumpDrive: emPumpDriveEvidence(nm) } };
         });
-        return _a36DetDescriptionParas({ category: cat, label, units: eqs, names: eqs.map((e) => e.name), shown: [] }, { rowsById, setpointAppendix: false }, 0).join(' ');
+        const paras = _a36DetDescriptionParas({ category: cat, label, units: eqs, names: eqs.map((e) => e.name), shown: [] }, { rowsById, setpointAppendix: false }, 0);
+        paras.forEach((p) => lens.push(_a36DetSentenceCount(p)));
+        return paras.join(' ');
       };
       const HWKEYS = ['boilerEnable', 'hwPumpEnable', 'hwSetpoint', 'hwdp', 'hwPumpSpeed'];
       const CHWKEYS = ['chillerEnable', 'pchwpEnable', 'chwSetpoint', 'chwdp', 'schwpSpeed'];
@@ -105,11 +108,18 @@ const ok = (c, m) => {
       out.tHwPlain = mk('hwp', 'Hot Water Plant', [names(['Boiler 1 Enable', 'Boiler 2 Enable', 'Hot Water Pump 1 Enable', 'Hot Water Pump 2 Enable'])], HWKEYS);
       out.tHwPrimary = mk('hwp', 'Hot Water Plant', [names(['Boiler 1 Enable', 'Primary Pump 1 Enable', 'Primary Pump 1 Speed', 'Secondary Pump 1 Speed'])], HWKEYS);
       out.tHwStatusRot = mk('hwp', 'Hot Water Plant', [names(['Boiler 1 Enable', 'Hot Water Pump 1 Enable', 'Hot Water Pump 1 Run Hours', 'Hot Water Pump 2 Run Hours', 'Hot Water Pump 2 Enable'])], HWKEYS);
+      out.tHwEnableOnly = mk('hwp', 'Hot Water Plant', [names(['Boiler 1 Enable', 'Boiler 1 Status', 'Boiler 2 Enable', 'Boiler 2 Status', 'Hot Water Pump 1 Enable', 'Hot Water Pump 2 Enable', 'Hot Water Set Point'])], ['boilerEnable', 'boilerStatus', 'hwPumpEnable', 'hwSetpoint']);
+      out.tHwIntegration = mk('hwp', 'Hot Water Plant', [names(['Boiler 1 Enable', 'Boiler 1 Fire Rate', 'Boiler 1 Setpoint %', 'Boiler 1 Flame Status', 'Boiler 1 Fault Code', 'Hot Water Pump 1 Enable'])], ['boilerEnable', 'hwPumpEnable']);
+      out.tAirSensors = mk('ahu', 'Variable Air Volume Air Handling Unit', [names(['Supply Fan Enabled', 'Supply Fan Speed Command', 'Duct Static Pressure', 'Supply Air Temperature', 'Freezestat Alarm'])], ['sfEnable', 'sfSpeedCmd', 'dsp', 'sat', 'freezeStat'], ['oaFlow']);
+      window._a36DetSequenceIds = function () { return ['hw_request_reset', 'plant_oa_lockout']; };
+      out.tSeq = mk('hwp', 'Hot Water Plant', [names(['Boiler 1 Enable', 'Boiler 1 Status', 'Hot Water Pump 1 Enable'])], ['boilerEnable', 'boilerStatus', 'hwPumpEnable']);
+      window._a36DetSequenceIds = function () { return []; };
       out.tChwAir = mk('chwp', 'Chilled Water Plant', [names(['Chiller 1 Enable', 'Chilled Water Pump 1 Speed', 'Sys 1 Condenser Fan Stage', 'Sys 1 Compressor 1 Run', 'Sys 2 Compressor 1 Run', 'Chilled Water Setpoint', 'Chilled Water Differential Pressure', 'Chilled Water Differential Pressure Setpoint AV'], { 'Chilled Water Setpoint': '57.0', 'Chilled Water Differential Pressure Setpoint AV': '10.0 psi' })], CHWKEYS);
       out.tChwNoType = mk('chwp', 'Chilled Water Plant', [names(['Chiller 1 Enable', 'Chilled Water Pump 1 Speed', 'Chilled Water Set Point', 'Active Setpoint', 'Circuit 1 - Compressor Starts'], { 'Chilled Water Set Point': '48.9', 'Active Setpoint': '48.9' })], CHWKEYS);
       out.tAirGas = mk('rtu', 'Single Zone Rooftop Unit', [names(['Heating Gas Valve', 'Heating Stage 1', 'Cooling Stage 1', 'Cooling Stage 2', 'Supply Air Temperature', 'Supply Fan Enabled'])], ['sfEnable', 'htgValve', 'sat']);
       out.tAirCoil = mk('rtu', 'Single Zone Rooftop Unit', [names(['Heating Valve', 'Supply Air Temperature', 'Supply Fan Enabled'])], ['sfEnable', 'htgValve', 'sat']);
       out.tAirTwo = mk('ahu', 'Single Zone Air Handling Unit', [names(['Compressor A1 Relay', 'Compressor A2 Relay', 'Supply Fan Enabled', 'Supply Air Temperature']), names(['Cooling Stage 1', 'Supply Fan Enabled', 'Supply Air Temperature'])], ['sfEnable', 'sat']);
+      out.paraLens = lens;
       return out;
     });
 
@@ -159,13 +169,23 @@ const ok = (c, m) => {
     ok(r.comp.compressors === 2 && r.comp.condenserFans === 2 && r.comp.circuits === 0, 'compressor numbers counted once each (two name orders), two condenser fans: ' + JSON.stringify([r.comp.compressors, r.comp.condenserFans]));
 
     // sentences
-    ok(/The plant has two boilers and two secondary hot water pumps with variable frequency drives\./.test(r.tHwSecondary) && /rotates the secondary pumps weekly\./.test(r.tHwSecondary) && /The secondary pump speed modulates/.test(r.tHwSecondary) && !/primary|constant speed/.test(r.tHwSecondary), 'hot water, secondary pumps: counts, variable speed, rotation, the word secondary, no primary: ' + r.tHwSecondary);
-    ok(/two hot water pumps/.test(r.tHwPlain) && !/primary|secondary/.test(r.tHwPlain) && !/constant speed/.test(r.tHwPlain) && /enables the boilers and hot water pumps/.test(r.tHwPlain), 'plain pump names: no primary and no secondary in the text; no drive point = nothing said about speed: ' + r.tHwPlain);
+    ok(/consists of two boilers and two secondary hot water pumps with variable frequency drives\./.test(r.tHwSecondary) && /rotates the secondary pumps on a regular schedule/.test(r.tHwSecondary) && /A variable frequency drive changes the speed of a pump motor/.test(r.tHwSecondary) && /secondary pumps circulate hot water/.test(r.tHwSecondary) && !/primary|fixed speed|weekly|Tuesday/.test(r.tHwSecondary), 'hot water, variable speed secondary pumps: counts, the drive explained, rotation without frequency or day, the word secondary, no primary: ' + r.tHwSecondary);
+    ok(/two hot water pumps/.test(r.tHwPlain) && !/primary|secondary/.test(r.tHwPlain) && /single fixed speed because they have no variable frequency drives/.test(r.tHwPlain) && !/changes the pump speed/.test(r.tHwPlain), 'plain pump names: no primary and no secondary; no drive point = fixed speed, no speed control claim: ' + r.tHwPlain);
     ok(/one boiler, one primary hot water pump with a variable frequency drive and one secondary hot water pump with a variable frequency drive/.test(r.tHwPrimary), 'primary appears only when the names say primary: ' + r.tHwPrimary);
     ok(!/rotate/.test(r.tHwStatusRot), 'run hours and enable points do not make a rotation sentence: ' + r.tHwStatusRot);
-    ok(/one air-cooled chiller with two refrigerant circuits and two compressors/.test(r.tChwAir) && /supply temperature at its setpoint/.test(r.tChwAir) && /differential pressure at 10 psi/.test(r.tChwAir) && !/primary|secondary/.test(r.tChwAir), 'chilled water, condenser fans: air-cooled; supply temperature at its setpoint, DP at 10 psi; no primary or secondary: ' + r.tChwAir);
-    ok(!/air-cooled|water-cooled/.test(r.tChwNoType) && /at its setpoint/.test(r.tChwNoType) && !/48\.9/.test(r.tChwNoType), 'chilled water with no condenser fan or tower point: no type; an active setpoint is not printed as a value: ' + r.tChwNoType);
-    ok(/gas heat with one heating stage/.test(r.tAirGas) && /gas heating valve modulates/.test(r.tAirGas) && !/heating coil valve|compressor|condensing/.test(r.tAirGas) && /two cooling stages/.test(r.tAirGas), 'gas valve: gas heat, the valve is not a coil valve, stages are counts only: ' + r.tAirGas);
+    ok(/one air-cooled chiller with two refrigerant circuits and two compressors/.test(r.tChwAir) && !/setpoint|10 psi|primary|secondary/.test(r.tChwAir), 'chilled water, condenser fans: air-cooled; no setpoint claim, no value, no primary or secondary: ' + r.tChwAir);
+    ok(!/air-cooled|water-cooled/.test(r.tChwNoType) && !/setpoint|48\.9/.test(r.tChwNoType), 'chilled water with no condenser fan or tower point: no type; an enable-only plant makes no setpoint claim and prints no value: ' + r.tChwNoType);
+    ok(/does not control the boiler firing rate/.test(r.tHwEnableOnly) && !/setpoint|holds|hold/.test(r.tHwEnableOnly), 'an enable and status only plant says the system does not control the firing rate and makes no setpoint claim: ' + r.tHwEnableOnly);
+    ok(/integration/.test(r.tHwIntegration) && /own controllers?/.test(r.tHwIntegration) && !/does not control/.test(r.tHwIntegration), 'a plant with boiler internal points and a firing rate says integration: ' + r.tHwIntegration);
+    ok(/changes the speed of a pump motor/.test(r.tHwSecondary) && /maintain the difference between the supply pressure and the return pressure/.test(r.tHwSecondary), 'variable speed secondary pumps: the drive and the pressure control are described');
+    ok(/The unit has a supply air temperature sensor/.test(r.tAirSensors) && /has no [^.]*outdoor airflow measurement/.test(r.tAirSensors), 'sensors present and sensors absent are both stated: ' + r.tAirSensors);
+    ok(/protected by a freeze stat/.test(r.tAirSensors) && /request/.test(r.tAirSensors) === false, 'safeties are stated from points; no request claim without request points: ' + r.tAirSensors);
+    ok(/Rotating the boilers/.test(r.tSeq) === false && /target for the hot water supply temperature is not fixed/.test(r.tSeq) && /locked out when the outdoor air temperature/.test(r.tSeq) && !/target for the hot water supply temperature is not fixed/.test(r.tHwEnableOnly), 'the sequences input adds the matching sentences (and only with the input): ' + r.tSeq);
+    var every = [r.tHwSecondary, r.tHwPlain, r.tHwPrimary, r.tChwAir, r.tChwNoType, r.tHwEnableOnly, r.tHwIntegration, r.tAirGas, r.tAirCoil, r.tAirTwo, r.tAirSensors, r.tSeq].join(' ');
+    ok(!/\d\s?(°F|%|in\.)/.test(every), 'no digits followed by °F, % or in. in any description');
+    ok(!/ASHRAE/.test(every), 'the word ASHRAE is not in a description');
+    ok(r.paraLens.every(function (n) { return n >= 2; }), 'every paragraph has two or more sentences: ' + JSON.stringify(r.paraLens));
+    ok(/gas heat with one heating stage/.test(r.tAirGas) && /gas heating valve/.test(r.tAirGas) && !/heating coil valve|compressor|condensing/.test(r.tAirGas) && /two cooling stages/.test(r.tAirGas), 'gas valve: gas heat, the valve is not a coil valve, stages are counts only: ' + r.tAirGas);
     ok(/heating coil valve modulates/.test(r.tAirCoil) && !/gas/.test(r.tAirCoil), 'a heating valve with no gas point stays a heating coil valve: ' + r.tAirCoil);
     ok(/One of the two units has two compressors\./.test(r.tAirTwo) && /One of the two units has one cooling stage\./.test(r.tAirTwo), 'a fact of one unit of two prints as "One of the two units has ...": ' + r.tAirTwo);
     ok(errs.length === 0, 'no page error' + (errs.length ? ': ' + errs.join(' | ') : ''));
