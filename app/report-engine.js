@@ -27249,6 +27249,8 @@ function _a36DetChainEnd(tokens, i, limited) {
 // 1. The run fits the space left on the page: it stays.
 // 2. It does not fit: its figure is made smaller to fit (aspect ratio kept, not below the minimum scale of the figure).
 // 3. It still does not fit: the whole run moves to the next page and 1 and 2 apply again on the empty page.
+// 3a. A move that would leave the page more than half empty (Matt 2026-11-06: no half-empty pages) does not happen: the text starts on this
+//    page and flows on, and the figure follows its text (rule 4). The figure still never comes before its text.
 // 4. It does not fit an empty page either (a run taller than a page): the text flows on, and the figure takes the space left on its page
 //    (scaled down to fit), or moves to the next page when it cannot fit there at its minimum scale. The figure never comes before its text.
 // A finding figure (no fig.block) keeps its old rule: scaled to fit when that keeps 85 %, else the run moves.
@@ -27281,7 +27283,11 @@ function _a36DetPaginate(tokens, budget) {
     var ft = tokens[j];
     if (ft.fig && ft.fig.block) {
       var fits = fitRun(i, j);
-      if (!fits && cur.length) {
+      if (!fits && cur.length && j > i && used < budget * 0.5) {
+        splitUntil = j; // rule 3a: the page keeps the text, the figure follows it
+        j = _a36DetChainEnd(tokens, i, true);
+        fits = true;
+      } else if (!fits && cur.length) {
         flush();
         fits = fitRun(i, j);
       }

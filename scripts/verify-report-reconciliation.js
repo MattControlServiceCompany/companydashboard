@@ -158,86 +158,16 @@ if (!DATA_FILE || !fs.existsSync(DATA_FILE)) {
 // literal copy of the boolean expression at the cited render site -- not a re-derivation.
 const REGISTRY = [
   {
-    id: 'cover-sensors-partition',
+    id: 'audit-cover-counts',
     doc: 'Audit cover',
     checkType: 'a',
-    site: 'report-engine.js rptPageASHRAE36Cover ~13047-13070 (Devices to Install stat card)',
-    predicate: 'Sigma over U where phase===1 && !ioOnly, grouped by building, summed',
+    site: 'report-engine.js rptPageASHRAE36Cover (stat cards)',
+    predicate: 'Audit = full BAS audit (2026-11-17): the cover states buildings and units audited, never priced device or sequence counts',
     run(b) {
-      const expected = b.uSensorTotal;
-      const sumParts = b.buildingTotals.reduce((s, r) => s + r.sensors, 0);
-      const rendered = b.coverStats['Devices to Install'];
-      const pass = rendered === expected && sumParts === expected;
-      return { pass, expected, actual: { rendered, sumOfPerBuildingParts: sumParts } };
-    },
-  },
-  {
-    id: 'cover-sequences-partition',
-    doc: 'Audit cover',
-    checkType: 'a',
-    site: 'report-engine.js rptPageASHRAE36Cover ~13047-13070 (Sequences to Program stat card)',
-    predicate: 'Sigma over U where phase===2 && seqKey, grouped by building, summed',
-    run(b) {
-      const expected = b.uSeqTotal;
-      const sumParts = b.buildingTotals.reduce((s, r) => s + r.sequences, 0);
-      const rendered = b.coverStats['Sequences to Program'];
-      const pass = rendered === expected && sumParts === expected;
-      return { pass, expected, actual: { rendered, sumOfPerBuildingParts: sumParts } };
-    },
-  },
-  {
-    id: 'cover-sensors-not-raw-accumulator',
-    doc: 'Audit cover',
-    checkType: 'c',
-    site: 'report-engine.js rptPageASHRAE36Cover ~13047 (_a36ConsolidatedSensors)',
-    predicate: 'rendered figure must equal the buildCatalogRows-derived count, not p.totalMissingHardwarePoints',
-    run(b) {
-      const rendered = b.coverStats['Devices to Install'];
-      const pass = rendered === b.uSensorTotal && rendered !== b.rawSensors;
-      return {
-        pass,
-        expected: 'equals priced ' + b.uSensorTotal + ', differs from raw accumulator ' + b.rawSensors,
-        actual: { rendered, uSensorTotal: b.uSensorTotal, rawAccumulator: b.rawSensors },
-      };
-    },
-  },
-  {
-    id: 'cover-sequences-not-raw-accumulator',
-    doc: 'Audit cover',
-    checkType: 'c',
-    site: 'report-engine.js rptPageASHRAE36Cover ~13048 (_a36ConsolidatedSequences)',
-    predicate: 'rendered figure must equal the buildCatalogRows-derived count, not p.totalNotReadySequences',
-    run(b) {
-      const rendered = b.coverStats['Sequences to Program'];
-      const pass = rendered === b.uSeqTotal && rendered !== b.rawSeq;
-      return {
-        pass,
-        expected: 'equals priced ' + b.uSeqTotal + ', differs from raw accumulator ' + b.rawSeq,
-        actual: { rendered, uSeqTotal: b.uSeqTotal, rawAccumulator: b.rawSeq },
-      };
-    },
-  },
-  {
-    id: 'per-building-rows-not-raw-accumulator',
-    doc: 'Audit per-building detail',
-    checkType: 'c',
-    site: 'report-engine.js _a36BuildingContent ~13969-13975 (totalSensorsNeeded/totalSeqsNotReady)',
-    predicate:
-      'each building total must equal Sigma over U filtered to that building, not a raw eq.compliance/eq.seqReadiness accumulator',
-    run(b) {
-      const bad = [];
-      b.buildingTotals.forEach((row) => {
-        const expSensors = b.sensorsByBuilding[row.building] || 0;
-        const expSeq = b.seqByBuilding[row.building] || 0;
-        if (row.sensors !== expSensors || row.sequences !== expSeq) {
-          bad.push({ building: row.building, rendered: row, expected: { sensors: expSensors, sequences: expSeq } });
-        }
-      });
-      return {
-        pass: bad.length === 0,
-        expected: 'every rendered per-building total === its buildCatalogRows-filtered predicate value',
-        actual: bad.length === 0 ? 'all ' + b.buildingTotals.length + ' buildings match' : bad,
-      };
+      const c = b.coverStats;
+      const pass = c['Buildings Assessed'] === b.totalBuildings && c['Equipment Units Audited'] === b.totalEquip &&
+        !('Devices to Install' in c) && !('Sequences to Program' in c);
+      return { pass, expected: { buildings: b.totalBuildings, units: b.totalEquip, pricedCards: 'none' }, actual: c };
     },
   },
   {
@@ -386,26 +316,12 @@ async function gatherPageData(page, projId) {
       // U-level predicate sums (copy of the render sites' own filter literals)
       let uSensorTotal = 0,
         uSeqTotal = 0;
-      const sensorsByBuilding = {},
-        seqByBuilding = {};
       const seqCatSet = {};
-      // Keyed by the CLIENT-VISIBLE building name (rptBuildingDisplayName), not the raw
-      // Equipment Matrix name catRows carry in r.building -- the per-building detail page
-      // renders "Total for <displayName>" (report-engine.js _a36BuildingContent, via
-      // _a36DisplayName/rptBuildingDisplayName; the row JOIN inside that same function
-      // deliberately stays on raw r.building===b.name, only the printed label changed). The
-      // scrape below (buildingTotals) reads that rendered display name out of the DOM, so this
-      // map must be keyed the same way or every renamed building misses here with `|| 0` and
-      // falsely fails the per-building-rows-not-raw-accumulator check.
       catRows.forEach((r) => {
         if (r.phase === 1 && !r.ioOnly) {
           uSensorTotal += r.qty || 0;
-          const dn = rptBuildingDisplayName(r.building);
-          sensorsByBuilding[dn] = (sensorsByBuilding[dn] || 0) + (r.qty || 0);
         } else if (r.phase === 2 && r.seqKey) {
           uSeqTotal += r.qty || 0;
-          const dn = rptBuildingDisplayName(r.building);
-          seqByBuilding[dn] = (seqByBuilding[dn] || 0) + (r.qty || 0);
           seqCatSet[r.seqKey] = true;
         }
       });
@@ -423,12 +339,9 @@ async function gatherPageData(page, projId) {
 
       out.uSensorTotal = uSensorTotal;
       out.uSeqTotal = uSeqTotal;
-      out.sensorsByBuilding = sensorsByBuilding;
-      out.seqByBuilding = seqByBuilding;
       out.seqCategoriesInU = Object.keys(seqCatSet);
-      out.rawSensors = data.portfolio.totalMissingHardwarePoints;
-      out.rawSeq = data.portfolio.totalNotReadySequences;
       out.totalBuildings = data.portfolio.totalBuildings;
+      out.totalEquip = data.portfolio.totalEquip;
       out.totalEquip = data.portfolio.totalEquip;
       out.composite = data.portfolio.composite;
       out.pointPct = data.portfolio.pointPct;
@@ -513,20 +426,6 @@ async function gatherPageData(page, projId) {
       }
       out.coverStats = coverStats;
 
-      const buildingTotals = [];
-      auditContainer.querySelectorAll('[data-section="building"]').forEach((pg) => {
-        const txt = pg.textContent || '';
-        const re = /Total for ([^:]+):\s*install\s*([\d,]+)\s*(?:sensors?|devices?),\s*program\s*([\d,]+)\s*sequences?/g;
-        let m;
-        while ((m = re.exec(txt))) {
-          buildingTotals.push({
-            building: m[1].trim(),
-            sensors: parseInt(m[2].replace(/,/g, ''), 10),
-            sequences: parseInt(m[3].replace(/,/g, ''), 10),
-          });
-        }
-      });
-      out.buildingTotals = buildingTotals;
       document.body.removeChild(auditContainer);
 
       // ── Generate the REAL Proposal HTML (all sections ON, incl. opt-in Cost Estimate) ──
