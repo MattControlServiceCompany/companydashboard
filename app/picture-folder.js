@@ -392,7 +392,9 @@ async function _pictureStoreOpenEntry(name, entry) {
       /* the cache is an optimisation only */
     }
   }
-  return new File([blob], name, { type: _pictureStoreMime(name), lastModified: entry.mtime || 0 });
+  var file = new File([blob], name, { type: _pictureStoreMime(name), lastModified: entry.mtime || 0 });
+  file.chStoreSha = entry.sha256; // the bytes are the store content named by the index (pictureScaledPictureKey keys the scaled result by it)
+  return file;
 }
 
 /**
@@ -404,6 +406,176 @@ function pictureFileOpen(item) {
   if (typeof item.openFile !== 'function') return Promise.resolve(item);
   return item.openFile().then(null, function () {
     return null;
+  });
+}
+
+/**
+ * Scaled-picture cache (Detailed audit report speed, Matt 2026-11-17). The report scales each picture with pixel work (crop, JPEG)
+ * and used to read each store picture one download after the other. pictureScaledRun is the ONE reader for both:
+ *  - the files of a list are opened (store download or cache read) in a bounded parallel pool (_pictureStoreRunPool,
+ *    PICTURE_SCALED_PARALLEL at a time), all started before the first scale;
+ *  - the pixel work runs one picture at a time, in list order (memory: one full-size picture at once);
+ *  - the result of a scale is kept in memory (one scale per picture per page life) and in this browser's IndexedDB, store "blobs"
+ *    (database "ch-picture-folder"), key "scaled|<kind>|<tag>|<variant>|<picture>". <picture> = "sha|<sha256>" for a store picture
+ *    (no download is needed when the result is cached) or "file|<path>|<size>|<lastModified>" for a folder file. <tag> is made by the
+ *    caller from the code and constants of the scaling, so a change in the scaling gives other keys; keys of the same kind with
+ *    another tag are deleted once per page load (the cache does not grow with each release).
+ * With no IndexedDB (private mode) or a failing store the cache is only the memory one and the result is the same.
+ */
+var PICTURE_SCALED_PARALLEL = 5;
+var _pictureScaledMemo = {}; // key -> the object the scale function returned
+var _pictureScaledPruned = {}; // kind -> true after the stale keys of that kind were deleted
+
+// A short hash of a string (FNV-1a, 32 bit, hex): for the code tag of a scaling.
+function pictureScaledHash(text) {
+  var h = 2166136261;
+  for (var i = 0; i < text.length; i++) {
+    h ^= text.charCodeAt(i);
+    h = Math.imul(h, 16777619) >>> 0;
+  }
+  return ('00000000' + h.toString(16)).slice(-8);
+}
+
+// The key part that names the picture: the sha256 of a store item or of a file opened from the store; else name, size, time.
+function pictureScaledPictureKey(item) {
+  var sha = item && (item.chStoreSha || item.sha256);
+  if (sha) return 'sha|' + sha;
+  return 'file|' + (item.webkitRelativePath || item.name) + '|' + item.size + '|' + (item.lastModified || 0);
+}
+
+function _pictureScaledCopy(o) {
+  var c = {};
+  Object.keys(o).forEach(function (k) {
+    c[k] = o[k];
+  });
+  return c;
+}
+
+// Resolves a copy of the cached result, or null. Never rejects.
+function pictureScaledGet(key) {
+  if (Object.prototype.hasOwnProperty.call(_pictureScaledMemo, key)) return Promise.resolve(_pictureScaledCopy(_pictureScaledMemo[key]));
+  return _pictureFolderStoreRun(
+    'readonly',
+    function (store) {
+      return store.get(key);
+    },
+    PICTURE_STORE_CACHE
+  ).then(
+    function (v) {
+      if (!v || typeof v !== 'object') return null;
+      _pictureScaledMemo[key] = v;
+      return _pictureScaledCopy(v);
+    },
+    function () {
+      return null;
+    }
+  );
+}
+
+// Keeps a result: in memory now, in IndexedDB when it can. Never rejects.
+function pictureScaledPut(key, result) {
+  _pictureScaledMemo[key] = _pictureScaledCopy(result);
+  return _pictureFolderStoreRun(
+    'readwrite',
+    function (store) {
+      return store.put(_pictureScaledCopy(result), key);
+    },
+    PICTURE_STORE_CACHE
+  ).then(null, function () {
+    /* the cache is an optimisation only */
+  });
+}
+
+// Deletes the keys "scaled|<kind>|..." that do not start with prefix (the keys of the current tag). Never rejects.
+function _pictureScaledPrune(kind, prefix) {
+  if (_pictureScaledPruned[kind]) return Promise.resolve();
+  _pictureScaledPruned[kind] = true;
+  var from = 'scaled|' + kind + '|';
+  return _pictureFolderStoreRun(
+    'readwrite',
+    function (store) {
+      var request = store.openKeyCursor(IDBKeyRange.bound(from, from + '￿'));
+      request.onsuccess = function () {
+        var cursor = request.result;
+        if (!cursor) return;
+        if (String(cursor.key).indexOf(prefix) !== 0) store.delete(cursor.key);
+        cursor.continue();
+      };
+      return request;
+    },
+    PICTURE_STORE_CACHE
+  ).then(null, function () {
+    /* nothing to prune, or no cache */
+  });
+}
+
+/**
+ * pictureScaledRun(items, kind, tag, variantOf, scale) - items: Files or store items (pictureStoreMerge). scale(file, item) returns a
+ * promise of the result object or null. Resolves an array, one result (or null) per item, in the order of items. variantOf(item) is
+ * the part of the key that the scale depends on besides the picture (for example a limit); '' when none.
+ */
+function pictureScaledRun(items, kind, tag, variantOf, scale) {
+  var prefix = 'scaled|' + kind + '|' + tag + '|';
+  function keyOf(item, picture) {
+    return prefix + variantOf(item) + '|' + picture;
+  }
+  var results = new Array(items.length);
+  var slots = items.map(function () {
+    var slot = {};
+    slot.promise = new Promise(function (resolve) {
+      slot.resolve = resolve;
+    });
+    return slot;
+  });
+  var order = items.map(function (item, i) {
+    return i;
+  });
+  var opens = _pictureScaledPrune(kind, prefix).then(function () {
+    return _pictureStoreRunPool(order, PICTURE_SCALED_PARALLEL, function (i) {
+      var item = items[i];
+      return pictureScaledGet(keyOf(item, pictureScaledPictureKey(item)))
+        .then(function (hit) {
+          if (hit) return { hit: hit };
+          return pictureFileOpen(item).then(function (file) {
+            return { file: file };
+          });
+        })
+        .then(null, function () {
+          return { file: null };
+        })
+        .then(slots[i].resolve);
+    });
+  });
+  var chain = Promise.resolve();
+  order.forEach(function (i) {
+    chain = chain.then(function () {
+      return slots[i].promise.then(function (r) {
+        if (r.hit) {
+          results[i] = r.hit;
+          return null;
+        }
+        if (!r.file) {
+          results[i] = null;
+          return null;
+        }
+        var key = keyOf(items[i], pictureScaledPictureKey(r.file));
+        // An earlier item of this run may have scaled the same picture: its result is in memory now.
+        return pictureScaledGet(key).then(function (again) {
+          if (again) {
+            results[i] = again;
+            return null;
+          }
+          return scale(r.file, items[i]).then(function (res) {
+            results[i] = res || null;
+            if (res) pictureScaledPut(key, res); // not awaited: the report does not wait for the IndexedDB write
+            return null;
+          });
+        });
+      });
+    });
+  });
+  return Promise.all([opens, chain]).then(function () {
+    return results;
   });
 }
 
@@ -425,6 +597,7 @@ function pictureStoreMerge(projectKey, folderFiles) {
       name: name,
       size: entry.size,
       lastModified: entry.mtime || 0,
+      sha256: entry.sha256,
       openFile: function () {
         return _pictureStoreOpenEntry(name, entry).then(function (file) {
           return file || byName[name] || null;
