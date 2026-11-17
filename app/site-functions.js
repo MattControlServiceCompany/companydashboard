@@ -2507,6 +2507,8 @@ async function siteResetAllMeterTableSettings() {
    site-ui.js delegates to this array and should NOT maintain its own copy.
 */
 var RELEASE_NOTES = [
+  { v: 'v2026.11.17.329', date: '2026-11-17', title: 'Audit Report picture line says what to do',
+    items: [ { type: 'fix', text: 'Audit Report dialog: when library front photos are missing from the saved pictures, the picture line says to click Change folder and select the picture folder.' } ] },
   { v: 'v2026.11.17.328', date: '2026-11-17', title: 'Audit Report: unit graphics and library photo warning',
     items: [ { type: 'fix', text: 'Detailed Audit Report: each unit shows its own graphic. A VAV table, zone list or floor plan graphic no longer shows as the unit graphic.' },
       { type: 'fix', text: 'Detailed Audit Report: when a library has no front photo, a message names it. The picture line shows how many library front photos the report has.' } ] },

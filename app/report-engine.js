@@ -29564,8 +29564,12 @@ function _a36PictureStatus() {
   if (useSaved) {
     var libNames = scopeTreeChecked(document.getElementById('a36Scope'), 'bldg').map(_a36DisplayName);
     var frontCount = libNames.length - _a36DetMissingLibraryPhotos(remembered.saved, libNames).length;
+    var missingFront = libNames.length - frontCount;
     st.textContent =
-      total + (total === 1 ? ' picture' : ' pictures') + ' in the picture list. The report uses the ' + remembered.saved.length + ' saved pictures (' + frontCount + ' of ' + libNames.length + ' library front photos). "Change folder" picks again.';
+      total + (total === 1 ? ' picture' : ' pictures') + ' in the picture list. The report uses the ' + remembered.saved.length + ' pictures this browser saved' +
+      (missingFront > 0
+        ? '; ' + frontCount + ' of ' + libNames.length + ' library front photos are saved. Click "Change folder" and select the picture folder to add them.'
+        : ' (all ' + libNames.length + ' library front photos). "Change folder" selects the folder again.');
     return;
   }
   if (!files.length) {

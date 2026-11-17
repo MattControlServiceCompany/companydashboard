@@ -392,7 +392,7 @@ const ok = (c, m) => {
     ok(saved.storedNames.length > 0 && saved.storedNames.every((n) => /^(syn-\d\.png|Alpha Library - Front\.png)$/.test(n)) && saved.storedNames.indexOf('other.png') < 0 && saved.storedNames.indexOf('junk.png') < 0, 'saved: only needed pictures and the front photo are stored, not the whole folder (' + saved.storedNames.join(',') + ')');
     ok(saved.firstLoaded && saved.firstLoaded.length === 6, 'saved: the first report read the folder files (' + (saved.firstLoaded || []).length + ')');
     ok(
-      /The report uses the \d+ saved pictures \(\d+ of \d+ library front photos\)\. "Change folder" picks again\.$/.test(saved.shown.status) && saved.shown.btn === 'Change folder' && saved.hasChoice,
+      /The report uses the \d+ pictures this browser saved(; \d+ of \d+ library front photos are saved\. Click "Change folder" and select the picture folder to add them\.| \(all \d+ library front photos\)\. "Change folder" selects the folder again\.)$/.test(saved.shown.status) && saved.shown.btn === 'Change folder' && saved.hasChoice,
       'saved: with no folder chosen the panel says "' + saved.shown.status + '", button "' + saved.shown.btn + '"',
     );
     ok(saved.secondLoaded && saved.secondLoaded.join(',') === saved.storedNames.join(',') && saved.pickerCalls === 0, 'saved: the next report reads the saved files, no picker (' + (saved.secondLoaded || []).join(',') + ')');
