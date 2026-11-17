@@ -2507,6 +2507,9 @@ async function siteResetAllMeterTableSettings() {
    site-ui.js delegates to this array and should NOT maintain its own copy.
 */
 var RELEASE_NOTES = [
+  { v: 'v2026.11.17.340', date: '2026-11-17', title: 'Audit Report: full-page Executive Summary',
+    items: [ { type: 'improved', text: 'Audit Report: the Executive Summary adds a Findings by Type table (each finding type with its buildings and units). It fills the page; the remaining rows continue on the next page.' },
+      { type: 'fixed', text: 'Audit Report: the lockout and freeze protection values now print (above 75°F).' } ] },
   { v: 'v2026.11.17.339', date: '2026-11-17', title: 'Audit Report: lockout values and clearer descriptions',
     items: [ { type: 'improved', text: 'Audit Report: lockout and freeze protection sentences print the WebCTRL setpoint (for example, above 75°F).' },
       { type: 'improved', text: 'Audit Report: sentences that apply to the same share of units are joined into one sentence; disabled sequences read as program facts; the fan start/stop alarm clause is removed.' },
