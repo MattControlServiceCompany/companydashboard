@@ -26813,7 +26813,30 @@ function _a36DetScalePicture(file, minPrintScale) {
   });
 }
 
-// Loads the needed picture files from the chosen folder (FileList) one at a time. Resolves { fileName: {url,w,h} }.
+// The code tag of the picture scaling (pictureScaledRun in app/picture-folder.js): a hash of the source of every function of the scaling
+// and of every constant it reads. A change in any of them gives other cache keys, so no old scaled picture is reused.
+function _a36DetScaleTag() {
+  return pictureScaledHash(
+    [_a36DetPaneRect, _a36DetTrimTop, _a36DetTrimDark, _a36DetCropGraphic, _a36DetPictureProblem, _a36DetScalePicture].map(String).join('\n') +
+      JSON.stringify([
+        A36_DET_PICTURE_MAX_W,
+        A36_DET_PICTURE_QUALITY,
+        A36_DET_FIG_SHOW_W,
+        A36_DET_FIG_SHOW_H,
+        A36_DET_PIC_MIN_CELLS,
+        A36_DET_PIC_LIGHT_SHARE,
+        A36_DET_TRIM_EMPTY,
+        A36_DET_CROP_MARGIN,
+        A36_DET_HEADER_SHORT_GAP,
+        A36_DET_HEADER_SHORT_SPAN,
+        A36_DET_HEADER_SIDE_SKIP,
+      ])
+  );
+}
+
+// Loads the needed picture files from the chosen folder (FileList) or the site picture store. Resolves { fileName: {url,w,h} }.
+// pictureScaledRun (app/picture-folder.js) opens the files in a bounded parallel pool and scales them one at a time, in list order;
+// a scaled picture that is cached (memory or IndexedDB, keyed by the picture and the _a36DetScaleTag) is not opened or scaled again.
 // picMap rows say which file is a graphic page (page text holds "graphic"); every other page is a logic or properties page and needs the larger scale.
 function _a36DetLoadPictures(files, needed, picMap) {
   var graphicFile = {};
@@ -26827,23 +26850,35 @@ function _a36DetLoadPictures(files, needed, picMap) {
   var todo = Array.prototype.filter.call(files || [], function (f) {
     return want[f.name];
   });
-  var out = {};
-  var chain = Promise.resolve();
-  todo.forEach(function (f) {
-    chain = chain.then(function () {
-      // f is a File from the folder or an item of the site picture store (app/picture-folder.js): pictureFileOpen gives the File.
-      return (typeof pictureFileOpen === 'function' ? pictureFileOpen(f) : Promise.resolve(f)).then(function (file) {
-        if (!file) return null; // no file can be read (the store download failed and the folder has no copy)
-        return _a36DetScalePicture(file, picMap && !graphicFile[f.name] ? A36_DET_FIG_MIN_PRINT_SCALE_PAGE : A36_DET_FIG_MIN_PRINT_SCALE);
-      }).then(function (r) {
-        if (r) {
-          r.modified = f.lastModified || 0; // the time the graphic file was saved: the capture time stated in the chapter
-          out[f.name] = r;
-        }
-      });
+  function minScaleOf(f) {
+    return String(picMap && !graphicFile[f.name] ? A36_DET_FIG_MIN_PRINT_SCALE_PAGE : A36_DET_FIG_MIN_PRINT_SCALE);
+  }
+  function scaleOne(file, f) {
+    return _a36DetScalePicture(file, Number(minScaleOf(f)));
+  }
+  var run =
+    typeof pictureScaledRun === 'function'
+      ? pictureScaledRun(todo, 'fig', _a36DetScaleTag(), minScaleOf, scaleOne)
+      : todo.reduce(function (chain, f) {
+          // no picture-folder.js: the files are plain Files, read one after the other
+          return chain.then(function (list) {
+            return (typeof pictureFileOpen === 'function' ? pictureFileOpen(f) : Promise.resolve(f)).then(function (file) {
+              return file ? scaleOne(file, f) : null;
+            }).then(function (r) {
+              list.push(r);
+              return list;
+            });
+          });
+        }, Promise.resolve([]));
+  return run.then(function (list) {
+    var out = {};
+    todo.forEach(function (f, i) {
+      var r = list[i];
+      if (r) {
+        r.modified = f.lastModified || 0; // the time the graphic file was saved: the capture time stated in the chapter
+        out[f.name] = r;
+      }
     });
-  });
-  return chain.then(function () {
     return out;
   });
 }
@@ -26987,21 +27022,39 @@ function _a36DetMissingLibraryPhotos(files, libraryNames) {
 function _a36DetLoadLibraryPhotos(files, libraryNames) {
   var out = {};
   var unreadable = [];
-  var chain = Promise.resolve();
+  var found = [];
   libraryNames.forEach(function (name) {
     var file = _a36DetLibraryPhotoFile(files, name, libraryNames);
-    if (!file) return;
-    chain = chain.then(function () {
-      var f = file;
-      return (typeof pictureFileOpen === 'function' ? pictureFileOpen(f) : Promise.resolve(f)).then(function (real) {
-        return real ? _a36DetCropPhoto(real) : null;
-      }).then(function (r) {
-        if (r) out[name] = r;
-        else unreadable.push(file.name);
-      });
-    });
+    if (file) found.push({ name: name, file: file });
   });
-  return chain.then(function () {
+  var items = found.map(function (p) {
+    return p.file;
+  });
+  var run =
+    typeof pictureScaledRun === 'function'
+      ? pictureScaledRun(
+          items,
+          'photo',
+          pictureScaledHash(String(_a36DetCropPhoto) + JSON.stringify([A36_DET_PHOTO_W, A36_DET_PHOTO_H, A36_DET_PICTURE_QUALITY])),
+          function () {
+            return '';
+          },
+          _a36DetCropPhoto
+        )
+      : found.reduce(function (chain, p) {
+          // no picture-folder.js: the files are plain Files, read one after the other
+          return chain.then(function (list) {
+            return _a36DetCropPhoto(p.file).then(function (r) {
+              list.push(r);
+              return list;
+            });
+          });
+        }, Promise.resolve([]));
+  return run.then(function (list) {
+    found.forEach(function (p, i) {
+      if (list[i]) out[p.name] = list[i];
+      else unreadable.push(p.file.name);
+    });
     // A photo the browser cannot read is not dropped without a word.
     if (unreadable.length && typeof showToast === 'function') {
       showToast('This browser could not read ' + unreadable.length + (unreadable.length === 1 ? ' front photo: ' : ' front photos: ') + unreadable.join(', '), 'error', 10000);
