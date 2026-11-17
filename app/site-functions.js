@@ -2507,6 +2507,9 @@ async function siteResetAllMeterTableSettings() {
    site-ui.js delegates to this array and should NOT maintain its own copy.
 */
 var RELEASE_NOTES = [
+  { v: 'v2026.11.17.335', date: '2026-11-17', title: 'Audit Report: System Descriptions without obvious sentences',
+    items: [ { type: 'improved', text: 'Audit Report: System Descriptions no longer state what every system does (fans start, zones have heating and cooling setpoints, what a variable frequency drive or an economizer is).' },
+      { type: 'fixed', text: 'Audit Report: a pump Amperage point counts as a variable frequency drive, so the report no longer says such pumps have no drive.' } ] },
   { v: 'v2026.11.17.334', date: '2026-11-17', title: 'Audit Report: sequences described, no pump speed guess',
     items: [ { type: 'fixed', text: 'Audit Report: lockouts and freeze protection are described as sequences (for example, a high outdoor air temperature lockout that keeps the plant from being enabled above the lockout setpoint), not as a plant state.' },
       { type: 'fixed', text: 'Audit Report: the report no longer says pumps run at a fixed speed when the points show no speed point. A pump amps point now counts as a drive.' },
