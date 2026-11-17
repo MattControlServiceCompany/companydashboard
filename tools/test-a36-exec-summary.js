@@ -107,13 +107,13 @@ const ok = (c, m) => {
     ok(a.pages.length >= 1 && /Executive Summary/.test(t), 'Detailed: Executive Summary page found');
     ok(/Overall Result/.test(t) && /Key Findings/.test(t) && !/Recommendations/.test(t) && !/Install 258 sensors/.test(t), 'Detailed: subheadings Overall Result and Key Findings; no Recommendations heading or paragraph (2026-11-17, facts only)');
     ok(!/still need this programmed/.test(t) && !/Occupancy-Based Ventilation/.test(t) && !/industry standard for how a building automation/.test(t) && !/The largest gaps are/.test(t), 'Detailed: the old text is gone (no "still need this programmed", no old intro, no old Summary)');
-    ok(/Control Service Company audited the building automation system at 13 libraries\. The audit covered 342 pieces of equipment and 16,195 control points\. One reference for the sensors and control sequences is ASHRAE 36, the industry standard for high-performance heating, cooling and ventilation control\./.test(t), 'Detailed: first paragraph carries the building, equipment and point counts');
-    ok(/The libraries have 84% of the ASHRAE 36 sensors and sequences in place\. Sensor coverage is 88%, but only 72% of the ASHRAE 36 control sequences are in place: most of the sensors are installed, and the larger gap is programming\./.test(t), 'Detailed: Overall Result carries composite 84, sensor coverage 88 and sequence readiness 72 (p.composite, p.pointPct, p.seqPct)');
+    ok(/Control Service Company audited the building automation system at 13 libraries\. The audit covered 342 pieces of equipment and 16,195 control points: its sensors, setpoints, schedules and control sequences\. The equipment audited is 4 Air Handlers and 4 Variable Air Volume Terminals\./.test(t) && !/ASHRAE/.test(t), 'Detailed: first paragraph carries the building, equipment, equipment types and point counts, and names no standard');
+    ok(/Overall ResultThe audit recorded/.test(t) && !/ASHRAE|Sensor coverage is|composite/.test(t), 'Detailed: Overall Result states the findings count of the audit; the readiness scores are not in the base Executive Summary');
     ok(/Key Findings/.test(t) && a.lis.length >= 2 && a.lis.length <= 4, 'Key Findings: ' + a.lis.length + ' bullets (2 to 4)');
     ok(/<ul[^>]*>\s*<li/.test(a.execHtml), 'Key Findings: a real <ul> with <li> items');
     ok(a.lis[0] && /^Ventilation does not follow occupancy\. 203 of 232 zones and 5 of 20 air handlers have no carbon dioxide \(CO2\) sensor\. These units bring in a fixed amount of outdoor air whether a space is full or empty\./.test(a.lis[0]), 'Key Findings: ventilation first, with the dcv counts (203 of 232 zones, 5 of 20 air handlers)');
     ok(a.lis[0] && /In all, 240 units need this sequence programmed/.test(a.lis[0]) && /This finding affects the most equipment in the audit\./.test(a.lis[0]), 'Key Findings: ventilation total = demandCtrl 20 + vav_dcv 220 = 240, the largest count, so "affects the most equipment"');
-    ok(a.lis[1] && /^Air handler sequences are incomplete\. Air handlers lack these ASHRAE 36 sequences: supply air temperature reset \(9 units\), minimum outdoor air \(9\), economizer \(7\) and duct static pressure reset \(3\)\. These sequences adjust the equipment to what the building needs, which lowers fan, heating and cooling energy\./.test(a.lis[1]), 'Key Findings: one air handler bullet with the four ahu counts of the priced scope (9, 9, 7, 3)');
+    ok(a.lis[1] && /^Air handler sequences are incomplete\. Air handlers lack these control sequences: supply air temperature reset \(9 units\), minimum outdoor air \(9\), economizer \(7\) and duct static pressure reset \(3\)\. These sequences adjust the equipment to what the building needs, which lowers fan, heating and cooling energy\./.test(a.lis[1]), 'Key Findings: one air handler bullet with the four ahu counts of the priced scope (9, 9, 7, 3)');
     ok(a.lis[2] && /^Zone setpoints\. 9 of 13 libraries have zone setpoints that differ from the recommended setpoints in Appendix A\.$/.test(a.lis[2]), 'Key Findings: setpoint bullet uses _a36SetpointNeedsChangeCount (9 of 13) and is last');
     ok(a.counts.sensors === 258 && a.counts.sequences === 9 + 9 + 7 + 3 + 20 + 220, 'shared: _a36ConsolidatedCounts = 258 devices, 268 sequences (' + a.counts.sensors + ', ' + a.counts.sequences + ')');
     ok(!/Install 258 sensors|The Service Proposal gives the cost|ASHRAE 36 standard for the equipment in scope/.test(t), 'Recommendations paragraph is gone (2026-11-17)');
@@ -133,7 +133,7 @@ const ok = (c, m) => {
     const zno = await build({ setpointReview: false, spNeed: 9 });
     ok(!/Zone setpoints\./.test(zno.pages[0] || ''), 'Appendix A not printed: no setpoint bullet even when the count is above 0');
     const gap = await build({ pointPct: 60, seqPct: 80 });
-    ok(/Sequence readiness is 80%, but only 60% of the ASHRAE 36 sensors are installed: most of the programming is in place, and the larger gap is sensors\./.test(gap.pages[0] || ''), 'opposite gap: sequence readiness higher than sensor coverage prints the other clause');
+    ok(!/ASHRAE|Sequence readiness is|Sensor coverage is/.test(gap.pages[0] || ''), 'opposite gap: the base Executive Summary prints no readiness comparison, whatever the two percentages are');
 
     // ---- 5. one page ----
     await page.evaluate(async (PID) => {
@@ -152,13 +152,13 @@ const ok = (c, m) => {
         return { text: p.textContent.replace(/\s+/g, ' ').slice(0, 80), bottom: mb, footTop: foot ? foot.getBoundingClientRect().top : null, overflow: body.scrollHeight > body.clientHeight + 1, hasReadiness: /Building Readiness/.test(p.textContent), hasSummary: /Overall Result/.test(p.textContent) };
       });
     });
-    ok(fit.length >= 2 && fit[0].hasSummary && !fit[0].hasReadiness && fit[1].hasReadiness && !fit[1].hasSummary, 'page 2 holds the whole summary; the Building Readiness table starts on its own page (' + fit.map((f) => (f.hasSummary ? 'summary' : '') + (f.hasReadiness ? 'readiness' : '')).join(' | ') + ')');
+    ok(fit.length >= 1 && fit[0].hasSummary && !fit[0].hasReadiness && fit.every((f) => !f.hasReadiness), 'page 2 holds the whole summary; the Building Readiness table is not in the base Executive Summary (' + fit.map((f) => (f.hasSummary ? 'summary' : '') + (f.hasReadiness ? 'readiness' : '')).join(' | ') + ')');
     ok(fit[0] && !fit[0].overflow && (fit[0].footTop === null || fit[0].bottom <= fit[0].footTop), 'page 2 content ends above the footer (bottom ' + (fit[0] && Math.round(fit[0].bottom)) + ', footer ' + (fit[0] && Math.round(fit[0].footTop)) + ')');
 
     // ---- 6. Simple style unchanged ----
     const s = await build({ simple: true });
     const st = s.pages.join(' ');
-    ok(/ASHRAE 36, the industry standard for how a building automation system should run heating, cooling and ventilation equipment, is one reference/.test(st) && /Occupancy-Based Ventilation\./.test(st) && /pieces of equipment still need this programmed\./.test(st) && !/Overall Result|Key Findings/.test(st), 'Simple: keeps the old intro, the Occupancy-Based Ventilation paragraph and the "still need this programmed" paragraphs; no new subheadings');
+    ok(/This audit reviewed the building automation system of each building/.test(st) && !/ASHRAE/.test(st) && /Occupancy-Based Ventilation\./.test(st) && /pieces of equipment still need this programmed\./.test(st) && !/Overall Result|Key Findings/.test(st), 'Simple: new intro without the standard, the Occupancy-Based Ventilation paragraph and the "still need this programmed" paragraphs; no new subheadings');
     ok(!/<ul/.test(s.execHtml), 'Simple: no bullet list');
 
     // ---- 7. audit modal: Point Inventory row ----

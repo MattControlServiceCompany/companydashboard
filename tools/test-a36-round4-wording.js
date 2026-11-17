@@ -37,7 +37,6 @@ vm.runInContext(
     fnSrc(RE, '_a36DetEquipNameIn'),
     fnSrc(RE, '_a36DetEquipName'),
     fnSrc(RE, '_a36DetFraction'),
-    fnSrc(RE, '_a36DetSectionRef'),
     'function _escHtml(s){ return String(s); }',
     fnSrc(RE, '_a36DetSummaryIssueHtml'),
   ].join('\n'),

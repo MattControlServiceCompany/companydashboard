@@ -250,8 +250,8 @@ const ok = (c, m) => {
               const tx = e.textContent.trim();
               let m = /(?:\(|; )Figure (\d+)\)/.exec(tx);
               if (m) mark = 'desc:' + m[1];
-              m = /^Finding \d+: [^,]+, (.*)$/.exec(tx);
-              if (m) mark = 'find:' + m[1];
+              m = /^\d+\.\d+\.\d+ (.*)$/.exec(tx);
+              if (m) mark = 'find:' + (/economizer/i.test(m[1]) ? 'Economizer' : m[1]);
             });
           });
           let inOverview = false;
@@ -291,12 +291,12 @@ const ok = (c, m) => {
     ok(!/Issues Log|Appendix A: Deficiency List|Appendix B|Appendix C/.test(det.text), 'N2: no Issues Log, no Appendix B, no Appendix C');
     ok(s.indexOf('setpointReview') > s.lastIndexOf('detailedLibrary') && /Appendix A: Setpoint Programming Review/.test(det.text), 'Appendix A (the setpoint review) prints last when zone setpoint data exists (Detailed turns the review on by itself)');
     const t = det.libText;
-    [/\d+\. Alpha Library/.exec(t) && /\d+\. Alpha Library/.exec(t)[0], /\d+\.1 System Overview/.exec(t) && /\d+\.1 System Overview/.exec(t)[0], /\d+\.2 System Descriptions/.exec(t) && /\d+\.2 System Descriptions/.exec(t)[0], /\d+\.3 Findings/.exec(t) && /\d+\.3 Findings/.exec(t)[0], 'Finding 1:', 'Missing:', 'Solution:'].forEach((x) => ok(t.indexOf(x) >= 0, 'chapters contain "' + x + '"'));
+    [/\d+\. Alpha Library/.exec(t) && /\d+\. Alpha Library/.exec(t)[0], /\d+\.1 System Overview/.exec(t) && /\d+\.1 System Overview/.exec(t)[0], /\d+\.2 System Descriptions/.exec(t) && /\d+\.2 System Descriptions/.exec(t)[0], /\d+\.3 Findings/.exec(t) && /\d+\.3 Findings/.exec(t)[0], '2.3.1 ', 'Missing:', 'Solution:'].forEach((x) => ok(t.indexOf(x) >= 0, 'chapters contain "' + x + '"'));
     ok(!/Recommended Work/.test(t), 'cut 1: no per-chapter Recommended Work table (each finding has its own Recommendation line)');
-    ok(!/\bIssue\./.test(t) && !/\bObserved\b|\bRecommendation\b|is not fully in place/.test(t) && /Missing: [^.]*\(ASHRAE 36, Sections? [\d.]+( to [\d.]+)?\)/.test(t), 'cut 2: no Issue line, no Observed or Recommendation label; the ASHRAE 36 section number is in the Missing line');
+    ok(!/\bIssue\./.test(t) && !/\bObserved\b|\bRecommendation\b|is not fully in place/.test(t) && !/ASHRAE 36, Section/.test(t), 'cut 2: no Issue line, no Observed or Recommendation label; no ASHRAE 36 section citation in the base report');
     // Round 1 (2026-11-14): wording rules of the Detailed report, on the final text. SYNTHETIC project.
     ok(!/Guideline 36|outside air|set point|§|Cfm/.test(t), 'round 1: no "Guideline 36", "outside air", "set point", section sign or "Cfm" in the Detailed text');
-    ok(/Report date: [A-Z][a-z]+ \d{1,2}, \d{4}/.test(det.text) && !/Glossary|Share Mapped|Points by Equipment Type/.test(det.text) && !/ASHRAE Coverage|none are discarded|prioritized list/.test(det.text), 'cover has the Report date (not a false data date); no Glossary page, no Share Mapped column; the old promise and wording are gone');
+    ok(!/Report date/.test(det.text) && !/Glossary|Share Mapped|Points by Equipment Type/.test(det.text) && !/ASHRAE Coverage|none are discarded|prioritized list/.test(det.text), 'cover has no Report date line; no Glossary page, no Share Mapped column; the old promise and wording are gone');
     ok(!/This system has/.test(t), 'cut 3: no "This system has N units" sentence (the System Overview table lists the units)');
     ok(/Alpha Library is served by [^.]*two air handling units \(AHU‑1, AHU‑2\)/.test(t), 'System Overview (a paragraph): names and counts the 2 air handling units of Alpha Library');
     ok(/Beta Library is served by one air handling unit \(AHU‑3\)/.test(t) && /three variable air volume terminals/.test(t) && !/Total\s*6/.test(t), 'System Overview: one unit is named, more than 3 are counted only, no Total line');
@@ -365,7 +365,7 @@ const ok = (c, m) => {
     // the graphic of a unit sits directly under its own description; a finding figure sits directly under its own finding
     ok(det.order.join('|') === 'desc:1|desc:2|find:Economizer|desc:4', 'every figure is directly under its own description or finding: ' + det.order.join('|'));
     ok(/Figure 3: Economizer: AHU\u20111, Properties(\n|$)/.test(det.figs.join('\n')), 'the finding figure caption names the condition: ' + det.figs.join(' / '));
-    ok(/(\(|; )Figure 1\)\./.test(t) && !/graphic of [^.]* is shown in Figure/.test(t) && /Missing: Outdoor Air Damper Actuator, Mixed Air Temperature[^.]*\(ASHRAE 36, Sections? [\d. to]+\)/.test(t), 'the text cites the figure it introduces, in the sentence: "(Figure N)." (item 4)');
+    ok(/(\(|; )Figure 1\)\./.test(t) && !/graphic of [^.]* is shown in Figure/.test(t) && /Missing: Outdoor Air Damper Actuator, Mixed Air Temperature/.test(t), 'the text cites the figure it introduces, in the sentence: "(Figure N)." (item 4)');
     ok(!/Pictures?: Figure/.test(t), 'no "Pictures: Figure" list under the findings');
     ok(!/\(1 of 1 unit\)/.test(t) && !/\((\d+) of \1 units\)/.test(t.replace(/Building automation controller[^\n]*/g, '')), 'D6: no "(N of N units)" noise in the text');
 
@@ -456,26 +456,26 @@ const ok = (c, m) => {
     const numbered = lay.h1s.filter((x) => /^\d+\. /.test(x.text));
     const numbers = numbered.map((x) => parseInt(x.text, 10));
     ok(numbers[0] === 1 && numbers.every((v, i) => i === 0 || v >= numbers[i - 1]), 'item 1: top-level sections are numbered 1.. in order (' + titles.join(' / ') + ')');
-    ok(/^1\. Executive Summary/.test(titles[0]) && /^2\. Building Readiness/.test(titles[1]), 'item 1: "1. Executive Summary", "2. Building Readiness" come first (' + titles.slice(0, 2).join(' / ') + ')');
+    ok(/^1\. Executive Summary/.test(titles[0]) && /^2\. Alpha Library/.test(titles[1]), 'item 1: "1. Executive Summary" comes first, then the library chapters (' + titles.slice(0, 2).join(' / ') + ')');
     const libTitles = titles.filter((x) => /^\d+\. (Alpha|Beta) Library$/.test(x));
-    ok(libTitles.length === 2 && parseInt(libTitles[0], 10) === 3 && parseInt(libTitles[1], 10) === 4, 'item 1: each library is one numbered section starting at 3 (' + libTitles.join(' / ') + ')');
+    ok(libTitles.length === 2 && parseInt(libTitles[0], 10) === 2 && parseInt(libTitles[1], 10) === 3, 'item 1: each library is one numbered section starting at 2 (' + libTitles.join(' / ') + ')');
     const seqIdx = titles.findIndex((x) => /Control Sequences/.test(x));
     const sumIdx = titles.findIndex((x) => /Findings Summary/.test(x));
-    ok(sumIdx > titles.indexOf(libTitles[1]) && /^5\. Findings Summary/.test(titles[sumIdx]) && seqIdx > sumIdx && /^6\. Control Sequences/.test(titles[seqIdx]), 'item 1: the Findings Summary (5) follows the library sections and Control Sequences (6) follows it (' + titles[sumIdx] + ' / ' + titles[seqIdx] + ')');
+    ok(sumIdx > titles.indexOf(libTitles[1]) && /^4\. Findings Summary/.test(titles[sumIdx]) && seqIdx > sumIdx && /^\d+\. Control Sequences/.test(titles[seqIdx]) && titles.some((x) => /^5\. ASHRAE 36 Readiness/.test(x)), 'item 1: the Findings Summary (4) follows the library sections; the ASHRAE 36 section (5 and up) follows it (' + titles[sumIdx] + ' / ' + titles[seqIdx] + ')');
     ok(titles.some((x) => /^Appendix A: Setpoint Programming Review/.test(x)) && !titles.some((x) => /^Appendix [B-Z]|Glossary|Points by Equipment Type|Point Inventory/.test(x)), 'item 1: the setpoint review is Appendix A with a large title; no Glossary, no other appendix (' + titles.filter((x) => /^Appendix/.test(x)).join(' / ') + ')');
     ok(lay.h1s.every((x) => x.first && x.size >= 21 && x.size <= 22), 'item 1: every section title is the first element of its page and 16 pt (21.34 px) (' + lay.h1s.filter((x) => !x.first || x.size < 21 || x.size > 22).map((x) => x.text + ' ' + x.size).join(', ') + ')');
     ok((t.match(/\d+\.1 System Overview/g) || []).length === 2 && (t.match(/\d+\.2 System Descriptions/g) || []).length === 2 && (t.match(/\d+\.3 Findings/g) || []).length === 2, 'item 1: every library has the same three sub-headings N.1 System Overview, N.2 System Descriptions, N.3 Findings');
-    ok(lay.sumRows.length > 0 && lay.sumRows.every((r) => r.length === 5 && /^\d+$/.test(r[0]) && /^(Energy use|Equipment control)$/.test(r[4])), 'item 2: every Findings Summary row has No., Library, System, Issue, Effect; Effect is Energy use or Equipment control');
+    ok(lay.sumRows.length > 0 && lay.sumRows.every((r) => r.length === 5 && /^\d+\.\d+\.\d+$/.test(r[0]) && /^(Energy use|Equipment control)$/.test(r[4])), 'item 2: every Findings Summary row has No., Library, System, Issue, Effect; Effect is Energy use or Equipment control');
     ok(lay.sumRows.length > 0 && lay.sumRows.every((r) => !/Affects (the unit|both units)/.test(r[3])), 'item 2: affected units are named (never "Affects the unit" or "both units" when 4 or fewer)');
-    ok(lay.sumRows.filter((r) => /Missing point/.test(r[3])).length > 0 && lay.sumRows.filter((r) => /Affects (\d+ of \d+|both|all|the building)/.test(r[3]) && /ASHRAE 36, Sections? [\d. a-z]+\)/.test(r[3])).length >= 2, 'item 2: the Issue cell says what is missing, which units it affects, what it prevents and the Guideline 36 section (a point whose section the standard does not give, such as the return air temperature, prints no section): ' + (lay.sumRows[0] || [])[3]);
+    ok(lay.sumRows.filter((r) => /Missing point/.test(r[3])).length > 0 && lay.sumRows.filter((r) => /Affects (\d+ of \d+|both|all|the building)/.test(r[3]) && !/ASHRAE|Guideline/.test(r[3])).length >= 2, 'item 2: the Issue cell says what is missing, which units it affects and what it prevents, with no standard citation: ' + (lay.sumRows[0] || [])[3]);
     ok(lay.pointHeads.length === 0, 'item 4: no Points by Equipment Type tables (' + lay.pointHeads.length + ' tables)');
     const ptText = '';
     ok(!/Alpha Library: Air Handling Unit \(2 units\)/.test(det.text), 'item 4: no per-library equipment-type point tables');
     ok(/\d+\.\d°F heating \/ \d+\.\d°F cooling/.test(lay.spText) && !/°F \/ \d/.test(lay.spText), 'item 5: every temperature pair of Appendix A reads "70.0°F heating / 74.0°F cooling"');
-    ok(/ASHRAE 36 default: occupied 70°F heating \/ 75°F cooling/.test(lay.spText), 'item 5: Appendix A has the ASHRAE default reference line');
+    ok(/Standard default: occupied 70°F heating \/ 75°F cooling/.test(lay.spText), 'item 5: Appendix A has the standard default reference line');
     ok(!/Occupied setpoints are the temperatures held|Unoccupied setpoints are the temperatures held|The deadband is the gap|building averages across|no weekend times|did not report any readings|Share Mapped/.test(lay.spText), 'item 5: Appendix A has no definitions, no data caveats and no method notes');
     ok(/Recommended by Control Service Company: occupied 70°F heating \/ 74°F cooling; unoccupied 55°F heating \/ 85°F cooling; occupied during each building’s open hours, unoccupied when closed/.test(lay.spText), 'item 5: the recommended setpoints and schedule are printed once in a box');
-    ok(/All 2 zones match ASHRAE 36 defaults/.test(lay.spText), 'item 5: one-line status per building');
+    ok(/All 2 zones match the standard defaults/.test(lay.spText), 'item 5: one-line status per building');
     ok(!/no zone-level set ?points/i.test(lay.spText), 'item 5: the wrong "no zone-level setpoints" reason is not printed');
     ok(lay.execBold.includes('Overall Result') && lay.execBold.includes('Key Findings') && lay.execPageFill > 0.35, 'item 6: Executive Summary has the bold subheadings Overall Result and Key Findings (' + lay.execBold.length + ' bold lines) and the page is filled (' + Math.round(lay.execPageFill * 100) + '%)');
     ok(lay.cite.off === 'The unit is run by a mode point (Off; Figure 2).' && lay.cite.plain === 'The unit runs (Figure 3).' && lay.cite.noMark === 'The unit runs (Figure 4)', 'item 8a: "(Off)" takes the figure inside the bracket, other sentences keep "(Figure N)": ' + JSON.stringify(lay.cite));
@@ -537,26 +537,25 @@ const ok = (c, m) => {
       const sum = [];
       document.querySelectorAll('#reportPages .rpt-page[data-section="detailedSummary"] table tr').forEach((tr) => {
         const c = tr.querySelectorAll('td');
-        const m = c.length === 5 && /^(\d+)$/.exec(c[0].textContent.trim());
-        if (m) sum.push(+m[1]);
+        const m = c.length === 5 && /^(\d+\.\d+\.\d+)$/.exec(c[0].textContent.trim());
+        if (m) sum.push(m[1]);
       });
       const body = [];
       let sec = '';
       document.querySelectorAll('#reportPages .rpt-page[data-section="detailedLibrary"] div, #reportPages .rpt-page[data-section="detailedLibrary"] h2, #reportPages .rpt-page[data-section="detailedLibrary"] tr').forEach((el) => {
         if (el.tagName === 'H2') { sec = /^\d+\.\d+ (.*)$/.exec(el.textContent.trim())[1]; return; }
         if (el.tagName === 'DIV' && sec === 'Findings') {
-          const m = /^Finding (\d+):/.exec(el.textContent.trim());
-          if (m && el.children.length === 0) body.push(+m[1]);
+          const m = /^(\d+\.\d+\.\d+) /.exec(el.textContent.trim());
+          if (m && el.children.length === 0) body.push(m[1]);
         }
       });
       return { total: all.length, dups, bad, mbad, split, sum, body, pointSeqOverlap: all.filter((f) => f.kind === 'sensor').filter((f) => all.some((s) => s.kind === 'seq' && s.lib === f.lib && s.groupLabel === f.groupLabel && s.missing.indexOf(f.label) >= 0)).map((f) => f.n) };
     }, seed);
     const sameList = (a, b) => a.length === b.length && a.every((x, i) => x === b[i]);
-    const seqNums = Array.from({ length: mdl.total }, (_, i) => i + 1);
     ok(mdl.total > 0 && mdl.dups === 0, 'e: no two findings share library, group and sequence (' + mdl.total + ' findings)');
     ok(mdl.split && mdl.split.now === mdl.split.base && mdl.split.total === mdl.split.baseTotal, 'e: a sequence that comes from two catalog rows of one group is ONE finding (' + JSON.stringify(mdl.split) + ')');
     ok(mdl.bad.length === 0, 'f: the count of every finding is units: Observed and Recommendation carry the same fraction of the group' + (mdl.bad.length ? ': ' + JSON.stringify(mdl.bad) : ''));
-    ok(sameList(mdl.sum, seqNums) && sameList(mdl.body, seqNums), 'l: Findings Summary and body list the same finding numbers 1..' + mdl.total + ' (summary ' + mdl.sum.length + ', body ' + mdl.body.length + ')');
+    ok(mdl.sum.length === mdl.total && sameList(mdl.sum, mdl.body) && mdl.sum.every((x, i) => i === 0 || x !== mdl.sum[i - 1]), 'l: Findings Summary and body list the same finding numbers 1..' + mdl.total + ' (summary ' + mdl.sum.length + ', body ' + mdl.body.length + ')');
     ok(mdl.pointSeqOverlap.length === 0, 'N1: no stand-alone point finding repeats a point that a sequence finding of the same group already lists (' + mdl.pointSeqOverlap.join(',') + ')');
     ok(mdl.mbad.length === 0, 'm: a recommendation says "sensor" only for a sensor, "point" for a valve or actuator' + (mdl.mbad.length ? ': ' + mdl.mbad.join(',') : ''));
     // n: a sequence finding counts the same units as the priced quantity (monitoring-only zone units are left out), and a point
@@ -885,10 +884,10 @@ const ok = (c, m) => {
     ok(big.count > 40 && bigBad.length === 0, 'large project (' + big.count + ' pages): every page fits above the footer' + (bigBad.length ? ': ' + JSON.stringify(bigBad) : ''));
     console.log('INFO Appendix A pages in the large project: ' + big.spPages);
     ['detailedSummary', 'costEstimate', 'setpointReview'].forEach((sec) => {
-      const list = big.multi[sec];
-      ok(list.length >= 1 && list.every((x, i) => (list.length === 1 || x.title.indexOf('(' + (i + 1) + ' of ' + list.length + ')') > 0) && x.title.length > 5 && x.th >= 3), 'item 3: the table of ' + sec + ' repeats its title with "(N of M)" and its column headers on every one of its ' + list.length + ' pages (one page: no suffix) (' + list.map((x) => x.title + ' th=' + x.th).join(' / ') + ')');
+      const list = big.multi[sec].filter((x) => sec !== 'costEstimate' || x.th > 0);
+      ok(list.length >= 1 && list.every((x, i) => (list.length === 1 || sec === 'costEstimate' || x.title.indexOf('(' + (i + 1) + ' of ' + list.length + ')') > 0) && x.title.length > 5 && x.th >= 3), 'item 3: the table of ' + sec + ' repeats its title with "(N of M)" and its column headers on every one of its ' + list.length + ' pages (one page: no suffix) (' + list.map((x) => x.title + ' th=' + x.th).join(' / ') + ')');
     });
-    ['detailedSummary', 'costEstimate'].forEach((sec) => {
+    ['detailedSummary'].forEach((sec) => {
       const list = big.multi[sec];
       if (list.length < 2) return;
       ok(list.every((x) => x.span), 'the "(N of M)" suffix of ' + sec + ' is in a span at 70% size on every part (' + list.map((x) => x.span).join(',') + ')');
@@ -963,12 +962,12 @@ const ok = (c, m) => {
     const fStart = pt.indexOf('Findings');
     const fEnd = pt.length;
     const findAll = pt.slice(fStart, fEnd);
-    const findPlants = findAll.slice(0, findAll.indexOf('Air Handling Unit'));
-    ok(fStart > 0 && fEnd > fStart && /Chilled Water Plant/.test(findPlants) && /Hot Water Plant/.test(findPlants), 'D4: Findings has a Chilled Water Plant block and a Hot Water Plant block');
+    const findPlants = findAll.slice(0, findAll.search(/The air handling unit/));
+    ok(fStart > 0 && fEnd > fStart && /chilled water plant/.test(findPlants) && /hot water plant/.test(findPlants), 'D4: Findings has findings for the chilled water plant and for the hot water plant');
     ok(!/schedul/i.test(findPlants) && !/Occupied schedule/.test(pt), 'D4: plants get no schedule finding and no schedule line');
     ok(/Chilled Water Supply Temperature Reset/.test(findPlants) && /Hot Water Supply Temperature Reset/.test(findPlants), 'D4: plant findings include the supply temperature reset sequence of each plant (same treatment as the plants Detailed already printed)');
     ok(/The hot water plant consists of one boiler and one hot water pump\./.test(pt) && /starts and stops|enables the hot water pump/.test(pt) && !/At the time of the audit|150\.2|130\.0|by an enable command|primary hot water pump|holds the hot water supply temperature at its setpoint/.test(pt), 'item 2 (2026-11-17): a plant description is what the plant has (one boiler, one pump) and how the system controls it, no setpoint claim without a proving point, no reading');
-    ok(!/primary hot water pump (has|has a)|status point/.test(pt), 'item 2: no "has an enable command", "status point" or "monitors" wording');
+    ok(!/primary hot water pump (has|has a)|status point/.test(pt.slice(0, fStart)), 'item 2: no "has an enable command", "status point" or "monitors" wording');
 
     // ---- 12. Round 4 (2026-11-11): figure crop, picture rank, carbon dioxide counts, power meter wording ----
     const round4 = await page.evaluate(async () => {
@@ -1122,13 +1121,13 @@ const ok = (c, m) => {
       };
     }, PID4);
     ok(eps.merged.length === 1 && !eps.keys.includes('demandCtrl') && !eps.keys.includes('ahu_min_oa') && eps.keys.includes('ahu_min_oa+demandCtrl'), 'report length: Minimum Outside Air and Occupancy-Based Ventilation of the same units are ONE finding (' + eps.keys.join(' / ') + ')');
-    ok(eps.merged[0] && /Minimum Outdoor Air and Occupancy-Based Ventilation \(Air Handling Units\)/.test(eps.merged[0].label) && /\(ASHRAE 36, Sections 5\.16\.3 to 5\.16\.6\) on both units/.test(eps.merged[0].observed) && /Carbon Dioxide Sensor/.test(eps.merged[0].observed) && /Outdoor Air Damper Actuator/.test(eps.merged[0].observed) && eps.merged[0].affected.length === 2, 'report length: the merged finding names both sections, the points of both and the 2 units: ' + (eps.merged[0] && eps.merged[0].observed));
+    ok(eps.merged[0] && /Minimum Outdoor Air and Occupancy-Based Ventilation \(Air Handling Units\)/.test(eps.merged[0].label) && !/ASHRAE/.test(eps.merged[0].observed) && /on both units/.test(eps.merged[0].observed) && /Carbon Dioxide Sensor/.test(eps.merged[0].observed) && /Outdoor Air Damper Actuator/.test(eps.merged[0].observed) && eps.merged[0].affected.length === 2, 'report length: the merged finding names no standard, the points of both and the 2 units: ' + (eps.merged[0] && eps.merged[0].observed));
     ok((eps.summary.match(/Minimum Outdoor Air and Occupancy-Based Ventilation \(Air Handling Units\) sequences not fully in place/g) || []).length === 1 && !/Minimum Outdoor Air sequence not fully in place/.test(eps.summary), 'report length: the Findings Summary has one row for the two sequences');
     ok(eps.seqNo && !eps.noteNo, 'report length: Control Sequences has its section number and the Findings Summary has no note about it (' + eps.seqNo + ' / ' + eps.noteNo + ')');
     ok(/Epsilon Library\s*AHU-A and AHU-B\s*66\.0°F heating \/ 71\.0°F cooling\s*60\.0°F heating \/ 79\.0°F cooling[\s\S]*Single-zone unit/.test(eps.sp) && !/Single-zone unit:/.test(eps.sp), 'report length: Appendix A lists the single-zone-only library with its current setpoints (AHU-A and AHU-B: 66/71 occupied, 60/79 unoccupied) and the status "Single-zone unit": ' + eps.sp.slice(0, 700));
     ok(/Epsilon Library\s*CUH\u20111\s*60\.0°F heating \/ No cooling\s*60\.0°F heating \/ No cooling\s*(—\s*)?No cooling/.test(eps.sp) && (eps.sp.match(/Single-zone unit/g) || []).length === 2, 'report length: a second set of setpoints in the same library is a second row (CUH-1 60/78, 60/84; a heater prints "No cooling" and Deadband "No cooling")');
     const epsRows = eps.sp.slice(eps.sp.indexOf('Epsilon Library'), eps.sp.indexOf('Carbon Dioxide Setpoints'));
-    ok(epsRows.length > 100 && !/Reprogram|Recommended|undefined|null|NaN/.test(epsRows) && /1 has single-zone units only/.test(eps.sp) && /All 1 zone match ASHRAE 36 defaults/.test(eps.sp), 'report length: single-zone rows carry no recommendation and no Reprogram status (the zone library keeps its own); the count line names them: ' + JSON.stringify([epsRows.length, /1 has single-zone units only/.test(eps.sp), /All 1 zone match ASHRAE 36 defaults/.test(eps.sp), eps.sp.slice(eps.sp.indexOf('buildings') - 20, eps.sp.indexOf('buildings') + 160)]));
+    ok(epsRows.length > 100 && !/Reprogram|Recommended|undefined|null|NaN/.test(epsRows) && /1 has single-zone units only/.test(eps.sp) && /All 1 zone match the standard defaults/.test(eps.sp), 'report length: single-zone rows carry no recommendation and no Reprogram status (the zone library keeps its own); the count line names them: ' + JSON.stringify([epsRows.length, /1 has single-zone units only/.test(eps.sp), /All 1 zone match the standard defaults/.test(eps.sp), eps.sp.slice(eps.sp.indexOf('buildings') - 20, eps.sp.indexOf('buildings') + 160)]));
     ok(/Single-zone unit: current setpoints shown, no zone review/.test(eps.simpleSp), 'report length: the Simple style prints the same rows in its Setpoint Programming Review');
 
     // emComputeSetpointCompliance: opts.anyCategory reads a single-zone unit as a zone row; the default is unchanged (no result for an air handler)

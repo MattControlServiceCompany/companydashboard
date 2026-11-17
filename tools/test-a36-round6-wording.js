@@ -101,7 +101,7 @@ const RE = fs.readFileSync(path.join(ROOT, 'app', 'report-engine.js'), 'utf8');
     const cmd = sz.find((f) => f.kind === 'sensor' && f.key === 'sfSpeedCmd');
     ok(cmd && /^Install a variable frequency drive on the supply fan of both units\.$/.test(cmd.rec), 'F2. single-zone point finding: drive recommendation: ' + (cmd && cmd.rec));
     ok(cmd && cmd.impact === 'Lets the system change the fan speed. Without a variable frequency drive the fan runs at full speed all the time.', 'F2. single-zone point finding: plain Impact line: ' + (cmd && cmd.impact));
-    ok(cmd && cmd.section === '5.18.4' && /ASHRAE 36, Section 5\.18\.4/.test(cmd.observed), 'F3. the single-zone supply fan speed command finding cites Section 5.18.4: ' + (cmd && cmd.section + ' | ' + cmd.observed));
+    ok(cmd && cmd.section === '5.18.4' && !/ASHRAE 36, Section/.test(cmd.observed), 'F3. the single-zone supply fan speed command finding keeps section 5.18.4 in the data and cites none in the text: ' + (cmd && cmd.section + ' | ' + cmd.observed));
     const sat = sz.find((f) => f.kind === 'seq' && f.key === 'ahu_sat_reset');
     ok(sat && /^Install a variable frequency drive on the supply fan of both units and add the Outdoor Air Temp point\. Program the Supply Air Temperature Reset sequence\.$/.test(sat.rec), 'F2. single-zone sequence finding: drive first, other missing points kept: ' + (sat && sat.rec));
     ok(sz.every((f) => f.kind !== 'seq' || !/Supply Fan Speed( Command)? point/.test(f.rec)), 'F2. no single-zone sequence finding asks to add the Supply Fan Speed point');

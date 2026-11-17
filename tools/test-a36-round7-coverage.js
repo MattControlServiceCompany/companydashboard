@@ -144,7 +144,7 @@ const RE = fs.readFileSync(path.join(ROOT, 'app', 'report-engine.js'), 'utf8');
     ok(/The portfolio scores weight each building by its amount of equipment, so they can differ a little from the totals of the counts in this table\./.test(RE), 'R3. the Building Readiness note is in the table footnote');
     const html = await page.evaluate(() => {
       const d = collectASHRAE36Data(900701, '2026-11-10', null);
-      return generateASHRAE36AuditHTML(d, { cover: true, executive: true, costEstimate: false, building: true }).replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ');
+      return generateASHRAE36AuditHTML(d, { cover: true, executive: true, costEstimate: true, building: true }).replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ');
     });
     ok(/portfolio scores weight each building by its amount of equipment/.test(html), 'R3. the rendered audit prints the note');
 
