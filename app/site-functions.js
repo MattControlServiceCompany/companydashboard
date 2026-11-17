@@ -2507,6 +2507,8 @@ async function siteResetAllMeterTableSettings() {
    site-ui.js delegates to this array and should NOT maintain its own copy.
 */
 var RELEASE_NOTES = [
+  { v: 'v2026.11.17.341', date: '2026-11-17', title: 'Audit Report: no half-empty building pages',
+    items: [ { type: 'fixed', text: 'Audit Report: the System Descriptions start on the opening page of each building, under the System Overview. A figure follows its text, on the next page when it does not fit.' } ] },
   { v: 'v2026.11.17.340', date: '2026-11-17', title: 'Audit Report: full-page Executive Summary',
     items: [ { type: 'improved', text: 'Audit Report: the Executive Summary adds a Findings by Type table (each finding type with its buildings and units). It fills the page; the remaining rows continue on the next page.' },
       { type: 'fixed', text: 'Audit Report: the lockout and freeze protection values now print (above 75°F).' } ] },
