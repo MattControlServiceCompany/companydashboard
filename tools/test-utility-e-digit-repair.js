@@ -358,34 +358,34 @@ async function run(rows, extra) {
   check('ActualKW still read', eq(b.ActualKW, 61.384), 'ActualKW=' + b.ActualKW);
 
   console.log('Case 22: both date columns unreadable and a stray token after RKVA Used: the row is still read, ActualRKVA is the RKVA column');
-  // End 20,000 - Start 19,500 = 500 x 100 = 50,000 kWh; KW 300; RKVA 160; RkVA Chg qty = 160 - 0.5 x 300 = 10.
+  // End 2,050.5 - Start 2,000.25 = 50.25 x 40 = 2,010 kWh; KW 30; RKVA 16; RkVA Chg qty = 16 - 0.5 x 30 = 1.
   b = await run(
-    ['lo09  lios  2  20,000.0000  19,500.0000  500.0000  100.0000  50,000.0000  300.0000  160.0000  [24'],
-    'RkVA Chg 10.0000 kW at $0.663 per kW ......... $6.63\n',
+    ['lo09  lios  2  2,050.5000  2,000.2500  50.2500  40.0000  2,010.0000  30.0000  16.0000  [24'],
+    'RkVA Chg 1.0000 kW at $0.663 per kW ......... $0.66\n',
   );
-  check('EndRead read', eq(b.EndRead, 20000), 'EndRead=' + b.EndRead);
-  check('ActualKW read', eq(b.ActualKW, 300), 'ActualKW=' + b.ActualKW);
-  check('ActualRKVA is the RKVA column, not the RkVA Chg quantity', eq(b.ActualRKVA, 160), 'ActualRKVA=' + b.ActualRKVA);
+  check('EndRead read', eq(b.EndRead, 2050.5), 'EndRead=' + b.EndRead);
+  check('ActualKW read', eq(b.ActualKW, 30), 'ActualKW=' + b.ActualKW);
+  check('ActualRKVA is the RKVA column, not the RkVA Chg quantity', eq(b.ActualRKVA, 16), 'ActualRKVA=' + b.ActualRKVA);
 
   console.log('Case 23: RKVA misread by one digit (6 for 5): the RkVA Chg quantity (RKVA - 0.5 x KW) restores it');
-  // KW 300, true RKVA 155 -> qty 5; the row reads RKVA 165.0000 (5 read as 6).
+  // KW 30, true RKVA 15.5 -> qty 0.5; the row reads RKVA 16.5000 (5 read as 6).
   b = await run(
-    ['01/09  02/09  31  20,000.0000  19,500.0000  500.0000  100.0000  50,000.0000  300.0000  165.0000'],
-    'RkVA Chg 5.0000 kW at $0.663 per kW ......... $3.32\n',
+    ['01/09  02/09  31  2,050.5000  2,000.2500  50.2500  40.0000  2,010.0000  30.0000  16.5000'],
+    'RkVA Chg 0.5000 kW at $0.663 per kW ......... $0.33\n',
   );
-  check('ActualRKVA restored', eq(b.ActualRKVA, 155), 'ActualRKVA=' + b.ActualRKVA);
+  check('ActualRKVA restored', eq(b.ActualRKVA, 15.5), 'ActualRKVA=' + b.ActualRKVA);
 
   console.log('Case 24 (control): RKVA that matches the RkVA Chg quantity stays; no fix when no one-digit change matches');
   b = await run(
-    ['01/09  02/09  31  20,000.0000  19,500.0000  500.0000  100.0000  50,000.0000  300.0000  160.0000'],
-    'RkVA Chg 10.0000 kW at $0.663 per kW ......... $6.63\n',
+    ['01/09  02/09  31  2,050.5000  2,000.2500  50.2500  40.0000  2,010.0000  30.0000  16.0000'],
+    'RkVA Chg 1.0000 kW at $0.663 per kW ......... $0.66\n',
   );
-  check('ActualRKVA kept', eq(b.ActualRKVA, 160), 'ActualRKVA=' + b.ActualRKVA);
+  check('ActualRKVA kept', eq(b.ActualRKVA, 16), 'ActualRKVA=' + b.ActualRKVA);
   b = await run(
-    ['01/09  02/09  31  20,000.0000  19,500.0000  500.0000  100.0000  50,000.0000  300.0000  160.0000'],
-    'RkVA Chg 33.3300 kW at $0.663 per kW ......... $22.10\n',
+    ['01/09  02/09  31  2,050.5000  2,000.2500  50.2500  40.0000  2,010.0000  30.0000  16.0000'],
+    'RkVA Chg 3.3300 kW at $0.663 per kW ......... $2.21\n',
   );
-  check('ActualRKVA kept when billing demand differs', eq(b.ActualRKVA, 160), 'ActualRKVA=' + b.ActualRKVA);
+  check('ActualRKVA kept when billing demand differs', eq(b.ActualRKVA, 16), 'ActualRKVA=' + b.ActualRKVA);
 
   console.log(fail ? '\n' + fail + ' FAILED' : '\nALL PASSED');
   process.exit(fail ? 1 : 0);
