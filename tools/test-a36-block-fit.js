@@ -71,9 +71,10 @@ r = pag(group('A', 2, 300).concat(group('B', 1, 300)), BUDGET);
 ok(r.length === 2 && r[1][0].html === 'HB', 'block that cannot fit at 60 % moves whole to the next page (' + names(r) + ')');
 ok(figOf(r, 'B').fig.h === 300, 'a moved block keeps its full figure size');
 
-// 3. Below 60 %: A takes 460 (240 left). B fixed part is 160, so the figure would get 80 of 400 px = 20 %: the block moves.
+// 3. Below 60 %, page under 70 % full: A takes 460 of 700 (66 %). Moving B would leave a third of the page empty (Matt 2026-11-06:
+// no half-empty pages), so B's heading and text start here and its figure follows on the next page.
 r = pag(group('A', 1, 300).concat(group('B', 1, 400)), BUDGET);
-ok(r.length === 2 && r[1][0].html === 'HB', 'a figure that would fall below 60 % moves the block (' + names(r) + ')');
+ok(r.length === 2 && r[0].map((t) => t.html).join(',') === 'HA,TA0,FIGA:300,HB,TB0' && r[1][0].html === 'FIGB:400', 'a page under 70 % full keeps the text, the figure follows (' + names(r) + ')');
 
 // 4. Scaled: A takes 460 (240 left). D fixed part is 160 and its figure is 130 px: room 80 px = 61.5 %: scaled, one page.
 r = pag(group('A', 1, 300).concat(group('D', 1, 130)), BUDGET);
@@ -109,9 +110,11 @@ let together = true;
 spec.forEach((g, i) => {
   const blockH = 30 + g[0] * 100 + 30 + g[1];
   const pages = pageOf(r, (t) => t.html === 'HG' + i || t.html.indexOf('TG' + i) === 0 || (t.fig && t.fig.num === 'G' + i));
-  if (blockH * 0.8 + 0 <= BUDGET && blockH - g[1] * 0.4 <= BUDGET && pages.size > 1) together = false;
+  const pg = r.find((c) => c.some((t) => t.html === 'HG' + i));
+  const before = pg.slice(0, pg.findIndex((t) => t.html === 'HG' + i)).reduce((a, t) => a + t.estH, 0);
+  if (blockH * 0.8 <= BUDGET && blockH - g[1] * 0.4 <= BUDGET && pages.size > 1 && before >= BUDGET * 0.7) together = false;
 });
-ok(together, 'mixed groups: a block that fits one page (figure at 60 %) is never split over two pages');
+ok(together, 'mixed groups: a block that fits one page is split only where the page before it is under 70 % full');
 
 // 7. Finding figures (no block flag) keep the old minimum of 85 %: the run moves.
 r = pag(
