@@ -2507,6 +2507,10 @@ async function siteResetAllMeterTableSettings() {
    site-ui.js delegates to this array and should NOT maintain its own copy.
 */
 var RELEASE_NOTES = [
+  { v: 'v2026.11.17.333', date: '2026-11-17', title: 'Audit Report: cover table of buildings, building pages fixed',
+    items: [ { type: 'improved', text: 'Audit Report: the cover states the units audited and the findings in plain words and has a table of every building with its units and findings.' },
+      { type: 'fixed', text: 'Audit Report: the Building Infrastructure lines stay on the building page (no page with only those lines), and they state facts only.' },
+      { type: 'fixed', text: 'Audit Report: two findings of the same units no longer have the same headline.' } ] },
   { v: 'v2026.11.17.332', date: '2026-11-17', title: 'Audit Report: full audit pages, building photos, plain findings, faster',
     items: [ { type: 'improved', text: 'Audit Report: the cover, summary and building pages describe the full building automation system audit; the ASHRAE 36 scores and tables are in the ASHRAE 36 section only. The cover has no date line.' },
       { type: 'improved', text: 'Audit Report: each building page shows the library front photo, and each finding has a one-sentence headline.' },
