@@ -28555,19 +28555,19 @@ var A36_DET_SEQ = {
     { c: 'chwp', fn: 'sequence', on: 'While the building is unoccupied, the plant starts and stops on the number of zone cooling requests.' },
   ],
   plant_oa_lockout: [
-    { c: 'hwp', fn: 'sequence', on: 'The plant has a high outdoor air temperature lockout that keeps it from being enabled when the outdoor air temperature is above the lockout setpoint.', off: 'An outdoor air lockout at high temperatures is available but not enabled.' },
-    { c: 'chwp', fn: 'sequence', on: 'The plant has a low outdoor air temperature lockout that keeps it from being enabled when the outdoor air temperature is below the lockout setpoint.', off: 'An outdoor air lockout at low temperatures is available but not enabled.' },
+    { c: 'hwp', fn: 'sequence', on: 'The plant has a high outdoor air temperature lockout that keeps it from being enabled when the outdoor air temperature is above the lockout setpoint.', off: 'The program has a plant lockout on high outdoor air temperature, but it is disabled.' },
+    { c: 'chwp', fn: 'sequence', on: 'The plant has a low outdoor air temperature lockout that keeps it from being enabled when the outdoor air temperature is below the lockout setpoint.', off: 'The program has a plant lockout on low outdoor air temperature, but it is disabled.' },
   ],
-  pump_freeze_run: [{ c: 'plant', fn: 'sequence', on: 'The pumps have a freeze protection sequence that runs them continuously when the outdoor air temperature is below the freeze protection setpoint.', off: 'Cold weather pump operation is available but not enabled.' }],
-  pump_freeze_run_trip: [{ c: 'plant', fn: 'sequence', on: 'The pumps run continuously when an air handler low temperature safety trips, for freeze protection.', off: 'Pump operation on an air handler low temperature safety trip is available but not enabled.' }],
+  pump_freeze_run: [{ c: 'plant', fn: 'sequence', on: 'The pumps have a freeze protection sequence that runs them continuously when the outdoor air temperature is below the freeze protection setpoint.', off: 'The program has a cold weather freeze protection sequence for the pumps, but it is disabled.' }],
+  pump_freeze_run_trip: [{ c: 'plant', fn: 'sequence', on: 'The pumps run continuously when an air handler low temperature safety trips, for freeze protection.', off: 'The program has a sequence that runs the pumps when an air handler low temperature safety trips, but it is disabled.' }],
   boiler_staging: [{ c: 'hwp', fn: 'sequence', on: 'The boilers stage on and off to hold the hot water supply temperature setpoint, with time delays between stages.' }],
   boiler_lag_delay: [{ c: 'hwp', fn: 'sequence', on: 'The lag boiler can start only after a set delay from plant start.' }],
   pump_staging: [{ c: 'plant', fn: 'sequence', on: 'An additional pump starts when the running pump stays at high speed for a set time, and stops when pump speed or differential pressure allows.' }],
   plant_run_timers: [{ c: 'plant', fn: 'sequence', on: 'Start delays, stop delays and minimum on and off times apply to the plant equipment.' }],
   chiller_bypass_flow: [{ c: 'chwp', fn: 'sequence', on: 'The bypass valve holds a chilled water flow setpoint.' }],
   pump_low_limit_speed: [{ c: 'chwp', fn: 'sequence', on: 'In low limit mode, the chilled water pump runs at a fixed speed.' }],
-  boiler_rotation: [{ c: 'hwp', fn: 'sequence', on: 'The lead boiler rotates on a schedule.', off: 'Lead boiler rotation is available but not enabled.' }],
-  pump_rotation: [{ c: 'plant', fn: 'sequence', on: 'The lead pump rotates on a schedule.', off: 'Lead pump rotation is available but not enabled.' }],
+  boiler_rotation: [{ c: 'hwp', fn: 'sequence', on: 'The lead boiler rotates on a schedule.', off: 'The program has a lead boiler rotation sequence, but it is disabled.' }],
+  pump_rotation: [{ c: 'plant', fn: 'sequence', on: 'The lead pump rotates on a schedule.', off: 'The program has a lead pump rotation sequence, but it is disabled.' }],
   // plant: pumping
   pump_dp_reset: [{ c: 'plant', fn: 'pumping', on: 'The differential pressure setpoint resets on requests from the building.' }],
   pump_dp_fixed: [{ c: 'plant', fn: 'pumping', on: 'A manual override fixes the differential pressure setpoint.' }],
@@ -28604,10 +28604,10 @@ var A36_DET_SEQ = {
   co2_fan_speed: [{ c: 'air', fn: 'oa', on: 'Supply fan speed rises with carbon dioxide (CO2) level.' }],
   min_oa_scheduled: [{ c: 'air', fn: 'oa', on: '' }], // obvious (every unit holds minimum outdoor air when occupied): no sentence
   ventilation_oa_disable: [{ c: 'air', fn: 'oa', on: 'The unit has low and high outdoor air temperature limits that turn off ventilation when the outdoor air temperature is outside the limits.' }],
-  cool_oa_lockout: [{ c: 'air', fn: 'oa', on: 'Mechanical cooling has a low outdoor air temperature lockout that keeps it off when the outdoor air temperature is below the lockout setpoint.', off: 'A mechanical cooling lockout at low outdoor air temperatures is available but not enabled.' }],
+  cool_oa_lockout: [{ c: 'air', fn: 'oa', on: 'Mechanical cooling has a low outdoor air temperature lockout that keeps it off when the outdoor air temperature is below the lockout setpoint.', off: 'The program has a mechanical cooling lockout on low outdoor air temperature, but it is disabled.' }],
   heat_oa_lockout: [
-    { c: 'air', fn: 'oa', on: 'Heating has a high outdoor air temperature lockout that keeps it off when the outdoor air temperature is above the lockout setpoint.', off: 'A heating lockout at high outdoor air temperatures is available but not enabled.' },
-    { c: 'heater', fn: 'start', on: 'Heating has a high outdoor air temperature lockout that keeps it off when the outdoor air temperature is above the lockout setpoint.', off: 'A heating lockout at high outdoor air temperatures is available but not enabled.' },
+    { c: 'air', fn: 'oa', on: 'Heating has a high outdoor air temperature lockout that keeps it off when the outdoor air temperature is above the lockout setpoint.', off: 'The program has a heating lockout on high outdoor air temperature, but it is disabled.' },
+    { c: 'heater', fn: 'start', on: 'Heating has a high outdoor air temperature lockout that keeps it off when the outdoor air temperature is above the lockout setpoint.', off: 'The program has a heating lockout on high outdoor air temperature, but it is disabled.' },
   ],
   erv_run_control: [{ c: 'air', fn: 'oa', on: 'The energy recovery ventilator runs in automatic mode with a minimum exhaust fan speed.' }],
   erv_bypass_oa: [{ c: 'air', fn: 'oa', on: 'The energy recovery ventilator turns off its supply fan and turns on its bypass fan within a set outdoor air temperature range.' }],
@@ -29219,7 +29219,6 @@ function _a36DetControlSentences(g, f, params, proof) {
         return c.alarms[k];
       });
     };
-    if (alarm('fanFailure')) al.push('a fan does not follow its start or stop command');
     if (alarm('runtime')) al.push('a fan exceeds its run-time limit');
     if (alarm('ductPressure')) al.push('the duct static pressure is too high or too low');
     if (alarm('supplyTemp')) al.push('the supply air temperature is too high or too low');
@@ -29334,6 +29333,30 @@ function _a36DetCiteFigure(text, figureNum) {
   if (/\)$/.test(core) && core.lastIndexOf('(') > -1) return core.slice(0, -1) + '; Figure ' + figureNum + ')' + mark;
   return core + ' (Figure ' + figureNum + ')' + mark;
 }
+// Sentences in a row that start with the same share of the units ("On 8 of the 17 units, ...") are one sentence, the parts joined by semicolons,
+// and a share of one unit whose sentence repeats the unit noun reads "One of the 3 exhaust fans runs ..." (Audit Report review, 2026-11-17).
+function _a36DetMergeShareSentences(body) {
+  var SHARE = /^On (\d+|[a-z]+) of the (\d+|[a-z]+) ([a-z][a-z -]*?)s, (.*)\.$/;
+  var out = [];
+  body.forEach(function (s) {
+    var m = SHARE.exec(s.text);
+    var last = out[out.length - 1];
+    if (m && last && last.share && last.fn === s.fn && last.share.key === m[1] + '|' + m[2] + '|' + m[3] && last.share.parts.length < 3) {
+      last.share.parts.push(m[4]);
+      return;
+    }
+    out.push(m ? { fn: s.fn, share: { key: m[1] + '|' + m[2] + '|' + m[3], n: m[1], total: m[2], noun: m[3], parts: [m[4]] } } : s);
+  });
+  return out.map(function (s) {
+    if (!s.share) return s;
+    var sh = s.share;
+    var parts = sh.parts;
+    var joined = parts.length === 1 ? parts[0] : parts.slice(0, -1).join('; ') + '; and ' + parts[parts.length - 1];
+    var own = new RegExp('^the ' + sh.noun + ' ');
+    if ((sh.n === '1' || sh.n === 'one') && own.test(joined)) return { fn: s.fn, text: 'One of the ' + sh.total + ' ' + sh.noun + 's ' + joined.replace(own, '') + '.' };
+    return { fn: s.fn, text: 'On ' + sh.n + ' of the ' + sh.total + ' ' + sh.noun + 's, ' + joined + '.' };
+  });
+}
 function _a36DetDescriptionParas(g, ctx, figureNum) {
   var f = _a36DetGroupFindings(g);
   var params = _a36DetGroupParams(g, ctx.rowsById);
@@ -29358,6 +29381,7 @@ function _a36DetDescriptionParas(g, ctx, figureNum) {
     vfd: vfd,
   });
   if (!body.length) body.push({ fn: '', text: f.covered.keys.length ? 'This equipment has monitoring points only.' : 'The building automation system shows no sensors or control points for this equipment.' });
+  body = _a36DetMergeShareSentences(body);
   if (figureNum && body.length) body[body.length - 1].text = _a36DetCiteFigure(body[body.length - 1].text, figureNum);
   // One paragraph for each part of the description (what the system has, how it is controlled, the sequences, the protection, the sensors): the
   // sentences of one part (fn) form one paragraph. A paragraph of one sentence joins the paragraph before it (the first joins the next one), so
