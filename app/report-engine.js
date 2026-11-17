@@ -18334,6 +18334,44 @@ function _a36CoverBuildingTable(d, info) {
   );
 }
 
+// The Executive Summary table "Findings by Type" (Matt 2026-11-17: a full page Executive Summary at a minimum): the findings of the findings model
+// (the same list as the Findings Summary and the chapters) grouped by what is missing, with the number of buildings and of units. '' when the
+// model has no findings.
+function _a36ExecFindingTypesTable(d) {
+  var ctx;
+  try {
+    ctx = d._a36AuditCtx || (d._a36AuditCtx = _a36DetContext(d));
+  } catch (e) {
+    console.error('_a36ExecFindingTypesTable: findings model failed', e);
+    return '';
+  }
+  var TYPE = { seq: 'Control sequence', sensor: 'Sensor or point' };
+  var by = {};
+  var list = [];
+  ctx.model.findings.forEach(function (f) {
+    var type = TYPE[f.kind] || 'Equipment setup';
+    var k = type + '|' + f.label;
+    if (!by[k]) {
+      by[k] = { label: f.label, type: type, libs: {}, units: 0, n: 0 };
+      list.push(by[k]);
+    }
+    by[k].libs[f.lib] = true;
+    by[k].units += f.units || 0;
+    by[k].n++;
+  });
+  if (!list.length) return '';
+  list.sort(function (a, c) {
+    return Object.keys(c.libs).length - Object.keys(a.libs).length || c.units - a.units || String(a.label).localeCompare(String(c.label));
+  });
+  var td = A36_DET_TD + ';padding:2px 8px;font-size:11.5px';
+  var tdC = td + ';text-align:center';
+  var rows = list.map(function (r) {
+    return '<tr><td style="' + td + '">' + _escHtml(r.label) + '</td><td style="' + td + '">' + r.type + '</td><td style="' + tdC + '">' +
+      rptCount(Object.keys(r.libs).length) + '</td><td style="' + tdC + '">' + (r.units ? rptCount(r.units) : '—') + '</td></tr>';
+  });
+  return _a36DetTableOpen([46, 24, 14, 16], ['Finding', 'Type', 'Buildings', 'Units']) + '<tbody>' + rows.join('') + '</tbody></table>';
+}
+
 function rptPageASHRAE36Cover(n, d, perBuildingIncluded, detailed) {
   var p = d.portfolio;
   var info = _a36AuditFindingInfo(d);
@@ -18820,6 +18858,9 @@ function rptPageASHRAE36Executive(n, d, detailedTitles, view) {
             .join('') +
           '</ul>'
         : '');
+    var _typesTable = _fInfo && _fInfo.total ? _a36ExecFindingTypesTable(d) : '';
+    if (_typesTable)
+      _sumHtml += _subHtml('Findings by Type') + _pHtml('The ' + _a36FindingsCount(_fInfo.total) + ' of the audit, grouped by what the system does not have. Units counts the equipment units each finding affects; a building-wide finding shows a dash.') + _typesTable;
     execIntro = execHeader + _sumHtml;
   }
 
