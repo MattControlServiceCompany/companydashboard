@@ -2507,6 +2507,8 @@ async function siteResetAllMeterTableSettings() {
    site-ui.js delegates to this array and should NOT maintain its own copy.
 */
 var RELEASE_NOTES = [
+  { v: 'v2026.11.16.325', date: '2026-11-16', title: 'Report building targets from one rule',
+    items: [ { type: 'fix', text: 'The Financial page of the savings report takes each building target from the same rule as the rest of the report. The printed figures do not change.' } ] },
   { v: 'v2026.11.16.324', date: '2026-11-16', title: 'Building status per building, Set Points schedules, Site EUI estimate',
     items: [
       { type: 'improved', text: 'Dashboard Status compares each building with its own share of the projected savings target (the same split the quarterly report prints). Hover a status for the building target.' },
