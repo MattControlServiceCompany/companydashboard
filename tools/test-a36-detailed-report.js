@@ -686,6 +686,43 @@ const ok = (c, m) => {
     ok(['(air handler)', '(VAV box)', 'graphic', '(air handler with zone controls)'].every((t) => gk.kinds[t] === 'unit'), 'graphic kind: unit graphics are "unit"');
     ok(gk.a === 'a.png', 'graphic pick (a): the unit graphic captured first wins over a cited zone table page: ' + gk.a);
     ok(gk.b === 'c.png', 'graphic pick (b): of two bare graphic rows the earlier file wins, not the cited one: ' + gk.b);
+    // group figure = a typical unit (Matt, 2026-11-17): the unit with the most common configuration of its group is the figure unit, even when an atypical unit was captured earlier
+    const typ = await page.evaluate((PID) => {
+      const d = collectASHRAE36Data(PID, '2026-11-10', null);
+      const rb = _a36DetRowsById(PID);
+      const out = { cases: [] };
+      d.buildings.forEach((b) => {
+        _a36DetGroups(b, rb).forEach((g) => {
+          if (g.names.length < 3 || !g.units.every((u) => rb[u.id] && (rb[u.id].pointsRaw || rb[u.id].points))) return;
+          const keyOf = (u) => { const r = rb[u.id]; return (r.pointsRaw || r.points); };
+          // make unit 0 atypical: the other units keep their points; unit 0 gets an extra enable point that changes its configuration only for terminals
+          if (!A36_DET_TERMINALS[g.category]) return;
+          const saved = {};
+          g.units.forEach((u) => { const r = rb[u.id]; saved[u.id] = r.pointsRaw; });
+          const r0 = rb[g.units[0].id];
+          r0.pointsRaw = Object.assign({}, keyOf(g.units[0]), { 'Baseboard Heat Enable': 'Off' });
+          g.units.slice(1).forEach((u) => { const r = rb[u.id]; const p = Object.assign({}, keyOf(u)); delete p['Baseboard Heat Enable']; r.pointsRaw = p; });
+          const picMap = [0, 1].map((i) => ({ file: 'Screenshot 2026-10-2' + (3 + i) + ' 111111.png', building: b.name, equipName: g.names[i], page: 'Graphic', cited: false }));
+          const loaded = { [picMap[0].file]: { url: 'x', w: 100, h: 100, bad: '' }, [picMap[1].file]: { url: 'x', w: 100, h: 100, bad: '' } };
+          // unit 0 is captured a day earlier than unit 1 but later day wins in capture rule: make unit 0 the capture-rule winner
+          picMap[0].file = 'Screenshot 2026-10-28 111111.png'; picMap[1].file = 'Screenshot 2026-10-23 111111.png';
+          const l2 = { [picMap[0].file]: loaded[Object.keys(loaded)[0]], [picMap[1].file]: loaded[Object.keys(loaded)[1]] };
+          const m = _a36DetModel(d, rb, picMap, l2);
+          const lib = m.libs.find((l) => l.b === b);
+          const gi = lib.groups.findIndex((x) => x.label === g.label);
+          const pic = lib.descPics[gi][0];
+          out.cases.push({ group: g.label, pic: pic ? pic.equipName : null, rep: lib.rep[gi] >= 0 ? lib.groups[gi].names[lib.rep[gi]] : null, typical: g.names[1], atypical: g.names[0] });
+          // only the atypical unit has a graphic: it is still the figure
+          const m2 = _a36DetModel(d, rb, [picMap[0]], l2);
+          const lib2 = m2.libs.find((l) => l.b === b);
+          const pic2 = lib2.descPics[lib2.groups.findIndex((x) => x.label === g.label)][0];
+          out.cases[out.cases.length - 1].only = pic2 ? pic2.equipName : null;
+          g.units.forEach((u) => { rb[u.id].pointsRaw = saved[u.id]; });
+        });
+      });
+      return out;
+    }, seed);
+    ok(typ.cases.length > 0 && typ.cases.every((c) => c.pic === c.typical && c.rep === c.typical && c.only === c.atypical), 'group figure: the typical unit is the figure unit over an atypical unit with the winning capture; the atypical unit is used when it is the only one with a graphic (' + JSON.stringify(typ.cases) + ')');
     ok(gk.f === 'Screenshot 2026-10-28 115721.png', 'graphic pick (f): the latest capture day wins, then its earliest capture: ' + gk.f);
     ok(gk.kinds['(system summary)'] === 'unit', 'graphic kind: a plant system summary is "unit"');
     ok(gk.d === 'e.png', 'graphic pick (d): one bare graphic row is used: ' + gk.d);

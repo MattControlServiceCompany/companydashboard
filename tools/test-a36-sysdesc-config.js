@@ -164,6 +164,14 @@ const ok = (c, m) => {
       // terminal: the airflow measurement is stated once; a single unit never says "each"
       out.tTermMeasure = mk('vav', 'Variable Air Volume Terminal', [names(['Discharge Airflow', 'Zone Temp'])], ['discFlow']);
       out.tTermOne = mk('fpb', 'Fan-Powered Terminal', [names(['Primary Airflow', 'Damper Command', 'Terminal Fan Enable'])], ['primaryFlow', 'dampCmd', 'termFanEnable']);
+      // perimeter baseboard heat: one unit, some units, every unit, absent; the one detector emTerminalConfig.perimeterHeat
+      const PH = names(['Zone Temp', 'Baseboard Heat Enable', 'Damper Command']);
+      const NOPH = names(['Zone Temp', 'Damper Command']);
+      out.phOne = mk('fpb', 'Fan-Powered Terminal', [PH], ['dampCmd']);
+      out.phSome = mk('vav', 'Variable Air Volume Terminal', [PH, NOPH, NOPH], ['dampCmd']);
+      out.phAll = mk('vav', 'Variable Air Volume Terminal', [PH, PH], ['dampCmd']);
+      out.phNone = mk('vav', 'Variable Air Volume Terminal', [NOPH, NOPH], ['dampCmd']);
+      out.phDetect = ['Baseboard Heat Enable', 'Perimeter Heat Valve', 'Radiation Valve', 'Fin Tube Command', 'Baseboard Heater Status'].map((n) => emTerminalConfig(names(['Zone Temp', n])).perimeterHeat).concat([emTerminalConfig(NOPH).perimeterHeat]);
       out.tHeaterOne = mk('heater', 'Heater', [names(['Heater Enable'])], ['enable']);
       out.tChwStatus2 = mk('chwp', 'Chilled Water Plant', [names(['Chiller 1 Enable', 'Chiller 1 Status', 'Chilled Water Pump 1 Enable', 'Chilled Water Pump 1 Status', 'Chilled Water Pump 2 Enable', 'Chilled Water Pump 2 Status'])], ['chillerEnable', 'chillerStatus', 'pchwpEnable', 'pchwpStatus']);
       out.tChwStatus1 = mk('chwp', 'Chilled Water Plant', [names(['Chiller 1 Enable', 'Chiller 1 Status', 'Chilled Water Pump 1 Enable', 'Chilled Water Pump 1 Status'])], ['chillerEnable', 'chillerStatus', 'pchwpEnable', 'pchwpStatus']);
@@ -268,6 +276,11 @@ const ok = (c, m) => {
     ok(/gas heat with one heating stage/.test(r.tAirGas) && /The gas heat modulates to hold the supply air temperature/.test(r.tAirGas) && !/gas heating valve/.test(r.tAirGas) && !/heating coil valve|compressor|condensing/.test(r.tAirGas) && /two cooling stages/.test(r.tAirGas), 'gas valve: gas heat, the valve is not a coil valve, stages are counts only: ' + r.tAirGas);
     ok(/heating coil valve modulates/.test(r.tAirCoil) && !/gas/.test(r.tAirCoil), 'a heating valve with no gas point stays a heating coil valve: ' + r.tAirCoil);
     ok(/One of the two units has two compressors\./.test(r.tAirTwo) && /One of the two units has one cooling stage\./.test(r.tAirTwo), 'a fact of one unit of two prints as "One of the two units has ...": ' + r.tAirTwo);
+    ok(/The terminal also controls perimeter baseboard heat\./.test(r.phOne) && !/Each terminal/.test(r.phOne), 'perimeter heat, one unit: ' + r.phOne);
+    ok(/On one of the three terminals, the building automation system also controls perimeter baseboard heat\./.test(r.phSome), 'perimeter heat, some units: ' + r.phSome);
+    ok(/Each terminal also controls perimeter baseboard heat\./.test(r.phAll), 'perimeter heat, every unit: ' + r.phAll);
+    ok(!/perimeter/i.test(r.phNone), 'no perimeter heat sentence when no unit has the points: ' + r.phNone);
+    ok(JSON.stringify(r.phDetect) === '[true,true,true,true,true,false]', 'perimeterHeat detects baseboard, perimeter, radiation and fin-tube points only: ' + JSON.stringify(r.phDetect));
     ok(errs.length === 0, 'no page error' + (errs.length ? ': ' + errs.join(' | ') : ''));
   } finally {
     await ctx.close();

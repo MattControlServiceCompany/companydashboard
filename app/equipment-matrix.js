@@ -22610,7 +22610,9 @@ function emAirConfig(points) {
 }
 // Zone terminal configuration (System Description, 2026-11-17) from the stored points { name: value }: { dualDuct (_emCfgDualDuct),
 // deckSensors: 2 (a flow control on the hot deck and one on the cold deck) | 1 (one flow control for both decks) | 0, requests: { air, heat, cool }
-// (the terminal's own request points to its air source), heating: emTerminalHeating(names), electricReheat: emElectricReheat(names) }.
+// (the terminal's own request points to its air source), heating: emTerminalHeating(names), electricReheat: emElectricReheat(names),
+// perimeterHeat: a baseboard, perimeter, radiation or fin-tube heat point of its own (enable, valve, command or status) }.
+// The one detector of perimeter heat (report sentences and the representative-unit pick read this field, never the point names).
 function emTerminalConfig(points) {
   var E = _emCfgEntries(points);
   var names = E.map(function (e) {
@@ -22628,6 +22630,7 @@ function emTerminalConfig(points) {
     requests: { air: has(/i\s*need\s*air\s*request/i), heat: has(/heat\s*request/i), cool: has(/cool\s*request/i) },
     heating: emTerminalHeating(names),
     electricReheat: emElectricReheat(names),
+    perimeterHeat: has(/(?:baseboard|perimeter|radiation|radiator|fin.?tube)/i),
   };
 }
 // Exhaust fan configuration (System Description, 2026-11-17) from the stored points: { enable, status, current, interlock (an "Associated
