@@ -63,7 +63,7 @@ check(RE.includes(coilText) && PE.includes(coilText) && !/hot water flow through
 
 // A1
 // The Detailed Executive Summary was rewritten 2026-11-16 (Matt: "not really an executive summary"); its work counts now open the Recommendations sentence.
-check(/_todo\.push\('install ' \+/.test(RE) && !/'The work needed is '/.test(RE), 'A1. Summary Recommendations sentence states the install count; the old "The work needed is" line is gone');
+check(!/_todo\.push\('install ' \+/.test(RE) && !/_subHtml\('Recommendations'\)/.test(RE) && !/'The work needed is '/.test(RE), 'A1. Detailed summary has no Recommendations paragraph (removed 2026-11-17, facts only); the old "The work needed is" line is gone');
 
 // A2
 check(/_co2Parts\.push\(rptCount\(_dcvZonesMissing\) \+ ' of ' \+ rptCount\(dcv\.totalZones\) \+ ' zone'/.test(RE) && !/ rooms? have no carbon dioxide/.test(RE) && !/zones have no carbon dioxide sensor, so ventilation/.test(RE), 'A2. Summary gaps say "zones", not "rooms"');

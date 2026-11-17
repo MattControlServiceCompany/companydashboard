@@ -18301,7 +18301,7 @@ function rptPageASHRAE36Cover(n, d, perBuildingIncluded, detailed) {
   // thousands-separator formatter, so the Audit narrative and the Proposal's Executive Summary
   // print the same figure the same way ("1,594", never "1594").
   var finding =
-    'To meet ASHRAE 36, across <strong>' +
+    'Across <strong>' +
     rptCount(p.totalBuildings) +
     ' building' +
     (p.totalBuildings !== 1 ? 's' : '') +
@@ -18311,14 +18311,14 @@ function rptPageASHRAE36Cover(n, d, perBuildingIncluded, detailed) {
     (p.totalEquip !== 1 ? 's' : '') +
     ' of heating and cooling equipment</strong>, <strong>' +
     _escHtml(d.project.name) +
-    '</strong> needs <strong>' +
+    '</strong> has <strong>' +
     rptCount(_a36ConsolidatedSequences) +
     ' control sequence' +
     (_a36ConsolidatedSequences !== 1 ? 's' : '') +
-    ' programmed</strong> and <strong>' +
+    ' to program</strong> and <strong>' +
     rptCount(_a36ConsolidatedSensors) +
     (_a36ConsolidatedSensors === 1 ? ' sensor or device' : ' sensors and devices') +
-    ' installed</strong>. ' +
+    ' to install</strong> to meet ASHRAE 36. ' +
     // a562fd67: the cover's forward-looking promise must match whether the report actually
     // includes per-building detail pages. perBuildingIncluded is passed true only when the
     // Audit Report's "Per-Building Detail" section is on (s.building !== false at the call
@@ -18346,7 +18346,7 @@ function rptPageASHRAE36Cover(n, d, perBuildingIncluded, detailed) {
     '<div style="font-size:11px;color:var(--rpt-page-text);margin-top:4px">Sequence Readiness</div></div>' +
     '</div>' +
     // A2: what the percentage means, in one plain sentence
-    (detailed ? '' : '<div style="font-size:12px;color:var(--rpt-page-text);text-align:center;line-height:1.5;margin:0 0 8px">Each percentage shows how much of what ASHRAE 36 calls for is already in place: 100% means nothing is missing.</div>');
+    (detailed ? '' : '<div style="font-size:12px;color:var(--rpt-page-text);text-align:center;line-height:1.5;margin:0 0 8px">Each percentage shows how much of the ASHRAE 36 sensor and sequence set is in place: 100% means none is missing.</div>');
 
   var bodyHTML =
     '<div style="padding:20px 48px 16px">' +
@@ -18379,13 +18379,12 @@ function rptPageASHRAE36Cover(n, d, perBuildingIncluded, detailed) {
     // explicit and survives any future margin consolidation.
     '<div style="height:16px"></div>' +
     '<div style="font-size:14px;color:var(--rpt-page-text);line-height:1.6;margin-bottom:8px">' +
-    'This report evaluates ' +
-    (p.totalBuildings === 1 ? 'the ' + _a36BuildingNouns(d).one + '’s building automation system' : 'the ' + _a36BuildingNouns(d).many + '’ building automation systems') +
-    ' against ASHRAE 36, the industry standard for high-performance heating and cooling control. ' +
-    'It identifies the specific sensors to install and control sequences to program to bring ' +
-    (p.totalBuildings === 1 ? 'the ' + _a36BuildingNouns(d).one : 'the ' + _a36BuildingNouns(d).many) +
-    ' into full alignment with ASHRAE 36.' +
-    (detailed ? '' : ' Use it to scope the recommended upgrades.') +
+    'This report covers ' +
+    (p.totalBuildings === 1 ? 'the building automation system of the ' + _a36BuildingNouns(d).one : 'the building automation systems of the ' + _a36BuildingNouns(d).many) +
+    (p.totalBuildings === 1 ? ': its' : ': their') +
+    ' equipment, control points, sensors and control sequences. ' +
+    'It lists the sensors and control sequences that ASHRAE 36, the industry standard for high-performance heating, cooling and ventilation control, calls for and ' +
+    (p.totalBuildings === 1 ? 'the system does not have.' : 'the systems do not have.') +
     '</div>' +
     gauges +
     // Cover gap 2 of 3 (Matt, 2026-08-03, item 5b): blank line after the gauges row.
@@ -18494,14 +18493,11 @@ function rptPageASHRAE36Executive(n, d, detailedTitles) {
     (detailed
       ? ''
       : '<div style="font-size:14px;color:var(--rpt-page-text);line-height:1.6;margin-bottom:14px">' +
-        'ASHRAE 36 is the industry standard for how a building automation system should run heating, ' +
-        'cooling, and ventilation equipment. It is built from proven control sequences — programmed ' +
-        'instructions that tell equipment how to respond to conditions such as occupancy, temperature, ' +
-        'and time of day.' +
-        ' This audit compared each building’s current programming against that ' +
-        'standard. The sequences summarized below are the ones that apply to the most equipment across ' +
-        'the portfolio, so they are where programming work would have the greatest reach; the table ' +
-        'that follows shows how ready each building is to run them.' +
+        'This audit reviewed the building automation system of each building: its equipment, control points, ' +
+        'sensors and control sequences. ASHRAE 36, the industry standard for how a building automation ' +
+        'system should run heating, cooling and ventilation equipment, is one reference. ' +
+        'The sequences below are the ASHRAE 36 sequences that apply to the most equipment. ' +
+        'The table that follows shows how many of the ASHRAE 36 sensors and sequences each building has.' +
         '</div>');
 
   // Top ASHRAE 36 Sequences, as short plain-language paragraphs (first page only).
@@ -18631,7 +18627,6 @@ function rptPageASHRAE36Executive(n, d, detailedTitles) {
   // sequence counts above (_execSeqCounts, topSeqTypes), the two work counts of _a36ConsolidatedCounts (the same as the cover) and the setpoint count of
   // _a36SetpointNeedsChangeCount (the same as the Setpoint Programming Review, Appendix A). A value of 0 or a missing value drops its sentence or bullet.
   if (detailed) {
-    var _sumCounts = _a36ConsolidatedCounts(d);
     var _nounOne = _a36BuildingNouns(d).one;
     var _nounMany = _a36BuildingNouns(d).many;
     var _noun = p.totalBuildings === 1 ? _nounOne : _nounMany;
@@ -18650,8 +18645,9 @@ function rptPageASHRAE36Executive(n, d, detailedTitles) {
     var _sumDid =
       'Control Service Company audited the building automation system' +
       (p.totalBuildings > 0 ? ' at ' + rptCount(p.totalBuildings) + ' ' + _noun : '') +
-      ' against ASHRAE 36, the industry standard for high-performance heating, cooling and ventilation control.' +
-      (_scope.length ? ' The audit covered ' + _scope.join(' and ') + '.' : '');
+      '.' +
+      (_scope.length ? ' The audit covered ' + _scope.join(' and ') + '.' : '') +
+      ' One reference for the sensors and control sequences is ASHRAE 36, the industry standard for high-performance heating, cooling and ventilation control.';
 
     // Overall result.
     var _lowScoreBldgs = d.buildings
@@ -18663,9 +18659,9 @@ function rptPageASHRAE36Executive(n, d, detailedTitles) {
     var _gapSentence = '';
     if (_sensorPct !== null && _seqPctP !== null) {
       if (_sensorPct > _seqPctP && _sensorPct >= 50) {
-        _gapSentence = ' Sensor coverage is ' + _sensorPct + '%, but only ' + _seqPctP + '% of the required control sequences are in place: most of the sensors are installed, and the larger gap is programming.';
+        _gapSentence = ' Sensor coverage is ' + _sensorPct + '%, but only ' + _seqPctP + '% of the ASHRAE 36 control sequences are in place: most of the sensors are installed, and the larger gap is programming.';
       } else if (_seqPctP > _sensorPct && _seqPctP >= 50) {
-        _gapSentence = ' Sequence readiness is ' + _seqPctP + '%, but only ' + _sensorPct + '% of the required sensors are installed: most of the programming is in place, and the larger gap is sensors.';
+        _gapSentence = ' Sequence readiness is ' + _seqPctP + '%, but only ' + _sensorPct + '% of the ASHRAE 36 sensors are installed: most of the programming is in place, and the larger gap is sensors.';
       } else {
         _gapSentence = ' Sensor coverage is ' + _sensorPct + '% and sequence readiness is ' + _seqPctP + '%.';
       }
@@ -18684,7 +18680,7 @@ function rptPageASHRAE36Executive(n, d, detailedTitles) {
           : ' ' + _numWord[_lowScoreBldgs.length] + ' ' + _nounMany + ' need the most work: ' + _a36DetJoin(_lowNames) + '.';
     }
     var _sumResult =
-      'The ' + _noun + (p.totalBuildings === 1 ? ' meets ' : ' meet ') + p.composite + '% of the standard.' + _gapSentence + _lowSentence;
+      'The ' + _noun + (p.totalBuildings === 1 ? ' has ' : ' have ') + p.composite + '% of the ASHRAE 36 sensors and sequences in place.' + _gapSentence + _lowSentence;
 
     // Setpoints of Appendix A: the same count as its totals line, only when the appendix prints.
     var _spNeed = 0;
@@ -18764,16 +18760,6 @@ function rptPageASHRAE36Executive(n, d, detailedTitles) {
     }
     _findings = _findings.slice(0, 4);
 
-    // Recommendations: the work counts of the cover, plus the setpoint change when Appendix A prints.
-    var _todo = [];
-    if (_sumCounts.sensors > 0) _todo.push('install ' + (_sumCounts.sensors === 1 ? '1 sensor or device' : rptCount(_sumCounts.sensors) + ' sensors and devices'));
-    if (_sumCounts.sequences > 0) _todo.push('program ' + _plural(_sumCounts.sequences, 'control sequence', 'control sequences'));
-    if (_spNeed > 0) _todo.push('change the zone setpoints in ' + _plural(_spNeed, _nounOne, _nounMany));
-    var _todoText = _a36DetJoin(_todo);
-    var _sumRec = _todo.length
-      ? _todoText.charAt(0).toUpperCase() + _todoText.slice(1) + '. This brings the ' + _noun + ' to the ASHRAE 36 standard for the equipment in scope. The Service Proposal gives the cost of this work.'
-      : '';
-
     var _sumHtml =
       _pHtml(_sumDid) +
       _subHtml('Overall Result') +
@@ -18791,8 +18777,7 @@ function rptPageASHRAE36Executive(n, d, detailedTitles) {
             })
             .join('') +
           '</ul>'
-        : '') +
-      (_sumRec ? _subHtml('Recommendations') + _pHtml(_sumRec) : '');
+        : '');
     execIntro = execHeader + _sumHtml;
   }
 
@@ -18954,7 +18939,7 @@ function rptPageASHRAE36Executive(n, d, detailedTitles) {
     // Renamed "Building ASHRAE 36 Readiness" -> "ASHRAE 36 Building Readiness" (Matt, 2026-08-03,
     // docx item 7).
     if (detailed) return _a36DetSectionTitle(detailedTitles.readinessNo, 'Building Readiness', part);
-    return '<div style="' + READINESS_CAPTION_STYLE + '">ASHRAE 36 Building Readiness' + part + '</div>';
+    return '<div style="' + READINESS_CAPTION_STYLE + '">Building Readiness' + part + '</div>';
   }
   // Destyle pass (fix/65ce578b, 2026-07-27): dropped the filled dark-blue header (color:#fff on
   // background:var(--rpt-blue)) to match the Proposal's plain/thin-bordered convention
@@ -19113,8 +19098,8 @@ function rptPageASHRAE36Executive(n, d, detailedTitles) {
   // them. The underlying 'green'/'amber'/'red' status keys are unchanged (see _a36StatusChip).
   var tableFootnote =
     '<div style="font-size:10px;color:var(--rpt-page-text);margin-top:-10px;margin-bottom:12px;line-height:1.5">' +
-    '<strong>Score</strong> is Control Service Company’s own readiness assessment, built on ASHRAE 36 requirements ' +
-    'and weighted by how many apply to each equipment type. ' +
+    '<strong>Score</strong> is Control Service Company’s own readiness measure. It counts the sensors and sequences ' +
+    'that ASHRAE 36 calls for and weights them by how many apply to each equipment type. ' +
     // Round 7 R3 (2026-11-14, Matt 2026-07-31 keeps the equipment-weighted portfolio scores): say why the cover scores differ from the counts here.
     (detailed ? '' : 'ASHRAE 36 itself defines no composite score or compliance threshold. The portfolio scores weight each building by its amount of equipment, so they can differ a little from the totals of the counts in this table. ') +
     '<strong>Readiness bands:</strong> High ≥' +
@@ -19126,7 +19111,7 @@ function rptPageASHRAE36Executive(n, d, detailedTitles) {
     '%' + (detailed ? '' : ' (some sensors and sequences are in place, but work is needed before sequences can run reliably)') + ', ' +
     'Low <' +
     ASHRAE36_READINESS_PARTIAL_THRESHOLD +
-    '%' + (detailed ? '.' : ' (the building lacks the sensors or programming needed to run ASHRAE 36 sequences at all).') +
+    '%' + (detailed ? '.' : ' (the building lacks the sensors or programming needed to run the ASHRAE 36 sequences at all).') +
     '</div>';
 
   // Build a token per building row — type:'row', estH:52px
@@ -28662,8 +28647,8 @@ function _a36DetLibraryTokens(d, b, ctx, sectionNo) {
       _a36DetTok(
         '<p style="' + A36_DET_P + '">' +
           (b.seqPct === null || b.seqPct === undefined
-            ? 'The equipment types at this library are outside the ASHRAE 36 sequences, so this review lists no sensors or sequences for it.'
-            : 'No sensors or sequences are missing against ASHRAE 36 for this library.') +
+            ? 'The equipment types at this library have no ASHRAE 36 sequences, so this review lists no ASHRAE 36 sensors or sequences for it.'
+            : 'No ASHRAE 36 sensors or sequences are missing at this library.') +
           '</p>',
       ),
     );
@@ -28772,7 +28757,7 @@ function _a36DetSummaryTokens(ctx, sectionNo) {
   var list = ctx.model.findings;
   if (!list.length) {
     tokens.push(_a36DetTok(_a36DetSectionTitle(sectionNo, 'Findings Summary', ''), true));
-    tokens.push(_a36DetTok('<p style="' + A36_DET_P + '">No sensors or sequences are missing against ASHRAE 36.</p>'));
+    tokens.push(_a36DetTok('<p style="' + A36_DET_P + '">No ASHRAE 36 sensors or sequences are missing.</p>'));
   } else {
     var summaryTitle = {
       html: function (pageIndex, pageCount) {
