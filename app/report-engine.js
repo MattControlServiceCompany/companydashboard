@@ -6153,12 +6153,18 @@ function rptPageFinancial(n, d) {
 
   // -- Building Performance table --
   const qTarget = d.contract.quarterlyTargets[q - 1] || 0;
-  const totBlCostForPct = d.totals.blCost || 1;
+  // Whole-dollar target of each building: the ONE rule (allocateTargetByBaselineCost, lib/formatting.js), the same as _rptBuildingTarget.
+  const bldgTargets = allocateTargetByBaselineCost(
+    qTarget,
+    d.buildings.map(function (x) {
+      return x.blCost || 0;
+    }),
+  );
   // The target cost of each building as printed: apportioned to the rounded total (_rptShownRows) in a report not yet presented.
   const projShown = _rptUnpresentedQuarter(d)
     ? _rptShownRows(
-        d.buildings.map(function (x) {
-          return x.blCost - (qTarget > 0 ? qTarget * (x.blCost / totBlCostForPct) : 0);
+        d.buildings.map(function (x, xi) {
+          return x.blCost - bldgTargets[xi];
         }),
       )
     : null;
@@ -6174,7 +6180,7 @@ function rptPageFinancial(n, d) {
       // Wording and colour come from _rptResultOf, the same as the quarterly report.
       const _res = _rptResultOf(b, d);
       const statusClass = _res.cls;
-      const bldgProjSav = qTarget > 0 ? qTarget * (b.blCost / totBlCostForPct) : 0;
+      const bldgProjSav = bldgTargets[bIdx];
       const bldgProjCost = _rptPVn(d, 'building table', b.id, '', '', 'projected_cost', b.blCost - bldgProjSav);
       return (
         '<tr>' +
