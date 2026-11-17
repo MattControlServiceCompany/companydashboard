@@ -643,6 +643,55 @@ const ok = (c, m) => {
     }, seed);
     ok(rep.length > 0 && rep.every((r) => r.picUnit === r.repName && (r.want === null || r.picUnit === r.want)), 'b: the representative unit (readings) is the unit of the figure; a bad figure is skipped (' + JSON.stringify(rep) + ')');
 
+    // ---- 4c2. graphic kind (Matt, 2026-11-17): a table or plan page never fills a unit figure; among unit graphics the latest capture day wins, then its earliest capture; "cited" is no tie-break ----
+    const gk = await page.evaluate((PID) => {
+      const d = collectASHRAE36Data(PID, '2026-11-10', null);
+      const rb = _a36DetRowsById(PID);
+      const out = { kinds: {}, cases: [] };
+      ['(building air handler / VAV summary table)', '(zone table page 2)', '(Penthouse floor plan, AHU-1 labels)', '(air handler)', '(VAV box)', 'graphic', '(air handler with zone controls)'].forEach((t) => { out.kinds[t] = _a36DetGraphicKind(t); });
+      const b = d.buildings.find((x) => _a36DetGroups(x, rb).length > 0);
+      const groups = _a36DetGroups(b, rb);
+      const figFiles = (picMap) => {
+        const loaded = {};
+        picMap.forEach((p) => { loaded[p.file] = { url: 'x', w: 100, h: 100, bad: '' }; });
+        const m = _a36DetModel(d, rb, picMap, loaded);
+        const lib = m.libs.find((l) => l.b === b);
+        return lib.descPics.map((list) => (list[0] ? list[0].file : null));
+      };
+      const row = (file, pg, cited, n) => ({ file, page: pg, cited, building: b.name, equipName: n });
+      const n0 = groups[0].names[0];
+      // (a) unit graphic captured first, not cited; zone table captured second, cited
+      out.a = figFiles([row('a.png', 'graphic (air handler)', false, n0), row('b.png', 'graphic (zone table)', true, n0)])[0];
+      // (b) two bare graphic rows: the earlier file is not cited, the later file is cited; the later row is listed first
+      out.b = figFiles([row('d.png', 'graphic', true, n0), row('c.png', 'graphic', false, n0)])[0];
+      // (f) capture days: a later visit replaces older captures; in that day the earliest capture wins; plus a system summary is a unit graphic
+      out.f = figFiles([row('Screenshot 2026-10-23 113602.png', 'graphic (air handler)', false, n0), row('Screenshot 2026-10-28 115742.png', 'graphic', true, n0), row('Screenshot 2026-10-28 115721.png', 'graphic', false, n0)])[0];
+      out.kinds['(system summary)'] = _a36DetGraphicKind('(system summary)');
+      // (d) one bare graphic row
+      out.d = figFiles([row('e.png', 'graphic', false, n0)])[0];
+      // a plan page only: no figure
+      out.plan = figFiles([row('f.png', 'graphic (Penthouse floor plan)', true, n0)])[0];
+      // (e) figure numbers: with a table page ahead in the list, every group of the library keeps one figure and the numbers run 1..N
+      const map = [];
+      groups.forEach((g, i) => {
+        map.push(row('t' + i + '.png', 'graphic (zone table)', true, g.names[0]));
+        map.push(row('u' + i + '.png', 'graphic (unit)', false, g.names[0]));
+      });
+      out.eFiles = figFiles(map);
+      out.eWant = groups.map((g, i) => 'u' + i + '.png');
+      return out;
+    }, seed);
+    ok(gk.kinds['(building air handler / VAV summary table)'] === 'list' && gk.kinds['(zone table page 2)'] === 'list', 'graphic kind: a summary table and a zone table page are "list": ' + JSON.stringify(gk.kinds));
+    ok(gk.kinds['(Penthouse floor plan, AHU-1 labels)'] === 'plan', 'graphic kind: a floor plan page is "plan"');
+    ok(['(air handler)', '(VAV box)', 'graphic', '(air handler with zone controls)'].every((t) => gk.kinds[t] === 'unit'), 'graphic kind: unit graphics are "unit"');
+    ok(gk.a === 'a.png', 'graphic pick (a): the unit graphic captured first wins over a cited zone table page: ' + gk.a);
+    ok(gk.b === 'c.png', 'graphic pick (b): of two bare graphic rows the earlier file wins, not the cited one: ' + gk.b);
+    ok(gk.f === 'Screenshot 2026-10-28 115721.png', 'graphic pick (f): the latest capture day wins, then its earliest capture: ' + gk.f);
+    ok(gk.kinds['(system summary)'] === 'unit', 'graphic kind: a plant system summary is "unit"');
+    ok(gk.d === 'e.png', 'graphic pick (d): one bare graphic row is used: ' + gk.d);
+    ok(gk.plan === null, 'graphic pick: a plan page alone does not fill a unit figure: ' + gk.plan);
+    ok(JSON.stringify(gk.eFiles) === JSON.stringify(gk.eWant), 'graphic pick (e): every group keeps its unit graphic, table pages are not placed (figure numbers run on count): ' + JSON.stringify(gk.eFiles));
+
     // ---- 4d. round 3: empty clauses (1), 0.0 adjustment (2), header fit (3), figure rule (4), heading with paragraph (5), one paragraph per function (6), airflow reset proof (7), fan speed wording (A) ----
     const r3 = await page.evaluate(() => {
       const run = (cat, label, keys, rd, proof, n) => {

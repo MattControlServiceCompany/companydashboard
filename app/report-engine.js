@@ -26088,6 +26088,23 @@ function _a36DetCaptionPage(page) {
   return t ? t.charAt(0).toUpperCase() + t.slice(1) : '';
 }
 
+// Capture day and time of a picture file ("Screenshot 2026-10-23 101628.png"); a name without a date sorts as day ''.
+function _a36DetCaptureKey(file) {
+  var f = String(file == null ? '' : file);
+  var m = /(\d{4}-\d{2}-\d{2})\D*(\d{4,6})?/.exec(f);
+  return m ? { day: m[1], rest: (m[2] || '') + '|' + f } : { day: '', rest: f };
+}
+
+// Kind of a graphic page, from its listed page text (Matt, 2026-11-17): 'list' = a table of units (zone table, VAV summary table,
+// terminal units; a plant "system summary" stays a unit graphic), 'plan' = a floor plan, site plan, overview or map, 'unit' = the graphic of one unit (also a bare "graphic").
+// Only a 'unit' graphic fills a unit figure.
+function _a36DetGraphicKind(page) {
+  var t = String(page == null ? '' : page);
+  if (/\b(table|zones?\s+list|vav\s+list|terminal\s+units?)\b/i.test(t)) return 'list';
+  if (/\b(floor\s+plan|site\s+plan|roof\s+plan|overview|zone\s+map|map|tree)\b/i.test(t)) return 'plan';
+  return 'unit';
+}
+
 function _a36DetNames(names, max) {
   max = max || A36_DET_NAMES_MAX;
   if (names.length <= max) return names.join(', ');
@@ -26299,16 +26316,29 @@ function _a36DetPickPictures(picMap, buildingNames, equipNames, loaded, opts) {
     seen[p.file] = true;
     return true;
   });
-  // A graphic page of the unit comes before any other page; inside each kind the cited pages come first (Matt, 2026-11-11).
+  // A graphic page of the unit comes before any other page. Among graphic pages the latest capture DAY wins (a later visit replaces
+  // older captures), then the earliest capture of that day (in one visit the unit graphic is opened before its VAV/zone list);
+  // file name = "... YYYY-MM-DD HHMMSS". "cited" is no tie-break there: a cited table page must not beat the unit graphic (Matt, 2026-11-17).
+  // Among other pages the cited pages come first (Matt, 2026-11-11).
+  function isG(p) {
+    return /graphic/i.test(p.page || '');
+  }
   function rank(p) {
-    return (/graphic/i.test(p.page || '') ? 0 : 2) + (p.cited ? 0 : 1);
+    return isG(p) ? 0 : 2 + (p.cited ? 0 : 1);
   }
   var ranked = list
     .map(function (p, i) {
       return { p: p, i: i };
     })
     .sort(function (a, c) {
-      return rank(a.p) - rank(c.p) || a.i - c.i;
+      var byRank = rank(a.p) - rank(c.p);
+      if (byRank) return byRank;
+      if (isG(a.p) && a.p.file !== c.p.file) {
+        var da = _a36DetCaptureKey(a.p.file), dc = _a36DetCaptureKey(c.p.file);
+        if (da.day !== dc.day) return da.day > dc.day ? -1 : 1;
+        return da.rest < dc.rest ? -1 : da.rest > dc.rest ? 1 : 0;
+      }
+      return a.i - c.i;
     })
     .map(function (x) {
       return x.p;
@@ -27460,6 +27490,9 @@ function _a36DetModel(d, rowsById, picMap, loaded) {
   var isGraphic = function (t) {
     return /graphic/i.test(t);
   };
+  var isUnitGraphic = function (t) {
+    return isGraphic(t) && _a36DetGraphicKind(t) === 'unit';
+  };
   var savings = typeof SEQUENCE_SAVINGS_IMPACT !== 'undefined' ? SEQUENCE_SAVINGS_IMPACT : {};
   var defsLeft = _a36DetDeficiencies(d);
   d.buildings.forEach(function (b, bi) {
@@ -27468,9 +27501,9 @@ function _a36DetModel(d, rowsById, picMap, loaded) {
     var bn = [b.name, _a36DisplayName(b)];
     var lib = { b: b, groups: groups, work: work, descPics: [], rep: [], findings: [] };
     groups.forEach(function (g) {
-      // One graphic per group: the first usable one of the listed graphic pages (cited first). The unit it shows is the
+      // One graphic per group: the first usable unit graphic (_a36DetPickPictures order; never a table or plan page). The unit it shows is the
       // representative unit of the group: its readings are the ones printed.
-      var picks = _a36DetPickPictures(picMap, bn, g.names, loaded, { page: isGraphic, skip: used, limit: loaded ? 1 : A36_DET_CANDIDATES });
+      var picks = _a36DetPickPictures(picMap, bn, g.names, loaded, { page: isUnitGraphic, skip: used, limit: loaded ? 1 : A36_DET_CANDIDATES });
       if (loaded && picks.length) used[picks[0].file] = true;
       lib.descPics.push(picks);
       lib.rep.push(loaded && picks.length ? g.names.map(_a36DetNorm).indexOf(_a36DetNorm(picks[0].equipName)) : -1);
