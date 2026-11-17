@@ -20735,258 +20735,27 @@ function _a36BuildingContent(d, building, showBuildingInfra) {
   };
 }
 
-// ─── rptPageASHRAE36Building ──────────────────────────────────────────────
-/**
- * Per-building detail page: structured equipment-by-row table showing sensors
- * present, sensors needed (with human-readable names), and sequences not ready.
- * Used for a SINGLE building whose own content is too tall to share a page with
- * others (see generateASHRAE36AuditHTML's packing loop, which calls this ONLY as a
- * fallback for oversized buildings — most buildings now go through
- * _a36BuildingBlockToken instead so they can pack multiple-per-page).
- * @param {number} n - Page number
- * @param {object} d - Data from collectASHRAE36Data
- * @param {object} building - Single building entry from d.buildings
- * @param {boolean} [showBuildingInfra]
- * PRE-SPLIT PAGINATION (Stage 2 fix, 2026-06-11):
- * Returns an ARRAY of rptPage() HTML strings -- one element per printed page.
- * Pixel budgets for _rptPaginateTokens (shared paginator):
- *   Page body height available = 1056px page - 12px top pad - ~45px int-hdr - 12px body-top-pad
- *     - 80px body-bottom-pad - 12px page-bottom-pad = ~895px actual
- *   First page: subtract gauges (~100px) + intro (~35px) + table thead (~30px) = 730px for rows
- *   Cont pages: subtract cont-header (~35px) + table thead (~30px) = 830px for rows
- */
-function rptPageASHRAE36Building(n, d, building, showBuildingInfra) {
-  // fix/report-content-pagination (2026-07-28): derived from _rptContentBudget() instead of
-  // standalone literals — BUILDING_*_BASE_ADJUSTMENT constants preserve these exact numeric
-  // values (904 - 174 = 730, 904 - 74 = 830), no visual/page-count change.
-  // U2 / RC-A (2026-08-02): re-measured in a headless PRINT render of the Client D Audit with EVERY
-  // optional section switched on, at the 10pt printed-text floor. The old adjustments (174/74)
-  // budgeted a 100px gauge strip, a 35px intro and a 30px table head; measured, the gauge strip is
-  // 184px, the intro runs to ~120px on buildings with many equipment categories, the head is 31px
-  // and the table's Total row is 33px. Under-reserving ~200px of chrome is why five Per-Building
-  // Detail pages ran past the footer band as soon as the font floor was applied.
-  var BUILDING_GAUGES_H = 190; // measured 184 (three readiness gauges + labels)
-  var BUILDING_INTRO_H = 120; // measured 43-107 depending on how many equipment categories the building has
-  var BUILDING_THEAD_H = 34; // measured 31
-  var BUILDING_TOTAL_ROW_H = 36; // measured 33 (the table's own Total row, last chunk only)
-  var BUILDING_CONT_HDR_H = 40; // "<name> (continued, N of M)" bar
-  var BUILDING_SAFETY_H = 40;
-  // The building-infrastructure callout is appended below the table on the LAST chunk, but was
-  // never subtracted from either budget here (only _a36BuildingBlockToken's estH knew about it).
-  // With the 10pt floor it measures up to ~113px, which is exactly how much four Per-Building
-  // Detail pages ran past the footer band after every other constant on this page was corrected.
-  // Reserved on every chunk rather than only the last one: a chunk count is not known until after
-  // pagination has already run, and this section is opt-in, so the conservative reservation costs
-  // nothing in the shipped client Audit.
-  var BUILDING_INFRA_CALLOUT_H = showBuildingInfra ? 130 : 0; // measured up to 113
-  // fix/report-remove-running-header-title (2026-08-03, Matt's fix #5): this page now always
-  // renders with hideIntHdr:true (no .rpt-int-hdr title bar), so both budgets use the 'flush'
-  // variant — matches the ACTUAL top offset now that the 60px chrome bar this page used to
-  // reserve is gone, reclaiming that space for rows.
-  var ROWS_BUDGET_FIRST =
-    _rptContentBudget('flush') -
-    BUILDING_GAUGES_H -
-    BUILDING_INTRO_H -
-    BUILDING_THEAD_H -
-    BUILDING_TOTAL_ROW_H -
-    BUILDING_INFRA_CALLOUT_H -
-    BUILDING_SAFETY_H; // px available for equipment rows on page 1
-  var ROWS_BUDGET_CONT =
-    _rptContentBudget('flush') -
-    BUILDING_CONT_HDR_H -
-    BUILDING_THEAD_H -
-    BUILDING_TOTAL_ROW_H -
-    BUILDING_INFRA_CALLOUT_H -
-    BUILDING_SAFETY_H; // px available for equipment rows on continuation pages
-
-  var c = _a36BuildingContent(d, building, showBuildingInfra);
-  var b = c.b;
-  var fakeData = c.fakeData;
-  var gauges = c.gauges;
-  var intro = c.intro;
-  var tableHead = c.tableHead;
-  var tokens = c.tokens;
-  var summaryRowHtml = c.summaryRowHtml;
-  var infraCallout = c.infraCallout;
-
-  // Chunk tokens into pages using the shared pixel-height paginator.
-  // Replaces the old row-count loop (ROWS_PER_PAGE_FIRST/CONT) which caused overflow
-  // when rows contained multi-line sensor/sequence lists.
-  // 2026-09-30 (fix/report-table-fit-one-page): measured fit. Row heights, table head, the gauge +
-  // intro block, the continuation heading and the tail (Total row + optional infrastructure block)
-  // are read back from a hidden render instead of the constants above (kept as the no-DOM
-  // fallback). The tail is reserved on the LAST page only, by _rptPaginateWithTail.
-  var _bTableOpen = '<table style="width:100%;border-collapse:collapse;margin-bottom:14px;table-layout:fixed">';
-  var _bTheadM = _rptMeasureTableTokens(_bTableOpen + tableHead, tokens);
-  var _bTailBudget = 0;
-  if (_bTheadM !== null) {
-    var _bChromeM = _rptMeasureHtmlH(gauges + intro);
-    var _bContM = _rptMeasureHtmlH(
-      '<div style="font-size:' +
-        RPT_SECTION_HEAD_PX +
-        'px;font-weight:600;margin-bottom:8px;padding-bottom:6px;border-bottom:1px solid">' +
-        _a36DisplayName(b) +
-        ' (2 of 3)</div>',
-    );
-    var _bTailM = _rptMeasureHtmlH(_bTableOpen + summaryRowHtml + '</table>' + (showBuildingInfra ? infraCallout : ''));
-    if (_bChromeM !== null && _bContM !== null && _bTailM !== null) {
-      ROWS_BUDGET_FIRST = _rptContentBudget('flush') - _bChromeM - _bTheadM - 8;
-      ROWS_BUDGET_CONT = _rptContentBudget('flush') - _bContM - _bTheadM - 8;
-      _bTailBudget = _bTailM;
-    }
-  }
-  var chunks = _bTailBudget
-    ? _rptPaginateWithTail(tokens, ROWS_BUDGET_FIRST, ROWS_BUDGET_CONT, _bTailBudget)
-    : _rptPaginateTokens(tokens, ROWS_BUDGET_FIRST, ROWS_BUDGET_CONT);
-
-  // Build one rptPage() string per chunk
-  var numChunks = chunks.length;
-  var resultPages = [];
-
-  chunks.forEach(function (chunk, chunkIndex) {
-    var tbodyRows = chunk
-      .map(function (tok) {
-        return tok.html;
+// ─── _a36BuildingFlowTokens ────────────────────────────────────────────────
+// The flow tokens of one building on the ASHRAE 36 Sequences by Building pages: its heading block (gauges + intro) and its equipment
+// table, which continues on the next page with its header repeated (Matt 2026-11-06 / 2026-11-17: no half-empty pages). The heading
+// keeps the first two rows; the last part keeps two rows and the Total row.
+function _a36BuildingFlowTokens(d, building) {
+  var c = _a36BuildingContent(d, building, false);
+  var head = _a36DetTok('<div style="margin-top:12px">' + c.gauges + c.intro + '</div>', true);
+  var open = '<table style="width:100%;border-collapse:collapse;table-layout:fixed;margin:0 0 10px 0">' + c.tableHead;
+  var rows = _a36DetTableToks(
+    open,
+    c.tokens
+      .map(function (t) {
+        return t.html;
       })
-      .join('');
-    var isLastChunk = chunkIndex === numChunks - 1;
-    var pageN = n + chunkIndex;
-
-    // 2026-07-10 fix: the Total row is a real <tfoot> row inside the table (only on the
-    // last chunk) instead of a free-standing div appended after the table — no
-    // free-floating rule sandwiching the total.
-    var equipTable =
-      '<table style="width:100%;border-collapse:collapse;margin-bottom:14px;table-layout:fixed">' +
-      tableHead +
-      '<tbody>' +
-      tbodyRows +
-      '</tbody>' +
-      (isLastChunk ? summaryRowHtml : '') +
-      '</table>';
-
-    var bodyHTML;
-    if (chunkIndex === 0) {
-      bodyHTML = gauges + intro + equipTable;
-      if (isLastChunk) {
-        bodyHTML += showBuildingInfra ? infraCallout : '';
-      }
-    } else {
-      var contHdr =
-        // D-12 (2026-08-03): continuation heading -> 13pt section tier, same as the "(1 of N)"
-        // heading it continues. Three sections share this exact fragment (Building ASHRAE 36
-        // Readiness, Per-Building Detail, Setpoint Programming Review).
-        '<div style="font-size:' +
-        RPT_SECTION_HEAD_PX +
-        'px;font-weight:600;color:var(--rpt-page-text);' +
-        'margin-bottom:8px;padding-bottom:6px;border-bottom:1px solid var(--rpt-rule)">' +
-        _a36DisplayName(b) +
-        // Item 6b (2026-08-03): "continued" removed from continuation headings — "(2 of 3)".
-        ' (' +
-        (chunkIndex + 1) +
-        ' of ' +
-        numChunks +
-        ')' +
-        '</div>';
-      bodyHTML = contHdr + equipTable;
-      if (isLastChunk) {
-        bodyHTML += showBuildingInfra ? infraCallout : '';
-      }
-    }
-
-    // 2026-07-29 fix (Matt: "why does it not say 1 of 2..."): page 1 of a multi-page building has
-    // no title-suffix of its own today (the continuation's contHdr div above already reads "b.name
-    // — continued (2 of 2)"). Appending the same "(N of numChunks)" fraction to the .rpt-int-hdr
-    // title bar (rptPage()'s own title param, present on every page including page 1) fixes the
-    // asymmetry consistently instead of only patching the continuation's already-correct text.
-    var pageTitleWithFraction =
-      'Audit Report: ' +
-      _a36DisplayName(b) +
-      (numChunks > 1 ? ' (' + (chunkIndex + 1) + ' of ' + numChunks + ')' : '');
-    resultPages.push(
-      rptPage(pageN, pageTitleWithFraction, bodyHTML, {
-        hideIntHdr: true,
-        data: fakeData,
-        label:
-          'Page ' +
-          pageN +
-          ' — ' +
-          _a36DisplayName(b) +
-          (numChunks > 1 ? ' (' + (chunkIndex + 1) + '/' + numChunks + ')' : ''),
-      }),
-    );
+      .concat([c.summaryRowHtml.replace(/<\/?tfoot>/g, '')])
+  );
+  rows.forEach(function (t, i) {
+    t.keepNext = i === 0 || i >= rows.length - 3;
   });
-
-  return resultPages; // always an Array, even for short buildings (length === 1)
-}
-
-// ─── _a36BuildingBlockToken ────────────────────────────────────────────────
-/**
- * Density fix (feat/audit-report-reframe-density, 2026-07-09), Finding 4: builds ONE
- * building's gauges+intro+table+summary as a single atomic, non-splittable HTML block with
- * an estimated pixel height, for packing multiple small buildings onto a shared page via
- * _rptPaginateTokens (mirrors the pattern rptPageASHRAE36Executive already uses for building
- * rows). Used by generateASHRAE36AuditHTML for every building whose content fits within one
- * page; buildings too tall for a single page still fall back to rptPageASHRAE36Building's own
- * dedicated multi-page treatment (unchanged).
- * @returns {{estH:number, html:string, type:'block', name:string}}
- */
-function _a36BuildingBlockToken(d, building, showBuildingInfra) {
-  var c = _a36BuildingContent(d, building, showBuildingInfra);
-  var tbodyRows = c.tokens
-    .map(function (tok) {
-      return tok.html;
-    })
-    .join('');
-  // 2026-07-10 fix: the Total row is a real <tfoot> row inside the table instead of a
-  // free-standing div appended after the table — no free-floating rule above the total.
-  var equipTable =
-    '<table style="width:100%;border-collapse:collapse;margin-bottom:14px;table-layout:fixed">' +
-    c.tableHead +
-    '<tbody>' +
-    tbodyRows +
-    '</tbody>' +
-    c.summaryRowHtml +
-    '</table>';
-  var innerHTML = c.gauges + c.intro + equipTable + (showBuildingInfra ? c.infraCallout : '');
-  // Block chrome: pure spacing (no border-bottom) separates one building's block from the
-  // next when several share a page — 2026-07-10 fix: a free-standing rule directly under the
-  // Total row violated the "rules only as part of a table's structure" rule; margin-bottom
-  // alone is enough separation between blocks.
-  var blockHTML = '<div style="margin-bottom:12px">' + innerHTML + '</div>';
-
-  // estH: the same chrome constants rptPageASHRAE36Building's ROWS_BUDGET_FIRST derivation uses,
-  // so the two renderers of the same building content cannot disagree about how tall it is.
-  // U2 / RC-A (2026-08-02): re-measured at the 10pt printed-text floor and cross-checked against
-  // two real blocks packed onto one page (Client D Audit, all sections on): this model predicted 550px
-  // and 459px against measured 550px and 459px.
-  var BLOCK_GAUGES_H = 190; // measured 184
-  var BLOCK_INTRO_H = 120; // measured 43-107
-  var BLOCK_THEAD_H = 34; // measured 31
-  var BLOCK_TOTAL_ROW_H = 36; // measured 33
-  var BLOCK_INFRA_CALLOUT_H = 130; // measured up to 113 at the 10pt floor
-  var BLOCK_SEPARATOR_H = 14; // this block's own margin-bottom:12px
-  var rowsH = c.tokens.reduce(function (s, t) {
-    return s + (t.estH || 20);
-  }, 0);
-  var estH =
-    BLOCK_GAUGES_H +
-    BLOCK_INTRO_H +
-    BLOCK_THEAD_H +
-    rowsH +
-    BLOCK_TOTAL_ROW_H +
-    (showBuildingInfra ? BLOCK_INFRA_CALLOUT_H : 0) +
-    BLOCK_SEPARATOR_H;
-
-  // 2026-09-30 (fix/report-table-fit-one-page): the block's TRUE height, read back from a hidden
-  // render at the report's own type context, replaces the constant model above when a DOM exists.
-  var _blockMeasured = _rptMeasureHtmlH(blockHTML);
-  return {
-    type: 'block',
-    estH: _blockMeasured !== null ? _blockMeasured : estH,
-    measured: _blockMeasured !== null,
-    html: blockHTML,
-    name: _a36DisplayName(c.b),
-  };
+  rows[rows.length - 1].keepNext = false;
+  return [head].concat(rows);
 }
 
 // ─── rptPageASHRAE36Recommendations ──────────────────────────────────────
@@ -29974,53 +29743,15 @@ function generateASHRAE36AuditHTML(data, selectedSections) {
     });
 
     if (buildingOn) {
-      // Density fix (feat/audit-report-reframe-density, 2026-07-09), Finding 4: each building becomes an atomic block token
-      // (_a36BuildingBlockToken); small buildings pack several per page via _rptPaginateTokensBalanced. A building whose own content is too tall
-      // for one page (estH over the budget) falls back to rptPageASHRAE36Building's own multi-page treatment, so no content is ever clipped.
-      // 2026-09-30 (fix/report-table-fit-one-page): blocks are measured, so the cap is the real content height minus an 8px sub-pixel margin;
-      // the 154px allowance stays for the no-DOM fallback.
-      var AUDIT_BUILDING_BASE_ADJUSTMENT = 154; // safety margin against the estH approximation in _a36BuildingBlockToken
-      var _blocksMeasured = typeof document !== 'undefined' && !!document.body;
-      var BUILDING_PAGE_BUDGET = _rptContentBudget('flush') - (_blocksMeasured ? 8 : AUDIT_BUILDING_BASE_ADJUSTMENT); // px — interior page body
-      var _bldgFakeData = { project: { client: data.project.name }, period: { label: '', reportDate: data.rawDate } };
-      var _pendingBlocks = [];
-
-      var _flushPendingBuildingBlocks = function () {
-        if (!_pendingBlocks.length) return;
-        // fix/65ce578b (2026-07-27): _rptPaginateTokensBalanced: same page count and hard per-page cap as the greedy paginator, but it chooses
-        // breakpoints that avoid one page landing far sparser than its neighbors.
-        var _chunks = _rptPaginateTokensBalanced(_pendingBlocks, BUILDING_PAGE_BUDGET);
-        _chunks.forEach(function (chunk) {
-          var bodyHTML = chunk
-            .map(function (t) {
-              return t.html;
-            })
-            .join('');
-          var pg = rptPage(pageNum, 'Audit Report: ASHRAE 36 Sequences by Building', bodyHTML, {
-            hideIntHdr: true,
-            data: _bldgFakeData,
-            label: 'Page ' + pageNum + ' — ASHRAE 36 Sequences by Building',
-          });
-          pages.push(_tagA36Section(pg, 'costEstimate'));
-          pageNum++;
-        });
-        _pendingBlocks = [];
-      };
-
+      // Every building flows: its table continues on the next page when the page is full (_a36BuildingFlowTokens).
+      var bTokens = [];
       data.buildings.forEach(function (b) {
-        var blockTok = _a36BuildingBlockToken(data, b, false);
-        if (blockTok.estH <= BUILDING_PAGE_BUDGET) {
-          _pendingBlocks.push(blockTok);
-        } else {
-          // Too tall to share a page: flush what is queued (keeps the building order), then give this building its own page(s).
-          _flushPendingBuildingBlocks();
-          rptPageASHRAE36Building(pageNum, data, b, false).forEach(function (pg) {
-            pages.push(_tagA36Section(pg, 'costEstimate'));
-            pageNum++;
-          });
-        }
+        bTokens = bTokens.concat(_a36BuildingFlowTokens(data, b));
       });
-      _flushPendingBuildingBlocks();
+      _a36DetPages(pageNum, data, bTokens, 'ASHRAE 36 Sequences by Building').forEach(function (pg) {
+        pages.push(_tagA36Section(pg, 'costEstimate'));
+        pageNum++;
+      });
     }
   }
 
