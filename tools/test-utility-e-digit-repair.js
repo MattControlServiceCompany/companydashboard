@@ -357,6 +357,36 @@ async function run(rows, extra) {
   check('ActualRKVA blank', b.ActualRKVA == null || b.ActualRKVA === '', 'ActualRKVA=' + b.ActualRKVA);
   check('ActualKW still read', eq(b.ActualKW, 61.384), 'ActualKW=' + b.ActualKW);
 
+  console.log('Case 22: both date columns unreadable and a stray token after RKVA Used: the row is still read, ActualRKVA is the RKVA column');
+  // End 20,000 - Start 19,500 = 500 x 100 = 50,000 kWh; KW 300; RKVA 160; RkVA Chg qty = 160 - 0.5 x 300 = 10.
+  b = await run(
+    ['lo09  lios  2  20,000.0000  19,500.0000  500.0000  100.0000  50,000.0000  300.0000  160.0000  [24'],
+    'RkVA Chg 10.0000 kW at $0.663 per kW ......... $6.63\n',
+  );
+  check('EndRead read', eq(b.EndRead, 20000), 'EndRead=' + b.EndRead);
+  check('ActualKW read', eq(b.ActualKW, 300), 'ActualKW=' + b.ActualKW);
+  check('ActualRKVA is the RKVA column, not the RkVA Chg quantity', eq(b.ActualRKVA, 160), 'ActualRKVA=' + b.ActualRKVA);
+
+  console.log('Case 23: RKVA misread by one digit (6 for 5): the RkVA Chg quantity (RKVA - 0.5 x KW) restores it');
+  // KW 300, true RKVA 155 -> qty 5; the row reads RKVA 165.0000 (5 read as 6).
+  b = await run(
+    ['01/09  02/09  31  20,000.0000  19,500.0000  500.0000  100.0000  50,000.0000  300.0000  165.0000'],
+    'RkVA Chg 5.0000 kW at $0.663 per kW ......... $3.32\n',
+  );
+  check('ActualRKVA restored', eq(b.ActualRKVA, 155), 'ActualRKVA=' + b.ActualRKVA);
+
+  console.log('Case 24 (control): RKVA that matches the RkVA Chg quantity stays; no fix when no one-digit change matches');
+  b = await run(
+    ['01/09  02/09  31  20,000.0000  19,500.0000  500.0000  100.0000  50,000.0000  300.0000  160.0000'],
+    'RkVA Chg 10.0000 kW at $0.663 per kW ......... $6.63\n',
+  );
+  check('ActualRKVA kept', eq(b.ActualRKVA, 160), 'ActualRKVA=' + b.ActualRKVA);
+  b = await run(
+    ['01/09  02/09  31  20,000.0000  19,500.0000  500.0000  100.0000  50,000.0000  300.0000  160.0000'],
+    'RkVA Chg 33.3300 kW at $0.663 per kW ......... $22.10\n',
+  );
+  check('ActualRKVA kept when billing demand differs', eq(b.ActualRKVA, 160), 'ActualRKVA=' + b.ActualRKVA);
+
   console.log(fail ? '\n' + fail + ' FAILED' : '\nALL PASSED');
   process.exit(fail ? 1 : 0);
 })();

@@ -3406,7 +3406,9 @@ function _extractEvergy(t, acctOverride, addrOverride) {
     // requirement below (readsChecksum/kwhChecksum) — widening the leading-token
     // tolerance cannot by itself manufacture a false-positive row match.
     const _meterReLoose =
-      /^[^\S\n]*(?:\S{1,6}[^\S\n]+){0,3}(?:\d{1,3}[^\S\n]+)?([\d,]+(?:\.\d+)?)[^\S\n]+([\d,]+(?:\.\d+)?)[^\S\n]+([\d,]+(?:\.\d+)?)[^\S\n]+([\d,]+(?:\.\d+)?)[^\S\n]+([\d,]+(?:\.\d+)?)(?:[^\S\n]+([\d,.]+))?(?:[^\S\n]+([\d,.]+))?[^\S\n]*$/gm;
+      /^[^\S\n]*(?:\S{1,6}[^\S\n]+){0,3}(?:\d{1,3}[^\S\n]+)?([\d,]+(?:\.\d+)?)[^\S\n]+([\d,]+(?:\.\d+)?)[^\S\n]+([\d,]+(?:\.\d+)?)[^\S\n]+([\d,]+(?:\.\d+)?)[^\S\n]+([\d,]+(?:\.\d+)?)(?:[^\S\n]+([\d,.]+))?(?:[^\S\n]+([\d,.]+))?(?:[^\S\n]+\S{1,4})?[^\S\n]*$/gm;
+    // One short stray token may follow the RKVA column (a scan reads a mark printed right of the table as "5%" or "[24");
+    // the arithmetic checks below still gate the row.
     let _lm;
     let _looseAttempts = 0;
     while ((_lm = _meterReLoose.exec(_meterT)) !== null && _looseAttempts < 300) {
@@ -6071,6 +6073,24 @@ function _extractEvergy(t, acctOverride, addrOverride) {
         if (fixedVal > 0 && fixedVal < kwVal * 5) {
           result.ActualRKVA = fixed;
         }
+      }
+    }
+  }
+
+  // ── RKVA DIGIT CHECK: the RkVA charge quantity is the RKVA above 50% of the KW (see the RkVA charge note above), so
+  // printed qty = RKVA Used - 0.5 x KW Used. When it does not hold and one confusable digit of the RKVA read makes it exact,
+  // the RKVA was misread (a scan read 157.2480 as 167.2480). No change when no one-digit fix matches (billing demand can
+  // differ from KW Used).
+  if (result.ActualRKVA && result.ActualKW) {
+    const qtyM = t.match(/R[kK]VA\s+(?:Ch[gaq9]|C[HhNn][Gg]|Gh[gq9])[.:]?\s+([\d,]+\.\d+)\s*[kK][Ww]/i);
+    const qty = qtyM ? parseBillNumber(qtyM[1]) : NaN;
+    const kw = parseBillNumber(result.ActualKW);
+    const rkva = parseBillNumber(result.ActualRKVA);
+    if (qty > 0 && kw > 0 && rkva > 0) {
+      const expected = parseFloat((qty + 0.5 * kw).toFixed(4));
+      if (Math.abs(rkva - expected) >= 0.001) {
+        const fixed = _reconcileNumber(String(result.ActualRKVA), expected, 1);
+        if (fixed !== null) result.ActualRKVA = fixed;
       }
     }
   }
