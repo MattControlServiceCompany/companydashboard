@@ -847,7 +847,7 @@ const ok = (c, m) => {
       const texts = groups.map((g) => _a36DetDescriptionParas(g, { rowsById: rows, setpointAppendix: false, libGroups: groups }, 0).join(' ')).join(' ');
       return { labels: groups.map((g) => g.label + ':' + g.category + ':' + g.units.length), texts };
     });
-    ok(dd.labels.some((l) => /^Dual-Duct Terminal:ddvav:2$/.test(l)) && dd.labels.some((l) => /^Variable Air Volume Terminal:vav:1$/.test(l)), 'dual-duct terminals (hot deck and cold deck points, also a single Flow Control with Air Source Hot Deck and Cold Deck points) are one dual-duct group, the plain one is not: ' + dd.labels.join(' | '));
+    ok(dd.labels.some((l) => /^Dual-Duct Terminal:ddvav:1$/.test(l)) && dd.labels.some((l) => /^Variable Air Volume Terminal:vav:2$/.test(l)), 'dual-duct terminals: own hot and cold deck flow controls are dual duct; a single Flow Control with only Air Source Hot/Cold Deck copies is not (rule 6b, 2026-11-17)' + dd.labels.join(' | '));
     ok(dd.labels.some((l) => /^Dual-Duct .*Air Handling Unit:ahu:1$/.test(l)) && !dd.labels.some((l) => /Multi-Zone.*:ahu:1/.test(l) && /Dual/.test(l)), 'an air handler whose points show a hot deck and a cold deck is labeled dual-duct, not multi-zone: ' + dd.labels.join(' | '));
     ok(!/ASHRAE/.test(dd.texts) && !/\d\s?(°F|%|in\.)/.test(dd.texts), 'the descriptions hold no ASHRAE word and no digits followed by °F, % or in.: ' + dd.texts.slice(0, 300));
 

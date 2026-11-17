@@ -22627,7 +22627,11 @@ function emTerminalConfig(points) {
   };
   var both = has(/hot\s*deck\s*flow\s*control/i) && has(/cold\s*deck\s*flow\s*control/i);
   return {
-    dualDuct: _emCfgDualDuct(E),
+    // "Air Source Hot/Cold Deck ..." points are copies of the air handler's values, not proof of the box (classifier rule 6b, item 56d45c6a):
+    // a terminal fed by one deck of a dual-duct air handler carries them too. The terminal's own deck points decide (2026-11-17).
+    dualDuct: _emCfgDualDuct(E.filter(function (e) {
+      return !/^air\s*source\b/i.test(e.name);
+    })),
     deckSensors: both ? 2 : has(/^flow\s*control\b/i) ? 1 : 0,
     requests: { air: has(/i\s*need\s*air\s*request/i), heat: has(/heat\s*request/i), cool: has(/cool\s*request/i) },
     heating: emTerminalHeating(names),
