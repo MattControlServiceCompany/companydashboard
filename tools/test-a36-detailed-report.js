@@ -809,7 +809,7 @@ const ok = (c, m) => {
     ok(!/Normal|monitors|setpoint|44/.test(allText(r3.chwSp)), 'a chilled water plant with only a supply sensor and a setpoint point makes no setpoint claim and prints no value, no status word (' + allText(r3.chwSp) + ')');
     ok(!/\d|monitors/.test(allText(r3.hw)) && /^The plant has a hot water supply temperature sensor and a hot water return temperature sensor\.$/.test(allText(r3.hw)), '1: a plant with no setpoint and no enable prints its sensors only, no "monitors" list (' + allText(r3.hw) + ')');
     ok(/starts and stops each boiler/.test(allText(r3.hwLockout)) && !/\d|setpoint|hold/.test(allText(r3.hwLockout)), 'b: a hot water plant with an outdoor air lockout setpoint point and a water setpoint point: no value and no setpoint claim (' + allText(r3.hwLockout) + ')');
-    ok(/The plant is locked out at high outdoor air temperatures/.test(allText(r3.hwLockoutStatus)) && !/Lockout|was off|At the time|\d/.test(allText(r3.hwLockoutStatus)), 'b: a plant with a lockout status point says it has the lockout, not that it was off (' + allText(r3.hwLockoutStatus) + ')');
+    ok(/The plant has a high outdoor air temperature lockout that keeps it from being enabled when the outdoor air temperature is above the lockout setpoint/.test(allText(r3.hwLockoutStatus)) && !/Lockout|was off|At the time|\d/.test(allText(r3.hwLockoutStatus)), 'b: a plant with a lockout status point says it has the lockout, not that it was off (' + allText(r3.hwLockoutStatus) + ')');
     ok(/between a heating setpoint and a cooling setpoint/.test(allText(r3.vavSp)) && !/\d|ons an?d|monitors|by command/.test(allText(r3.vavSp)), 'c: a VAV group describes its zone heating and cooling setpoints with no number (' + allText(r3.vavSp) + ')');
     ok(/Separate setpoints apply while the building is unoccupied\./.test(allText(r3.vavMost)) && /listed in Appendix A\./.test(allText(r3.vavMost)) && !/\d/.test(allText(r3.vavMost)), 'c: unoccupied setpoints are named, the values point to Appendix A, no number is printed (' + allText(r3.vavMost) + ')');
     ok(/listed in Appendix A\./.test(allText(r3.vavVary)) && !/\d/.test(allText(r3.vavVary)), 'c: the zone setpoint values are never printed in the description (' + allText(r3.vavVary) + ')');
@@ -870,7 +870,7 @@ const ok = (c, m) => {
       };
     });
     ok(sq.mine.length === 1 && sq.mine[0].id === 'econ_disabled' && sq.mine[0].status === 'enabled' && sq.other.length === 1 && sq.other[0].id === 'econ_dry_bulb' && sq.wrongPid.length === 0 && sq.noPid.length === 0, 'the sequence reader matches the library and the unit name (case and spaces do not matter) and nothing else: ' + JSON.stringify([sq.mine, sq.other]));
-    ok(/The economizer is present but disabled\./.test(sq.withRows) && !/economizer/.test(sq.without), 'a record row of the unit adds its sentence to the description; no record adds nothing: ' + sq.withRows);
+    ok(/The economizer sequence is not enabled in the program\./.test(sq.withRows) && !/economizer/.test(sq.without), 'a record row of the unit adds its sentence to the description; no record adds nothing: ' + sq.withRows);
     ok(sq.synced === 'synced', 'en_auditseq_<pid> is classified synced (app/sync-classification.js)');
     ok(!/\d\s?(°F|%|in\.|AM|PM)\b/.test(sq.withRows) && !/which is called/.test(sq.withRows), 'a description with sequences has no digit with °F, %, in., AM or PM and no "which is called"');
 

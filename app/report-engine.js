@@ -18316,19 +18316,19 @@ function _a36CoverBuildingTable(d, info) {
   var list = d.buildings.slice().sort(function (a, c) {
     return rptBuildingNameSort(_a36DisplayName(a), _a36DisplayName(c));
   });
+  // Compact rows (the cover must fit one page with up to ~15 buildings): the table style of the building pages, with smaller padding and text.
+  var td = A36_DET_TD + ';padding:2px 8px;font-size:11.5px';
+  var tdC = td + ';text-align:center';
+  var tot = td + ';font-weight:700;border-top:2px solid var(--rpt-table-tot-bdr)';
   var rows = list.map(function (b) {
     var name = _a36DisplayName(b);
-    var cells = [_escHtml(name), { html: rptCount(b.equipCount || 0), center: true }];
-    if (info) cells.push({ html: rptCount((info.byLib && info.byLib[name]) || 0), center: true });
-    return _a36DetRow(cells);
+    return '<tr><td style="' + td + '">' + _escHtml(name) + '</td><td style="' + tdC + '">' + rptCount(b.equipCount || 0) + '</td>' +
+      (info ? '<td style="' + tdC + '">' + rptCount((info.byLib && info.byLib[name]) || 0) + '</td>' : '') + '</tr>';
   });
-  var totalTd = A36_DET_TD + ';font-weight:700;border-top:2px solid var(--rpt-table-tot-bdr)';
-  rows.push(
-    '<tr><td style="' + totalTd + '">Total</td><td style="' + totalTd + ';text-align:center">' + rptCount(d.portfolio.totalEquip) + '</td>' +
-      (info ? '<td style="' + totalTd + ';text-align:center">' + rptCount(info.total) + '</td>' : '') + '</tr>',
-  );
+  rows.push('<tr><td style="' + tot + '">Total</td><td style="' + tot + ';text-align:center">' + rptCount(d.portfolio.totalEquip) + '</td>' +
+    (info ? '<td style="' + tot + ';text-align:center">' + rptCount(info.total) + '</td>' : '') + '</tr>');
   return (
-    '<div style="margin-top:20px">' +
+    '<div style="margin-top:14px">' +
     _a36DetTableOpen(info ? [56, 24, 20] : [70, 30], info ? ['Building', 'Equipment Units', 'Findings'] : ['Building', 'Equipment Units']) +
     '<tbody>' + rows.join('') + '</tbody></table></div>'
   );
@@ -18363,17 +18363,17 @@ function rptPageASHRAE36Cover(n, d, perBuildingIncluded, detailed) {
     '<div style="font-size:' + RPT_DOC_TITLE_PX + 'px;font-weight:700;color:var(--rpt-blue);text-align:center;margin-bottom:4px">' + rptA36AuditTitle() + '</div>' +
     '<div style="font-size:15px;font-weight:700;color:var(--rpt-page-text);text-align:center;margin-bottom:12px">' + _escHtml(d.project.name) + '</div>' +
     '</div>' +
-    '<div style="height:16px"></div>' +
+    '<div style="height:8px"></div>' +
     '<div style="font-size:14px;color:var(--rpt-page-text);line-height:1.6;margin-bottom:8px">' +
     'This report covers ' +
     (p.totalBuildings === 1 ? 'the building automation system of the ' + _a36BuildingNouns(d).one : 'the building automation systems of the ' + _a36BuildingNouns(d).many) +
     (p.totalBuildings === 1 ? ': its' : ': their') +
     ' equipment, control points, sensors, setpoints, schedules and control sequences. It lists the equipment audited and what the audit found.' +
     '</div>' +
-    '<div style="height:16px"></div>' +
+    '<div style="height:8px"></div>' +
     '<div class="rpt-a36-callout" style="font-size:14px;line-height:1.6;color:var(--rpt-page-text)">' + finding + '</div>' +
-    '<div style="height:16px"></div>' +
-    '<div style="display:flex;gap:16px;margin-top:12px">' +
+    '<div style="height:8px"></div>' +
+    '<div style="display:flex;gap:16px;margin-top:4px">' +
     statCard(rptCount(p.totalBuildings), 'Buildings Assessed') +
     statCard(rptCount(p.totalEquip), 'Equipment Units Audited') +
     (info ? statCard(rptCount(info.total), 'Findings') : '') +
@@ -28558,13 +28558,13 @@ var A36_DET_SEQ = {
     { c: 'chwp', fn: 'sequence', on: 'While the building is unoccupied, the plant starts and stops on the number of zone cooling requests.' },
   ],
   plant_oa_lockout: [
-    { c: 'hwp', fn: 'sequence', on: 'The plant is locked out at high outdoor air temperatures.', off: 'An outdoor air lockout at high temperatures is available but not enabled.' },
-    { c: 'chwp', fn: 'sequence', on: 'The plant is locked out at low outdoor air temperatures.', off: 'An outdoor air lockout at low temperatures is available but not enabled.' },
+    { c: 'hwp', fn: 'sequence', on: 'The plant has a high outdoor air temperature lockout that keeps it from being enabled when the outdoor air temperature is above the lockout setpoint.', off: 'An outdoor air lockout at high temperatures is available but not enabled.' },
+    { c: 'chwp', fn: 'sequence', on: 'The plant has a low outdoor air temperature lockout that keeps it from being enabled when the outdoor air temperature is below the lockout setpoint.', off: 'An outdoor air lockout at low temperatures is available but not enabled.' },
   ],
-  pump_freeze_run: [{ c: 'plant', fn: 'sequence', on: 'Pump operation is continuous at low outdoor air temperatures, for freeze protection.', off: 'Cold weather pump operation is available but not enabled.' }],
-  pump_freeze_run_trip: [{ c: 'plant', fn: 'sequence', on: 'Pump operation is continuous when an air handler low temperature safety trips, for freeze protection.', off: 'Pump operation on an air handler low temperature safety trip is available but not enabled.' }],
-  boiler_staging: [{ c: 'hwp', fn: 'sequence', on: 'The boilers stage on supply temperature, with time delays.' }],
-  boiler_lag_delay: [{ c: 'hwp', fn: 'sequence', on: 'The lag boiler starts after a delay from plant start.' }],
+  pump_freeze_run: [{ c: 'plant', fn: 'sequence', on: 'The pumps have a freeze protection sequence that runs them continuously when the outdoor air temperature is below the freeze protection setpoint.', off: 'Cold weather pump operation is available but not enabled.' }],
+  pump_freeze_run_trip: [{ c: 'plant', fn: 'sequence', on: 'The pumps run continuously when an air handler low temperature safety trips, for freeze protection.', off: 'Pump operation on an air handler low temperature safety trip is available but not enabled.' }],
+  boiler_staging: [{ c: 'hwp', fn: 'sequence', on: 'The boilers stage on and off to hold the hot water supply temperature setpoint, with time delays between stages.' }],
+  boiler_lag_delay: [{ c: 'hwp', fn: 'sequence', on: 'The lag boiler can start only after a set delay from plant start.' }],
   pump_staging: [{ c: 'plant', fn: 'sequence', on: 'An additional pump starts when the running pump stays at high speed for a set time, and stops when pump speed or differential pressure allows.' }],
   plant_run_timers: [{ c: 'plant', fn: 'sequence', on: 'Start delays, stop delays and minimum on and off times apply to the plant equipment.' }],
   chiller_bypass_flow: [{ c: 'chwp', fn: 'sequence', on: 'The bypass valve holds a chilled water flow setpoint.' }],
@@ -28596,21 +28596,21 @@ var A36_DET_SEQ = {
   high_humidity_mode: [{ c: 'air', fn: 'temp', on: 'High humidity mode starts on high relative humidity and runs only while mechanical cooling is enabled.' }],
   dewpoint_fixed_sp: [{ c: 'air', fn: 'temp', on: 'The unit dehumidifies to a fixed dew point setpoint.' }],
   changeover_setpoints: [{ c: 'air', fn: 'temp', on: 'Changeover setpoints select heating or cooling.' }],
-  humidifier_oa_lockout: [{ c: 'air', fn: 'temp', on: 'The humidifier is enabled only at low outdoor air temperatures.' }],
+  humidifier_oa_lockout: [{ c: 'air', fn: 'temp', on: 'The humidifier has an outdoor air temperature limit that enables it only when the outdoor air temperature is below the enable setpoint.' }],
   humidity_reset_oa: [{ c: 'air', fn: 'temp', on: 'The humidifier setpoint resets on outdoor air temperature.' }],
   // air units: outdoor air, economizer, ventilation, lockouts
-  econ_disabled: [{ c: 'air', fn: 'oa', on: 'The economizer is present but disabled.', all: 'The economizer of each unit is present but disabled.' }],
+  econ_disabled: [{ c: 'air', fn: 'oa', on: 'The economizer sequence is not enabled in the program.', all: 'The economizer of each unit is present but disabled.' }],
   econ_methods: [], // placeholder: the sentences of the control method of the economizer (econ_dry_bulb, econ_enthalpy, econ_diff_enthalpy) are one text, see seqEconSentences
   econ_integration: [{ c: 'air', fn: 'oa', on: 'The economizer is integrated with mechanical cooling.' }],
   econ_loop: [{ c: 'air', fn: 'oa', on: 'A control loop positions the economizer dampers.' }],
   co2_ventilation_reset: [{ c: 'air', fn: 'oa', on: 'The minimum outdoor air resets on carbon dioxide (CO2) level.' }],
   co2_fan_speed: [{ c: 'air', fn: 'oa', on: 'Supply fan speed rises with carbon dioxide (CO2) level.' }],
   min_oa_scheduled: [{ c: 'air', fn: 'oa', on: 'The unit holds minimum outdoor air while the building is scheduled as occupied.' }],
-  ventilation_oa_disable: [{ c: 'air', fn: 'oa', on: 'Ventilation is disabled at low and high outdoor air temperatures.' }],
-  cool_oa_lockout: [{ c: 'air', fn: 'oa', on: 'Mechanical cooling is locked out at low outdoor air temperatures.', off: 'A mechanical cooling lockout at low outdoor air temperatures is available but not enabled.' }],
+  ventilation_oa_disable: [{ c: 'air', fn: 'oa', on: 'The unit has low and high outdoor air temperature limits that turn off ventilation when the outdoor air temperature is outside the limits.' }],
+  cool_oa_lockout: [{ c: 'air', fn: 'oa', on: 'Mechanical cooling has a low outdoor air temperature lockout that keeps it off when the outdoor air temperature is below the lockout setpoint.', off: 'A mechanical cooling lockout at low outdoor air temperatures is available but not enabled.' }],
   heat_oa_lockout: [
-    { c: 'air', fn: 'oa', on: 'Heating is locked out at high outdoor air temperatures.', off: 'A heating lockout at high outdoor air temperatures is available but not enabled.' },
-    { c: 'heater', fn: 'start', on: 'Heating is locked out at high outdoor air temperatures.', off: 'A heating lockout at high outdoor air temperatures is available but not enabled.' },
+    { c: 'air', fn: 'oa', on: 'Heating has a high outdoor air temperature lockout that keeps it off when the outdoor air temperature is above the lockout setpoint.', off: 'A heating lockout at high outdoor air temperatures is available but not enabled.' },
+    { c: 'heater', fn: 'start', on: 'Heating has a high outdoor air temperature lockout that keeps it off when the outdoor air temperature is above the lockout setpoint.', off: 'A heating lockout at high outdoor air temperatures is available but not enabled.' },
   ],
   erv_run_control: [{ c: 'air', fn: 'oa', on: 'The energy recovery ventilator runs in automatic mode with a minimum exhaust fan speed.' }],
   erv_bypass_oa: [{ c: 'air', fn: 'oa', on: 'The energy recovery ventilator turns off its supply fan and turns on its bypass fan within a set outdoor air temperature range.' }],
@@ -28644,7 +28644,7 @@ var A36_DET_SEQ_MERGE = [
   { ids: ['sat_request_reset', 'sat_oa_limit'], c: 'air', fn: 'temp', text: 'The supply air setpoint resets on cooling requests, with an outdoor air low limit.', own: 'The building automation system resets the supply air setpoint that it sends to the unit on cooling requests, with an outdoor air low limit.' },
   { ids: ['water_request_reset', 'water_oa_limit'], c: 'hwp', fn: 'temp', text: 'The building automation system resets the hot water supply temperature based on heating requests, with an outdoor air high limit.' },
   { ids: ['water_request_reset', 'water_oa_limit'], c: 'chwp', fn: 'temp', text: 'The building automation system resets the chilled water supply temperature based on cooling requests, with an outdoor air low limit.' },
-  { ids: ['pump_freeze_run', 'pump_freeze_run_trip'], c: 'plant', fn: 'sequence', text: 'Pump operation is continuous at low outdoor air temperatures and when an air handler low temperature safety trips, for freeze protection.' },
+  { ids: ['pump_freeze_run', 'pump_freeze_run_trip'], c: 'plant', fn: 'sequence', text: 'The pumps have a freeze protection sequence that runs them continuously when the outdoor air temperature is below the freeze protection setpoint or when an air handler low temperature safety trips.' },
   { ids: ['boiler_rotation', 'pump_rotation'], c: 'hwp', fn: 'sequence', text: 'The lead boiler and lead pump rotate on a schedule.' },
 ];
 
@@ -28998,10 +28998,6 @@ function _a36DetControlSentences(g, f, params, proof) {
       if (gate || startPart) add(BAS + (gate && startPart ? gate + ', and it ' + startPart : gate || startPart) + '.', 'plant');
       var noCtl = hw ? (pl ? 'Each boiler has its own controller, which sets the firing rate' : 'The boiler has its own controller, which sets the firing rate') : 'The chiller has its own controller, which sets the capacity';
       add(noCtl + '.', 'plant');
-      if (constant) {
-        add('The pumps have no variable frequency drives and run at a single fixed speed.', 'plant');
-        constantDone = true;
-      }
     } else if (scope === 'bas') {
       add(BAS + 'runs a control loop for the boilers and commands their firing rate.', 'plant');
       if (startsText) add(BAS + 'also starts and stops ' + startsText + '.', 'plant');
@@ -29022,7 +29018,6 @@ function _a36DetControlSentences(g, f, params, proof) {
       add(BAS + 'starts and stops ' + startsText + '.', 'plant');
     }
     if (hw && heatReq && scope !== 'enable') add('The plant receives heat requests from the air handlers.', 'plant');
-    if (constant && !constantDone) add('The pumps have no variable frequency drives and run at a single fixed speed.', 'plant');
     if (hw && plantAll(function (c) { return c.condensing; })) add('The boilers are condensing boilers.', 'plant');
     // what it monitors
     var mon = [];
@@ -29037,7 +29032,7 @@ function _a36DetControlSentences(g, f, params, proof) {
     if (mon.length) add(BAS + _a36DetSerial(mon) + '.', 'plant');
     // lockout, requests and the sequences of the control program
     seqAdd('temp');
-    if (proof.plantLockout && !seqCount('plant_oa_lockout', 'on')) add(/outdoor/.test(proof.plantLockout) ? 'The plant is locked out at ' + (hw ? 'high' : 'low') + ' outdoor air temperatures.' : 'The plant has a lockout mode.', 'sequence');
+    if (proof.plantLockout && !seqCount('plant_oa_lockout', 'on')) add(/outdoor/.test(proof.plantLockout) ? (hw ? 'The plant has a high outdoor air temperature lockout that keeps it from being enabled when the outdoor air temperature is above the lockout setpoint.' : 'The plant has a low outdoor air temperature lockout that keeps it from being enabled when the outdoor air temperature is below the lockout setpoint.') : 'The plant has a lockout sequence that keeps it from being enabled.', 'sequence');
     seqAdd('sequence');
     // rotation of the pumps (the frequency and the day are settings and are not printed)
     var rot = plantCfg.length > 0 && !seqCount('pump_rotation', 'on') && plantCfg.every(function (c) { return !!c.rotation; });
