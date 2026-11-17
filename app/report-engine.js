@@ -29399,6 +29399,12 @@ function openASHRAE36ReportModal(projId, type, skipRestore) {
 
   if (!skipRestore) _a36DialogRestore(projId, type, modal);
   scopeTreeSync(document.getElementById('a36Scope'));
+  // Save every change at once (Matt 2026-11-17: he had to pick the same choices each time; the memory
+  // saved only on Generate Preview, so Cancel or X lost them). One handler per modal, replaced on each open.
+  modal.onchange = function () {
+    var names = scopeTreeChecked(document.getElementById('a36Scope'), 'bldg');
+    if (names.length) _a36DialogSave(modal._a36ProjId, modal._a36Type, modal, names);
+  };
 
   modal.classList.add('open');
 }

@@ -84,6 +84,17 @@ const B = 991102;
 
     const other = await state(B, 'audit');
     ok(other.style === 'simple' && other.blds.join() === 'Delta' && other.secs.join() === def.secs.join(), 'other project: its own defaults');
+    // Cancel keeps the choices (Matt 2026-11-17): change a section box with a real click, close without Generate, reopen.
+    const cancelKey = await page.evaluate((pid) => {
+      openASHRAE36ReportModal(pid, 'audit');
+      const m = document.getElementById('ashrae36ReportModal');
+      const cb = m.querySelector('.a36SecCheck');
+      cb.click();
+      m.classList.remove('open');
+      return cb.dataset.key;
+    }, B);
+    const afterCancel = await state(B, 'audit');
+    ok(def.secs.includes(cancelKey) !== afterCancel.secs.includes(cancelKey), 'closed without Generate: the changed section is kept (' + cancelKey + ')');
 
     // Reload: choices follow.
     await page.waitForTimeout(1000);
