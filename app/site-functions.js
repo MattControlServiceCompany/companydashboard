@@ -2507,6 +2507,10 @@ async function siteResetAllMeterTableSettings() {
    site-ui.js delegates to this array and should NOT maintain its own copy.
 */
 var RELEASE_NOTES = [
+  { v: 'v2026.11.17.339', date: '2026-11-17', title: 'Audit Report: lockout values and clearer descriptions',
+    items: [ { type: 'improved', text: 'Audit Report: lockout and freeze protection sentences print the WebCTRL setpoint (for example, above 75°F).' },
+      { type: 'improved', text: 'Audit Report: sentences that apply to the same share of units are joined into one sentence; disabled sequences read as program facts; the fan start/stop alarm clause is removed.' },
+      { type: 'fixed', text: 'Audit Report: a terminal is described as dual-duct only when its own points show both decks (the same rule as the Equipment Matrix).' } ] },
   { v: 'v2026.11.17.338', date: '2026-11-17', title: 'Audit Report: Appendix A wording',
     items: [ { type: 'fixed', text: 'Audit Report: the Appendix A summary counts the buildings that have zones that differ from the standard, and the reference row is labeled Industry default.' } ] },
   { v: 'v2026.11.17.337', date: '2026-11-17', title: 'Audit Report: setpoint review states facts only',
