@@ -2507,6 +2507,9 @@ async function siteResetAllMeterTableSettings() {
    site-ui.js delegates to this array and should NOT maintain its own copy.
 */
 var RELEASE_NOTES = [
+  { v: 'v2026.11.17.328', date: '2026-11-17', title: 'Audit Report: unit graphics and library photo warning',
+    items: [ { type: 'fix', text: 'Detailed Audit Report: each unit shows its own graphic. A VAV table, zone list or floor plan graphic no longer shows as the unit graphic.' },
+      { type: 'fix', text: 'Detailed Audit Report: when a library has no front photo, a message names it. The picture line shows how many library front photos the report has.' } ] },
   { v: 'v2026.11.17.327', date: '2026-11-17', title: 'Audit Report: a full building automation system audit',
     items: [ { type: 'fix', text: 'Audit Report: the cover and Executive Summary describe an audit of the whole building automation system. ASHRAE 36 is one reference.' },
       { type: 'fix', text: 'Detailed Audit Report: the Recommendations paragraph, which repeated the page before it, is removed.' },
