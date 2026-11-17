@@ -18367,8 +18367,9 @@ function rptPageASHRAE36Cover(n, d, perBuildingIncluded, detailed) {
     '<div style="font-size:15px;font-weight:700;color:var(--rpt-page-text);text-align:center;margin-bottom:12px">' +
     _escHtml(d.project.name) +
     '</div>' +
-    // Items 3 and 17 (2026-11-14): the date of the data in the report (d.date, the one shared report date).
-    '<div style="font-size:14px;color:var(--rpt-page-text);text-align:center;margin-bottom:12px">Data reviewed: ' +
+    // d.date is the Report Date chosen in the dialog, not the date the data was collected (Matt 2026-11-17:
+    // "Data reviewed: <today>" was false). Label it as what it is.
+    '<div style="font-size:14px;color:var(--rpt-page-text);text-align:center;margin-bottom:12px">Report date: ' +
     _escHtml(d.date) +
     '</div>' +
     '</div>' +
