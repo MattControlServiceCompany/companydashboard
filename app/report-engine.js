@@ -28506,8 +28506,8 @@ function _a36DetGroupParams(g, rowsById) {
 // The sequences of one unit, read from the record en_auditseq_<projectId> = { rows: [{ library, equipName, id, status, source }], updated }
 // (written by the tool 2026-11-17-import-audit-sequences.py from the control program pages of the audit): [{ id, status }] with status
 // 'enabled' or 'available_not_enabled'; [] when the project has no record or the unit has no row. This is the ONE input of the sequence
-// sentences (A36_DET_SEQ). The ids are the canonical ids of the import tool. The record holds no setpoint, range or limit: a value is a
-// setting of one day and never belongs to a sequence id.
+// sentences (A36_DET_SEQ). The ids are the canonical ids of the import tool. value (degrees F, optional): the lockout or freeze protection
+// setpoint read from the WebCTRL screen of the row (2026-11-17-set-auditseq-values.py; Matt 2026-11-17: print the lockout value).
 function _a36DetSequenceIds(equipName, libName, projId) {
   var rec = projId && typeof sget === 'function' ? sget('en_auditseq_' + projId, null) : null;
   if (!rec || !Array.isArray(rec.rows)) return [];
@@ -28518,7 +28518,7 @@ function _a36DetSequenceIds(equipName, libName, projId) {
       return r && _a36DetNorm(r.equipName) === unit && _a36DetNorm(r.library) === lib;
     })
     .map(function (r) {
-      return { id: r.id, status: r.status };
+      return { id: r.id, status: r.status, value: r.value };
     });
 }
 

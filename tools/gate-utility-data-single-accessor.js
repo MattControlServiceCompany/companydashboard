@@ -48,6 +48,7 @@ function isAllowlisted(relPath) {
   if (relPath === 'test-verification.js') return true;
   if (relPath === 'test-backlog-runner.js') return true;
   if (relPath === 'test-assign-bill-create-meter-dom.js') return true; // exact file: test seeds the raw storage key on purpose; no other file is exempt here
+  if (relPath === 'test-bill-save-once-dom.js') return true; // exact file: synthetic fixture seeds the raw storage key, like the line above
   return false;
 }
 

@@ -50,12 +50,12 @@ const RE = fs.readFileSync(path.join(ROOT, 'app', 'report-engine.js'), 'utf8');
         ],
         // R4: plant with no pump drive point (two plant units), plant with a drive status, plant with a speed point
         r4: [
-          mk('p1', 'Alpha Hall', 'hwp', 'Hot Water System A1', { 'Hot Water Pump 1 Enable': 'On', 'Hot Water Pump 1 H-O-A': 'Auto', 'Hot Water Pump 1 Amperage': '1.7', 'Boiler 1 Status': 'On', 'Hot Water Supply Temp': '150 F' }),
-          mk('p2', 'Alpha Hall', 'hwp', 'Hot Water System A2', { 'Hot Water Pump 2 Enable': 'On', 'Hot Water Pump 2 Amperage': '1.2', 'Boiler 2 Status': 'On', 'Hot Water Supply Temp': '150 F' }),
+          mk('p1', 'Alpha Hall', 'hwp', 'Hot Water System A1', { 'Hot Water Pump 1 Enable': 'On', 'Hot Water Pump 1 H-O-A': 'Auto', 'Hot Water Pump 1 Status': 'On', 'Boiler 1 Status': 'On', 'Hot Water Supply Temp': '150 F' }),
+          mk('p2', 'Alpha Hall', 'hwp', 'Hot Water System A2', { 'Hot Water Pump 2 Enable': 'On', 'Hot Water Pump 2 Status': 'On', 'Boiler 2 Status': 'On', 'Hot Water Supply Temp': '150 F' }),
           mk('p3', 'Beta Hall', 'hwp', 'Hot Water System B', { 'HWP-1 Enable': 'On', 'HWP-1 VFD Status': 'On', 'HWP-2 VFD Status': 'On', 'Boiler 1 Status': 'On', 'Hot Water Supply Temp': '150 F' }),
           mk('p4', 'Gamma Hall', 'hwp', 'Hot Water System C', { 'Hot Water Pump 1 Speed': '60', 'Hot Water Pump 1 Amperage': '1.7', 'Boiler 1 Status': 'On', 'Hot Water Supply Temp': '150 F' }),
           // one plant row with two pumps and no pump drive; the boiler burner fan speed is not a pump drive
-          mk('p5', 'Delta Hall', 'hwp', 'Hot Water System D', { 'HWP-1 Enable': 'On', 'HWP-1 H-O-A': 'Auto', 'HWP-2 Enable': 'Off', 'Hot Water Pump 2 Amperage': '1.2', 'Boiler 1 Fan Speed': '40', 'Hot Water Supply Temp': '150 F' }),
+          mk('p5', 'Delta Hall', 'hwp', 'Hot Water System D', { 'HWP-1 Enable': 'On', 'HWP-1 H-O-A': 'Auto', 'HWP-2 Enable': 'Off', 'Hot Water Pump 2 Status': 'Off', 'Boiler 1 Fan Speed': '40', 'Hot Water Supply Temp': '150 F' }),
         ],
         // the wording rule of the supply fan drive: a single-zone air handler that reads its fan speed has the drive
         szSpeed: [
@@ -150,7 +150,7 @@ const RE = fs.readFileSync(path.join(ROOT, 'app', 'report-engine.js'), 'utf8');
 
     // ---- R4 ----
     const pa = ['p1', 'p2'].map((n, i) => U('r4', 'Hot Water System A' + (i + 1)));
-    ok(pa.every((u) => u.pumpDrive === false), 'R4. a plant with only enable, hand-off-auto and amperage points shows no pump drive');
+    ok(pa.every((u) => u.pumpDrive === false), 'R4. a plant with only enable, hand-off-auto and status points shows no pump drive (an amps point is drive evidence, Matt 2026-11-17)');
     ok(U('r4', 'Hot Water System D').pumpDrive === false && U('r4', 'Hot Water System D').pumpCount === 2, 'R4. a boiler fan speed point is not a pump drive; HWP-1 and HWP-2 are 2 pumps');
     ok(U('r4', 'Hot Water System A1').pumpCount === 1 && U('r4', 'Hot Water System B').pumpCount === 2, 'R4. pump count from the pump numbers in the point names');
     ok(U('r4', 'Hot Water System B').pumpDrive === true && U('r4', 'Hot Water System C').pumpDrive === true, 'R4. a plant with a drive status point, and a plant with a speed point, show a pump drive');
