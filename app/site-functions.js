@@ -2507,6 +2507,8 @@ async function siteResetAllMeterTableSettings() {
    site-ui.js delegates to this array and should NOT maintain its own copy.
 */
 var RELEASE_NOTES = [
+  { v: 'v2026.11.17.331', date: '2026-11-17', title: 'Audit Report System Descriptions describe the control sequences',
+    items: [ { type: 'improved', text: 'Detailed Audit Report: the System Descriptions describe each system and its control sequences from the control programs in plain paragraphs, with no fixed setpoint values or schedule times.' } ] },
   { v: 'v2026.11.17.330', date: '2026-11-17', title: 'Audit Report pictures come from the site store',
     items: [ { type: 'improved', text: 'Audit Report: the pictures are kept in the site file store. The report uses them in any browser with no folder pick, and pictures added to the project folder upload automatically.' } ] },
   { v: 'v2026.11.17.329', date: '2026-11-17', title: 'Audit Report picture line says what to do',
