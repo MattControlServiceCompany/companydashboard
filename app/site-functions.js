@@ -2507,6 +2507,10 @@ async function siteResetAllMeterTableSettings() {
    site-ui.js delegates to this array and should NOT maintain its own copy.
 */
 var RELEASE_NOTES = [
+  { v: 'v2026.11.17.334', date: '2026-11-17', title: 'Audit Report: sequences described, no pump speed guess',
+    items: [ { type: 'fixed', text: 'Audit Report: lockouts and freeze protection are described as sequences (for example, a high outdoor air temperature lockout that keeps the plant from being enabled above the lockout setpoint), not as a plant state.' },
+      { type: 'fixed', text: 'Audit Report: the report no longer says pumps run at a fixed speed when the points show no speed point. A pump amps point now counts as a drive.' },
+      { type: 'fixed', text: 'Audit Report: the cover table of buildings fits on page 1.' } ] },
   { v: 'v2026.11.17.333', date: '2026-11-17', title: 'Audit Report: cover table of buildings, building pages fixed',
     items: [ { type: 'improved', text: 'Audit Report: the cover states the units audited and the findings in plain words and has a table of every building with its units and findings.' },
       { type: 'fixed', text: 'Audit Report: the Building Infrastructure lines stay on the building page (no page with only those lines), and they state facts only.' },
