@@ -349,6 +349,14 @@ async function run(rows, extra) {
   );
   check('kWhConsumed is the meter sum', eq(b.kWhConsumed, 3065.2), 'kWh=' + b.kWhConsumed);
 
+  console.log('Case 21: no RKVA column in the meter row: ActualRKVA stays blank, the RkVA Chg quantity is not used for it');
+  b = await run(
+    ['01/09  02/09  31  7,246.5000  5,931.2000  1,315.3000  1.0000  1,315.3000  61.3840'],
+    'RkVA Chg 6.4320 kW at $0.663 per kW ......... $4.26\n',
+  );
+  check('ActualRKVA blank', b.ActualRKVA == null || b.ActualRKVA === '', 'ActualRKVA=' + b.ActualRKVA);
+  check('ActualKW still read', eq(b.ActualKW, 61.384), 'ActualKW=' + b.ActualKW);
+
   console.log(fail ? '\n' + fail + ' FAILED' : '\nALL PASSED');
   process.exit(fail ? 1 : 0);
 })();

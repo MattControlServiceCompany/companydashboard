@@ -2507,6 +2507,9 @@ async function siteResetAllMeterTableSettings() {
    site-ui.js delegates to this array and should NOT maintain its own copy.
 */
 var RELEASE_NOTES = [
+  { v: 'v2026.11.17.343', date: '2026-11-17', title: 'Audit Report: facts only in findings; bill RKVA',
+    items: [ { type: 'fixed', text: 'Audit Report: the findings no longer print a Solution line. Each finding states what was found and where.' },
+      { type: 'fixed', text: 'Bill reading: the RKVA Used value comes only from the meter table. The billed RkVA charge quantity is no longer stored as RKVA used.' } ] },
   { v: 'v2026.11.17.342', date: '2026-11-17', title: 'Audit Report: full ASHRAE 36 building pages',
     items: [ { type: 'fixed', text: 'Audit Report: the ASHRAE 36 Sequences by Building pages show every building and fill each page; a building table continues on the next page with its header.' } ] },
   { v: 'v2026.11.17.341', date: '2026-11-17', title: 'Audit Report: no half-empty building pages',

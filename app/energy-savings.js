@@ -5345,11 +5345,8 @@ function _extractEvergy(t, acctOverride, addrOverride) {
   // NumberOfDays from the validated read dates (one rule), with the printed Days column as the check.
   _evgSetNumberOfDays(result, _printedDays, _billDate);
 
-  // 4. ActualRKVA fallback from RkVA charge line kW value
-  if (!result.ActualRKVA) {
-    const rkvaKwM = t.match(/R[kK]VA\s+(?:Ch[gaq9]|C[HhNn][Gg]|Gh[gq9])[.:]?\s+([\d,.]+)\s*[kK][Ww]/i);
-    if (rkvaKwM) result.ActualRKVA = rkvaKwM[1].replace(/,/g, '');
-  }
+  // 4. ActualRKVA comes only from the meter table (RKVA Used). The "RkVA Chg N kW" quantity is the billed RkVA, a different number
+  // (a scanned 2026-11 bill: 6.4320 billed, 157.2480 used): no fallback to it; an unread column stays blank.
 
   // 5. THREE-WAY VERIFICATION: qty × rate = charge
   // For each charge line, if we have any 2 of {qty, rate, charge}, compute and verify the 3rd.
