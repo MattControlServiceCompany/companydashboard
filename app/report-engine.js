@@ -27503,9 +27503,12 @@ function _a36DetHeadline(f, g, units, kind, o) {
   var points = f.missing.map(_a36DetPlainNoun);
   var sentence;
   if (kind === 'deficiency') return '';
-  if (o.fanDrive && f.missingKeys && f.missingKeys.some(_a36DetIsFanSpeedKey)) {
+  // The drive keys: the missing points of a sequence finding, the point itself of a point finding (a missing speed point on a
+  // constant-speed fan or pump is a missing drive; the heading states that fact).
+  var keys = kind === 'seq' ? f.missingKeys || [] : [f.key];
+  if (o.fanDrive && keys.some(_a36DetIsFanSpeedKey)) {
     sentence = subject + ' ' + have + ' no variable frequency drive on ' + (plural ? 'their' : 'its') + ' supply fan' + (plural ? 's' : '') + (kind === 'seq' && labelText ? ', so ' + labelText + ' cannot run' : '') + '.';
-  } else if (o.pumpDrive && f.missingKeys && f.missingKeys.indexOf('hwPumpSpeed') > -1) {
+  } else if (o.pumpDrive && keys.indexOf('hwPumpSpeed') > -1) {
     sentence = subject + ' ' + have + ' no variable frequency drive on ' + (plural ? 'their' : 'its') + ' pumps' + (kind === 'seq' && labelText ? ', so ' + labelText + ' cannot run' : '') + '.';
   } else if (kind === 'seq') {
     if (points.length) {
@@ -27632,17 +27635,6 @@ function _a36DetModel(d, rowsById, picMap, loaded) {
       var fanDrive = driveUnits('sfSpeedCmd').length > 0;
       var pumpUnits = driveUnits('hwPumpSpeed');
       var pumpDrive = pumpUnits.length > 0;
-      // Pricing counts one pump drive per pump (compliance.pumpCount); the text names the pumps when a plant shows more than one.
-      var pumpTotal = pumpUnits.reduce(function (n, u) { return n + Math.max(1, (u.compliance && u.compliance.pumpCount) || 1); }, 0);
-      // A missing point that is only a controller point (no device to install): the audit prices it at $0 and the building table does not list it.
-      // The text says so, on the same rules as the price (_pricingDriveIsPriced for the drives, the ioOnly flag of PRICE_POINT_MAP for the rest).
-      var pointIsControllerOnly = function (k) {
-        if (_a36DetIsFanSpeedKey(k)) return !fanDrive;
-        if (k === 'hwPumpSpeed') return !pumpDrive;
-        var me = typeof PRICE_POINT_MAP !== 'undefined' ? PRICE_POINT_MAP[k] : null;
-        return !!(me && me.flags && me.flags.indexOf('ioOnly') !== -1);
-      };
-      var pumpPhrase = pumpTotal > pumpUnits.length ? 'each of the ' + pumpTotal + ' hot water pumps' : 'the hot water pump';
       if (kind === 'seq') {
         // extra.keys: one finding that stands for two sequences on the same units (Minimum Outside Air with Occupancy-Based
         // Ventilation of the air handling units); the finding names both sequences and both Guideline 36 sections.
@@ -27670,28 +27662,6 @@ function _a36DetModel(d, rowsById, picMap, loaded) {
           (f.missing.length ? _a36DetJoin(f.missingText).replace(/^./, function (c) { return c.toUpperCase(); }) + ' point' + plural : seqNoun) +
           secPart + (g ? ' on ' + frac : ' at building level') + '.';
         f.issueShort = seqNoun + ' not fully in place';
-        // A single-zone unit with no fan speed point has a constant-speed fan: the missing point is a variable speed drive.
-        var fanKeys = fanDrive ? (extra.missingKeys || []).filter(_a36DetIsFanSpeedKey) : [];
-        // A plant with no pump drive point has constant-speed pumps (round 7 R4): the missing pump speed point is a drive, priced as one.
-        var pumpKeys = pumpDrive ? (extra.missingKeys || []).filter(function (k) { return k === 'hwPumpSpeed'; }) : [];
-        var driveKeyList = fanKeys.concat(pumpKeys);
-        var otherText = f.missingText.filter(function (t, i) {
-          return driveKeyList.indexOf((extra.missingKeys || [])[i]) === -1;
-        });
-        if (fanKeys.length || pumpKeys.length) {
-          f.recommendation =
-            'Install a variable frequency drive on ' + (fanKeys.length ? 'the supply fan' : pumpPhrase) + (g ? ' of ' + frac : '') +
-            (otherText.length ? ' and add the ' + _a36DetJoin(otherText) + ' point' + (otherText.length > 1 ? 's' : '') : '') +
-            '. Program the ' + seqNoun + '.';
-        } else if (f.missing.length) {
-          var where = g ? ' on ' + frac : ' (quantity ' + units + ')';
-          var ctlText = f.missingText.filter(function (t, i) { return pointIsControllerOnly((extra.missingKeys || [])[i]); });
-          var devText = f.missingText.filter(function (t, i) { return !pointIsControllerOnly((extra.missingKeys || [])[i]); });
-          var recParts = [];
-          if (devText.length) recParts.push('Add the ' + _a36DetJoin(devText) + ' point' + (devText.length > 1 ? 's' : '') + where + '.');
-          if (ctlText.length) recParts.push('Add the ' + _a36DetJoin(ctlText) + ' point' + (ctlText.length > 1 ? 's' : '') + where + ' (programming only, no device to install).');
-          f.recommendation = recParts.join(' ') + ' Program the ' + seqNoun + '.';
-        } else f.recommendation = 'Program the ' + seqNoun + (g ? ' on ' + frac : ' (quantity ' + units + ')') + '.';
       } else {
         var sensor = _a36DetIsSensorLabel(label);
         f.section = String((row && row.g36Section) || '').replace(/^[§\s]*(Section\s*)?/i, '');
@@ -27707,16 +27677,8 @@ function _a36DetModel(d, rowsById, picMap, loaded) {
         var pSec = '';
         f.observed = (sensor ? label : label + ' point') + pSec + (g ? ' on ' + frac + names + '.' : ' at building level.');
         f.issueShort = label + ' point missing';
-        f.recommendation = sensor ? 'Install the ' + label + (/ sensor$/i.test(label) ? '' : ' sensor') + (g ? ' on ' + frac : ' (quantity ' + units + ')') + '.' : 'Add the ' + label + ' point' + (g ? ' on ' + frac : ' (quantity ' + units + ')') + '.';
-        // Item 6: a fan speed point on a constant-speed fan means a variable speed drive. A single-zone unit is priced as a drive.
-        if (fanDrive && _a36DetIsFanSpeedKey(key))
-          f.recommendation = 'Install a variable frequency drive on the supply fan of ' + frac + '.';
-        else if (pumpDrive && key === 'hwPumpSpeed')
-          f.recommendation = 'Install a variable frequency drive on ' + pumpPhrase + ' of ' + frac + '.';
-        else if (_a36DetIsFanSpeedKey(key))
-          f.recommendation = 'Add a variable frequency drive to the supply fan where it runs at constant speed, for the ' + label + (g ? ' on ' + frac : ' (quantity ' + units + ')') + '.';
       }
-      f.headline = _a36DetHeadline(f, g, units, kind, { fanDrive: fanDrive, pumpDrive: pumpDrive, pumpPhrase: pumpPhrase, dcvNarrow: dcvNarrow, szGroup: szGroup });
+      f.headline = _a36DetHeadline(f, g, units, kind, { fanDrive: fanDrive, pumpDrive: pumpDrive, dcvNarrow: dcvNarrow, szGroup: szGroup });
       f.category = g ? g.category : null; // the equipment type of the finding (the per-building page lists a finding on the row of its type)
       // A picture only when the listed page text names the topic of this finding, on a non-graphic page of an affected unit.
       var wordList = (extra.keys || [key]).map(function (k) { return A36_DET_FINDING_PAGE_WORDS[k]; }).filter(Boolean);
@@ -27915,7 +27877,6 @@ function _a36DetModel(d, rowsById, picMap, loaded) {
         effect: 'Equipment control',
         observed: (unitName ? unitName + ': ' : '') + (df.issue || ''),
         issueShort: (unitName ? unitName + ': ' : '') + (df.issue || ''),
-        recommendation: df.change || df.how || '',
       };
       f.headline = _a36DetUpperFirst(String(f.observed).replace(/\s+$/, '').replace(/([^.!?])$/, '$1.'));
       f.category = gMatch ? gMatch.category : null;
@@ -27947,8 +27908,8 @@ var A36_DET_P_TIGHT = 'margin:0 0 4px 0;font-size:13.34px;line-height:1.4;color:
 
 // One finding: heading (the section number, for example "3.3.1", and the headline: one plain sentence that says what was found), then one
 // paragraph: Missing (what is missing and where), Impact (only when an approved text exists and only on the first finding of that point in
-// the chapter: the text says what the point does, not what is wrong with this unit), Solution. A Facility Audit deficiency has Issue and
-// Solution only. impactSeen = { key: true } of the chapter (updated here).
+// the chapter: the text says what the point does, not what is wrong with this unit). The audit states facts only: no Solution line (Matt
+// 2026-11-17). A Facility Audit deficiency has Issue only. impactSeen = { key: true } of the chapter (updated here).
 function _a36DetFindingTok(f, impactSeen) {
   var showImpact = f.impact && !(impactSeen && impactSeen[f.key]);
   if (f.impact && impactSeen) impactSeen[f.key] = true;
@@ -27963,7 +27924,7 @@ function _a36DetFindingTok(f, impactSeen) {
       '</div><p style="' +
       A36_DET_P_TIGHT +
       '">' +
-      [part(f.kind === 'deficiency' ? 'Issue' : 'Missing', f.observed), showImpact ? part('Impact', f.impact) : '', part('Solution', f.recommendation)].filter(Boolean).join(' ') +
+      [part(f.kind === 'deficiency' ? 'Issue' : 'Missing', f.observed), showImpact ? part('Impact', f.impact) : ''].filter(Boolean).join(' ') +
       '</p></div>',
   );
 }

@@ -88,7 +88,7 @@ const RE = fs.readFileSync(path.join(ROOT, 'app', 'report-engine.js'), 'utf8');
         tmp.innerHTML = html;
         const rows = [...tmp.querySelectorAll('tr')].map((tr) => tr.textContent.replace(/\s+/g, ' ')).filter((t) => /Requires:/.test(t));
         out[k] = {
-          findings: c.model.findings.map((f) => ({ g: f.groupLabel, kind: f.kind, key: f.key, section: f.section, rec: f.recommendation, impact: f.impact, observed: f.observed })),
+          findings: c.model.findings.map((f) => ({ g: f.groupLabel, kind: f.kind, key: f.key, section: f.section, head: f.headline, impact: f.impact, observed: f.observed })),
           rows: rows,
           text: tmp.textContent.replace(/\s+/g, ' '),
         };
@@ -99,20 +99,19 @@ const RE = fs.readFileSync(path.join(ROOT, 'app', 'report-engine.js'), 'utf8');
     // ---- F2 and F3: findings ----
     const sz = scen.sz.findings;
     const cmd = sz.find((f) => f.kind === 'sensor' && f.key === 'sfSpeedCmd');
-    ok(cmd && /^Install a variable frequency drive on the supply fan of both units\.$/.test(cmd.rec), 'F2. single-zone point finding: drive recommendation: ' + (cmd && cmd.rec));
+    ok(cmd && /no variable frequency drive on (its|their) supply fans?/.test(cmd.head), 'F2. single-zone point finding: the heading says the supply fan has no drive: ' + (cmd && cmd.head));
     ok(cmd && cmd.impact === 'Lets the system change the fan speed. Without a variable frequency drive the fan runs at full speed all the time.', 'F2. single-zone point finding: plain Impact line: ' + (cmd && cmd.impact));
     ok(cmd && cmd.section === '5.18.4' && !/ASHRAE 36, Section/.test(cmd.observed), 'F3. the single-zone supply fan speed command finding keeps section 5.18.4 in the data and cites none in the text: ' + (cmd && cmd.section + ' | ' + cmd.observed));
     const sat = sz.find((f) => f.kind === 'seq' && f.key === 'ahu_sat_reset');
-    ok(sat && /^Install a variable frequency drive on the supply fan of both units and add the Outdoor Air Temp point\. Program the Supply Air Temperature Reset sequence\.$/.test(sat.rec), 'F2. single-zone sequence finding: drive first, other missing points kept: ' + (sat && sat.rec));
-    ok(sz.every((f) => f.kind !== 'seq' || !/Supply Fan Speed( Command)? point/.test(f.rec)), 'F2. no single-zone sequence finding asks to add the Supply Fan Speed point');
+    ok(sat && /no variable frequency drive on (its|their) supply fans?, so .* cannot run\./.test(sat.head) && /Outdoor Air Temp/.test(sat.observed), 'F2. single-zone sequence finding: the heading names the missing drive, Missing keeps the other points: ' + (sat && sat.head + ' | ' + sat.observed));
+    ok(sz.every((f) => !/Solution/.test(f.head + ' ' + f.observed)), 'F2. no finding text carries a Solution');
     const mzSeq = scen.mixed.findings.find((f) => f.kind === 'seq' && f.key === 'ahu_sat_reset' && f.section === '5.16.2');
-    ok(mzSeq && /^Add the Outdoor Air Temp point on the unit\. Add the Supply Fan Speed point on the unit \(programming only, no device to install\)\. Program the Supply Air Temperature Reset sequence\.$/.test(mzSeq.rec), 'F2. a multi-zone unit: the speed point is a controller point, programming only (the building table lists no device for it): ' + (mzSeq && mzSeq.rec));
+    ok(mzSeq && !/variable frequency drive/i.test(mzSeq.head) && /Outdoor Air Temp/.test(mzSeq.observed) && /Supply Fan Speed/.test(mzSeq.observed), 'F2. a multi-zone unit: no drive in the heading, Missing names both points: ' + (mzSeq && mzSeq.head + ' | ' + mzSeq.observed));
     ok(scen.mixed.findings.some((f) => f.key === 'sfSpeedCmd') === scen.mixed.findings.some((f) => f.key === 'sfSpeedCmd' && f.section === '5.18.4'), 'F3. every single-zone sfSpeedCmd finding has a section');
 
     // ---- F2 (drive wording follows the price): units that cover sfSpeed but miss sfSpeedCmd ----
     const sp = scen.szSpeed.findings;
-    ok(sp.length > 0 && sp.every((f) => !/variable frequency drive/i.test(f.rec + ' ' + f.impact)), 'F2. a single-zone group that reads its fan speed but has no speed command: no finding says "variable frequency drive" (the speed command is a $0 controller point): ' + sp.map((f) => f.key + ': ' + f.rec));
-    ok(sp.filter((f) => f.kind === 'seq').every((f) => /^Add the .* point/.test(f.rec)), 'F2. its sequence findings keep the plain "Add the ... point" text: ' + sp.filter((f) => f.kind === 'seq').map((f) => f.rec));
+    ok(sp.length > 0 && sp.every((f) => !/variable frequency drive/i.test(f.head + ' ' + f.impact)), 'F2. a single-zone group that reads its fan speed but has no speed command: no finding says "variable frequency drive" (the speed command is a $0 controller point): ' + sp.map((f) => f.key + ': ' + f.head));
 
     // ---- F4: Control Sequences sections ----
     const satRow = (k) => (scen[k].rows.find((t) => /^Supply Air Temperature Reset/.test(t)) || '');

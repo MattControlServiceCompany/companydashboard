@@ -291,8 +291,8 @@ const ok = (c, m) => {
     ok(!/Issues Log|Appendix A: Deficiency List|Appendix B|Appendix C/.test(det.text), 'N2: no Issues Log, no Appendix B, no Appendix C');
     ok(s.indexOf('setpointReview') > s.lastIndexOf('detailedLibrary') && /Appendix A: Setpoint Programming Review/.test(det.text), 'Appendix A (the setpoint review) prints last when zone setpoint data exists (Detailed turns the review on by itself)');
     const t = det.libText;
-    [/\d+\. Alpha Library/.exec(t) && /\d+\. Alpha Library/.exec(t)[0], /\d+\.1 System Overview/.exec(t) && /\d+\.1 System Overview/.exec(t)[0], /\d+\.2 System Descriptions/.exec(t) && /\d+\.2 System Descriptions/.exec(t)[0], /\d+\.3 Findings/.exec(t) && /\d+\.3 Findings/.exec(t)[0], '2.3.1 ', 'Missing:', 'Solution:'].forEach((x) => ok(t.indexOf(x) >= 0, 'chapters contain "' + x + '"'));
-    ok(!/Recommended Work/.test(t), 'cut 1: no per-chapter Recommended Work table (each finding has its own Recommendation line)');
+    [/\d+\. Alpha Library/.exec(t) && /\d+\. Alpha Library/.exec(t)[0], /\d+\.1 System Overview/.exec(t) && /\d+\.1 System Overview/.exec(t)[0], /\d+\.2 System Descriptions/.exec(t) && /\d+\.2 System Descriptions/.exec(t)[0], /\d+\.3 Findings/.exec(t) && /\d+\.3 Findings/.exec(t)[0], '2.3.1 ', 'Missing:'].forEach((x) => ok(t.indexOf(x) >= 0, 'chapters contain "' + x + '"'));
+    ok(!/Recommended Work/.test(t), 'cut 1: no per-chapter Recommended Work table');
     ok(!/\bIssue\./.test(t) && !/\bObserved\b|\bRecommendation\b|is not fully in place/.test(t) && !/ASHRAE 36, Section/.test(t), 'cut 2: no Issue line, no Observed or Recommendation label; no ASHRAE 36 section citation in the base report');
     // Round 1 (2026-11-14): wording rules of the Detailed report, on the final text. SYNTHETIC project.
     ok(!/Guideline 36|outside air|set point|§|Cfm/.test(t), 'round 1: no "Guideline 36", "outside air", "set point", section sign or "Cfm" in the Detailed text');
@@ -517,11 +517,11 @@ const ok = (c, m) => {
       all.forEach((f) => {
         if (f.kind === 'deficiency') return;
         const frac = _a36DetFraction(f.units, f.total, f.fracNoun, f.fracTail);
-        const inText = !f.total || (f.observed.indexOf(frac) >= 0 && f.recommendation.indexOf(frac) >= 0);
+        const inText = !f.total || f.observed.indexOf(frac) >= 0;
         if (!inText || f.units < 1 || (f.total && f.units > f.total)) bad.push(f.n + ': ' + f.observed + ' units ' + f.units + ' of ' + f.total);
       });
-      // m: the recommendation of a point finding says sensor only for a sensor
-      const mbad = all.filter((f) => f.kind === 'sensor' && (_a36DetIsSensorLabel(f.label) ? !/^Install the .* sensor/i.test(f.recommendation) : !/^Add the .* point/.test(f.recommendation))).map((f) => f.n);
+      // m: no finding carries a Solution (the audit states facts only, 2026-11-17)
+      const mbad = all.filter((f) => 'recommendation' in f).map((f) => f.n);
       // a sequence listed twice for one group (two catalog rows) is one finding with the summed units
       const real = _a36ScopedCatalogRows;
       let split = null;
@@ -1002,7 +1002,7 @@ const ok = (c, m) => {
     const findPlants = findAll.slice(0, findAll.search(/The air handling unit/));
     ok(fStart > 0 && fEnd > fStart && /chilled water plant/.test(findPlants) && /hot water plant/.test(findPlants), 'D4: Findings has findings for the chilled water plant and for the hot water plant');
     ok(!/schedul/i.test(findPlants) && !/Occupied schedule/.test(pt), 'D4: plants get no schedule finding and no schedule line');
-    ok(/Chilled Water Supply Temperature Reset/.test(findPlants) && /Hot Water Supply Temperature Reset/.test(findPlants), 'D4: plant findings include the supply temperature reset sequence of each plant (same treatment as the plants Detailed already printed)');
+    ok(/Chilled Water Supply Temperature Reset/i.test(findPlants) && /Hot Water Supply Temperature Reset/i.test(findPlants), 'D4: plant findings include the supply temperature reset sequence of each plant (same treatment as the plants Detailed already printed)');
     ok(/The hot water plant consists of one boiler and one hot water pump\./.test(pt) && /starts and stops|enables the hot water pump/.test(pt) && !/At the time of the audit|150\.2|130\.0|by an enable command|primary hot water pump|holds the hot water supply temperature at its setpoint/.test(pt), 'item 2 (2026-11-17): a plant description is what the plant has (one boiler, one pump) and how the system controls it, no setpoint claim without a proving point, no reading');
     ok(!/primary hot water pump (has|has a)|status point/.test(pt.slice(0, fStart)), 'item 2: no "has an enable command", "status point" or "monitors" wording');
 
@@ -1148,7 +1148,7 @@ const ok = (c, m) => {
       const simpleSp = Array.from(new DOMParser().parseFromString('<div>' + simple + '</div>', 'text/html').querySelectorAll('.rpt-page[data-section="setpointReview"]')).map((p) => p.textContent.replace(/\s+/g, ' ')).join(' ');
       return {
         keys: m.findings.map((f) => f.keys || [f.key]).map((k) => k.join('+')),
-        merged: m.findings.filter((f) => f.keys && f.keys.length === 2).map((f) => ({ label: f.label, affected: f.affected, missing: f.missing, observed: f.observed, rec: f.recommendation, issue: f.issueShort, section: f.section })),
+        merged: m.findings.filter((f) => f.keys && f.keys.length === 2).map((f) => ({ label: f.label, affected: f.affected, missing: f.missing, observed: f.observed, issue: f.issueShort, section: f.section })),
         summary: secText('detailedSummary'),
         lib: secText('detailedLibrary'),
         sp: secText('setpointReview'),

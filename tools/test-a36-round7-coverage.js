@@ -90,7 +90,7 @@ const RE = fs.readFileSync(path.join(ROOT, 'app', 'report-engine.js'), 'utf8');
             pumpCount: e.compliance.pumpCount,
             pumpSeq: e.seqReadiness && e.seqReadiness.hwp_pump_dp_reset ? e.seqReadiness.hwp_pump_dp_reset.status : null,
           })),
-          findings: c.model.findings.map((f) => ({ lib: f.lib, g: f.groupLabel, kind: f.kind, key: f.key, rec: f.recommendation, impact: f.impact, observed: f.observed, affected: f.affected })),
+          findings: c.model.findings.map((f) => ({ lib: f.lib, g: f.groupLabel, kind: f.kind, key: f.key, head: f.headline, impact: f.impact, observed: f.observed, affected: f.affected })),
           tiers,
           rate: typeof COST_LABOR_RATE_DEFAULT !== 'undefined' ? _pricingGetConfig().hourlyRate || COST_LABOR_RATE_DEFAULT : null,
         };
@@ -169,14 +169,14 @@ const RE = fs.readFileSync(path.join(ROOT, 'app', 'report-engine.js'), 'utf8');
     const blk = await page.evaluate(() => SEQUENCE_BLOCKING_SENSORS.hwp_pump_dp_reset);
     ok(blk.indexOf('hwPumpSpeed') > -1, 'R4. the pump speed point blocks the sequence: ' + blk);
     const pf = (lib) => out.r4.findings.filter((f) => f.lib === lib && (f.key === 'hwp_pump_dp_reset' || f.key === 'hwPumpSpeed'));
-    const drvText = (f) => /Install a variable frequency drive on the hot water pump of/.test(f.rec);
-    ok(pf('Delta Hall').length > 0 && pf('Delta Hall').some((f) => /each of the 2 hot water pumps/.test(f.rec)), 'R4. a plant row with two pumps: the text says "each of the 2 hot water pumps": ' + pf('Delta Hall').map((f) => f.rec));
-    ok(pf('Alpha Hall').length > 0 && pf('Alpha Hall').every(drvText), 'R4. the no-drive plant: the text says "Install a variable frequency drive on the hot water pump": ' + pf('Alpha Hall').map((f) => f.rec));
-    ok(pf('Beta Hall').length > 0 && pf('Beta Hall').every((f) => !drvText(f) && /^Add the .* point/.test(f.rec)), 'R4. the plant with a drive status point: the plain "Add the ... point" text: ' + pf('Beta Hall').map((f) => f.rec));
+    const drvText = (f) => /no variable frequency drive on (its|their) pumps/.test(f.head);
+    ok(pf('Delta Hall').length > 0 && pf('Delta Hall').every(drvText), 'R4. a plant row with two pumps: the heading says the pumps have no drive: ' + pf('Delta Hall').map((f) => f.head));
+    ok(pf('Alpha Hall').length > 0 && pf('Alpha Hall').every(drvText), 'R4. the no-drive plant: the heading says the pumps have no drive: ' + pf('Alpha Hall').map((f) => f.head));
+    ok(pf('Beta Hall').length > 0 && pf('Beta Hall').every((f) => !drvText(f)), 'R4. the plant with a drive status point: no drive in the heading: ' + pf('Beta Hall').map((f) => f.head));
 
     // ---- extra: the fan drive wording follows the price ----
     const szf = out.szSpeed.findings;
-    ok(szf.length > 0 && szf.every((f) => !/variable frequency drive/i.test(f.rec + ' ' + f.impact)) && szf.filter((f) => f.kind === 'seq').every((f) => /^Add the .* point/.test(f.rec)), 'EXTRA. a single-zone group that reads its fan speed (sfSpeed) but has no speed command: no finding says "variable frequency drive", sequence findings say "Add the ... point": ' + szf.map((f) => f.key + ': ' + f.rec));
+    ok(szf.length > 0 && szf.every((f) => !/variable frequency drive/i.test(f.head + ' ' + f.impact)), 'EXTRA. a single-zone group that reads its fan speed (sfSpeed) but has no speed command: no finding says "variable frequency drive": ' + szf.map((f) => f.key + ': ' + f.head));
     ok(out.szSpeed.tiers.compliance.filter((r) => r.pk === 'sfSpeedCmd').every((r) => r.total === 0), 'EXTRA. and the speed command is $0 in the price: ' + out.szSpeed.tiers.compliance.filter((r) => r.pk === 'sfSpeedCmd').map((r) => r.total));
 
     ok(errs.length === 0, 'no page errors' + (errs.length ? ': ' + errs[0] : ''));
