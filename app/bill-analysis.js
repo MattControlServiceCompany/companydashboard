@@ -22353,14 +22353,68 @@ function _autoCreateMeterAndSaveBill(extracted, projId, billRow, preferBldgId, n
   return { bldg: targetBldg, meter: newMeter };
 }
 
-async function _saveSinglePDFBill(extracted, projId) {
-  if (!extracted || !extracted.UtilityCompany) return false;
+// Saving one extracted bill is idempotent (2026-11-17, "same billing period 27 times"):
+//  - The first write stamps extracted._savedPdfBillId. Every later save of the SAME extracted bill
+//    replaces that en_pdf_bills record; it never appends another one.
+//  - A save that is still running for the bill is joined, not started twice (fast double click).
+//  - A record with the same content (account, period start/end, total, kWh) that is still
+//    unassigned is reused instead of a new one being added.
+//  - If a step AFTER the record write throws before the bill reached a meter, the record is made
+//    visible in Saved Bills (it would otherwise hide behind its projId) and the error goes on to the caller.
+const _saveInFlightByBill = new WeakMap();
+const _billLandedOnMeter = new WeakSet();
+function _savedBillContentKey(b) {
+  const t = (v) => (v === undefined || v === null ? '' : String(v).trim());
+  return [t(b.AccountNumber), t(b.BillingPeriodStart), t(b.BillingPeriodEnd), t(b.TotalCurrentCharges), t(b.kWhConsumed)];
+}
+function _findIdenticalUnassignedSavedBill(list, extracted) {
+  const k = _savedBillContentKey(extracted);
+  if (!k[0] || !k[1] || !k[2]) return null; // no identity: never guess
+  return list.find((b) => b && !b.projId && _savedBillContentKey(b).every((v, i) => v === k[i])) || null;
+}
+async function _exposeSavedBillRecord(billId) {
+  const _list = (await sget('en_pdf_bills', [])) || [];
+  const _rec = _list.find((b) => b && b.id === billId);
+  if (_rec && _rec.projId) {
+    _rec._heldFromProjId = _rec.projId;
+    _rec.projId = null;
+    await sset('en_pdf_bills', _list);
+  }
+}
+function _saveSinglePDFBill(extracted, projId) {
+  if (!extracted || !extracted.UtilityCompany) return Promise.resolve(false);
+  const running = _saveInFlightByBill.get(extracted);
+  if (running) return running;
+  const job = (async () => {
+    try {
+      return await _saveSinglePDFBillCore(extracted, projId);
+    } catch (e) {
+      if (extracted._savedPdfBillId && !_billLandedOnMeter.has(extracted)) {
+        try {
+          await _exposeSavedBillRecord(extracted._savedPdfBillId);
+        } catch (e2) {
+          console.warn('[_saveSinglePDFBill] could not expose the saved record after a failed save:', e2);
+        }
+      }
+      throw e;
+    }
+  })();
+  _saveInFlightByBill.set(extracted, job);
+  const done = () => _saveInFlightByBill.delete(extracted);
+  job.then(done, done);
+  return job;
+}
+async function _saveSinglePDFBillCore(extracted, projId) {
   const proj = projId ? projects.find((p) => p.id === projId) : null;
-  // A retry after a held attempt must replace, never duplicate, its Saved
-  // Bills record (fix/save-all-persist-bills, review finding 3).
+  // A retry of the same extracted bill must replace, never duplicate, its Saved
+  // Bills record (fix/save-all-persist-bills review finding 3; stamp
+  // _savedPdfBillId added 2026-11-17 so a repeat Save of a bill that already
+  // landed on a meter is covered too). _pdfBillsRecordId is the "held" stamp.
+  const _allPdfBills = (await sget('en_pdf_bills', [])) || [];
+  const _identical = _findIdenticalUnassignedSavedBill(_allPdfBills, extracted);
+  const billId = extracted._savedPdfBillId || (_identical && _identical.id) || 'pb' + Date.now();
   const _priorHeldId = extracted._pdfBillsRecordId || null;
-  const pdfBills = ((await sget('en_pdf_bills', [])) || []).filter((b) => !_priorHeldId || !b || b.id !== _priorHeldId);
-  const billId = 'pb' + Date.now();
+  const pdfBills = _allPdfBills.filter((b) => !b || (b.id !== billId && (!_priorHeldId || b.id !== _priorHeldId)));
   let hasPDF = false;
   let pdfKey = null;
   if (extracted._pdfSharedKey) {
@@ -22372,6 +22426,8 @@ async function _saveSinglePDFBill(extracted, projId) {
   } else if (pdfB64) {
     hasPDF = await pdfStore('en_pdf_file_' + billId, pdfB64);
   }
+  // The stamps are bookkeeping of this save, not bill data: keep them out of the record.
+  const { _savedPdfBillId: _stampSaved, _pdfBillsRecordId: _stampHeld, ...extractedFields } = extracted;
   const billRecord = {
     id: billId,
     savedAt: new Date().toISOString(),
@@ -22381,10 +22437,11 @@ async function _saveSinglePDFBill(extracted, projId) {
     pdfKey,
     pdfPageStart: extracted._pageStart || null,
     pdfPageEnd: extracted._pageEnd || null,
-    ...extracted,
+    ...extractedFields,
   };
   pdfBills.push(billRecord);
   await sset('en_pdf_bills', pdfBills);
+  extracted._savedPdfBillId = billId; // from here on a repeat save replaces this record
   function toISO(d) {
     if (!d) return '';
     if (typeof d === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(d)) return d;
@@ -22724,6 +22781,7 @@ async function _saveSinglePDFBill(extracted, projId) {
   if (totalCost > 0 && diff > 0.1 && !isGas && !isPropane) {
     console.warn('Bill validation: components $' + componentSum.toFixed(2) + ' vs total $' + totalCost.toFixed(2));
   }
+  if (_landedOnMeter) _billLandedOnMeter.add(extracted);
   if (_landedOnMeter && !(_landedDest || '').startsWith(_UNMATCHED_PREFIX)) {
     delete extracted._pdfBillsRecordId;
     return _landedDest || true;
@@ -22735,13 +22793,7 @@ async function _saveSinglePDFBill(extracted, projId) {
   // advice about an invisible record.
   extracted._pdfBillsRecordId = billId;
   try {
-    const _list = (await sget('en_pdf_bills', [])) || [];
-    const _rec = _list.find((b) => b && b.id === billId);
-    if (_rec && _rec.projId) {
-      _rec._heldFromProjId = _rec.projId;
-      _rec.projId = null;
-      await sset('en_pdf_bills', _list);
-    }
+    await _exposeSavedBillRecord(billId);
   } catch (e) {
     console.warn('[_saveSinglePDFBill] could not expose held record in Saved Bills:', e);
   }
@@ -22837,6 +22889,9 @@ function savePDFData() {
       };
     }
   }
+  // One Save at a time: the button stays disabled until the save ends (success or failure).
+  if (window._pdfSaveBusy) return;
+  _setPdfSaveButtonsBusy(true);
   _saveSinglePDFBill(extracted, projId).then((ok) => {
     const proj = projId ? projects.find((p) => p.id === projId) : null;
     if (_saveResultNeedsMeter(ok)) {
@@ -22851,5 +22906,11 @@ function savePDFData() {
   }).catch((err) => {
     console.error('Save failed', err);
     showToast('Save failed: ' + (err && err.message ? err.message : err), 'error');
+  }).finally(() => _setPdfSaveButtonsBusy(false));
+}
+function _setPdfSaveButtonsBusy(busy) {
+  window._pdfSaveBusy = busy;
+  document.querySelectorAll('[data-fb="energy.pdf.save-btn"]').forEach((btn) => {
+    btn.disabled = busy;
   });
 }
