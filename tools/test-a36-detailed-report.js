@@ -472,7 +472,7 @@ const ok = (c, m) => {
     const ptText = '';
     ok(!/Alpha Library: Air Handling Unit \(2 units\)/.test(det.text), 'item 4: no per-library equipment-type point tables');
     ok(/\d+\.\d°F heating \/ \d+\.\d°F cooling/.test(lay.spText) && !/°F \/ \d/.test(lay.spText), 'item 5: every temperature pair of Appendix A reads "70.0°F heating / 74.0°F cooling"');
-    ok(/Standard default: occupied 70°F heating \/ 75°F cooling/.test(lay.spText), 'item 5: Appendix A has the standard default reference line');
+    ok(/Industry default: occupied 70°F heating \/ 75°F cooling/.test(lay.spText), 'item 5: Appendix A has the standard default reference line');
     ok(!/Occupied setpoints are the temperatures held|Unoccupied setpoints are the temperatures held|The deadband is the gap|building averages across|no weekend times|did not report any readings|Share Mapped/.test(lay.spText), 'item 5: Appendix A has no definitions, no data caveats and no method notes');
     ok(!/recommend/i.test(lay.spText) && /Control Service Company standard: occupied 70°F heating \/ 74°F cooling; unoccupied 55°F heating \/ 85°F cooling; occupied during each building’s open hours, unoccupied when closed/.test(lay.spText), 'item 5: the standard setpoints and schedule are printed once in a box; no recommendation wording');
     ok(/All 2 zones match the standard defaults/.test(lay.spText), 'item 5: one-line status per building');

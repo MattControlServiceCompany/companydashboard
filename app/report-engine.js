@@ -21548,7 +21548,7 @@ function rptPageASHRAE36SetpointReview(n, d, detailedTitle) {
     { w: 13, th: 'Building', td: tdBase, cell: function (r) { return '<span style="font-weight:600;color:var(--rpt-page-text)">' + _escHtml(_a36DisplayName(r)) + '</span>' + (r.unitNote ? '<div style="margin-top:3px;color:var(--rpt-page-text)">' + _escHtml(r.unitNote) + '</div>' : ''); } },
     { w: _detailedReview ? 15 : 17, th: 'Occupied' + thSub + 'Existing average</span>', td: tdCenter, cell: function (r) { return _pairText(r.avgHeat, r.avgCool, _fmtAvg, r.heatOnly); } },
     { w: _detailedReview ? 15 : 17, th: 'Unoccupied' + thSub + 'Existing average</span>', td: tdCenter, cell: function (r) { return _pairText(r.avgUnoccHeat, r.avgUnoccCool, _fmtAvg, r.heatOnly); } },
-    { w: 17, th: 'Standard<br>Default', td: tdCenter, zoneOnly: true, cell: function (r) { return r.singleZone ? '—' : _refCellFor(r); }, uniformNote: function (h) { var p = h.split('<br>'); return '<strong>Standard default:</strong> ' + p[0].replace(/^Occupied/, 'occupied') + '; ' + p[1].replace(/^Unoccupied/, 'unoccupied'); } },
+    { w: 17, th: 'Industry<br>Default', td: tdCenter, zoneOnly: true, cell: function (r) { return r.singleZone ? '—' : _refCellFor(r); }, uniformNote: function (h) { var p = h.split('<br>'); return '<strong>Industry default:</strong> ' + p[0].replace(/^Occupied/, 'occupied') + '; ' + p[1].replace(/^Unoccupied/, 'unoccupied'); } },
     { w: _detailedReview ? 12 : 10, th: 'Deadband' + thSub + 'Existing average</span>', td: tdCenter, cell: function (r) { return r.heatOnly ? (_detailedReview ? 'No cooling' : '—') : _fmtDeadband(r); } },
     { w: _detailedReview ? 17 : 14, th: 'Existing<br>Schedule' + thSub + (_detailedReview ? 'Mon–Fri' : 'Mon–Fri, Sat &amp; Sun') + '</span>', td: tdCenter, cell: _eschCellFor, uniformNote: function (h) { return h === 'Not part of this review' ? '' : '<strong>Existing schedule for every building:</strong> ' + h.replace(/<br>/g, '; '); }, dropIf: function (h) { return h === 'Not part of this review'; } },
     { w: _detailedReview ? 26 : 25, th: 'Status', td: tdBase, keep: true, cell: function (r) { return _statusLine(r) + _recDifferenceFor(r); } },
@@ -21615,7 +21615,7 @@ function rptPageASHRAE36SetpointReview(n, d, detailedTitle) {
 
   if (_detailedReview) {
     summaryParts = [_shownCount + ' building' + (_shownCount !== 1 ? 's' : '')];
-    if (needsReviewTotal > 0) summaryParts.push(needsReviewTotal + ' need setpoints changed');
+    if (needsReviewTotal > 0) summaryParts.push(needsReviewTotal + (needsReviewTotal === 1 ? ' has' : ' have') + ' zones that differ from the standard');
     if (matchesTotal > 0) summaryParts.push(matchesTotal + ' match the standard defaults');
     if (_singleCount > 0) summaryParts.push(_singleCount + ' ' + (_singleCount === 1 ? 'has' : 'have') + ' single-zone units only');
   }
