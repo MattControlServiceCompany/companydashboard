@@ -2507,6 +2507,11 @@ async function siteResetAllMeterTableSettings() {
    site-ui.js delegates to this array and should NOT maintain its own copy.
 */
 var RELEASE_NOTES = [
+  { v: 'v2026.11.17.332', date: '2026-11-17', title: 'Audit Report: full audit pages, building photos, plain findings, faster',
+    items: [ { type: 'improved', text: 'Audit Report: the cover, summary and building pages describe the full building automation system audit; the ASHRAE 36 scores and tables are in the ASHRAE 36 section only. The cover has no date line.' },
+      { type: 'improved', text: 'Audit Report: each building page shows the library front photo, and each finding has a one-sentence headline.' },
+      { type: 'improved', text: 'Audit Report: System Descriptions state perimeter baseboard heat, and a group figure shows a typical unit.' },
+      { type: 'improved', text: 'Audit Report: the report generates faster; pictures download in parallel and resized pictures are kept.' } ] },
   { v: 'v2026.11.17.331', date: '2026-11-17', title: 'Audit Report System Descriptions describe the control sequences',
     items: [ { type: 'improved', text: 'Detailed Audit Report: the System Descriptions describe each system and its control sequences from the control programs in plain paragraphs, with no fixed setpoint values or schedule times.' } ] },
   { v: 'v2026.11.17.330', date: '2026-11-17', title: 'Audit Report pictures come from the site store',
