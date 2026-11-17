@@ -28791,6 +28791,20 @@ function _a36DetControlSentences(g, f, params, proof) {
       if (dry) method(false, false, true, dry);
     }
   }
+  // The setpoint of a sequence in its sentence: "above the lockout setpoint" reads "above 75°F" when every enabled unit has a recorded value
+  // (one value, or "65°F to 75°F, depending on the unit"); otherwise the sentence keeps the setpoint name.
+  function withSetpointValue(text, ids) {
+    ids.forEach(function (id) {
+      var c = seqIds[id];
+      if (!c || !c.values || c.values.length < c.on) return;
+      var vals = c.values.slice().sort(function (a, b) { return a - b; });
+      var lo = vals[0];
+      var hi = vals[vals.length - 1];
+      var v = lo === hi ? lo + '°F' : lo + '°F to ' + hi + '°F, depending on the unit';
+      text = text.replace(/the (lockout|freeze protection) setpoint/, v);
+    });
+    return text;
+  }
   function seqAdd(fn, skip) {
     skip = skip || {};
     var order = Object.keys(A36_DET_SEQ);
@@ -28812,7 +28826,7 @@ function _a36DetControlSentences(g, f, params, proof) {
       }
       if (mergedSkip[id]) return;
       if (mergedFirst[id]) {
-        var mt = mergedFirst[id].m.own && ownAll ? mergedFirst[id].m.own : mergedFirst[id].m.text;
+        var mt = withSetpointValue(mergedFirst[id].m.own && ownAll ? mergedFirst[id].m.own : mergedFirst[id].m.text, mergedFirst[id].m.ids);
         if (mergedFirst[id].n < total) mt = 'On ' + mergedFirst[id].n + ' of the ' + total + ' ' + seqNoun + 's, ' + mt.charAt(0).toLowerCase() + mt.slice(1);
         add(mt, fn);
         return;
@@ -28827,6 +28841,7 @@ function _a36DetControlSentences(g, f, params, proof) {
           if (state === 'on' && v.all && total > 1 && n === total) text = v.all;
           if (state === 'on' && v.dual && /dual-duct/i.test(g.label)) text = v.dual;
           if (state === 'on' && v.own && ownAll) text = v.own;
+          if (state === 'on') text = withSetpointValue(text, [id]);
           if (n < total) text = 'On ' + n + ' of the ' + total + ' ' + seqNoun + 's, ' + text.charAt(0).toLowerCase() + text.slice(1);
           add(text, fn);
         });
@@ -29365,7 +29380,11 @@ function _a36DetDescriptionParas(g, ctx, figureNum) {
   g.units.forEach(function (eq) {
     _a36DetSequenceIds(eq && eq.name, ctx.libName, ctx.projId).forEach(function (r) {
       var c = (seq[r.id] = seq[r.id] || { on: 0, off: 0 });
-      if (r.status === 'enabled') c.on++;
+      if (r.status === 'enabled') {
+        c.on++;
+        // The setpoint of the sequence as read from its WebCTRL screen (value, degrees F), when recorded (Matt 2026-11-17: print the lockout value).
+        if (r.value !== undefined && r.value !== null && r.value !== '' && isFinite(Number(r.value))) (c.values = c.values || []).push(Number(r.value));
+      }
       else if (r.status === 'available_not_enabled') c.off++;
     });
   });
