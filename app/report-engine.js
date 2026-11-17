@@ -18798,7 +18798,7 @@ function rptPageASHRAE36Executive(n, d, detailedTitles, view) {
         head: 'Zone setpoints.',
         text:
           rptCount(_spNeed) + (_spNeed <= p.totalBuildings ? ' of ' + rptCount(p.totalBuildings) : '') + ' ' + (_spNeed === 1 && p.totalBuildings !== 1 ? _nounOne : _noun) +
-          (_spNeed === 1 ? ' has' : ' have') + ' zone setpoints that differ from the recommended setpoints in Appendix A.',
+          (_spNeed === 1 ? ' has' : ' have') + ' zone setpoints that differ from the Control Service Company standard setpoints in Appendix A.',
       });
     }
     _findings = _findings.slice(0, 4);
@@ -21465,7 +21465,7 @@ function rptPageASHRAE36SetpointReview(n, d, detailedTitle) {
     if (row.singleZone) return '<span style="font-weight:700;color:var(--rpt-page-text)">' + (_detailedReview ? 'Single-zone unit' : 'Single-zone unit: current setpoints shown, no zone review') + '</span>';
     var zones = row.totalZones + (row.totalZones !== 1 ? ' zones' : ' zone');
     if (row.bStatus === 'NEEDS_REVIEW') {
-      return '<span style="font-weight:700;color:var(--rpt-orange)">Change the setpoints of ' + row.deviatorCount + ' of ' + zones + ' to the recommended setpoints</span>';
+      return '<span style="font-weight:700;color:var(--rpt-orange)">' + row.deviatorCount + ' of ' + zones + ' differ from the standard setpoints</span>';
     }
     return '<span style="font-weight:700;color:var(--rpt-green)">All ' + zones + ' match the standard defaults</span>';
   }
@@ -21505,7 +21505,7 @@ function rptPageASHRAE36SetpointReview(n, d, detailedTitle) {
     if (fields.unoccupied !== _recBox.unoccupied) parts.push('unoccupied ' + fields.unoccupied);
     if (fields.schedule !== _recBox.schedule) parts.push(fields.schedule);
     return parts.length
-      ? '<div style="margin-top:3px;color:var(--rpt-page-text)">Recommended for this building: ' + parts.join('; ') + '</div>'
+      ? '<div style="margin-top:3px;color:var(--rpt-page-text)">Standard for this building: ' + parts.join('; ') + '</div>'
       : '';
   }
   var thStyle =
@@ -21634,7 +21634,7 @@ function rptPageASHRAE36SetpointReview(n, d, detailedTitle) {
       '<div class="rpt-a36-callout" style="margin-top:10px">' +
       '<div style="font-size:10px;font-weight:700;color:var(--rpt-blue);margin-bottom:3px">Carbon Dioxide Setpoints</div>' +
       '<div style="font-size:10px;color:var(--rpt-page-text);line-height:1.6">' +
-      'No carbon dioxide setpoints are programmed for occupancy-based ventilation. Control Service Company recommends adding them per the industry standard.' +
+      'No carbon dioxide setpoints are programmed for occupancy-based ventilation.' +
       '</div>' +
       '</div>';
   }
@@ -21685,13 +21685,12 @@ function rptPageASHRAE36SetpointReview(n, d, detailedTitle) {
 
   var preamble =
     '<div style="font-size:11px;color:var(--rpt-page-text);line-height:1.6;margin-bottom:10px">' +
-    'The industry standard defines default occupied and unoccupied temperature setpoints for three zone types. Control Service Company’s recommended setpoints and schedule are its company standard. ' +
+    'The table compares the zone setpoints programmed in each building with the Control Service Company standard setpoints and schedule for three zone types. ' +
     (_detailedReview
-      ? 'Buildings with a change listed in the Status column have zones that operate outside the standard default setpoints; Control Service Company recommends resetting them to the recommended setpoints and schedule.'
+      ? 'The Status column gives the number of zones whose setpoints differ from the standard.'
       : 'Occupied setpoints are the temperatures held while the building is in use. Unoccupied setpoints are the temperatures held while it is empty. The deadband is the gap between the heating and cooling setpoints. ' +
-        'Buildings with a change listed in the Status column have zones that operate outside the standard default setpoints. Control Service Company recommends resetting them to the recommended setpoints and schedule. ' +
+        'The Status column gives the number of zones whose setpoints differ from the standard. ' +
         'Existing values shown are building averages across all zone equipment in the building automation system.') +
-    (_a36SetpointReprogramPlan(d, buildingRows).zones > 0 ? ' The cost of this work is in the Service Proposal.' : '') +
     '</div>';
 
   // ── Pagination (Issue 6 + Fix B correction 2026-06-18) ───────────────────
@@ -21737,7 +21736,7 @@ function rptPageASHRAE36SetpointReview(n, d, detailedTitle) {
   // The box: the ASHRAE 36 default and the existing schedule when they are the same for every building, and the recommended setpoints and schedule.
   var _recLines = _zoneRows.length
     ? [
-        '<strong>Recommended by Control Service Company:</strong> occupied ' + _recBox.occupied + '; unoccupied ' + _recBox.unoccupied + '; ' + _recBox.schedule,
+        '<strong>Control Service Company standard:</strong> occupied ' + _recBox.occupied + '; unoccupied ' + _recBox.unoccupied + '; ' + _recBox.schedule,
       ]
     : []; // only single-zone rows: no recommendation
   // Item 16: a library whose setpoint averages cover fewer zones than it has says so, and names the zones left out.
@@ -27668,7 +27667,7 @@ function _a36DetHeadline(f, g, units, kind, o) {
       var dev = noun + (/ sensor$/i.test(noun) ? '' : ' sensor');
       sentence = !g ? 'The building lacks ' + units + ' ' + dev + (units === 1 ? '' : 's') + '.' : subject + ' ' + (o.dcvNarrow ? (plural ? 'have none' : 'has none') : have + ' no ' + dev) + '.';
     } else {
-      sentence = (!g ? 'The building lacks the ' : subject + ' ' + lack + ' the ') + noun + ' point' + (!g ? ' (' + units + ' needed).' : '.');
+      sentence = (!g ? 'The building lacks the ' : subject + ' ' + lack + ' the ') + noun + ' point.';
     }
   }
   return _a36DetUpperFirst(sentence);
@@ -27817,7 +27816,7 @@ function _a36DetModel(d, rowsById, picMap, loaded) {
         // Missing: the points the sequence needs, with the section, on the units that lack them (a sequence with no missing point names the sequence).
         f.observed =
           (f.missing.length ? _a36DetJoin(f.missingText).replace(/^./, function (c) { return c.toUpperCase(); }) + ' point' + plural : seqNoun) +
-          secPart + (g ? ' on ' + frac : ' at building level (' + units + ' needed)') + '.';
+          secPart + (g ? ' on ' + frac : ' at building level') + '.';
         f.issueShort = seqNoun + ' not fully in place';
         // A single-zone unit with no fan speed point has a constant-speed fan: the missing point is a variable speed drive.
         var fanKeys = fanDrive ? (extra.missingKeys || []).filter(_a36DetIsFanSpeedKey) : [];
@@ -27854,7 +27853,7 @@ function _a36DetModel(d, rowsById, picMap, loaded) {
         if (g && f.affected.length === units && units > 1 && units < f.total && units <= 6) names = ' (' + f.affected.map(_a36DetEquipNameIn(_a36DisplayName(b))).join(', ') + ')';
         else if (g && f.affected.length === 1 && units === 1 && f.total > 1) names = ' (' + _a36DetEquipName(f.affected[0], _a36DisplayName(b)) + ')';
         var pSec = '';
-        f.observed = (sensor ? label : label + ' point') + pSec + (g ? ' on ' + frac + names + '.' : ' at building level (' + units + ' needed).');
+        f.observed = (sensor ? label : label + ' point') + pSec + (g ? ' on ' + frac + names + '.' : ' at building level.');
         f.issueShort = label + ' point missing';
         f.recommendation = sensor ? 'Install the ' + label + (/ sensor$/i.test(label) ? '' : ' sensor') + (g ? ' on ' + frac : ' (quantity ' + units + ')') + '.' : 'Add the ' + label + ' point' + (g ? ' on ' + frac : ' (quantity ' + units + ')') + '.';
         // Item 6: a fan speed point on a constant-speed fan means a variable speed drive. A single-zone unit is priced as a drive.
@@ -28648,7 +28647,6 @@ var A36_DET_SEQ_MERGE = [
 
 // The introduction of the economizer, printed before the first economizer sentence of a unit that has no points-based economizer sentence.
 // The explanation of enthalpy, printed once in a chapter, in the first sentence that uses the word.
-var A36_DET_ENTHALPY_DEF = ' (enthalpy is the total heat content of the air including moisture)';
 
 // How many sentences a paragraph text has (a full stop, question mark or exclamation mark followed by a space, a bracket or the end).
 function _a36DetSentenceCount(text) {
@@ -28781,10 +28779,6 @@ function _a36DetControlSentences(g, f, params, proof) {
       else if (e && t) text = 'The economizer uses outdoor air for cooling only below outdoor air temperature and enthalpy limits';
       else if (e) text = 'The economizer uses outdoor air for cooling only below an outdoor air enthalpy limit';
       else text = 'The economizer uses outdoor air for cooling only below an outdoor air temperature limit';
-      if ((d || e) && !vfd.enth) {
-        vfd.enth = true;
-        text += A36_DET_ENTHALPY_DEF;
-      }
       text += '.';
       if (n < total) text = 'On ' + n + ' of the ' + total + ' ' + seqNoun + 's, ' + text.charAt(0).toLowerCase() + text.slice(1);
       add(text, fn);
@@ -29082,7 +29076,6 @@ function _a36DetControlSentences(g, f, params, proof) {
       if (perim === tcfg.length) add(who + ' also controls perimeter baseboard heat.', 'config');
       else if (perim > 0) add('On ' + _a36DetCountWord(perim) + ' of the ' + _a36DetCountWord(tcfg.length) + ' terminals, the building automation system also controls perimeter baseboard heat.', 'config');
     }
-    if (has('termFanEnable')) add(lead(['termFanEnable'], 'terminal', BAS + 'enables the terminal fan.'), 'airflow');
     if (flowKey && dampKey) {
       var holdText = flowKey === 'primaryFlow' ? 'its primary airflow setpoint' : 'its airflow setpoint';
       add(some([flowKey, dampKey], 'terminal') ? lead([flowKey, dampKey], 'terminal', 'The damper modulates to hold ' + holdText + '.') : damperWho + ' modulates to hold ' + holdText + '.', 'airflow');
@@ -29617,7 +29610,7 @@ function _a36DetSummaryIssueHtml(f) {
   var lines = ['<strong>' + _escHtml(f.issueShort) + '</strong>'];
   if (f.kind !== 'deficiency') {
     var affects;
-    if (!f.total) affects = 'the building (' + f.units + ' needed)';
+    if (!f.total) affects = 'the building';
     else {
       // Up to 4 affected units are named ("Affects AHU-1."; "Affects 2 of 3 units (RTU-1, RTU-2)."), never "the unit" (Matt, 2026-11-11).
       var affectedNames = f.affected.length && f.affected.length <= 4 ? f.affected.map(_a36DetEquipNameIn(f.lib)).join(', ') : '';

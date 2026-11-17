@@ -66,7 +66,7 @@ ok(lits.every((s) => /variable-speed savings/.test(s)), '3. no report string say
   ok(sandbox.f(1, 1, 'plant') === 'the plant' && sandbox.f(2, 2, 'plant') === 'both plants', '9. a plant is a plant, not a unit');
   ok(/f\.fracNoun = g && \(g\.category === 'hwp' \|\| g\.category === 'chwp'\) \? 'plant'/.test(RE) && /_a36DetFraction\(f\.units, f\.total, f\.fracNoun, f\.fracTail\)/.test(RE), '2/9. the finding and the Findings Summary read the same noun and base text');
   // 3: the setpoint wording
-  ok(/zone setpoints that differ from the recommended setpoints in Appendix A\./.test(RE) && !/ASHRAE 36 recommended values/.test(RE), '3. Key Findings: setpoints "differ from the recommended setpoints in Appendix A" (they are the company setpoints, not ASHRAE 36 values)');
+  ok(/zone setpoints that differ from the Control Service Company standard setpoints in Appendix A\./.test(RE) && !/ASHRAE 36 recommended values/.test(RE), '3. Key Findings: setpoints "differ from the Control Service Company standard setpoints in Appendix A" (they are the company setpoints, not ASHRAE 36 values)');
   // 4: every Key Findings phrase says only that the full sequence is missing
   ok(/ahu_economizer: 'economizer',/.test(RE) && /'Air handlers lack these control sequences: '/.test(RE) && !/do not use outdoor air for free cooling/.test(RE), '4. the summary names the missing sequences and makes no claim about what a unit does');
   ok(!/do not use outdoor air for free cooling|hold one supply air temperature at all times|do not control their minimum outdoor air/.test(RE), '4. the three overclaiming phrases are gone');

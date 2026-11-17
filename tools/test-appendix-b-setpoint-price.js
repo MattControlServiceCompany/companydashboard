@@ -1,6 +1,6 @@
 // tools/test-appendix-b-setpoint-price.js - the Service Proposal prices the Appendix A setpoint and schedule reprogramming (2026-11-15).
 // SYNTHETIC data only, headless bundled Chromium.
-//   1. The line quantity is the Appendix A zone count: the sum of N over the buildings that print "Change the setpoints of N of M zones".
+//   1. The line quantity is the Appendix A zone count: the sum of N over the buildings that print "N of M zones differ from the standard setpoints".
 //   2. Hours = 0.15 x zones + 2 x buildings with N > 0; price = hours x the project hourly rate.
 //   3. The line is in the Programming part (phase 2) of Compliance, Recommended and Full Scope, and in each option total. It is not in the optional CO2 section.
 //   4. A project with N = 0 (and a building of single-zone units only) has no line and the totals do not change.
@@ -64,7 +64,7 @@ const ok = (c, m) => {
         const pages = rptPageASHRAE36SetpointReview(1, d);
         const html = pages.join(' ');
         const printed = [];
-        const re = /Change the setpoints of (\d+) of (\d+) zones?/g;
+        const re = /(\d+) of (\d+) zones? differ from the standard setpoints/g;
         let m;
         while ((m = re.exec(html))) printed.push([Number(m[1]), Number(m[2])]);
         const est = _pricingGetEstimate(pid);
@@ -132,7 +132,7 @@ const ok = (c, m) => {
     const printedSum = mx.printed.reduce((a, p) => a + p[0], 0);
     ok(mx.printed.length === 2 && printedSum === 5, 'mixed. the Audit Report prints 2 buildings to reprogram, 5 zones in all: ' + JSON.stringify(mx.printed));
     ok(mx.plan.zones === 5 && mx.plan.buildings === 2, 'mixed. the plan (_a36SetpointReprogramPlan): 5 zones, 2 buildings: ' + JSON.stringify(mx.plan));
-    ok(mx.intro, 'mixed. the Appendix A intro says the cost of this work is in the Service Proposal');
+    ok(!mx.intro, 'mixed. the Appendix A intro has no Service Proposal cost sentence (facts only, Matt 2026-11-17)');
     const hours = 0.15 * 5 + 2 * 2;
     const price = Math.round(hours * mx.rate * 100) / 100;
     TIERS.forEach((t) => {
@@ -154,7 +154,7 @@ const ok = (c, m) => {
     // ---- the project with nothing to reprogram ----
     const nn = out.none;
     ok(nn.plan.zones === 0 && nn.plan.buildings === 0, 'none. the plan has 0 zones: ' + JSON.stringify(nn.plan));
-    ok(nn.printed.length === 0, 'none. the Audit Report prints no "Change the setpoints" line');
+    ok(nn.printed.length === 0, 'none. the Audit Report prints no "differ from the standard setpoints" line');
     ok(!nn.intro, 'none. the Appendix A intro does not mention the Service Proposal');
     TIERS.forEach((t) => ok(nn.tiers[t].lines.length === 0 && near(nn.tiers[t].grand, nn.tiers[t].grandWithout), 'none. ' + t + ': no setpoint line, total unchanged'));
     ok(nn.rows.some((r) => r.single), 'none. a building of single-zone units is in Appendix A and adds nothing');
