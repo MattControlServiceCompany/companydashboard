@@ -22702,7 +22702,7 @@ async function _saveSinglePDFBillCore(extracted, projId) {
         const commodity = extracted.Commodity || (isGas ? 'Gas' : isPropane ? 'Propane' : 'Electric');
         const commLower = commodity.toLowerCase();
         const typeMeters = [];
-        (udProj.buildings || []).forEach((b) =>
+        (getUDBldgs(proj.id) || []).forEach((b) =>
           (b.meters || []).forEach((m) => {
             const mc = (m.commodity || '').toLowerCase();
             if (

@@ -34,7 +34,7 @@ const KEYWORDS = new Set(
 // can land on): _saveSinglePDFBillCore "Second try" reads `udProj`, which is declared nowhere (since 7e3d8e17).
 // It throws inside the meter-assignment try/catch, so a bill with no account match is held in Saved Bills with a
 // toast. Remove the entry when the code is fixed; the check fails if the entry is no longer needed.
-const KNOWN_UNDECLARED = { _saveSinglePDFBillCore: ['udProj'] };
+const KNOWN_UNDECLARED = {}; // udProj fixed 2026-11-17 (getUDBldgs)
 const PRE_REGEX = new Set(['return', 'typeof', 'case', 'in', 'of', 'delete', 'void', 'throw', 'new', 'else', 'do']);
 
 // ---- tokenizer ----------------------------------------------------------
