@@ -28904,7 +28904,7 @@ function _a36DetControlSentences(g, f, params, proof) {
     if (tcfg.length) {
       _a36DetFactSentences(
         tcfg.map(function (c) {
-          return c.electricReheat ? 'has electric reheat' : c.heating === 'airOnly' ? 'has no reheat device, so its heat comes from the hot deck air' : '';
+          return c.electricReheat ? 'has electric reheat' : c.heating === 'airOnly' ? 'has no reheat coil and gets its heat from the hot deck air' : '';
         }),
         { one: 'The terminal', each: 'Each terminal' },
         'terminal',
