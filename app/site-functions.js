@@ -2507,6 +2507,11 @@ async function siteResetAllMeterTableSettings() {
    site-ui.js delegates to this array and should NOT maintain its own copy.
 */
 var RELEASE_NOTES = [
+  { v: 'v2026.11.17.326', date: '2026-11-17', title: 'PDF/OCR one-bill Save, report dialog memory, cover date',
+    items: [ { type: 'fix', text: 'PDF/OCR: Save works again for a file with one billing period. If a save fails, a message now shows.' },
+      { type: 'fix', text: 'PDF/OCR: the running total has no line under it. A green check shows when the charges match the bill total.' },
+      { type: 'fix', text: 'Audit Report and Service Proposal dialogs keep each choice as soon as you make it, also when you close without Generate.' },
+      { type: 'fix', text: 'Audit Report cover: "Report date" replaces "Data reviewed", which showed the report date, not the data date.' } ] },
   { v: 'v2026.11.16.325', date: '2026-11-16', title: 'Report building targets from one rule',
     items: [ { type: 'fix', text: 'The Financial page of the savings report takes each building target from the same rule as the rest of the report. The printed figures do not change.' } ] },
   { v: 'v2026.11.16.324', date: '2026-11-16', title: 'Building status per building, Set Points schedules, Site EUI estimate',
