@@ -2507,6 +2507,10 @@ async function siteResetAllMeterTableSettings() {
    site-ui.js delegates to this array and should NOT maintain its own copy.
 */
 var RELEASE_NOTES = [
+  { v: 'v2026.11.17.327', date: '2026-11-17', title: 'Audit Report: a full building automation system audit',
+    items: [ { type: 'fix', text: 'Audit Report: the cover and Executive Summary describe an audit of the whole building automation system. ASHRAE 36 is one reference.' },
+      { type: 'fix', text: 'Detailed Audit Report: the Recommendations paragraph, which repeated the page before it, is removed.' },
+      { type: 'fix', text: 'Audit Report per-building tables: the Units numbers are centered.' } ] },
   { v: 'v2026.11.17.326', date: '2026-11-17', title: 'PDF/OCR one-bill Save, report dialog memory, cover date',
     items: [ { type: 'fix', text: 'PDF/OCR: Save works again for a file with one billing period. If a save fails, a message now shows.' },
       { type: 'fix', text: 'PDF/OCR: the running total has no line under it. A green check shows when the charges match the bill total.' },
