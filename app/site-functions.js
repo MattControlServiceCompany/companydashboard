@@ -2507,6 +2507,9 @@ async function siteResetAllMeterTableSettings() {
    site-ui.js delegates to this array and should NOT maintain its own copy.
 */
 var RELEASE_NOTES = [
+  { v: 'v2026.11.17.337', date: '2026-11-17', title: 'Audit Report: setpoint review states facts only',
+    items: [ { type: 'fixed', text: 'Audit Report: the setpoint review in Appendix A compares the zone setpoints with the Control Service Company standard and gives the number of zones that differ; it no longer recommends changes or refers to the Service Proposal.' },
+      { type: 'improved', text: 'Audit Report: System Descriptions no longer define enthalpy or say that the terminal fan is enabled; findings no longer print "(N needed)".' } ] },
   { v: 'v2026.11.17.336', date: '2026-11-17', title: 'Utility bills: one Save saves one bill',
     items: [ { type: 'fixed', text: 'Utility bills: saving one extracted bill again replaces its record; it never adds another copy. The Save button is disabled while a save runs.' },
       { type: 'fixed', text: 'Utility bills: a bill with no account match now lands on the only meter of its type in the project, or a new meter is created, instead of failing.' } ] },
