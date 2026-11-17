@@ -74,8 +74,8 @@ ok(lits.every((s) => /variable-speed savings/.test(s)), '3. no report string say
   ok(/'‑': '-'/.test(fs.readFileSync(path.join(ROOT, 'app', 'report-pdf.js'), 'utf8')), '7. PDF text layer: non-breaking hyphen reads as a plain hyphen');
   // 5: one cell text for a category with no device to install
   ok(!/rawSensorsSum/.test(RE) && /\? 'None needed'\s*:\s*sensorsBreakdown/.test(RE), '5. a category with no device to install reads "None needed" in every row');
-  // 1: a point that is only a controller point reads "programming only, no device to install"
-  ok(/pointIsControllerOnly/.test(RE) && /\(programming only, no device to install\)/.test(RE) && /_a36DetIsFanSpeedKey\(k\)\) return !fanDrive/.test(RE) && /k === 'hwPumpSpeed'\) return !pumpDrive/.test(RE), '1. the finding says "programming only, no device to install" for the points the building table does not list (same rule as the price: _pricingDriveIsPriced, PRICE_POINT_MAP ioOnly)');
+  // 1: the findings state facts only (Matt 2026-11-17): no Solution line, so no install/program advice
+  ok(!/part\('Solution'/.test(RE) && !/pointIsControllerOnly/.test(RE) && !/programming only, no device to install/.test(RE), '1. the findings print no Solution line');
   // 6: a sentence that holds for some terminals leads with the count
   ok(/function some\(keys, noun\)/.test(RE) && /On ' \+ n \+ ' of the ' \+ total/.test(RE) && !/function part\(keys, noun\)/.test(RE), '6. a sentence about some of the units starts "On 1 of the 35 terminals, ..."');
   ok(/'The damper modulates to hold ' \+ holdText/.test(RE), '6. the partial damper sentence reads "the damper modulates", never "the damper of each terminal"');

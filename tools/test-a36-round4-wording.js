@@ -49,7 +49,7 @@ const pl = sb._pricingPointLabel('primaryFlow');
 check(!/Controller|\(Flow\)/.test(dl + pl) && /Airflow Sensor/.test(dl) && /Airflow Sensor/.test(pl), 'A3. airflow point labels are plain: "' + dl + '" / "' + pl + '"');
 
 // A3b: a label that ends in "Sensor" does not print "sensor sensor"
-check(RE.includes("(/ sensor$/i.test(label) ? '' : ' sensor')"), 'A3. "Install the X Sensor" has no doubled word');
+check(RE.includes("noun + (/ sensor$/i.test(noun) ? '' : ' sensor')"), 'A3. the heading "has no X sensor" has no doubled word');
 
 // A4
 const f = { kind: 'seq', issueShort: 'Reheat Valve Control sequence not fully in place', total: 35, units: 1, affected: ['Electrical | FPB-101'], missing: ['x'], missingText: ['Reheat Valve'], section: '5.6.5' };
