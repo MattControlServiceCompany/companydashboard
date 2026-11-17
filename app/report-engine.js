@@ -26953,6 +26953,12 @@ function _a36DetCropPhoto(file) {
     img.src = objUrl;
   });
 }
+// The libraries (display names) with no front photo in files. One rule: _a36DetLibraryPhotoFile.
+function _a36DetMissingLibraryPhotos(files, libraryNames) {
+  return (libraryNames || []).filter(function (name) {
+    return !_a36DetLibraryPhotoFile(files, name, libraryNames);
+  });
+}
 // Resolves { libraryDisplayName: {url,w,h} } for each library that has a front photo in the folder.
 function _a36DetLoadLibraryPhotos(files, libraryNames) {
   var out = {};
@@ -26975,6 +26981,18 @@ function _a36DetLoadLibraryPhotos(files, libraryNames) {
     }
     return out;
   });
+}
+// One warning toast when libraries of the report have no front photo (the report is still made).
+function _a36DetWarnMissingLibraryPhotos(files, libraryNames) {
+  var missing = _a36DetMissingLibraryPhotos(files, libraryNames);
+  if (!missing.length || typeof showToast !== 'function') return;
+  var shown = missing.slice(0, 3).join(', ');
+  if (missing.length > 3) shown += ' and ' + (missing.length - 3) + ' more';
+  showToast(
+    'No front photo for ' + missing.length + (missing.length === 1 ? ' library: ' : ' libraries: ') + shown + '. Click Change folder and choose the picture folder again.',
+    'warning',
+    12000
+  );
 }
 
 // ── Flow layout: tokens fill pages by measured height ──
@@ -29544,8 +29562,10 @@ function _a36PictureStatus() {
   });
   var total = Object.keys(listed).length;
   if (useSaved) {
+    var libNames = scopeTreeChecked(document.getElementById('a36Scope'), 'bldg').map(_a36DisplayName);
+    var frontCount = libNames.length - _a36DetMissingLibraryPhotos(remembered.saved, libNames).length;
     st.textContent =
-      total + (total === 1 ? ' picture' : ' pictures') + ' in the picture list. The report uses the ' + remembered.saved.length + ' saved pictures. "Change folder" picks again.';
+      total + (total === 1 ? ' picture' : ' pictures') + ' in the picture list. The report uses the ' + remembered.saved.length + ' saved pictures (' + frontCount + ' of ' + libNames.length + ' library front photos). "Change folder" picks again.';
     return;
   }
   if (!files.length) {
@@ -29720,6 +29740,7 @@ function generateASHRAE36Preview() {
               return _a36DetLoadLibraryPhotos(pictureFiles, libraryNames);
             })
             .then(function (photos) {
+              _a36DetWarnMissingLibraryPhotos(pictureFiles, libraryNames);
               // Keep only the files this report needs for the next export (no folder pick then); files read again replace saved files of the same name.
               var keep = pictureFolderSelectToSave(pictureFiles, needed, libraryNames, _a36DetLibraryPhotoFile);
               return pictureFolderRemember(projId, pictureFiles, keep).then(
