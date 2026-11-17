@@ -5755,11 +5755,13 @@
       .ef-running.mismatch {
         font-weight: 700;
       }
-      .ef-running.match {
-        border-bottom: 2px solid var(--green);
+      /* No underline: a line under the last number reads as a sum line with more below (Matt 2026-11-17). */
+      .ef-running.match .ef-run-note {
+        color: var(--green);
+        font-size: 10px;
       }
       .ef-running.mismatch {
-        border-bottom: 2px solid var(--red);
+        color: var(--red);
       }
       .ef-section-run {
         font-size: 10px;

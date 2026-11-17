@@ -20717,7 +20717,9 @@ function renderPDFFields(parsed, warnings) {
       const totalCell = _center(buildCell('TotalCurrentCharges')).replace('class="ef-item', 'class="ef-item ef-total');
       const diffLine = mismatch
         ? `<span>${diff >= 0 ? '+' : '-'}$${_money(Math.abs(diff))}</span>`
-        : '';
+        : match
+          ? '<span class="ef-run-note">✓ matches</span>'
+          : '';
       _row(
         `<div class="ef-charge-row ef-total-row">${_roBox('Total Rate', _rateTxt.join(' · '), 'ef-span2') || '<div class="ef-span2"></div>'}${totalCell || _blank}<div class="ef-running ${match ? 'match' : mismatch ? 'mismatch' : ''}" title="${_RUN_TITLE}"><span>${fmtDollar(runningTotal)}</span>${diffLine}</div></div>`,
       );
@@ -22404,7 +22406,8 @@ async function _saveSinglePDFBill(extracted, projId) {
   // totalCostRaw feeds billRow.totalCost (string, matches PDF); totalCost below
   // stays numeric — the rest of this function (componentSum/diff validation,
   // .toFixed further down) expects a number, same as before this fix.
-  const { kwh: usageQty, totalCost: totalCostRaw } = _extractedToBillRowCosts(extracted);
+  const { kwh: usageQty, kwCost, kwhCost, otherCost, taxCost, totalCost: totalCostRaw } =
+    _extractedToBillRowCosts(extracted);
   const totalCost = parseBillNumber(totalCostRaw);
   const componentSum =
     parseBillNumber(extracted.FacilitiesCharge) +
@@ -22845,5 +22848,8 @@ function savePDFData() {
       showToast(proj ? 'Saved to ' + proj.name + ' ✓' : 'Saved to general database ✓');
       if (document.getElementById('savedBillsModal').classList.contains('open')) renderSavedBills();
     }
+  }).catch((err) => {
+    console.error('Save failed', err);
+    showToast('Save failed: ' + (err && err.message ? err.message : err), 'error');
   });
 }
