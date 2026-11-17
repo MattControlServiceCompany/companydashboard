@@ -106,6 +106,11 @@ const SyncClassification = (() => {
       prefix: true,
       note: 'facility-audit.js: en_audit_<pid> = findings the user added or imported plus the user edits to automatic findings. Set points are never stored here. Also holds .evidence = screenshot evidence per Still-need line (file names, note, who, when). Shared by both users.',
     },
+    {
+      pattern: 'en_auditpics_',
+      prefix: true,
+      note: 'picture-folder.js: en_auditpics_<pid> = the index of the audit pictures kept in the site file store (pdf_blobs through pdf-sync, key pictures/<pid>/<sha256>): { files: { "<file name>": { key, sha256, size, mtime } }, updated }. Written by the audit report dialog (folder pick) and by _context/tools/2026-11-17-sync-audit-pictures.py. Separate from en_audit_<pid> (not matched by that prefix). Shared by both users.',
+    },
     { pattern: 'en_hours_', prefix: true, note: 'hours.js: en_hours_<pid>' },
     {
       pattern: 'en_cal_',

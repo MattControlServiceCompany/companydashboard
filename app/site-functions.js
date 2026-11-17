@@ -2507,6 +2507,8 @@ async function siteResetAllMeterTableSettings() {
    site-ui.js delegates to this array and should NOT maintain its own copy.
 */
 var RELEASE_NOTES = [
+  { v: 'v2026.11.17.330', date: '2026-11-17', title: 'Audit Report pictures come from the site store',
+    items: [ { type: 'improved', text: 'Audit Report: the pictures are kept in the site file store. The report uses them in any browser with no folder pick, and pictures added to the project folder upload automatically.' } ] },
   { v: 'v2026.11.17.329', date: '2026-11-17', title: 'Audit Report picture line says what to do',
     items: [ { type: 'fix', text: 'Audit Report dialog: when library front photos are missing from the saved pictures, the picture line says to click Change folder and select the picture folder.' } ] },
   { v: 'v2026.11.17.328', date: '2026-11-17', title: 'Audit Report: unit graphics and library photo warning',

@@ -53,11 +53,12 @@ function _pictureFolderOpenDb() {
       reject(new Error('IndexedDB is not available in this browser.'));
       return;
     }
-    var request = window.indexedDB.open(PICTURE_FOLDER_DB, 2);
+    var request = window.indexedDB.open(PICTURE_FOLDER_DB, 3);
     request.onupgradeneeded = function () {
       var db = request.result;
       if (!db.objectStoreNames.contains(PICTURE_FOLDER_STORE)) db.createObjectStore(PICTURE_FOLDER_STORE);
       if (!db.objectStoreNames.contains(PICTURE_FOLDER_SAVED_STORE)) db.createObjectStore(PICTURE_FOLDER_SAVED_STORE);
+      if (!db.objectStoreNames.contains('blobs')) db.createObjectStore('blobs'); // the site picture store cache (PICTURE_STORE_CACHE)
     };
     request.onsuccess = function () {
       request.result.onversionchange = function () {
@@ -225,7 +226,8 @@ function pictureFolderHasChoice(projectKey, inputEl) {
   if (inputEl && inputEl.files && inputEl.files.length) return true;
   var state = _pictureFolderStateFor(projectKey);
   if (state.handle && state.permission === 'granted') return true;
-  return !!(state.saved && state.saved.length);
+  if (state.saved && state.saved.length) return true;
+  return pictureStoreHasPictures(projectKey); // the site store holds pictures of this project: no folder needed
 }
 
 /**
@@ -290,6 +292,247 @@ async function pictureFolderRemember(projectKey, files, keepFiles) {
   return keepFiles.length;
 }
 
+/**
+ * SITE PICTURE STORE (Matt, 2026-11-17: "Why would I have to reselect a folder if it's already selected? ... what if I add more
+ * pictures later???"). Firefox cannot read a folder without a pick, so the pictures of a project live in the site's own file store
+ * (the pdf_blobs bucket through netlify/functions/pdf-sync.js, the same store and the same client code as the bill PDFs: core.js
+ * _pdfUploadCommit / _pdfDownload). This module is the ONE owner of that store for pictures.
+ *
+ *  - Blob: one per distinct picture content, key "pictures/<project id>/<sha256>" (immutable, same content = no-op on the server).
+ *  - Index: one kv record per project, key "en_auditpics_<project id>" = { files: { "<file name>": { key, sha256, size, mtime } },
+ *    updated } (synced, app/sync-classification.js). Separate from en_audit_<pid> so it cannot clash with audit edits.
+ *  - Read (report): pictureStoreMerge gives the report one list: a lazy item per indexed file (the blob is downloaded only when
+ *    the report shows that picture; cached in this browser's IndexedDB, store "blobs", by sha256, so a second report downloads
+ *    nothing) plus the folder files the index does not hold. The store wins; a picture whose download fails falls back to the folder
+ *    file of the same name.
+ *  - Write: pictureStoreUpload, started when the user picks a folder (never awaited by Generate). The same job runs on a PC with
+ *    _context/tools/2026-11-17-sync-audit-pictures.py (same key rule, same index) so new pictures reach the report with no pick.
+ * Works only with the backend on (signed in on the production or local netlify dev host); otherwise the folder and the saved set
+ * are used as before.
+ */
+var PICTURE_STORE_INDEX_PREFIX = 'en_auditpics_';
+var PICTURE_STORE_CACHE = 'blobs'; // IndexedDB store (database "ch-picture-folder"): key = sha256, value = Blob
+var PICTURE_STORE_IMAGE_RE = /\.(png|jpe?g)$/i; // the picture types the report reads (_a36DetPhotoRest and the picture list)
+var PICTURE_STORE_PARALLEL = 3;
+var PICTURE_STORE_SAVE_EVERY = 25; // the index is saved after this many new entries, and at the end
+var _pictureStoreUploads = {}; // project id -> { total, done, uploaded, unchanged, failed, running, promise }
+
+function pictureStoreAvailable() {
+  return (
+    typeof _pdfDownload === 'function' &&
+    typeof _pdfUploadCommit === 'function' &&
+    !!window.CH_AUTH &&
+    typeof window.CH_AUTH.backendMode === 'function' &&
+    window.CH_AUTH.backendMode() === 'on'
+  );
+}
+
+// The index of a project: { files, updated }. Empty when the project has none.
+function pictureStoreIndex(projectKey) {
+  var v = typeof sget === 'function' ? sget(PICTURE_STORE_INDEX_PREFIX + projectKey, null) : null;
+  return v && v.files && typeof v.files === 'object' ? v : { files: {}, updated: null };
+}
+
+// The file names the store holds for a project.
+function pictureStoreNames(projectKey) {
+  return Object.keys(pictureStoreIndex(projectKey).files);
+}
+
+function pictureStoreHasPictures(projectKey) {
+  return pictureStoreAvailable() && pictureStoreNames(projectKey).length > 0;
+}
+
+function _pictureStoreMime(name) {
+  return /\.png$/i.test(name) ? 'image/png' : 'image/jpeg';
+}
+
+// A pool of `limit` workers over items; resolves when all are done. worker(item) returns a promise.
+function _pictureStoreRunPool(items, limit, worker) {
+  var next = 0;
+  function lane() {
+    if (next >= items.length) return Promise.resolve();
+    var item = items[next++];
+    return worker(item).then(lane);
+  }
+  var lanes = [];
+  for (var i = 0; i < Math.min(limit, items.length); i++) lanes.push(lane());
+  return Promise.all(lanes);
+}
+
+// One picture of the store as a File: from the IndexedDB cache by sha256, else downloaded (pdf-sync GET) and cached.
+// Resolves null when the store cannot give it (the caller then uses the folder file of the same name).
+async function _pictureStoreOpenEntry(name, entry) {
+  var blob = null;
+  try {
+    blob = await _pictureFolderStoreRun(
+      'readonly',
+      function (store) {
+        return store.get(entry.sha256);
+      },
+      PICTURE_STORE_CACHE
+    );
+  } catch (err) {
+    blob = null; // no cache in this browser (private mode): download each time
+  }
+  if (!blob) {
+    var base64 = await _pdfDownload(entry.key);
+    if (!base64) return null;
+    var bytes = _pdfBase64ToBytes(base64);
+    if ((await _pdfSha256HexFromBytes(bytes)) !== entry.sha256) return null; // not the content the index names
+    blob = new Blob([bytes], { type: _pictureStoreMime(name) });
+    try {
+      await _pictureFolderStoreRun(
+        'readwrite',
+        function (store) {
+          return store.put(blob, entry.sha256);
+        },
+        PICTURE_STORE_CACHE
+      );
+    } catch (err) {
+      /* the cache is an optimisation only */
+    }
+  }
+  return new File([blob], name, { type: _pictureStoreMime(name), lastModified: entry.mtime || 0 });
+}
+
+/**
+ * pictureFileOpen(item) - resolves the real File of a list item: a File is itself; a store item (it has openFile) downloads its
+ * blob now. Resolves null when no file can be read. The report calls this for each picture it reads.
+ */
+function pictureFileOpen(item) {
+  if (!item) return Promise.resolve(null);
+  if (typeof item.openFile !== 'function') return Promise.resolve(item);
+  return item.openFile().then(null, function () {
+    return null;
+  });
+}
+
+/**
+ * pictureStoreMerge - the list the report reads pictures from: one lazy item per file of the store index ({ name, size,
+ * lastModified, openFile }) plus the folder files whose name the index does not hold. With the store off or empty it is folderFiles.
+ */
+function pictureStoreMerge(projectKey, folderFiles) {
+  var folder = Array.prototype.slice.call(folderFiles || []);
+  if (!pictureStoreHasPictures(projectKey)) return folder;
+  var files = pictureStoreIndex(projectKey).files;
+  var byName = {};
+  folder.forEach(function (f) {
+    byName[f.name] = f;
+  });
+  var out = Object.keys(files).map(function (name) {
+    var entry = files[name];
+    return {
+      name: name,
+      size: entry.size,
+      lastModified: entry.mtime || 0,
+      openFile: function () {
+        return _pictureStoreOpenEntry(name, entry).then(function (file) {
+          return file || byName[name] || null;
+        });
+      },
+    };
+  });
+  folder.forEach(function (f) {
+    if (!files[f.name]) out.push(f);
+  });
+  return out;
+}
+
+// The panel text for an upload in progress or just finished ('' when none ran).
+function pictureStoreProgress(projectKey) {
+  var u = _pictureStoreUploads[String(projectKey)];
+  if (!u) return '';
+  if (u.running) return ' Uploading to the site store: ' + u.done + ' of ' + u.total + '.';
+  var text = u.uploaded ? ' ' + u.uploaded + (u.uploaded === 1 ? ' picture' : ' pictures') + ' uploaded to the site store.' : '';
+  if (u.failed) text += ' ' + u.failed + (u.failed === 1 ? ' picture' : ' pictures') + ' did not upload. They upload at the next folder pick or by the automatic sync.';
+  return text;
+}
+
+// Saves new entries into the index: the latest saved index plus mine. Writes are chained (one at a time).
+function _pictureStoreSaveIndex(projectKey, mine, chain) {
+  return chain.then(function () {
+    var latest = pictureStoreIndex(projectKey);
+    var files = Object.assign({}, latest.files, mine);
+    return sset(PICTURE_STORE_INDEX_PREFIX + projectKey, { files: files, updated: new Date().toISOString() });
+  });
+}
+
+/**
+ * pictureStoreUpload - sends every picture file of a folder read (File[]) that the index does not hold, or holds with another
+ * sha256, to the store, then updates the index. A file with the same name, size and time as its index entry is skipped with no
+ * read. Runs in the background: Generate never waits for it. onProgress() is called after each file. Resolves { uploaded,
+ * unchanged, failed }. A second call for the same project while one runs returns the running one.
+ */
+function pictureStoreUpload(projectKey, files, onProgress) {
+  var pid = String(projectKey);
+  if (_pictureStoreUploads[pid] && _pictureStoreUploads[pid].running) return _pictureStoreUploads[pid].promise;
+  if (!pictureStoreAvailable()) return Promise.resolve({ uploaded: 0, unchanged: 0, failed: 0 });
+  var known = pictureStoreIndex(pid).files;
+  var seen = {};
+  var todo = Array.prototype.filter.call(files || [], function (f) {
+    if (!PICTURE_STORE_IMAGE_RE.test(f.name) || seen[f.name]) return false;
+    seen[f.name] = true;
+    var e = known[f.name];
+    return !(e && e.size === f.size && e.mtime === f.lastModified);
+  });
+  var u = { total: todo.length, done: 0, uploaded: 0, unchanged: 0, failed: 0, running: true, promise: null };
+  _pictureStoreUploads[pid] = u;
+  var mine = {};
+  var pending = 0;
+  var chain = Promise.resolve();
+  function flush(force) {
+    if (!pending || (!force && pending < PICTURE_STORE_SAVE_EVERY)) return;
+    var batch = mine;
+    mine = {};
+    pending = 0;
+    chain = _pictureStoreSaveIndex(pid, batch, chain);
+  }
+  function finish() {
+    u.running = false;
+    if (typeof onProgress === 'function') onProgress();
+  }
+  u.promise = _pictureStoreRunPool(todo, PICTURE_STORE_PARALLEL, async function (f) {
+    try {
+      var bytes = new Uint8Array(await f.arrayBuffer());
+      var sha = await _pdfSha256HexFromBytes(bytes);
+      var key = 'pictures/' + pid + '/' + sha;
+      var old = known[f.name];
+      if (!old || old.sha256 !== sha) {
+        var res = await _pdfWithAuthRetry(function () {
+          return _pdfUploadCommit(key, _pdfBytesToBase64(bytes));
+        });
+        if (!res || res.status !== 'ok') throw new Error('upload ' + (res && res.status));
+        u.uploaded++;
+      } else {
+        u.unchanged++;
+      }
+      mine[f.name] = { key: key, sha256: sha, size: bytes.length, mtime: f.lastModified || 0 };
+      pending++;
+      flush(false);
+    } catch (err) {
+      u.failed++;
+      console.warn('[pictureStore] upload failed:', f.name, err && err.message);
+    }
+    u.done++;
+    if (typeof onProgress === 'function') onProgress();
+  })
+    .then(function () {
+      flush(true);
+      return chain;
+    })
+    .then(
+      function () {
+        finish();
+        return { uploaded: u.uploaded, unchanged: u.unchanged, failed: u.failed };
+      },
+      function (err) {
+        finish();
+        throw err;
+      }
+    );
+  return u.promise;
+}
+
 window.pictureFolderPickerSupported = pictureFolderPickerSupported;
 window.pictureFolderRestore = pictureFolderRestore;
 window.pictureFolderPick = pictureFolderPick;
@@ -299,3 +542,11 @@ window.pictureFolderHasChoice = pictureFolderHasChoice;
 window.pictureFolderFiles = pictureFolderFiles;
 window.pictureFolderSelectToSave = pictureFolderSelectToSave;
 window.pictureFolderRemember = pictureFolderRemember;
+window.pictureStoreAvailable = pictureStoreAvailable;
+window.pictureStoreIndex = pictureStoreIndex;
+window.pictureStoreNames = pictureStoreNames;
+window.pictureStoreHasPictures = pictureStoreHasPictures;
+window.pictureStoreMerge = pictureStoreMerge;
+window.pictureStoreProgress = pictureStoreProgress;
+window.pictureStoreUpload = pictureStoreUpload;
+window.pictureFileOpen = pictureFileOpen;
