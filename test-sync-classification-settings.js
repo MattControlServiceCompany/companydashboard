@@ -10,6 +10,8 @@ const want = {
   ch_tbl_colschema_ver_t1: 'per-user',
   ch_theme: 'per-user',
   bcr_result_b1_s1__TotalAmountDue: 'synced',
+  en_auditseq_1790368264741: 'synced',
+  en_audit_1790368264741: 'synced',
   bcr_pdftext_k1: 'local-only',
   ch_sync_queue: 'local-only',
 };

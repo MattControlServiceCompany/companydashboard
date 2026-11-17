@@ -330,9 +330,10 @@ const ok = (c, m) => {
     ok(!/Every point of this equipment/.test(t) && !/Appendix A lists every building automation point reviewed for each system\./.test(t), 'item 3: no "Every point of this equipment" sentence; the Appendix A sentence is not repeated in the chapters (2026-11-11: report length)');
     ok(det.joins.length === 0, 'item 2: no missing space after a full stop inside a paragraph of the chapters: ' + det.joins.join(' | '));
     ok(!/\d ?F\b/.test(t.replace(/°F/g, '')), 'D2: no temperature prints as "<n> F" (every temperature has °F)');
-    ok(/The occupied schedule is 6:00 AM‑9:00 PM on 1 unit and 7:00 AM‑6:00 PM on 1 unit/.test(t.replace(/; Figure \d+\)/g, ')')), 'System Descriptions: the occupied schedule sentence lists each distinct schedule with its unit count');
-    ok((t.match(/The occupied schedule is/g) || []).length === 2, 'groups with no schedule print nothing about schedules (one schedule sentence per group that has one: 2)');
-    ok(/The occupied schedule is 24 hours\./.test(t) && !/12:00 AM-12:00 AM/.test(t), 'D8: an all-day schedule (start 0, stop 0) prints "24 hours", never 12:00 AM-12:00 AM');
+    ok(!/\d{1,2}:\d{2}\s?[AP]M/.test(dtext) && !/The occupied schedule is/.test(t), 'System Descriptions: no schedule time and no "The occupied schedule is" sentence in any description (Matt, 2026-11-17: a schedule is a setting of one day)');
+    ok(!/Rather than|instead of the automatic adjustment|is not fixed:|rather than keeping|share the operating hours|which is how|use less energy|so that the pumps|locked out, which means|which is the boiler|relative humidity, which|freeze stat, which|which is the air pressure|which is the pressure difference|which is called/.test(dtext), 'no description uses a banned phrase (contrast framing, a reason for a standard practice, a definition of a common term)');
+    ok(!/occupied schedule \((?!Figure)/.test(dtext) && !/occupied schedule is/i.test(dtext), 'no description prints an occupied schedule time or bracket (a unit follows the schedule; the times are settings of one day)');
+    ok(!/24 hours|12:00 AM-12:00 AM/.test(dtext), 'D8: an all-day schedule prints no time and no "24 hours" in a description');
     ok(/Beta Library[\s\S]{0,40}Mon–Fri 24 hours/.test(det.text.slice(det.text.indexOf('Appendix A: Setpoint Programming Review'))), 'D8: Appendix A prints the all-day schedule of Beta Library as "Mon–Fri 24 hours"');
     ok(!/Demand Level|Air Source Mode|Outdoor Air Dewpoint/.test(t), 'a: points with no control meaning (Demand Level, Air Source Mode, Dewpoint) are not named in the body');
     const rv = await page.evaluate(() => ['Supply Air Temperature|55.2', 'Airflow Setpoint|580.0', 'Air Source Mode|2.0', 'Duct Static Pressure|1.1 in H2O', 'Fan Status|On', 'Zone Status|?'].map((x) => String(_a36DetReadingValue(x.split('|')[0], x.split('|')[1]))));
@@ -772,13 +773,13 @@ const ok = (c, m) => {
     ok(!/Normal|monitors|setpoint|44/.test(allText(r3.chwSp)), 'a chilled water plant with only a supply sensor and a setpoint point makes no setpoint claim and prints no value, no status word (' + allText(r3.chwSp) + ')');
     ok(!/\d|monitors/.test(allText(r3.hw)) && /^The plant has a hot water supply temperature sensor and a hot water return temperature sensor\.$/.test(allText(r3.hw)), '1: a plant with no setpoint and no enable prints its sensors only, no "monitors" list (' + allText(r3.hw) + ')');
     ok(/starts and stops each boiler/.test(allText(r3.hwLockout)) && !/\d|setpoint|hold/.test(allText(r3.hwLockout)), 'b: a hot water plant with an outdoor air lockout setpoint point and a water setpoint point: no value and no setpoint claim (' + allText(r3.hwLockout) + ')');
-    ok(/The plant has an outdoor air temperature lockout/.test(allText(r3.hwLockoutStatus)) && !/Lockout|was off|At the time|\d/.test(allText(r3.hwLockoutStatus)), 'b: a plant with a lockout status point says it has the lockout, not that it was off (' + allText(r3.hwLockoutStatus) + ')');
-    ok(/heating setpoint, below which it adds heat, and a cooling setpoint/.test(allText(r3.vavSp)) && !/\d|ons an?d|monitors|by command/.test(allText(r3.vavSp)), 'c: a VAV group describes its zone heating and cooling setpoints with no number (' + allText(r3.vavSp) + ')');
-    ok(/A separate pair of setpoints applies when the building is unoccupied\./.test(allText(r3.vavMost)) && /listed in Appendix A\./.test(allText(r3.vavMost)) && !/\d/.test(allText(r3.vavMost)), 'c: unoccupied setpoints are named, the values point to Appendix A, no number is printed (' + allText(r3.vavMost) + ')');
+    ok(/The plant is locked out at high outdoor air temperatures/.test(allText(r3.hwLockoutStatus)) && !/Lockout|was off|At the time|\d/.test(allText(r3.hwLockoutStatus)), 'b: a plant with a lockout status point says it has the lockout, not that it was off (' + allText(r3.hwLockoutStatus) + ')');
+    ok(/between a heating setpoint and a cooling setpoint/.test(allText(r3.vavSp)) && !/\d|ons an?d|monitors|by command/.test(allText(r3.vavSp)), 'c: a VAV group describes its zone heating and cooling setpoints with no number (' + allText(r3.vavSp) + ')');
+    ok(/Separate setpoints apply while the building is unoccupied\./.test(allText(r3.vavMost)) && /listed in Appendix A\./.test(allText(r3.vavMost)) && !/\d/.test(allText(r3.vavMost)), 'c: unoccupied setpoints are named, the values point to Appendix A, no number is printed (' + allText(r3.vavMost) + ')');
     ok(/listed in Appendix A\./.test(allText(r3.vavVary)) && !/\d/.test(allText(r3.vavVary)), 'c: the zone setpoint values are never printed in the description (' + allText(r3.vavVary) + ')');
     ok(!/Appendix A/.test(allText(r3.vavNoAppendix)), 'c: the Appendix A reference prints only when Appendix A is in the report (' + allText(r3.vavNoAppendix) + ')');
-    ok(allText(r3.vavSched).indexOf('6:00 AM-9:00 PM on 2 units and 7:00 AM-6:00 PM on 1 unit') >= 0, 'c: the schedule is part of the start sentence (' + allText(r3.vavSched) + ')');
-    ok(/start and stop on the occupied schedule \(5:00 AM-9:00 PM\)/.test(allText(r3.ahuSched.map((s) => s.text))) && /heating coil valve and cooling coil valve modulate in sequence to hold the supply air temperature\./.test(allText(r3.ahuSched.map((s) => s.text))) && /fan speed is varied to hold the duct static pressure/.test(allText(r3.ahuSched.map((s) => s.text))) && !/monitors|by command|positioned|1\.1|55°F/.test(allText(r3.ahuSched.map((s) => s.text))), 'c: an air handler gives start and stop, each loop without its setpoint value, no "monitors" list and no "by command" (' + allText(r3.ahuSched.map((s) => s.text)) + ')');
+    ok(!/6:00 AM|occupied schedule is/.test(allText(r3.vavSched)), 'c: a terminal group prints no schedule time and no "The occupied schedule is" sentence (' + allText(r3.vavSched) + ')');
+    ok(/start and stop on the occupied schedule\./.test(allText(r3.ahuSched.map((s) => s.text))) && /heating coil valve and cooling coil valve modulate in sequence to hold the supply air temperature\./.test(allText(r3.ahuSched.map((s) => s.text))) && /fan speed holds the duct static pressure/.test(allText(r3.ahuSched.map((s) => s.text))) && !/monitors|by command|positioned|1\.1|55°F|5:00 AM/.test(allText(r3.ahuSched.map((s) => s.text))), 'c: an air handler gives start and stop, each loop without its setpoint value, no "monitors" list and no "by command" (' + allText(r3.ahuSched.map((s) => s.text)) + ')');
     ok(!/\d/.test(allText(r3.vavNoSp)) && !/held between/.test(allText(r3.vavNoSp)), 'c: no setpoint value, no number printed (' + allText(r3.vavNoSp) + ')');
     ok(r3.counts.join(' / ') === 'Air Handler / Air Handlers / Heater / Exhaust Fan / Dedicated Outdoor Air System Unit / Variable Air Volume Terminals / Hot Water Plant', 'd: the type count line is singular for one unit (' + r3.counts.join(' / ') + ')');
     ok(!/adjust|0\.0/.test(allText(r3.adjZero)), '2: no adjustment sentence and no adjustment value is printed: ' + allText(r3.adjZero));
@@ -786,7 +787,7 @@ const ok = (c, m) => {
     ok(!/resets between/.test(allText(r3.noProof)) && /resets between its minimum and maximum/.test(allText(r3.proof)), '7: "airflow setpoint resets between minimum and maximum" only with the stored minimum and maximum airflow setpoints');
     ok(r3.proofRows.join(',') === 'true,false,true', '7: proof = a minimum and a maximum airflow point of the unit; the Air Source Minimum point does not count (' + r3.proofRows.join(',') + ')');
     ok(!/monitors|speed command|by command|varied/.test(allText(r3.fanReading.map((s) => s.text))) && /enables the supply fan/.test(allText(r3.fanReading.map((s) => s.text))), 'A: a supply fan with no speed command point has no speed sentence and no "monitors" list: ' + r3.fanReading.map((s) => s.text).filter((x) => /fan/.test(x)).join(' '));
-    ok(/The supply fan speed is varied to hold the duct static pressure/.test(allText(r3.fanCmd.map((s) => s.text))) && !/1\.1/.test(allText(r3.fanCmd.map((s) => s.text))), 'A: with a speed command point the supply fan speed is varied to hold the duct static pressure, no value');
+    ok(/The supply fan speed holds the duct static pressure/.test(allText(r3.fanCmd.map((s) => s.text))) && !/1\.1/.test(allText(r3.fanCmd.map((s) => s.text))), 'A: with a speed command point the supply fan speed is varied to hold the duct static pressure, no value');
     const fns = r3.fanReading.map((s) => s.fn);
     const FN_ORDER = ['config', 'start', 'air', 'temp', 'oa', 'zone', 'requests', 'safety', 'sensors'];
     ok(fns.join(',') === fns.slice().sort((a, b) => FN_ORDER.indexOf(a) - FN_ORDER.indexOf(b)).join(',') && new Set(fns).size >= 4, '6: air handler sentences are in operating order (start and stop, temperature, airflow and static pressure, outdoor air, zone, safety): ' + fns.join(','));
@@ -813,6 +814,29 @@ const ok = (c, m) => {
     ok(dd.labels.some((l) => /^Dual-Duct Terminal:ddvav:2$/.test(l)) && dd.labels.some((l) => /^Variable Air Volume Terminal:vav:1$/.test(l)), 'dual-duct terminals (hot deck and cold deck points, also a single Flow Control with Air Source Hot Deck and Cold Deck points) are one dual-duct group, the plain one is not: ' + dd.labels.join(' | '));
     ok(dd.labels.some((l) => /^Dual-Duct .*Air Handling Unit:ahu:1$/.test(l)) && !dd.labels.some((l) => /Multi-Zone.*:ahu:1/.test(l) && /Dual/.test(l)), 'an air handler whose points show a hot deck and a cold deck is labeled dual-duct, not multi-zone: ' + dd.labels.join(' | '));
     ok(!/ASHRAE/.test(dd.texts) && !/\d\s?(°F|%|in\.)/.test(dd.texts), 'the descriptions hold no ASHRAE word and no digits followed by °F, % or in.: ' + dd.texts.slice(0, 300));
+
+    // ---- 4f. 2026-11-17: the sequence record en_auditseq_<pid> reaches the descriptions through _a36DetSequenceIds (the one input) ----
+    const sq = await page.evaluate(async () => {
+      const PID = 900099;
+      await sset('en_auditseq_' + PID, { rows: [{ library: 'Test Library', equipName: '  A2 ', id: 'econ_disabled', status: 'enabled', source: 'x.png' }, { library: 'Other Library', equipName: 'a2', id: 'econ_dry_bulb', status: 'enabled', source: 'y.png' }], updated: 'x' });
+      const rows = { a2: { id: 'a2', pointsRaw: { 'Supply Air Temp': '55', 'Supply Fan Status': 'On' } } };
+      const eq = { id: 'a2', name: 'A2', category: 'ahu', categoryLabel: 'Variable Air Volume Air Handling Unit', compliance: { coveredPoints: [], missingPoints: [] } };
+      const g = { category: 'ahu', label: 'Variable Air Volume Air Handling Unit', units: [eq], names: ['A2'], shown: ['A2'] };
+      const text = (ctx) => _a36DetDescriptionParas(g, Object.assign({ rowsById: rows, setpointAppendix: false }, ctx), 0).join(' ');
+      return {
+        mine: _a36DetSequenceIds('a2', 'test  library', PID),
+        other: _a36DetSequenceIds('a2', 'Other Library', PID),
+        wrongPid: _a36DetSequenceIds('a2', 'Test Library', 1),
+        noPid: _a36DetSequenceIds('a2', 'Test Library'),
+        withRows: text({ projId: PID, libName: 'Test Library' }),
+        without: text({ projId: 1, libName: 'Test Library' }),
+        synced: typeof SyncClassification !== 'undefined' ? SyncClassification.classify('en_auditseq_' + PID) : null,
+      };
+    });
+    ok(sq.mine.length === 1 && sq.mine[0].id === 'econ_disabled' && sq.mine[0].status === 'enabled' && sq.other.length === 1 && sq.other[0].id === 'econ_dry_bulb' && sq.wrongPid.length === 0 && sq.noPid.length === 0, 'the sequence reader matches the library and the unit name (case and spaces do not matter) and nothing else: ' + JSON.stringify([sq.mine, sq.other]));
+    ok(/The economizer is present but disabled\./.test(sq.withRows) && !/economizer/.test(sq.without), 'a record row of the unit adds its sentence to the description; no record adds nothing: ' + sq.withRows);
+    ok(sq.synced === 'synced', 'en_auditseq_<pid> is classified synced (app/sync-classification.js)');
+    ok(!/\d\s?(°F|%|in\.|AM|PM)\b/.test(sq.withRows) && !/which is called/.test(sq.withRows), 'a description with sequences has no digit with °F, %, in., AM or PM and no "which is called"');
 
     // ---- 7b. a large project: many libraries, long tables, long deficiency list; every page still fits ----
     const big = await page.evaluate(async () => {

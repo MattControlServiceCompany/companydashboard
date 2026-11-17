@@ -106,6 +106,11 @@ const SyncClassification = (() => {
       prefix: true,
       note: 'facility-audit.js: en_audit_<pid> = findings the user added or imported plus the user edits to automatic findings. Set points are never stored here. Also holds .evidence = screenshot evidence per Still-need line (file names, note, who, when). Shared by both users.',
     },
+    {
+      pattern: 'en_auditseq_',
+      prefix: true,
+      note: 'report-engine.js _a36DetSequenceIds: en_auditseq_<pid> = { rows: [{ library, equipName, id, status, source }], updated }, the control sequences read from the WebCTRL control program pages (canonical ids, no setpoint values). Written by tools 2026-11-17-import-audit-sequences.py through kv-sync; the Detailed Audit Report System Descriptions read it. Shared by both users.',
+    },
     { pattern: 'en_hours_', prefix: true, note: 'hours.js: en_hours_<pid>' },
     {
       pattern: 'en_cal_',
