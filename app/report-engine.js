@@ -27523,6 +27523,27 @@ function _a36DetJoin(list) {
   return list.slice(0, -1).join(', ') + ' and ' + list[list.length - 1];
 }
 
+// The names of the units of a group that have the most common configuration of the group (the configuration facts of _a36DetConfig, which read
+// emPlantConfig / emAirConfig / emTerminalConfig / emExhaustFanConfig). A group of one unit, or a group with no readable configuration, returns
+// every name. A tie goes to the configuration of the first unit in name order.
+function _a36DetTypicalNames(g, rowsById) {
+  if (g.names.length < 2) return g.names;
+  var cfg = _a36DetConfig(g, rowsById);
+  if (!cfg) return g.names;
+  var sigs = cfg.units.map(function (c) {
+    return JSON.stringify(c);
+  });
+  var count = {};
+  var best = '';
+  sigs.forEach(function (s) {
+    count[s] = (count[s] || 0) + 1;
+    if (!best || count[s] > count[best]) best = s;
+  });
+  return g.names.filter(function (n, i) {
+    return sigs[i] === best;
+  });
+}
+
 // The findings model of the report, built once from the same data the Simple report uses: the priced-scope catalog rows
 // (_a36ScopedCatalogRows, through _a36DetScopedWork) and the per-unit audit results (equipResults). One finding per missing
 // sequence per equipment group (rows of the same sequence add up); a missing point that a listed sequence of the group needs is
@@ -27553,8 +27574,22 @@ function _a36DetModel(d, rowsById, picMap, loaded) {
     var lib = { b: b, groups: groups, work: work, descPics: [], rep: [], findings: [] };
     groups.forEach(function (g) {
       // One graphic per group: the first usable unit graphic (_a36DetPickPictures order; never a table or plan page). The unit it shows is the
-      // representative unit of the group: its readings are the ones printed.
-      var picks = _a36DetPickPictures(picMap, bn, g.names, loaded, { page: isUnitGraphic, skip: used, limit: loaded ? 1 : A36_DET_CANDIDATES });
+      // representative unit of the group: its readings are the ones printed. A unit with the most common configuration of its group is
+      // preferred (_a36DetTypicalNames); another unit only when no typical unit has a usable graphic.
+      var pickOpts = { page: isUnitGraphic, skip: used, limit: loaded ? 1 : A36_DET_CANDIDATES };
+      var typical = _a36DetTypicalNames(g, rowsById);
+      var picks = typical.length < g.names.length ? _a36DetPickPictures(picMap, bn, typical, loaded, pickOpts) : [];
+      if (!loaded || !picks.length) {
+        var seenFile = {};
+        picks.forEach(function (p) {
+          seenFile[p.file] = true;
+        });
+        picks = picks.concat(
+          _a36DetPickPictures(picMap, bn, g.names, loaded, pickOpts).filter(function (p) {
+            return !seenFile[p.file];
+          }),
+        );
+      }
       if (loaded && picks.length) used[picks[0].file] = true;
       lib.descPics.push(picks);
       lib.rep.push(loaded && picks.length ? g.names.map(_a36DetNorm).indexOf(_a36DetNorm(picks[0].equipName)) : -1);
@@ -28911,6 +28946,12 @@ function _a36DetControlSentences(g, f, params, proof) {
       ).forEach(function (t) {
         add(t, 'config');
       });
+    }
+    // perimeter baseboard heat the terminal controls (emTerminalConfig.perimeterHeat, the one detector): one unit, some units or every unit
+    if (tcfg.length) {
+      var perim = tcfg.filter(function (c) { return c.perimeterHeat; }).length;
+      if (perim === tcfg.length) add(who + ' also controls perimeter baseboard heat.', 'config');
+      else if (perim > 0) add('On ' + _a36DetCountWord(perim) + ' of the ' + _a36DetCountWord(tcfg.length) + ' terminals, the building automation system also controls perimeter baseboard heat.', 'config');
     }
     if (has('termFanEnable')) add(lead(['termFanEnable'], 'terminal', BAS + 'enables the terminal fan.'), 'airflow');
     if (flowKey && dampKey) {
