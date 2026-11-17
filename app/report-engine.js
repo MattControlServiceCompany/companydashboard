@@ -20443,7 +20443,7 @@ function _a36BuildingContent(d, building, showBuildingInfra) {
         '</td>' +
         '<td style="' +
         tdBase +
-        ';text-align:right;color:var(--rpt-page-text)">' +
+        ';text-align:center;color:var(--rpt-page-text)">' +
         unitCount +
         '</td>' +
         '<td style="' +
@@ -20524,7 +20524,7 @@ function _a36BuildingContent(d, building, showBuildingInfra) {
         ';font-weight:600;color:var(--rpt-page-text)">Building-Wide (Outdoor Air)</td>' +
         '<td style="' +
         _bwTdBase +
-        ';text-align:right;color:var(--rpt-page-text)">1</td>' +
+        ';text-align:center;color:var(--rpt-page-text)">1</td>' +
         '<td style="' +
         _bwTdBase +
         ';color:var(--rpt-page-text);font-weight:400">' +
