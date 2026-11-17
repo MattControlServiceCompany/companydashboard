@@ -22235,7 +22235,7 @@ function emPumpDriveEvidence(pointNames) {
     if (/fan/i.test(pointNames[i])) continue; // also the camelCase keys (boiler1FanSpeed)
     if (/\b(vfd|vfds|vsd|drive|inverter|hz)\b|speed|frequency/i.test(pointNames[i])) return true;
     // A pump current (amps) point: fixed-speed pumps typically have no amps reading; the amps come from the drive (Matt 2026-11-17).
-    if (/pump|hwp|chwp|\bp-?\d/i.test(pointNames[i]) && /\bamps?\b|current/i.test(pointNames[i])) return true;
+    if (/pump|hwp|chwp|\bp-?\d/i.test(pointNames[i]) && /\bamps?\b|amperage|current/i.test(pointNames[i])) return true;
   }
   return false;
 }

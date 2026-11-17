@@ -28410,10 +28410,8 @@ function _a36DetAirFactSentences(cfg, opts) {
           return fan.type;
         });
         out.push(fanUnit.fans.length === 1 ? 'The ' + types[0] + ' fan is equipped with a variable frequency drive.' : 'The ' + _a36DetJoin(types) + ' fans are equipped' + drive);
-        if (!explained) out.push('A variable frequency drive changes the speed of an electric motor.');
         if (opts.vfd) opts.vfd.done = true;
       } else if (!explained && cfg.units.some(function (c) { return c.fans.length > 0; })) {
-        out.push('A variable frequency drive changes the speed of an electric motor.');
         if (opts.vfd) opts.vfd.done = true;
       }
     }
@@ -28605,7 +28603,7 @@ var A36_DET_SEQ = {
   econ_loop: [{ c: 'air', fn: 'oa', on: 'A control loop positions the economizer dampers.' }],
   co2_ventilation_reset: [{ c: 'air', fn: 'oa', on: 'The minimum outdoor air resets on carbon dioxide (CO2) level.' }],
   co2_fan_speed: [{ c: 'air', fn: 'oa', on: 'Supply fan speed rises with carbon dioxide (CO2) level.' }],
-  min_oa_scheduled: [{ c: 'air', fn: 'oa', on: 'The unit holds minimum outdoor air while the building is scheduled as occupied.' }],
+  min_oa_scheduled: [{ c: 'air', fn: 'oa', on: '' }], // obvious (every unit holds minimum outdoor air when occupied): no sentence
   ventilation_oa_disable: [{ c: 'air', fn: 'oa', on: 'The unit has low and high outdoor air temperature limits that turn off ventilation when the outdoor air temperature is outside the limits.' }],
   cool_oa_lockout: [{ c: 'air', fn: 'oa', on: 'Mechanical cooling has a low outdoor air temperature lockout that keeps it off when the outdoor air temperature is below the lockout setpoint.', off: 'A mechanical cooling lockout at low outdoor air temperatures is available but not enabled.' }],
   heat_oa_lockout: [
@@ -28649,7 +28647,6 @@ var A36_DET_SEQ_MERGE = [
 ];
 
 // The introduction of the economizer, printed before the first economizer sentence of a unit that has no points-based economizer sentence.
-var A36_DET_ECON_INTRO = 'The economizer cools the building with outdoor air in place of mechanical cooling.';
 // The explanation of enthalpy, printed once in a chapter, in the first sentence that uses the word.
 var A36_DET_ENTHALPY_DEF = ' (enthalpy is the total heat content of the air including moisture)';
 
@@ -28763,7 +28760,6 @@ function _a36DetControlSentences(g, f, params, proof) {
   // for an id whose sentence the points of the group already wrote. The economizer is introduced, and enthalpy explained, once.
   var seqClasses = _a36DetSeqClasses(g.category);
   var seqNoun = seqClasses.indexOf('plant') >= 0 ? 'plant' : seqClasses.indexOf('air') >= 0 || seqClasses.indexOf('fcu') >= 0 ? 'unit' : seqClasses.indexOf('term') >= 0 ? 'terminal' : seqClasses.indexOf('heater') >= 0 ? 'heater' : 'exhaust fan';
-  var seqEcon = { econ_integration: true, econ_loop: true };
   // A unit with its own factory controller (unit_own_controller on every unit of the group): the building automation system sends it targets.
   var ownAll = total > 0 && seqCount('unit_own_controller', 'on') === total && seqClasses.indexOf('air') >= 0;
   function seqCount(id, state) {
@@ -28771,11 +28767,6 @@ function _a36DetControlSentences(g, f, params, proof) {
   }
   // One or two sentences for the control method of the economizer: the comparison of the outdoor air with the return air (enthalpy), or a
   // limit on the outdoor air temperature or enthalpy, and the high limits. Never one sentence per id.
-  function econIntro(fn, skip) {
-    if (vfd.econ) return;
-    vfd.econ = true; // the economizer is introduced once in a chapter
-    if (!skip.econIntro) add(A36_DET_ECON_INTRO, fn);
-  }
   function seqEconSentences(fn, skip) {
     var diff = seqCount('econ_diff_enthalpy', 'on');
     var enth = seqCount('econ_enthalpy', 'on');
@@ -28783,9 +28774,6 @@ function _a36DetControlSentences(g, f, params, proof) {
     if (!diff && !enth && !dry) return;
     var counts = [diff, enth, dry].filter(function (n) { return n > 0; });
     var same = counts.every(function (n) { return n === counts[0]; });
-    function intro() {
-      econIntro(fn, skip);
-    }
     function method(d, e, t, n) {
       // d = compares with the return air, e = enthalpy limit, t = temperature limit; n = units that have it
       var text;
@@ -28799,7 +28787,6 @@ function _a36DetControlSentences(g, f, params, proof) {
       }
       text += '.';
       if (n < total) text = 'On ' + n + ' of the ' + total + ' ' + seqNoun + 's, ' + text.charAt(0).toLowerCase() + text.slice(1);
-      intro();
       add(text, fn);
       if (d && (e || t)) add('It also stops using outdoor air above a high limit on outdoor air ' + (e && t ? 'temperature or enthalpy' : e ? 'enthalpy' : 'temperature') + '.', fn);
     }
@@ -28847,7 +28834,6 @@ function _a36DetControlSentences(g, f, params, proof) {
           if (state === 'on' && v.dual && /dual-duct/i.test(g.label)) text = v.dual;
           if (state === 'on' && v.own && ownAll) text = v.own;
           if (n < total) text = 'On ' + n + ' of the ' + total + ' ' + seqNoun + 's, ' + text.charAt(0).toLowerCase() + text.slice(1);
-          if (state === 'on' && seqEcon[id]) econIntro(fn, skip);
           add(text, fn);
         });
       });
@@ -28864,9 +28850,7 @@ function _a36DetControlSentences(g, f, params, proof) {
     if (!zs) return;
     var unit = zs.unit;
     var who = unit ? 'The unit' : total === 1 ? 'The ' + noun : 'Each ' + noun;
-    if (controlled) add(who + ' holds ' + (unit ? 'its zone' : 'the room') + ' between a heating setpoint and a cooling setpoint, based on its zone temperature sensor.', 'zone');
-    else add(who + ' has a zone temperature sensor, a heating setpoint and a cooling setpoint.', 'zone');
-    if (zoneHas('unocc')) add('Separate setpoints apply while the building is unoccupied.', 'zone');
+    // No sentence that a zone has a sensor and heating and cooling setpoints, or separate unoccupied setpoints: every zone has them.
     if (ref && (zoneHas('occ') || zoneHas('unocc'))) add('The setpoint values found during the audit are listed in Appendix A.', 'zone');
   }
   // Sensors of the group: the present ones and the absent ones come from the audit of the group (the covered points and the missing points of each
@@ -29052,7 +29036,6 @@ function _a36DetControlSentences(g, f, params, proof) {
     // a variable frequency drive is explained once in a chapter (the first group that uses the word and has the sentence)
     if (variable && !vfd.done) {
       vfd.done = true;
-      add('A variable frequency drive changes the speed of an electric motor.', 'pumping');
     }
     if (variable && (plantAll(function (c) { return c.pumpDpControl; }) || (has(hw ? 'hwdp' : 'chwdp') && has(hw ? 'hwPumpSpeed' : 'schwpSpeed')))) add(BAS + 'varies the pump speed to hold the differential pressure of the piping.', 'pumping');
     seqAdd('pumping');
@@ -29161,8 +29144,7 @@ function _a36DetControlSentences(g, f, params, proof) {
     });
     if (fans.length > 1) fanMany = true;
     if (ownAll) { /* the building automation system schedules the unit through the integration (stated with the facts of the unit) */ }
-    else if (fans.length) add(sched ? subject(fans) + ' ' + (fanMany ? 'start and stop' : 'starts and stops') + onSchedule + '.' : BAS + 'enables the ' + _a36DetJoin(fans) + '.', 'start');
-    else if (sched) add((total === 1 ? 'The unit' : 'Each unit') + ' runs on the occupied schedule.', 'start');
+    // No fan start/stop or schedule sentence: every air handler starts its fans (Matt 2026-11-17: "what information does the reader gain").
     seqAdd('start');
     // static pressure and airflow
     var staticPrinted = false;
@@ -29208,7 +29190,7 @@ function _a36DetControlSentences(g, f, params, proof) {
     var econPoints = !ownAll && has('oaDampCmd') && has('econSp') && seqCount('econ_disabled', 'on') < total;
     if (econPoints) add('The economizer opens the outdoor air damper to cool with outdoor air.', 'oa');
     if (has('ervWheel')) add('An energy recovery wheel transfers heat between the exhaust air and the outdoor air.', 'oa');
-    seqAdd('oa', { econIntro: econPoints });
+    seqAdd('oa');
     // the zone of a single-zone unit
     if (!multi && has('htgSP') && has('coolSP')) zoneSentences('unit', true);
     // the requests of the library: terminals to the air handler, the air handler to the plant

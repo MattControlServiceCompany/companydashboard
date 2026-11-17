@@ -8,6 +8,7 @@ let fail = 0;
 function ok(c, m) { console.log((c ? 'PASS ' : 'FAIL ') + m); if (!c) fail++; }
 ok(emPumpDriveEvidence(['HWP-1 Amps', 'HWP-1 Status']), 'pump amps point = drive evidence');
 ok(emPumpDriveEvidence(['Hot Water Pump 2 Current']), 'pump current point = drive evidence');
+ok(emPumpDriveEvidence(['Hot Water Pump 1 Amperage', 'Hot Water Pump 1 Enable']), 'real Blue Valley name: pump amperage point = drive evidence');
 ok(emPumpDriveEvidence(['HWP-1 VFD Speed']), 'speed point = drive evidence');
 ok(!emPumpDriveEvidence(['HWP-1 Status', 'Boiler 1 Status']), 'status only = no evidence');
 ok(!emPumpDriveEvidence(['Boiler 1 Current Fault']), 'a boiler current point is not pump evidence');

@@ -84,7 +84,7 @@ ok(lits.every((s) => /variable-speed savings/.test(s)), '3. no report string say
   ok(nt === '<p>UH\u20111 &amp; ERV\u20112 run 7:00\u00A0AM\u20117:00\u00A0PM</p>', '7. a tag has a non-breaking hyphen, a time a non-breaking space and hyphen: ' + JSON.stringify(nt));
   ok(!/<[^>]*\u2011/.test(sandbox.n('<td style="x" class="VAV-1">VAV-1</td>')), '7. only the text between tags changes, never an attribute');
   // 8: the verb and the noun follow the number of fans
-  ok(/fans\.push\(fk\[1\] \+ \(several \? ' fans' : ' fan'\)\)/.test(RE) && /fanMany \? 'start and stop' : 'starts and stops'/.test(RE), '8. "enables the supply fans" when a unit has several supply fans (the verb follows)');
+  ok(!/BAS \+ 'enables the ' \+ _a36DetJoin\(fans\)/.test(RE), '8. no obvious "enables the supply fans" sentence (Matt 2026-11-17)');
 }
 
 (async () => {
