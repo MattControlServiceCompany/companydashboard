@@ -25093,8 +25093,10 @@ function _rptA36OppDetail(summaryData, estimateState, key, tt) {
           '.',
       );
     }
+    // A programming row named like the line itself (the override release, the terminal unit upgrade) is not repeated under it.
+    var same = [title.toLowerCase(), _rptA36PlainName(g.opp.label).toLowerCase()];
     var progText = progOrder.filter(function (l) {
-      return l.toLowerCase() !== title.toLowerCase();
+      return same.indexOf(l.toLowerCase()) < 0;
     });
     if (ioQty) progText.push(ioQty + ' existing control point' + (ioQty === 1 ? '' : 's'));
     if (progText.length) desc.push('Programming: ' + progText.join(', ') + '.');
