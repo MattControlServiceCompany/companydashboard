@@ -1149,8 +1149,9 @@ const ok = (c, m) => {
       const simple = generateASHRAE36AuditHTML(d, { cover: true, executive: true, costEstimate: true, building: true, setpointReview: true, pointInventory: true });
       const simpleSp = Array.from(new DOMParser().parseFromString('<div>' + simple + '</div>', 'text/html').querySelectorAll('.rpt-page[data-section="setpointReview"]')).map((p) => p.textContent.replace(/\s+/g, ' ')).join(' ');
       return {
-        keys: m.findings.map((f) => f.keys || [f.key]).map((k) => k.join('+')),
-        merged: m.findings.filter((f) => f.keys && f.keys.length === 2).map((f) => ({ label: f.label, affected: f.affected, missing: f.missing, observed: f.observed, issue: f.issueShort, section: f.section })),
+        keys: m.findings.map((f) => f.key),
+        stacked: m.findings.filter((f) => f.keys && f.keys.length > 1).length,
+        two: ['ahu_min_oa', 'demandCtrl'].map((k) => m.findings.filter((f) => f.key === k).map((f) => ({ key: f.key, label: f.label, affected: f.affected, missing: f.missing, observed: f.observed, section: f.section }))),
         summary: secText('detailedSummary'),
         lib: secText('detailedLibrary'),
         sp: secText('setpointReview'),
@@ -1159,9 +1160,11 @@ const ok = (c, m) => {
         noteNo: (/described in Section (\d+)/.exec(secText('detailedSummary')) || [])[1],
       };
     }, PID4);
-    ok(eps.merged.length === 1 && !eps.keys.includes('demandCtrl') && !eps.keys.includes('ahu_min_oa') && eps.keys.includes('ahu_min_oa+demandCtrl'), 'report length: Minimum Outside Air and Occupancy-Based Ventilation of the same units are ONE finding (' + eps.keys.join(' / ') + ')');
-    ok(eps.merged[0] && /Minimum Outdoor Air and Occupancy-Based Ventilation \(Air Handling Units\)/.test(eps.merged[0].label) && !/ASHRAE/.test(eps.merged[0].observed) && /on both units/.test(eps.merged[0].observed) && /Carbon Dioxide Sensor/.test(eps.merged[0].observed) && /Outdoor Air Damper Actuator/.test(eps.merged[0].observed) && eps.merged[0].affected.length === 2, 'report length: the merged finding names no standard, the points of both and the 2 units: ' + (eps.merged[0] && eps.merged[0].observed));
-    ok((eps.summary.match(/Minimum Outdoor Air and Occupancy-Based Ventilation \(Air Handling Units\) sequences not fully in place/g) || []).length === 1 && !/Minimum Outdoor Air sequence not fully in place/.test(eps.summary), 'report length: the Opportunities Summary has one row for the two sequences');
+    ok(eps.stacked === 0 && eps.two[0].length === 1 && eps.two[1].length === 1 && !eps.keys.some((k) => /\+/.test(k)), 'report length: Minimum Outside Air and Occupancy-Based Ventilation of the same units are TWO findings, one each (1 opportunity = 1 line) (' + eps.keys.join(' / ') + ')');
+    const [epsOa, epsDcv] = [eps.two[0][0] || {}, eps.two[1][0] || {}];
+    ok(/Minimum Outdoor Air/.test(epsOa.label) && !/ASHRAE/.test(epsOa.observed) && /Outdoor Air Damper Actuator/.test(epsOa.observed) && epsOa.affected && epsOa.affected.length === 2, 'report length: the Minimum Outdoor Air finding names no standard, its damper actuator and the 2 units: ' + epsOa.observed);
+    ok(/Occupancy-Based Ventilation/.test(epsDcv.label) && !/ASHRAE/.test(epsDcv.observed) && /Carbon Dioxide Sensor/.test(epsDcv.observed) && epsDcv.affected && epsDcv.affected.length === 2, 'report length: the Occupancy-Based Ventilation finding names no standard, its carbon dioxide sensor and the 2 units: ' + epsDcv.observed);
+    ok((eps.summary.match(/Minimum Outdoor Air sequence not fully in place/g) || []).length === 1 && (eps.summary.match(/Occupancy-Based Ventilation \(Air Handling Units\) sequence not fully in place/g) || []).length === 1, 'report length: the Opportunities Summary has one row for each of the two sequences: ' + (eps.summary.match(/[A-Za-z() -]{0,60}sequence not fully in place/g) || []).join(' | '));
     ok(eps.seqNo && !eps.noteNo, 'report length: Control Sequences has its section number and the Opportunities Summary has no note about it (' + eps.seqNo + ' / ' + eps.noteNo + ')');
     ok(/Epsilon Library\s*AHU-A and AHU-B\s*66\.0°F heating \/ 71\.0°F cooling\s*60\.0°F heating \/ 79\.0°F cooling[\s\S]*Single-zone unit/.test(eps.sp) && !/Single-zone unit:/.test(eps.sp), 'report length: Appendix A lists the single-zone-only library with its current setpoints (AHU-A and AHU-B: 66/71 occupied, 60/79 unoccupied) and the status "Single-zone unit": ' + eps.sp.slice(0, 700));
     ok(/Epsilon Library\s*CUH\u20111\s*60\.0°F heating \/ No cooling\s*60\.0°F heating \/ No cooling\s*(—\s*)?No cooling/.test(eps.sp) && (eps.sp.match(/Single-zone unit/g) || []).length === 2, 'report length: a second set of setpoints in the same library is a second row (CUH-1 60/78, 60/84; a heater prints "No cooling" and Deadband "No cooling")');

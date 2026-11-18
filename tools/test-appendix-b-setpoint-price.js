@@ -137,13 +137,16 @@ const ok = (c, m) => {
     const price = Math.round(hours * mx.rate * 100) / 100;
     TIERS.forEach((t) => {
       const T = mx.tiers[t];
-      ok(T.lines.length === 1, 'mixed. ' + t + ': one setpoint line: ' + JSON.stringify(T.lines));
-      const L = T.lines[0] || {};
-      ok(L.item === 'Setpoint and Schedule Reprogramming' && L.label === 'Setpoint and Schedule Reprogramming', 'mixed. ' + t + ': the label is "Setpoint and Schedule Reprogramming"');
-      ok(L.qty === printedSum, 'mixed. ' + t + ': quantity ' + L.qty + ' = the Appendix A N sum ' + printedSum);
-      ok(L.phase === 2, 'mixed. ' + t + ': the line is in the Programming part (phase 2)');
-      ok(near(L.hrsPerUnit * L.qty, hours), 'mixed. ' + t + ': hours ' + (L.hrsPerUnit * L.qty) + ' = 0.15 x 5 + 2 x 2 = ' + hours);
-      ok(near(L.total, price), 'mixed. ' + t + ': price ' + L.total + ' = ' + hours + ' h x $' + mx.rate + ' = ' + price);
+      // One line per library (1 opportunity = 1 line, Matt 2026-11-18): the two libraries with zones to reprogram give two lines.
+      ok(T.lines.length === 2, 'mixed. ' + t + ': one setpoint line for each of the 2 libraries: ' + JSON.stringify(T.lines));
+      ok(T.lines.every((L) => L.item === 'Setpoint and Schedule Reprogramming' && L.label === 'Setpoint and Schedule Reprogramming'), 'mixed. ' + t + ': the label is "Setpoint and Schedule Reprogramming"');
+      const qtySum = T.lines.reduce((a, L) => a + L.qty, 0);
+      ok(qtySum === printedSum && T.lines.map((L) => L.qty).sort().join() === mx.printed.map((p) => p[0]).sort().join(), 'mixed. ' + t + ': the quantities ' + T.lines.map((L) => L.qty) + ' are the Appendix A N of each library, sum ' + qtySum + ' = ' + printedSum);
+      ok(T.lines.every((L) => L.phase === 2), 'mixed. ' + t + ': the lines are in the Programming part (phase 2)');
+      const hrsSum = T.lines.reduce((a, L) => a + L.hrsPerUnit * L.qty, 0);
+      ok(near(hrsSum, hours) && T.lines.every((L) => near(L.hrsPerUnit * L.qty, 0.15 * L.qty + 2)), 'mixed. ' + t + ': hours ' + hrsSum + ' = 0.15 x 5 + 2 x 2 = ' + hours + ' (each line 0.15 x its zones + 2)');
+      const totSum = T.lines.reduce((a, L) => a + L.total, 0);
+      ok(near(totSum, price), 'mixed. ' + t + ': price ' + totSum + ' = ' + hours + ' h x $' + mx.rate + ' = ' + price);
       ok(T.inOptional === 0, 'mixed. ' + t + ': the line is not in the optional CO2 section');
       ok(near(T.hourlyGrand - T.hourlyGrandWithout, price), 'mixed. ' + t + ': hourly method: the option total is higher by the line price: ' + T.hourlyGrand + ' - ' + T.hourlyGrandWithout);
       ok(near(T.hourlyP2 - T.hourlyP2Without, price) && near(T.hourlyP1, T.hourlyP1Without), 'mixed. ' + t + ': hourly method: only the programming subtotal moves');

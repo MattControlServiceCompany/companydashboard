@@ -261,6 +261,8 @@ const plain = (x) => JSON.parse(JSON.stringify(x));
     [
       'function _escHtml(s){ return String(s == null ? "" : s); }',
       'var _RPT_A36_POINT_CATEGORY_LABEL = {};',
+      'var SEQUENCE_BLOCKING_SENSORS = {};',
+      ...['_pricingRowOpportunity', '_pricingOpportunityLines', '_hwRowKeyMatchesBlocking'].map((f) => fnSrc(read('app/pricing-estimator.js'), f)),
       fnSrc(read('app/audit-estimate.js'), '_auditEstAllocate'),
       fnSrc(read('app/audit-estimate.js'), '_auditEstShareLines'),
     ]
@@ -276,6 +278,10 @@ const plain = (x) => JSON.parse(JSON.stringify(x));
           '_rptA36PlainRowLabel',
           '_rptA36TierDetailAggByPhase',
           '_rptA36HardwareCategoryAgg',
+          '_rptA36HardwareLabel',
+          '_rptA36OppDetail',
+          '_rptA36OppPriceText',
+          '_rptA36OppPrintedSum',
           '_rptA36TierDetailPanelHTML',
         ].map((f) => fnSrc(REP, f)),
       )
@@ -291,34 +297,37 @@ const plain = (x) => JSON.parse(JSON.stringify(x));
   assert.strictEqual(ev('_rptFootTier(5489, 4303, 1186).totalR'), 5500);
   ok('proposal: workbook grand 5489 prints 5489; Hourly still rounds up to 5500');
 
-  // 3700 hardware / 1020 sequence rows, workbook subtotals 4303 / 1186
+  // 3700 hardware / 1020 sequence rows, workbook subtotals 4303 / 1186. One opportunity = one line (Matt 2026-11-18): the sensor row is the
+  // line of one opportunity and each sequence row is the line of its own.
   const rows = [
-    { id: 'h', item: 'Zone Sensor', phase: 1, qty: 4, lineTotal: 3700 },
-    { id: 'q', item: 'Seq A', phase: 2, qty: 2, lineTotal: 600 },
-    { id: 'r', item: 'Seq B', phase: 2, qty: 1, lineTotal: 420 },
+    { id: 'h', item: 'Zone Sensor', phase: 1, qty: 4, lineTotal: 3700, building: 'Lib', oppKey: 'oS' },
+    { id: 'q', item: 'Seq A', phase: 2, qty: 2, lineTotal: 600, building: 'Lib', oppKey: 'oA' },
+    { id: 'r', item: 'Seq B', phase: 2, qty: 1, lineTotal: 420, building: 'Lib', oppKey: 'oB' },
+  ];
+  const opps = [
+    { bName: 'Lib', lib: 'Lib', key: 'oS', kind: 'sensor', label: 'Zone Sensor' },
+    { bName: 'Lib', lib: 'Lib', key: 'oA', kind: 'seq', label: 'Seq A' },
+    { bName: 'Lib', lib: 'Lib', key: 'oB', kind: 'seq', label: 'Seq B' },
   ];
   rsb.__tt = { compliance: { grand: 5489, phase1: 4303, phase2: 1186, method: 'workbook' }, recommended: null };
-  rsb.__sd = { perTier: { compliance: rows } };
+  rsb.__sd = { perTier: { compliance: rows }, opps: opps };
   const html = ev("_rptA36TierDetailPanelHTML('compliance', __tt, __sd, {rowToggles:{}}, true, __fmt)");
   assert.ok(!/Rounding/.test(html), 'no Rounding line in workbook mode');
   const usd = (t) => Number(t.replace(/[$,]/g, ''));
-  const hwPart = html.slice(0, html.indexOf('>Programming'));
-  const pgPart = html.slice(html.indexOf('>Programming'));
-  const sub = (part) => usd(/font-weight:700">(\$[\d,]+)<\/span>/.exec(part)[1]);
-  const lines = (part) => [...part.matchAll(/<li>[^<]*: (?:\d+ units, )?(\$[\d,]+)<\/li>/g)].map((m) => usd(m[1]));
-  assert.strictEqual(sub(hwPart), 4303);
-  assert.strictEqual(sub(pgPart), 1186);
-  assert.strictEqual(lines(hwPart).reduce((a, b) => a + b, 0), 4303);
-  assert.strictEqual(lines(pgPart).reduce((a, b) => a + b, 0), 1186);
-  assert.strictEqual(lines(pgPart).length, 2);
-  assert.ok(!/\u00d7/.test(html), 'no qty x unit text in workbook mode');
-  ok('proposal: lines add up to the workbook subtotals (4303 / 1186), no Rounding line');
+  const lines = [...html.matchAll(/<li>[^<]*: (\$[\d,]+)<\/li>/g)].map((m) => usd(m[1]));
+  assert.strictEqual(lines.length, 3, 'one line for each of the 3 opportunities');
+  assert.strictEqual(usd(/font-weight:700">(\$[\d,]+)<\/span>/.exec(html)[1]), 5489);
+  assert.strictEqual(lines.reduce((a, b) => a + b, 0), 4303 + 1186);
+  assert.ok(!/×/.test(html), 'no qty x unit text in workbook mode');
+  ok('proposal: the 3 opportunity lines add up to the workbook subtotals (4303 + 1186 = 5489), no Rounding line');
 
-  // Hourly: same rows keep the old output (rounded subtotals and a Rounding line)
+  // Hourly: the same rows keep the rounded subtotals and a Rounding line (the printed lines add up to the Devices + Programming parts)
   rsb.__tt = { compliance: { grand: 4720, phase1: 3700, phase2: 1020 }, recommended: null };
   const hh = ev("_rptA36TierDetailPanelHTML('compliance', __tt, __sd, {rowToggles:{}}, true, __fmt)");
-  assert.ok(/\u00d7/.test(hh), 'Hourly keeps qty x unit lines');
-  ok('proposal: Hourly panel keeps qty x unit lines');
+  const hl = [...hh.matchAll(/<li>(?!Rounding)[^<]*: (\$[\d,]+)<\/li>/g)].map((m) => usd(m[1]));
+  const rd = /<li>Rounding: (-?\$[\d,]+)<\/li>/.exec(hh);
+  assert.strictEqual(hl.reduce((a, b) => a + b, 0) + (rd ? usd(rd[1].replace('-$', '-')) : 0), 3700 + 1020 + (ev('_rptFootTier(4720, 3700, 1020)').totalR - 4720));
+  ok('proposal: Hourly panel foots (lines + Rounding = the rounded Devices and Programming parts)');
 }
 
 // 3b. Phase split (workbook): Phase 2 = the programming labor priced alone (its labor + tools + OH + profit);
