@@ -30871,33 +30871,13 @@ function _a36AuditBuildingTokens(d, b, ctx, showBuildingInfra) {
 }
 
 /**
- * _a36DetSummaryIssueHtml - the Issue cell of the Findings Summary: the issue (bold), which units it affects (names when 4 or fewer,
- * else "N of M units") and the points the BAS lacks, then the Guideline 36 section. What a sequence does is not repeated here: it is
- * printed once, in Control Sequences (the note above the table says so).
+ * _a36DetSummaryIssue - the Issue cell of the Opportunities Summary: the short name of the issue only (Matt 2026-11-18: one line per row;
+ * the summary does not explain the scope: the units affected and the missing points are in the library sections).
  */
-function _a36DetSummaryIssueHtml(f) {
-  var lines = ['<strong>' + _escHtml(f.issueShort) + '</strong>'];
-  if (f.kind !== 'deficiency') {
-    var affects;
-    if (!f.total) affects = 'the building';
-    else {
-      // Up to 4 affected units are named ("Affects AHU-1."; "Affects 2 of 3 units (RTU-1, RTU-2)."), never "the unit" (Matt, 2026-11-11).
-      var affectedNames = f.affected.length && f.affected.length <= 4 ? f.affected.map(_a36DetEquipNameIn(f.lib)).join(', ') : '';
-      if (affectedNames && f.units >= f.total) affects = affectedNames;
-      else {
-        affects = _a36DetFraction(f.units, f.groupTotal && f.dcvNote ? f.groupTotal : f.total, f.fracNoun, '');
-        if (affectedNames) affects += ': ' + affectedNames;
-      }
-    }
-    var secondLine = 'Affects ' + affects + '.';
-    if (f.kind === 'seq' && f.missing.length) secondLine += ' Missing point' + (f.missing.length > 1 ? 's' : '') + ': ' + _a36DetJoin(f.missingText) + '.';
-    lines.push(_escHtml(secondLine));
-  }
-  return lines
-    .map(function (line) {
-      return '<div>' + line + '</div>';
-    })
-    .join('');
+function _a36DetSummaryIssue(f) {
+  return String(f.issueShort)
+    .replace(/ sequence not fully in place$/, '')
+    .replace(/^Zone setpoints differ from the recommended setpoints$/, 'Zone setpoints differ from recommended');
 }
 
 /**
@@ -30922,9 +30902,10 @@ function _a36DetSummaryTokens(ctx, sectionNo) {
       h: A36_DET_TITLE_H,
     };
     _a36DetTableToks(
-      _a36DetTableOpen([9, 14, 17, 48, 12], ['No.', 'Library', 'System', 'Issue', 'Effect']),
+      _a36DetTableOpen([8, 20, 21, 37, 14], ['No.', 'Library', 'System', 'Issue', 'Effect']),
       list.map(function (f) {
-        return _a36DetRow([{ html: String(f.num || f.n), center: true }, _escHtml(f.lib), _escHtml(f.groupLabel), _a36DetSummaryIssueHtml(f), _escHtml(f.effect)]);
+        // One line per row (Matt 2026-11-18): the library without the word "Library" (the column says it), the short issue name.
+        return _a36DetRow([{ html: String(f.num || f.n), center: true }, _escHtml(String(f.lib).replace(/ Library$/, '')), _escHtml(f.groupLabel), _escHtml(_a36DetSummaryIssue(f)), _escHtml(f.effect)]);
       }),
       summaryTitle,
     ).forEach(function (t) {

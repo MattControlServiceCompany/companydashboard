@@ -63,7 +63,7 @@ ok(lits.every((s) => /variable-speed savings/.test(s)), '3. no report string say
   ok(!/that need a CO2 sensor/.test(RE) && /f\.dcvNote = dcvNarrow \? _a36DetDcvNote\(g, units\)/.test(RE), '2. a CO2 count is against the whole group with a note on the other units; no "that need a CO2 sensor" (Matt 2026-11-18: no unit needs a CO2 sensor)');
   ok(sandbox.f(3, 25) === '3 of 25 units' && sandbox.f(5, 5) === 'all 5 units' && sandbox.f(2, 2) === 'both units' && sandbox.f(1, 1) === 'the unit', '2. a count with no base text keeps the old words');
   ok(sandbox.f(1, 1, 'plant') === 'the plant' && sandbox.f(2, 2, 'plant') === 'both plants', '9. a plant is a plant, not a unit');
-  ok(/f\.fracNoun = g && \(g\.category === 'hwp' \|\| g\.category === 'chwp'\) \? 'plant'/.test(RE) && /_a36DetFraction\(f\.units, f\.groupTotal && f\.dcvNote \? f\.groupTotal : f\.total, f\.fracNoun, ''\)/.test(RE), '2/9. the finding and the Opportunities Summary read the same noun and base');
+  ok(/f\.fracNoun = g && \(g\.category === 'hwp' \|\| g\.category === 'chwp'\) \? 'plant'/.test(RE), '9. a plant finding reads the noun plant (the Opportunities Summary prints no count since 2026-11-18)');
   // 3: the setpoint wording
   ok(/setpoints that differ from these\.'/.test(RE) && !/Each differing setpoint is also an opportunity/.test(RE) && / Appendix A lists each setpoint with the recommended value beside it\./.test(RE) && /Control Service Company recommends zone setpoints of /.test(RE) && !/ASHRAE 36 recommended values/.test(RE), '3. Executive Summary: setpoints "differ from the Control Service Company standard setpoints in Appendix A" (they are the company setpoints, not ASHRAE 36 values)');
   // 4: every Key Findings phrase says only that the full sequence is missing
