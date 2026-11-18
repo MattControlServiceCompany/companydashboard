@@ -3473,6 +3473,12 @@ function _pricingOpportunityLines(rows, opps) {
   };
 }
 
+// A row id inside a quoted JS argument of an inline handler: row ids carry building names (an apostrophe in "St. Mary's" broke the handler).
+// Escape for the JS string first, then for the HTML attribute.
+function _pricingIdArg(id) {
+  return _escHtml(String(id == null ? '' : id).replace(/\\/g, '\\\\').replace(/'/g, "\\'"));
+}
+
 function buildSensorInvestigationRows(projId) {
   if (typeof emLoadMatrix !== 'function' || typeof emComputeSensorDeficiencyInventory !== 'function') return [];
   var matData = emLoadMatrix(projId);
@@ -4475,7 +4481,7 @@ function initCostEstimateTab(projId) {
         ' onchange="_pricingManualPrice(event,\'' +
         projId +
         "','" +
-        row.id +
+        _pricingIdArg(row.id) +
         '\')">';
     } else if (!hasCatalog) {
       unitPriceCell = '<span style="color:var(--text3)">—</span>';
@@ -4514,7 +4520,7 @@ function initCostEstimateTab(projId) {
         ' onchange="_pricingToggleRow(\'' +
         projId +
         "','" +
-        row.id +
+        _pricingIdArg(row.id) +
         '\',this.checked)"' +
         ' style="cursor:pointer">',
       '</td>',
