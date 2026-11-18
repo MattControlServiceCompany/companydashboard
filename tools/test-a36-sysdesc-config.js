@@ -114,6 +114,11 @@ const ok = (c, m) => {
       out.tHwEnableOnly = mk('hwp', 'Hot Water Plant', [names(['Boiler 1 Enable', 'Boiler 1 Status', 'Boiler 2 Enable', 'Boiler 2 Status', 'Hot Water Pump 1 Enable', 'Hot Water Pump 2 Enable', 'Hot Water Set Point'])], ['boilerEnable', 'boilerStatus', 'hwPumpEnable', 'hwSetpoint']);
       out.tHwIntegration = mk('hwp', 'Hot Water Plant', [names(['Boiler 1 Enable', 'Boiler 1 Fire Rate', 'Boiler 1 Setpoint %', 'Boiler 1 Flame Status', 'Boiler 1 Fault Code', 'Hot Water Pump 1 Enable'])], ['boilerEnable', 'hwPumpEnable']);
       out.tAirSensors = mk('ahu', 'Variable Air Volume Air Handling Unit', [names(['Supply Fan Enabled', 'Supply Fan Speed Command', 'Duct Static Pressure', 'Supply Air Temperature', 'Freezestat Alarm'])], ['sfEnable', 'sfSpeedCmd', 'dsp', 'sat', 'freezeStat'], ['oaFlow']);
+      // 2026-11-18 expert voice: counts, low-value schedule lines, the meaning of a missing differential pressure sensor
+      out.tCountTerm = mk('vav', 'Variable Air Volume Terminal', [names(['Zone Temp', 'Damper Command']), names(['Zone Temp', 'Damper Command']), names(['Zone Temp', 'Damper Command'])], ['dampCmd']);
+      out.tHeaterSched = mk('heater', 'Heater', [names(['Heater Enable']), names(['Heater Enable'])], ['enable']);
+      out.tNoDp = mk('hwp', 'Hot Water Plant', [names(['Boiler 1 Enable', 'Secondary Pump 1 VFD Speed', 'Secondary Pump 2 VFD Speed'])], ['boilerEnable', 'hwPumpSpeed'], ['hwdp']);
+      out.tDp = mk('hwp', 'Hot Water Plant', [names(['Boiler 1 Enable', 'Secondary Pump 1 VFD Speed', 'Secondary Pump 2 VFD Speed', 'System Differential Pressure'])], ['boilerEnable', 'hwPumpSpeed', 'hwdp']);
       // ---- sequences (2026-11-17): the rows of en_auditseq_<pid> through _a36DetSequenceIds (the one input) ----
       let seqTab = {};
       window._a36DetSequenceIds = function (name) { return seqTab[name] || []; };
@@ -239,7 +244,7 @@ const ok = (c, m) => {
     ok(/has its own controller, which sets the firing rate/.test(r.tHwEnableOnly) && !/setpoint|holds|hold/.test(r.tHwEnableOnly), 'an enable and status only plant says the boiler controller sets the firing rate and makes no setpoint claim: ' + r.tHwEnableOnly);
     ok(/integration/.test(r.tHwIntegration) && /own controllers?/.test(r.tHwIntegration) && !/does not control/.test(r.tHwIntegration), 'a plant with boiler internal points and a firing rate says integration: ' + r.tHwIntegration);
     ok(/varies the pump speed to hold the differential pressure of the piping/.test(r.tHwSecondary), 'variable speed secondary pumps: the drive and the pressure control are described');
-    ok(/The unit has a supply air temperature sensor/.test(r.tAirSensors) && /has no [^.]*outdoor airflow measurement/.test(r.tAirSensors), 'sensors present and sensors absent are both stated: ' + r.tAirSensors);
+    ok(/The unit has a supply air temperature sensor and a duct static pressure sensor but no outdoor airflow measurement\./.test(r.tAirSensors), 'sensors present and sensors absent are both stated: ' + r.tAirSensors);
     ok(/protected by a freeze stat/.test(r.tAirSensors) && /request/.test(r.tAirSensors) === false, 'safeties are stated from points; no request claim without request points: ' + r.tAirSensors);
     // sequences (2026-11-17)
     ok(/The (building automation )?system resets the hot water supply temperature based on heating requests, with an outdoor air high limit\./.test(r.tSeq) && !/resets the hot water/.test(r.tSeqNone), 'the sequences input adds the merged sentence (and only with the input): ' + r.tSeq);
@@ -264,6 +269,10 @@ const ok = (c, m) => {
     ok(!/changes the speed of an electric motor/.test(r.vfdPlant + ' ' + r.vfdAir + ' ' + r.vfdAirAlone) && /equipped with a variable frequency drive\./.test(r.vfdAir), 'no definition of a variable frequency drive (Matt 2026-11-17: obvious): ' + r.vfdPlant + ' || ' + r.vfdAir);
     ok(/measures its airflow/.test(r.tTermMeasure) && !/airflow measurement/.test(r.tTermMeasure), 'the airflow measurement is stated once (no "has an airflow measurement" after "measures its airflow"): ' + r.tTermMeasure);
     ok(!/\b[Ee]ach (terminal|unit|heater|exhaust fan)\b/.test(r.tTermOne + ' ' + r.tHeaterOne) && /The damper of the terminal unit modulates/.test(r.tTermOne), 'a single unit group has no "each" wording: ' + r.tTermOne + ' || ' + r.tHeaterOne);
+    ok(/^The library has three variable air volume terminals\./.test(r.tCountTerm), 'a description starts with the count of the units of the type: ' + r.tCountTerm);
+    ok(/^The library has two heaters\./.test(r.tHeaterSched) && !/occupied schedule/.test(r.tHeaterSched), 'a heater description has no occupied schedule line: ' + r.tHeaterSched);
+    ok(/Without a differential pressure sensor, the pump speed cannot be controlled to hold the differential pressure of the piping\./.test(r.tNoDp) && /no hot water differential pressure sensor/.test(r.tNoDp), 'a missing differential pressure sensor states what it means for the variable speed pumps: ' + r.tNoDp);
+    ok(!/Without a differential pressure sensor/.test(r.tDp), 'a plant with a differential pressure sensor has no missing-sensor sentence: ' + r.tDp);
     ok(/monitors the run status of the chiller and each pump\./.test(r.tChwStatus2) && /monitors the run status of the chiller and the pump\./.test(r.tChwStatus1), 'run status wording follows the counts: "the chiller and each pump", "the chiller and the pump": ' + r.tChwStatus2 + ' || ' + r.tChwStatus1);
     ok(![r.tHwSecondary, r.tHwPlain, r.tHwEnableOnly, r.tHwIntegration, r.tChwStatus2, r.tSeq, r.tSeqOne, r.tSeqHeater].some((x) => /(The building automation system [^.]*\. ){3}The building automation system /.test(x)), 'no four sentences in a row open with "The building automation system"');
     var every = [r.tHwSecondary, r.tHwPlain, r.tHwPrimary, r.tChwAir, r.tChwNoType, r.tHwEnableOnly, r.tHwIntegration, r.tAirGas, r.tAirCoil, r.tAirTwo, r.tAirSensors, r.tSeq, r.tSeqSome, r.tSeqAll, r.tSeqOne, r.econAll3, r.econDry, r.econEnth, r.econDryEnth, r.econDiff, r.econSome, r.tOwn, r.tOwnOne, r.tSeqEf, r.tSeqHeater, r.vfdPlant, r.vfdAir, r.tTermMeasure, r.tTermOne, r.tChwStatus2].join(' ');

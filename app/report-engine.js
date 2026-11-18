@@ -29070,6 +29070,12 @@ function _a36DetControlSentences(g, f, params, proof) {
     return list.length > 1 ? many : one;
   }
   var onSchedule = sched ? ' on the occupied schedule' : '';
+  // Start and stop on the occupied schedule says nothing a reader can use (Matt 2026-11-18: "what value does this give the reader?"): such a
+  // sentence prints only when the group has no other sentence, so the description is not empty.
+  var lowValue = [];
+  function addLow(s, fn) {
+    if (s) lowValue.push({ fn: fn || '', text: s.replace(/\.\.$/, '.') });
+  }
   // The sequence sentences (A36_DET_SEQ) of the ids the units of the group have, for one paragraph, in table order. A sequence on only some of
   // the units says how many ("On 2 of the 3 units, ..."); a sequence that is available but not enabled has its own sentence. skip = { id: true }
   // for an id whose sentence the points of the group already wrote. The economizer is introduced, and enthalpy explained, once.
@@ -29230,20 +29236,36 @@ function _a36DetControlSentences(g, f, params, proof) {
     });
     return n;
   }
-  function sensorSentences(keys, who, noun, prefix) {
+  // consequence = { key: 'what the missing sensor means for the control' } for an absent sensor (a sentence that follows the sensor sentence).
+  function sensorSentences(keys, who, noun, prefix, consequence) {
     var present = [];
     var absent = [];
+    var absentKeys = [];
     var partial = [];
+    // A supply and a return temperature sensor read as one phrase ("hot water supply and return temperature sensors").
+    var PAIR = { hwst: 'hwrt', chwst: 'chwrt' };
+    var paired = {};
     keys.forEach(function (k) {
       var n = cnt(k);
       var m = missingCount(k);
       var word = (prefix || '') + SENSOR_NOUN[k];
+      if (PAIR[k] && n === total && total > 0 && cnt(PAIR[k]) === total) {
+        paired[PAIR[k]] = true;
+        present.push((prefix || '') + 'supply and return temperature sensors');
+        return;
+      }
+      if (paired[k]) return;
       if (n === total && total > 0) present.push(_a36DetArticle(word));
-      else if (m === total && total > 0) absent.push(word);
-      else if (n > 0) partial.push({ w: _a36DetArticle(word), n: n });
+      else if (m === total && total > 0) {
+        absent.push(word);
+        absentKeys.push(k);
+      } else if (n > 0) partial.push({ w: _a36DetArticle(word), n: n });
     });
-    if (present.length) add(who + ' has ' + _a36DetSerial(present) + '.', 'sensors');
-    if (absent.length) add((present.length && total === 1 ? 'It' : who) + ' has no ' + (absent.length > 1 ? absent.slice(0, -1).join(', ') + (absent.length > 2 ? ',' : '') + ' or ' + absent[absent.length - 1] : absent[0]) + '.', 'sensors');
+    var absentText = absent.length > 1 ? absent.slice(0, -1).join(', ') + (absent.length > 2 ? ',' : '') + ' or ' + absent[absent.length - 1] : absent[0];
+    if (present.length && absent.length) add(who + ' has ' + _a36DetSerial(present) + ' but no ' + absentText + '.', 'sensors');
+    else if (present.length) add(who + ' has ' + _a36DetSerial(present) + '.', 'sensors');
+    else if (absent.length) add(who + ' has no ' + absentText + '.', 'sensors');
+    if (consequence) absentKeys.forEach(function (k) { if (consequence[k]) add(consequence[k], 'sensors'); });
     partial.slice(0, 3).forEach(function (p) {
       add(_a36DetUpperFirst(p.w) + ' is present on ' + p.n + ' of the ' + total + ' ' + noun + 's.', 'sensors');
     });
@@ -29385,7 +29407,11 @@ function _a36DetControlSentences(g, f, params, proof) {
     if (variable && (plantAll(function (c) { return c.pumpDpControl; }) || (has(hw ? 'hwdp' : 'chwdp') && has(hw ? 'hwPumpSpeed' : 'schwpSpeed')))) add(BAS + 'varies the pump speed to hold the differential pressure of the piping.', 'pumping');
     seqAdd('pumping');
     // sensors
-    sensorSentences(hw ? ['hwst', 'hwrt', 'hwdp', 'hwFlow'] : ['chwst', 'chwrt', 'chwdp', 'chwFlow'], total === 1 ? 'The plant' : 'Each plant', 'plant', water + ' ');
+    // A missing differential pressure sensor means the variable speed pumps cannot be controlled to hold the differential pressure of the piping.
+    var dpKey = hw ? 'hwdp' : 'chwdp';
+    var dpMeaning = {};
+    if (variable) dpMeaning[dpKey] = (total === 1 ? 'Without a differential pressure sensor, the pump speed' : 'Without a differential pressure sensor, the pump speed of these plants') + ' cannot be controlled to hold the differential pressure of the piping.';
+    sensorSentences(hw ? ['hwst', 'hwrt', 'hwdp', 'hwFlow'] : ['chwst', 'chwrt', 'chwdp', 'chwFlow'], total === 1 ? 'The plant' : 'Each plant', 'plant', water + ' ', dpMeaning);
   }
   var cat = g.category;
   if (A36_DET_TERMINALS[cat]) {
@@ -29586,7 +29612,7 @@ function _a36DetControlSentences(g, f, params, proof) {
     if (has('hwValve')) valves.push('heating valve');
     if (has('chwValve')) valves.push('cooling valve');
     var fcuControl = valves.length > 0 && has('zoneTemp');
-    if (sched) add((total === 1 ? 'The unit' : 'Each unit') + ' follows the occupied schedule.', 'start');
+    if (sched) addLow((total === 1 ? 'The unit' : 'Each unit') + ' follows the occupied schedule.', 'start');
     seqAdd('start');
     if (fcuControl) add(lead(['zoneTemp'], 'unit', subject(valves) + ' ' + verb(valves, 'modulates', 'modulate') + (valves.length > 1 ? ' in sequence' : '') + ' to hold the zone temperature.'), 'temp');
     seqAdd('temp');
@@ -29596,8 +29622,8 @@ function _a36DetControlSentences(g, f, params, proof) {
     seqAdd('requests');
   } else if (cat === 'heater') {
     var heaterWho = total === 1 ? 'The heater' : 'Each heater';
-    if (has('enable')) add(some(['enable'], 'heater') ? lead(['enable'], 'heater', sched ? 'The heater starts and stops' + onSchedule + '.' : BAS + 'enables the heater.') : sched ? heaterWho + ' starts and stops' + onSchedule + '.' : BAS + 'enables ' + (total === 1 ? 'the heater' : 'each heater') + '.', 'start');
-    else if (sched) add(heaterWho + ' follows the occupied schedule.', 'start');
+    if (has('enable')) addLow(some(['enable'], 'heater') ? lead(['enable'], 'heater', sched ? 'The heater starts and stops' + onSchedule + '.' : BAS + 'enables the heater.') : sched ? heaterWho + ' starts and stops' + onSchedule + '.' : BAS + 'enables ' + (total === 1 ? 'the heater' : 'each heater') + '.', 'start');
+    else if (sched) addLow(heaterWho + ' follows the occupied schedule.', 'start');
     seqAdd('start');
     seqAdd('zone');
     if (val('oaEnable') && !seqCount('heat_oa_lockout', 'on')) add('The heaters run only when the outdoor air temperature is below an enable limit.', 'start');
@@ -29614,14 +29640,16 @@ function _a36DetControlSentences(g, f, params, proof) {
     if (ecfg.length) {
       ['sched', 'interlock', 'report', 'fail', 'runtime'].forEach(function (k) {
         _a36DetFactSentences(preds[k], { one: 'The exhaust fan', each: 'Each exhaust fan' }, 'exhaust fan').forEach(function (t) {
-          add(t, 'ef');
+          if (k === 'sched') addLow(t, 'ef');
+          else add(t, 'ef');
         });
       });
-      if (!out.length && has('enable')) add(BAS + 'enables ' + (total === 1 ? 'the exhaust fan' : 'each exhaust fan') + '.', 'ef');
-    } else if (has('schedule')) add(some(['schedule'], 'exhaust fan') ? lead(['schedule'], 'exhaust fan', sched ? 'The exhaust fan starts and stops' + onSchedule + '.' : 'The exhaust fan starts and stops on a schedule.') : sched ? (total === 1 ? 'The exhaust fan' : 'Each exhaust fan') + ' starts and stops' + onSchedule + '.' : (total === 1 ? 'The exhaust fan' : 'Each exhaust fan') + ' starts and stops on a schedule.', 'ef');
-    else if (sched) add((total === 1 ? 'The exhaust fan' : 'Each exhaust fan') + ' follows the occupied schedule.', 'ef');
+      if (!out.length && !lowValue.length && has('enable')) addLow(BAS + 'enables ' + (total === 1 ? 'the exhaust fan' : 'each exhaust fan') + '.', 'ef');
+    } else if (has('schedule')) addLow(some(['schedule'], 'exhaust fan') ? lead(['schedule'], 'exhaust fan', sched ? 'The exhaust fan starts and stops' + onSchedule + '.' : 'The exhaust fan starts and stops on a schedule.') : sched ? (total === 1 ? 'The exhaust fan' : 'Each exhaust fan') + ' starts and stops' + onSchedule + '.' : (total === 1 ? 'The exhaust fan' : 'Each exhaust fan') + ' starts and stops on a schedule.', 'ef');
+    else if (sched) addLow((total === 1 ? 'The exhaust fan' : 'Each exhaust fan') + ' follows the occupied schedule.', 'ef');
     seqAdd('ef');
   }
+  if (!out.length) lowValue.forEach(function (x) { out.push(x); });
   return out;
 }
 
@@ -29701,7 +29729,8 @@ function _a36DetMergeShareSentences(body) {
     var sh = s.share;
     var parts = sh.parts;
     var joined = parts.length === 1 ? parts[0] : parts.slice(0, -1).join('; ') + '; and ' + parts[parts.length - 1];
-    var own = new RegExp('^the ' + sh.noun + ' ');
+    // Only when a verb follows the noun ("the heater runs"); "the heater fan runs" keeps its subject (was: "One of the 2 heaters fan runs").
+    var own = new RegExp('^the ' + sh.noun + ' (?=[a-z]+s\\b)');
     if ((sh.n === '1' || sh.n === 'one') && own.test(joined)) return { fn: s.fn, text: 'One of the ' + sh.total + ' ' + sh.noun + 's ' + joined.replace(own, '') + '.' };
     return { fn: s.fn, text: 'On ' + sh.n + ' of the ' + sh.total + ' ' + sh.noun + 's, ' + joined + '.' };
   });
@@ -29746,6 +29775,12 @@ function _a36DetDescriptionParas(g, ctx) {
     reset: resets,
     vfd: vfd,
   });
+  // Every description states how many units of the type there are (Matt 2026-11-18): "Blue Valley Library has 19 dual-duct terminal units."
+  // A single air handler that says it is the only one in the system already states the count.
+  if (body.length && !/is the only air handler in the building automation system/.test(body[0].text)) {
+    var nUnits = g.units.length;
+    body.unshift({ fn: body[0].fn, text: (ctx.libName || 'The library') + ' has ' + _a36DetCountWord(nUnits) + ' ' + _a36DetTypePlural(g.label, nUnits) + '.' });
+  }
   if (!body.length) body.push({ fn: '', text: f.covered.keys.length ? 'This equipment has monitoring points only.' : 'The building automation system shows no sensors or control points for this equipment.' });
   body = _a36DetMergeShareSentences(body);
   // One paragraph for each part of the description (what the system has, how it is controlled, the sequences, the protection, the sensors): the
@@ -29923,7 +29958,7 @@ function _a36DetPhotoHtml(photo, libraryName, scale) {
 // d._a36LibraryPhotos, printed at 75 percent so the table fits under it on an 8.5 x 11 in page), the equipment audited by type with the findings of
 // each type, and the total. A library with no photo prints no picture. No ASHRAE 36 text: the scores and the devices to install and sequences to
 // program of the building are in the ASHRAE 36 Sequences section.
-var A36_AUDIT_PHOTO_SCALE = 0.62;
+var A36_AUDIT_PHOTO_SCALE = 0.62;
 var A36_AUDIT_PHOTO_SCALE_SMALL = 0.5; // a building page too short for the table at the full photo size
 function _a36AuditBuildingTokens(d, b, ctx, showBuildingInfra) {
   var name = _a36DisplayName(b);
