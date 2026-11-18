@@ -1,7 +1,7 @@
 // tools/test-a36-utility-use.js: the 12-month utility use in the Audit Report (2026-11-18). SYNTHETIC names and values only; headless bundled
 // Chromium; no network.
 // Rules tested: each per-building page has one prose line "<period> utility use: N kWh and N therms, $N. Floor area N ft2. Energy Use Intensity
-// (EUI) N kBtu/ft2." (no gas meter: "(no gas meter on file)"; no utility data: no line); ONE comparison page "Utility Use by <noun>" follows the last
+// (EUI) N kBtu/ft2." (no gas meter: "(electric only)"; no utility data: no line); ONE comparison page "Utility Use by <noun>" follows the last
 // per-building page: a sentence, one table sorted by EUI high to low, a total row whose EUI is computePeriodEUI of the summed kBtu and area;
 // with fewer than 2 buildings that have data there is no comparison page.
 // Run: CH_TMP_ROOT=<scratch> node tools/test-a36-utility-use.js   (exit 0 = all pass)
@@ -88,14 +88,14 @@ const ok = (c, m) => {
     const titleIdx = r.pages.findIndex((t) => /Utility Use by Library/.test(t));
     ok(titleIdx >= 0, 'the comparison page "Utility Use by Library" exists');
     ok(r.secs[titleIdx] === 'building' && r.secs.lastIndexOf('building') === titleIdx, 'it is the last page of the per-building group (after every building page)');
-    ok(r.pages.slice(0, titleIdx).filter((t) => /Alpha Library/.test(t) && /utility use:/.test(t)).length === 1, 'Alpha Library page has the use line');
-    const alphaPage = r.pages.find((t, i) => r.secs[i] === 'building' && /Alpha Library/.test(t) && /utility use:/.test(t));
-    ok(/2025 utility use: 240,000 kWh and 6,000 therms, \$36,000\./.test(alphaPage), 'line with gas: ' + (alphaPage.match(/2025 utility use:.*?kBtu\/ft²\./) || [''])[0]);
-    ok(/Floor area 20,000 ft²\. Energy Use Intensity \(EUI\) \d+\.\d kBtu\/ft²\./.test(alphaPage), 'floor area and EUI sentences');
-    const betaPage = r.pages.find((t, i) => r.secs[i] === 'building' && /Beta Library/.test(t) && /utility use:/.test(t));
-    ok(/2025 utility use: 60,000 kWh \(no gas meter on file\), \$7,200\./.test(betaPage), 'line with no gas meter');
-    ok(!r.pages.some((t, i) => r.secs[i] === 'building' && /Gamma Library/.test(t) && /utility use:/.test(t)), 'an 11-month building has no line');
-    ok(!r.pages.some((t, i) => r.secs[i] === 'building' && /Delta Library/.test(t) && /utility use:/.test(t)), 'a building with no meters has no line');
+    ok(r.pages.slice(0, titleIdx).filter((t) => /Alpha Library/.test(t) && /Energy Use Intensity \(2025\)/.test(t)).length === 1, 'Alpha Library page has the utility card');
+    const alphaPage = r.pages.find((t, i) => r.secs[i] === 'building' && /Alpha Library/.test(t) && /Energy Use Intensity \(2025\)/.test(t));
+    ok(/240,000 kWh, 6,000 therms\s*\$36,000, [\d,]+ ft²/.test(alphaPage) && !/Outdoor air sensors/.test(alphaPage), 'card with gas replaces the outdoor air card: ' + (alphaPage.match(/Energy Use Intensity[\s\S]{0,120}/) || [''])[0]);
+    ok(/Energy Use Intensity \(2025\)\s*\d+\.\d kBtu\/ft²/.test(alphaPage) && /20,000 ft²/.test(alphaPage), 'card value is the intensity; the floor area is in the note');
+    const betaPage = r.pages.find((t, i) => r.secs[i] === 'building' && /Beta Library/.test(t) && /Energy Use Intensity \(2025\)/.test(t));
+    ok(/60,000 kWh, electric only\s*\$7,200, [\d,]+ ft²/.test(betaPage) && !/Outdoor air sensors/.test(betaPage), 'card with no gas meter replaces the outdoor air card');
+    ok(!r.pages.some((t, i) => r.secs[i] === 'building' && /Gamma Library/.test(t) && /Energy Use Intensity \(/.test(t)), 'an 11-month building has no utility card');
+    ok(!r.pages.some((t, i) => r.secs[i] === 'building' && /Delta Library/.test(t) && /Energy Use Intensity \(/.test(t)), 'a building with no meters has no utility card');
     const t = r.pages[titleIdx];
     ok(/In 2025 the 2 libraries used 300,000 kWh of electricity and 6,000 therms of gas, at a cost of \$43,200\./.test(t), 'context sentence: ' + (t.match(/In 2025.*?\./) || [''])[0]);
     ok(/Energy Use Intensity \(EUI\) ranges from [\d.]+ kBtu\/ft² at \w+ Library to [\d.]+ at \w+ Library\./.test(t), 'range sentence');
@@ -111,7 +111,7 @@ const ok = (c, m) => {
     ok(/background:var\(--rpt-blue\)/.test(html) && /text-align:right/.test(html), 'blue header row and right-aligned numbers');
     ok(!/finding|ASHRAE/i.test(t), 'the page has no "finding" and no "ASHRAE" text');
     ok(!r.pages1.some((x) => /Utility Use by Library/.test(x)), 'one building with data: no comparison page');
-    ok(r.pages1.some((x, i) => r.secs1[i] === 'building' && /utility use:/.test(x)), 'one building with data: its line still prints');
+    ok(r.pages1.some((x, i) => r.secs1[i] === 'building' && /Energy Use Intensity \(2025\)/.test(x)), 'one building with data: its card still prints');
     ok(errs.length === 0, 'no page errors: ' + errs.join(' | '));
     void bldPages;
   } finally {

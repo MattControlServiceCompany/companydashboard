@@ -30615,13 +30615,21 @@ function _a36BuildingUse(d, b) {
   d._a36Use[b.name] = use;
   return use;
 }
-// The line under the photo of a building page: "2025 utility use: 317,201 kWh and 10,835 therms, $47,623. Floor area 25,073 ft². Energy Use
-// Intensity (EUI) 86.4 kBtu/ft²." Plain text (every part is a number or a fixed word).
-function _a36UseLine(u) {
-  var gas = u.hasGas ? ' and ' + rptCount(u.therms) + ' therms' : ' (no gas meter on file)';
-  var t = u.label + ' utility use: ' + rptCount(u.kwh) + ' kWh' + gas + ', ' + _fmtUSD(u.cost, '$0') + '.';
-  if (u.sqft > 0) t += ' Floor area ' + rptCount(u.sqft) + ' ' + A36_FT2 + '. Energy Use Intensity (EUI) ' + u.eui.toFixed(1) + ' kBtu/' + A36_FT2 + '.';
-  return t;
+// The utility card of a building page (Matt 2026-11-18: the utility use goes in the facts square of the outdoor air sensors, not on its own line):
+// label "Energy Use Intensity (2025)", value "86.4 kBtu/ft²", note "317,201 kWh, 10,835 therms" / "$47,623, 25,073 ft²" (no gas meter:
+// "48,404 kWh, electric only"). A number and its unit never break apart. Returns null with no floor area (no intensity to show).
+function _a36UseCard(u) {
+  if (!(u && u.sqft > 0)) return null;
+  var nb = function (v) {
+    return '<span style="white-space:nowrap">' + v + '</span>';
+  };
+  return {
+    label: 'Energy Use Intensity (' + u.label + ')',
+    value: nb(u.eui.toFixed(1) + ' kBtu/' + A36_FT2),
+    note:
+      nb(rptCount(u.kwh) + ' kWh') + ', ' + (u.hasGas ? nb(rptCount(u.therms) + ' therms') : 'electric only') + '<br>' +
+      nb(_fmtUSD(u.cost, '$0')) + ', ' + nb(rptCount(u.sqft) + ' ' + A36_FT2),
+  };
 }
 // The page after the per-building pages: one table of the 12-month use of every building that has it, highest Energy Use Intensity first, with a
 // total row. Only with at least 2 buildings that have use and floor area for the same months. Returns the pages ([] when there is none).
@@ -30746,21 +30754,25 @@ function _a36AuditBuildingTokens(d, b, ctx, showBuildingInfra) {
   var infraVal = function (on) {
     return on ? 'Installed' : 'Not installed';
   };
+  var useCard = _a36UseCard(_a36BuildingUse(d, b));
   var cards =
     '<table style="width:100%;border-collapse:collapse;table-layout:fixed"><tr>' +
     card(rptCount(_a36AuditUnitsOf(b)), 'Equipment units audited', 'var(--rpt-blue)') +
     card(rptCount(nF), nF === 1 ? 'Opportunity' : 'Opportunities', nF ? 'var(--rpt-orange)' : 'var(--rpt-green-dark)') +
     '</tr>' +
+    // The utility card prints with or without the building infrastructure cards (it is the building's own data, not an infrastructure check).
     (showBuildingInfra
       ? '<tr>' +
         card(infraVal(b.hasPowerMonitoring), 'Building power meter', b.hasPowerMonitoring ? 'var(--rpt-green-dark)' : pmRec ? 'var(--rpt-orange)' : 'var(--rpt-page-text)', pmNote) +
-        card(infraVal(b.hasOAConditions), 'Outdoor air sensors', b.hasOAConditions ? 'var(--rpt-green-dark)' : 'var(--rpt-orange)') +
+        (useCard
+          ? card(useCard.value, useCard.label, 'var(--rpt-blue)', useCard.note)
+          : card(infraVal(b.hasOAConditions), 'Outdoor air sensors', b.hasOAConditions ? 'var(--rpt-green-dark)' : 'var(--rpt-orange)')) +
         '</tr>'
-      : '') +
+      : useCard
+        ? '<tr>' + card(useCard.value, useCard.label, 'var(--rpt-blue)', useCard.note) + '<td style="width:50%;border:none"></td></tr>'
+        : '') +
     '</table>';
   var photo = d._a36LibraryPhotos && d._a36LibraryPhotos[name];
-  var use = _a36BuildingUse(d, b);
-  var useP = use ? '<p style="' + A36_DET_P + ';margin-top:4px">' + _a36UseLine(use) + '</p>' : '';
   var photoTok = function (scale) {
     return _a36DetTok(
       (photo
@@ -30768,7 +30780,7 @@ function _a36AuditBuildingTokens(d, b, ctx, showBuildingInfra) {
             Math.round(A36_DET_PHOTO_W * scale + 8) + 'px"><col></colgroup><tr>' +
             '<td style="vertical-align:top;padding:0;border:none">' + _a36DetPhotoHtml(photo, name, scale).replace('margin:0 0 12px 0', 'margin:0') + '</td>' +
             '<td style="vertical-align:top;padding:0;border:none">' + cards + '</td></tr></table>'
-        : cards) + useP,
+        : cards),
       true,
     );
   };
