@@ -31659,6 +31659,65 @@ function _a36ScopeNodes(projId) {
     });
 }
 
+// ─── Abbreviations in the Audit Report (Matt, 2026-11-18) ────────────────────────────────────────────
+// The first use of a term in the report prints as "full words (ABBR)"; every later use prints the abbreviation. One pass over the text nodes
+// of the finished pages, in reading order; the state is per call (per report). Skipped: headings, the cover, table header cells, the page
+// heading bars, the blue title bands and figure captions. The PDF and the Word file are built from this same page DOM, so both show it.
+var A36_ABBR_TERMS = [
+  { abbr: 'BAS', words: 'building automation system', an: false },
+  { abbr: 'AHU', words: 'air handling unit', an: true },
+  { abbr: 'VAV', words: 'variable air volume', an: false },
+  { abbr: 'RTU', words: 'rooftop unit', an: true },
+  { abbr: 'FCU', words: 'fan coil unit', an: true },
+  { abbr: 'DOAS', words: 'dedicated outdoor air system', an: false },
+  { abbr: 'ERV', words: 'energy recovery ventilator', an: true },
+];
+function _a36AbbrSkipNode(node) {
+  for (var el = node.parentElement; el; el = el.parentElement) {
+    if (/^(H[1-6]|TH|THEAD|SCRIPT|STYLE)$/.test(el.tagName)) return true;
+    if (el.getAttribute('data-section') === 'cover') return true;
+    var cls = el.getAttribute('class') || '';
+    if (/\b(rpt-pl|rpt-int-hdr|rpt-pg-title|rpt-footer|rpt-footer-label|rpt-pg-footer|rpt-pg-footer-pagenum)\b/.test(cls)) return true;
+    if (/background:\s*var\(--rpt-blue\)/.test(el.getAttribute('style') || '')) return true;
+    var prev = el.previousElementSibling;
+    if (prev && prev.tagName === 'IMG' && el.parentElement && el.parentElement.querySelector('img') === prev) return true; // a figure caption
+    if (el.id === 'reportPages') break;
+  }
+  return false;
+}
+function _a36ApplyAbbreviations(root) {
+  if (!root) return;
+  var walker = root.ownerDocument.createTreeWalker(root, NodeFilter.SHOW_TEXT);
+  var nodes = [];
+  for (var n = walker.nextNode(); n; n = walker.nextNode()) nodes.push(n);
+  var defined = {};
+  var res = A36_ABBR_TERMS.map(function (t) {
+    return new RegExp('(\\b(?:an?\\s+)?)(' + t.words.replace(/ /g, '\\s+') + ')(s?)\\b(\\s*\\(' + t.abbr + 's?\\))?', 'gi');
+  });
+  nodes.forEach(function (node) {
+    var text = node.nodeValue;
+    if (!text || text.length < 6 || _a36AbbrSkipNode(node)) return;
+    var out = text;
+    A36_ABBR_TERMS.forEach(function (t, i) {
+      out = out.replace(res[i], function (m, art, words, plural, paren) {
+        if (words === words.toUpperCase()) return m; // an all-capital heading style: leave it
+        var abbr = t.abbr + (plural && !/S$/.test(t.abbr) ? 's' : '');
+        if (!defined[t.abbr]) {
+          defined[t.abbr] = true;
+          return art + words + plural + ' (' + abbr + ')'; // the first use: full words, then the abbreviation in brackets
+        }
+        var article = art ? art.replace(/\b(an?)(\s+)$/i, function (x, a, sp) {
+          var want = t.an ? 'an' : 'a';
+          return (a.charAt(0) === 'A' ? want.charAt(0).toUpperCase() + want.slice(1) : want) + sp;
+        }) : '';
+        return article + abbr;
+      });
+    });
+    if (out !== text) node.nodeValue = out;
+  });
+}
+window._a36ApplyAbbreviations = _a36ApplyAbbreviations;
+
 /**
  * generateASHRAE36Preview — called by the modal Generate button.
  */
@@ -31723,6 +31782,7 @@ function generateASHRAE36Preview() {
     window._currentReportData = data;
 
     showReportOverlay(html, reportTitle);
+    if (type !== 'proposal') _a36ApplyAbbreviations(document.getElementById('reportPages'));
     _updateOverlayPageNumbers();
   }
 
