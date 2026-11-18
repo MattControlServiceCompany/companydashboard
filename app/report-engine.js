@@ -21409,8 +21409,7 @@ function rptPageASHRAE36Recommendations(n, d) {
 
 // ─── _a36SetpointBuildingRows ────────────────────────────────────────────────
 // The ONE place that decides, for each building, how many zones to reprogram for Appendix A (Setpoint Programming Review): deviatorCount,
-// out of totalZones. The Audit Report page (rptPageASHRAE36SetpointReview) prints it; the cost estimate (_a36SetpointReprogramPlan, read by
-// pricing-estimator.js buildSetpointReprogramRows) prices it. Returns { buildingRows, anyCO2InExport, leftOut, zoneTotals }; buildingRows is
+// out of totalZones. The Audit Report page (rptPageASHRAE36SetpointReview) prints it; the cost estimate does not price it. Returns { buildingRows, anyCO2InExport, leftOut, zoneTotals }; buildingRows is
 // empty when no zone setpoint data exists.
 var _A36_SETPOINT_ZONE_CATS = { vav: true, fpb: true, ddvav: true, zone: true, fcu: true };
 function _a36SetpointBuildingRows(d) {
@@ -21731,10 +21730,6 @@ function _a36SetpointBuildingRows(d) {
   return { buildingRows: buildingRows, anyCO2InExport: anyCO2InExport, leftOut: _leftOut, zoneTotals: _zoneTotals };
 }
 
-// _a36SetpointReprogramPlan(d) - the zones the Service Proposal prices for Appendix A: the sum of deviatorCount over the buildings of
-// _a36SetpointBuildingRows. Single-zone-unit rows (no zone review) and buildings with 0 zones to reprogram add nothing.
-// Returns { zones, buildings } (buildings = number of buildings with at least one zone to reprogram). buildingRows is optional: a caller that
-// already has the rows of _a36SetpointBuildingRows passes them, so they are not built twice.
 // The terminal unit program upgrade the Audit Report recommends (terminalStandard opportunities of _a36DetModel): every terminal unit of each
 // library with that opportunity. The one count pricing-estimator.js buildTerminalStandardRows prices. { boxes, buildings }.
 function _a36TerminalStandardPlan(d) {
@@ -21769,19 +21764,6 @@ function _a36OpportunityList(d) {
     return [];
   }
   return ctx.model.findings;
-}
-
-function _a36SetpointReprogramPlan(d, buildingRows) {
-  var zones = 0;
-  var buildings = 0;
-  var libs = [];
-  (buildingRows || _a36SetpointBuildingRows(d).buildingRows).forEach(function (r) {
-    if (r.singleZone || !(r.deviatorCount > 0)) return;
-    zones += r.deviatorCount;
-    buildings++;
-    libs.push({ name: r.name, zones: r.deviatorCount });
-  });
-  return { zones: zones, buildings: buildings, libs: libs };
 }
 
 // _a36SetpointNeedsChangeCount(buildingRows) - the number of rows of _a36SetpointBuildingRows that need setpoints changed (bStatus
@@ -23451,19 +23433,14 @@ function _rptA36RecommendedStepPlan(d) {
       var rows = [];
       for (var i = lo; i < hi; i++) rows = rows.concat(tl.phases[i].rows || []);
       allRows = allRows.concat(rows);
-      // The setpoint and schedule reprogramming (Appendix A) is done in Step 1, so it is not a group of a later step.
-      var groups = _rptA36MonthSequenceGroups(_rptA36PhaseUnits(rows.filter(function (r) { return !r.isSetpointReprogram; })));
+      var groups = _rptA36MonthSequenceGroups(_rptA36PhaseUnits(rows));
       groups.forEach(function (g) {
         g.isNew = !seen[g.label];
         seen[g.label] = true;
       });
       steps.push({ groups: groups, rows: rows });
     }
-    var _spZones = 0;
-    allRows.forEach(function (r) {
-      if (r.isSetpointReprogram) _spZones += r.qty || 0;
-    });
-    plan = { tl: tl, steps: steps, allRows: allRows, stepCount: 1 + W, setpointZones: _spZones };
+    plan = { tl: tl, steps: steps, allRows: allRows, stepCount: 1 + W };
   }
   d._a36StepPlan = plan;
   return plan;
@@ -23556,14 +23533,8 @@ function _rptA36MeasureContentH(html) {
 // The ONE Step 1 text, for the step table and the Order of Work (2026-11-15 client-reader review: the two said it differently, and
 // a bare "Appendix" did not name the Audit Report).
 // Step 1 is work of Control Service Company: nothing in the proposal is a job of the client (Matt 2026-11-18).
-function _rptA36Step1Text(setpointZones) {
-  if (!(setpointZones > 0)) return 'Control Service Company checks the equipment and confirms what to program.';
-  return (
-    'Control Service Company checks the equipment, confirms what to program, and resets the zone setpoints and schedules (' +
-    rptCount(setpointZones) +
-    (setpointZones === 1 ? ' zone' : ' zones') +
-    ', Audit Report Appendix A).'
-  );
+function _rptA36Step1Text() {
+  return 'Control Service Company checks the equipment and confirms what to program.';
 }
 
 function _rptA36PhaseTableDerive(d, opts) {
@@ -23773,7 +23744,7 @@ function _rptA36PhaseTableDerive(d, opts) {
     // units and the seqGroups loop below renders nothing for it — programming lines begin in
     // month 2. This line states the reserved verification work that month 1's room is spent on.
     if (mi === 0) {
-      var verifyLine = _rptA36Step1Text(plan.setpointZones);
+      var verifyLine = _rptA36Step1Text();
       lines.push('<div style="' + _cellLineStyle + '">' + verifyLine + '</div>');
       charLens.push(verifyLine.length);
     }
@@ -25017,17 +24988,13 @@ function _rptA36HardwareCategoryAgg(rows, toggles) {
  * subtotalR = the Devices and Programming parts the cost table prints; rounding = what the printed whole-dollar lines miss of it (null: none).
  * Returns { lines, included, subtotalR, rounding, noCatalog }.
  */
-// The name of one cost line: a short title-case name of the work (the Audit Report wording of an opportunity is a sentence:
-// "Zone setpoints differ from the recommended setpoints" prints as "Zone Setpoint Reprogramming").
+// The name of one cost line: a short title-case name of the work (the Audit Report wording of an opportunity is a sentence).
 function _rptA36OppLineName(opp) {
   var A36_OPP_LINE_NAME = {
-    zoneSetpoints: 'Zone Setpoint Reprogramming',
     terminalStandard: 'Terminal Unit Program Upgrade',
     powerMeter: 'Building Power Meter',
     lightingPhotocell: 'Exterior Lighting Photocell',
     lightingOccupancy: 'Interior Lighting Occupancy Sensors',
-    lightingSchedule: 'Lighting Schedules',
-    schedules: 'Occupied Schedules',
   };
   if (A36_OPP_LINE_NAME[opp.key]) return A36_OPP_LINE_NAME[opp.key];
   var t = _rptA36PlainName(opp.label).replace(/ reset overridden$/i, ' reset override').replace(/ overridden$/i, ' override');
@@ -25278,7 +25245,7 @@ function _rptA36RecommendedTimelineHTML(d) {
   plan.steps.forEach(function (st, idx) {
     var text;
     if (idx === 0) {
-      text = _rptA36Step1Text(plan.setpointZones);
+      text = _rptA36Step1Text();
     } else {
       // The row names every group of the step, as the step table does: the work it starts, the work that began earlier and
       // ends here ("finish"), and the work that began earlier and goes on in a later step ("continue").

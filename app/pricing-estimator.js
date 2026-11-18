@@ -53,9 +53,6 @@ const COST_PER_SEQ_HOURS_DEFAULT = {
   vav_dcv: 0.5,
 };
 
-// Covering estimate, Manager 2026-11-15: setpoint and schedule changes per zone plus a schedule set-up and check per building; editable.
-const SETPOINT_REPROGRAM_HOURS_PER_ZONE = 0.15;
-const SETPOINT_REPROGRAM_HOURS_PER_BUILDING = 2;
 // Matt 2026-11-18 (f3b50ab2): upgrade of a terminal unit program to the Control Service Company standard terminal unit sequence (load the
 // program, set its values, test it): 1.0 hour per terminal unit, Recommended and Full Scope (not Compliance: no ASHRAE 36 requirement).
 const TERMINAL_STANDARD_HOURS_PER_BOX = 1.0;
@@ -63,8 +60,6 @@ const TERMINAL_STANDARD_HOURS_PER_BOX = 1.0;
 // cost estimate). Labor at the project hourly rate; material is the price of the device per unit. A catalog item of the same kind does not
 // replace these (the catalog holds no photocell; its power meter and occupancy sensor SKUs are other devices than the ones these lines cover).
 const OVERRIDE_RELEASE_HOURS = 1.0; // release one manual override (one opportunity of a library)
-const SCHEDULE_HOURS_PER_UNIT = 0.15; // set the occupied schedule of one affected unit
-const SCHEDULE_HOURS_PER_BUILDING = 1; // schedule set-up and check, once per library
 const PHOTOCELL_MATERIAL_PRICE = 150; // exterior lighting photocell, per library
 const PHOTOCELL_HOURS = 3; // install and wire it, per library
 const OCCUPANCY_SENSOR_MATERIAL_PRICE = 120; // interior lighting occupancy sensor, per affected interior lighting unit
@@ -3226,51 +3221,6 @@ function buildCatalogRows(projId, buildingNames) {
    folds each one in as its own single-row unit (scored via the same _pricingEquipRowScore every
    other unclaimed row uses) so it still gets scheduled into a phase like any other line item.
    ─────────────────────────────────────────────────────────────────────────── */
-/* ── buildSetpointReprogramRows(projId, buildingNames) ────────────────────────────────────────
-   The Audit Report's Appendix A (Setpoint Programming Review) recommends resetting zone setpoints and
-   schedules. This is the ONE priced line for that work (one-time cost), in the Programming part of every
-   option (Recommended, Compliance, Full Scope); it is not part of the optional room CO2 scope.
-   Zones = the Appendix A count (report-engine.js _a36SetpointReprogramPlan, the same per-building
-   "Change the setpoints of N of M zones" count; no second count here).
-   Hours = SETPOINT_REPROGRAM_HOURS_PER_ZONE x zones + SETPOINT_REPROGRAM_HOURS_PER_BUILDING x buildings with
-   zones to reprogram. Price = hours x the project hourly rate (cfg.hourlyRate || COST_LABOR_RATE_DEFAULT).
-   Returns [] when there are no zones to reprogram. */
-function buildSetpointReprogramRows(projId, buildingNames) {
-  if (typeof collectASHRAE36Data !== 'function' || typeof _a36SetpointReprogramPlan !== 'function') return [];
-  var ashData = collectASHRAE36Data(projId, null, buildingNames);
-  if (!ashData || !ashData.buildings) return [];
-  var plan = _a36SetpointReprogramPlan(ashData);
-  if (!plan || !(plan.zones > 0)) return [];
-  var hourlyRate = _pricingGetConfig().hourlyRate || COST_LABOR_RATE_DEFAULT;
-  // One row per library (1 opportunity = 1 line): the hours of a library are 0.15 x its zones + 2.
-  return plan.libs.map(function (lb) {
-    var hours = SETPOINT_REPROGRAM_HOURS_PER_ZONE * lb.zones + SETPOINT_REPROGRAM_HOURS_PER_BUILDING;
-    var hrsPerUnit = hours / lb.zones;
-    return {
-      id: 'sprg_' + lb.name,
-      building: lb.name,
-      item: 'Setpoint and Schedule Reprogramming',
-      type: 'Programming',
-      equipment: lb.zones + ' zone' + (lb.zones !== 1 ? 's' : ''),
-      qty: lb.zones,
-      sku: null,
-      engReview: false,
-      noSku: false,
-      ioOnly: false,
-      unitPrice: hrsPerUnit * hourlyRate,
-      listPrice: null,
-      netPrice: null,
-      contractPrice: null,
-      lineTotal: parseFloat((hours * hourlyRate).toFixed(2)),
-      note: 'Appendix A: reset zone setpoints and schedules to the recommended values.',
-      phase: 2,
-      hrsPerUnit: hrsPerUnit,
-      isSetpointReprogram: true,
-      oppKey: 'zoneSetpoints',
-    };
-  });
-}
-
 /* ── buildTerminalStandardRows(projId, buildingNames) ──
    The Audit Report recommends upgrading the terminal unit programs to the Control Service Company standard terminal unit sequence where the
    programs it read are below it. ONE priced line per library: its terminal units (report-engine.js _a36TerminalStandardPlan, the one count)
@@ -3311,7 +3261,7 @@ function buildTerminalStandardRows(projId, buildingNames) {
 
 /* ── buildOpportunityLaborRows(projId, buildingNames) ──
    The priced line of every opportunity that had none (Matt 2026-11-18: 1 opportunity = 1 line in the cost estimate): a manual override to
-   release, the occupied schedules, the exterior lighting photocell, the interior lighting occupancy sensors and the building power meter.
+   release, the exterior lighting photocell, the interior lighting occupancy sensors and the building power meter.
    One row per opportunity of the findings model (report-engine.js _a36OpportunityList, the one list), with the constants at the top of this
    file. Labor at the project hourly rate. In Recommended and Full Scope (not Compliance: none of these is an ASHRAE 36 requirement). */
 function buildOpportunityLaborRows(projId, buildingNames) {
@@ -3380,9 +3330,6 @@ function buildOpportunityLaborRows(projId, buildingNames) {
   _a36OpportunityList(ashData).forEach(function (f) {
     if (typeof A36_DET_OVERRIDE_KEYS !== 'undefined' && A36_DET_OVERRIDE_KEYS.indexOf(f.key) > -1) {
       labor(f, 1, OVERRIDE_RELEASE_HOURS, '1 manual override', 'Release the manual override so the reset runs.');
-    } else if (f.key === 'schedules' || f.key === 'lightingSchedule') {
-      var u = Math.max(f.units || 0, 1);
-      labor(f, u, SCHEDULE_HOURS_PER_UNIT * u + SCHEDULE_HOURS_PER_BUILDING, plural(u, 'unit'), 'Set the occupied schedules and check them.');
     } else if (f.key === 'lightingPhotocell') {
       device(f, 1, PHOTOCELL_MATERIAL_PRICE, PHOTOCELL_HOURS, '1 photocell', 'Photocell for the exterior lighting.', 'Exterior Lighting Photocells');
     } else if (f.key === 'lightingOccupancy') {
@@ -3395,16 +3342,17 @@ function buildOpportunityLaborRows(projId, buildingNames) {
   return rows;
 }
 
-/* ── _pricingProgramRows(projId) ── every programming line the findings add to Recommended and Full Scope: the setpoint and schedule
-   reprogramming and the terminal unit upgrade of each library, and the priced override, schedule, lighting and power meter opportunities. */
+/* ── _pricingProgramRows(projId) ── every programming line the findings add to Recommended and Full Scope: the
+   terminal unit upgrade of each library, and the priced override, lighting and power meter opportunities. The setpoint and schedule
+   opportunities of the audit have no priced line (Matt 2026-11-18). */
 function _pricingProgramRows(projId) {
-  return buildSetpointReprogramRows(projId).concat(buildTerminalStandardRows(projId)).concat(buildOpportunityLaborRows(projId));
+  return buildTerminalStandardRows(projId).concat(buildOpportunityLaborRows(projId));
 }
 
 /* ── _pricingRowOpportunity(row, opps) ── THE one rule that says which opportunity a priced row belongs to (Matt 2026-11-18: 1 opportunity = 1
    line in the cost estimate). opps = the opportunities (findings of report-engine.js _a36OpportunityList) of the row's library. Returns the
    opportunity, or null when the row is no opportunity (the optional status points, the FDD line, the sensor checks: they print as "Included").
-   1. A row with oppKey (the setpoint, terminal, override, schedule, lighting and power meter rows) is the opportunity with that key.
+   1. A row with oppKey (the terminal, override, lighting and power meter rows) is the opportunity with that key.
    2. A programming row of a sequence is the sequence opportunity of that key.
    3. A device row is, in this order: the sensor opportunity of its point; the sequence that the point is a blocking sensor of
       (SEQUENCE_BLOCKING_SENSORS: the CO2 sensors of occupancy-based ventilation, the pressure sensor and pump drive of the pump pressure reset);
@@ -3577,8 +3525,7 @@ function _pricingComplianceRowsAll(projId) {
       if (row.phase === 1) return true;
       var def = SEQUENCE_SAVINGS_IMPACT[row.seqKey];
       return !!(def && def.type === 'safety');
-    })
-    .concat(buildSetpointReprogramRows(projId)); // Appendix A work is recommended in every option
+    });
 }
 
 /* ── Optional zone CO2 scope (Matt, 2026-11-13) ──────────────────────────────────────────────
@@ -5560,9 +5507,8 @@ function _pricingFullScopeRowsAll(projId) {
     fsRows.push(fs);
   });
 
-  // Appendix A setpoint and schedule reprogramming: recommended work in every option.
   _pricingProgramRows(projId).forEach(function (row) {
-    fsRows.push(row); // + the terminal unit upgrade and the priced override, schedule, lighting and power meter opportunities (Recommended and Full Scope, Matt 2026-11-18)
+    fsRows.push(row); // the terminal unit upgrade and the priced override, lighting and power meter opportunities (Recommended and Full Scope, Matt 2026-11-18)
   });
 
   // c82cc354 REV 2 (Step 4): optional (beyond-compliance) point rows

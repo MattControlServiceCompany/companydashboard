@@ -27,7 +27,7 @@ Object.assign(ctx, {
   _a36DetJoin: (list) => (list.length < 2 ? list.join('') : list.slice(0, -1).join(', ') + ' and ' + list[list.length - 1]),
   _escHtml: (text) => String(text).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;'),
 });
-// The building rows come from the shared helpers above the page function (_a36SetpointBuildingRows, _a36SetpointReprogramPlan).
+// The building rows come from the shared helpers above the page function (_a36SetpointBuildingRows).
 const helpers = src.indexOf("var _A36_SETPOINT_ZONE_CATS");
 if (helpers < 0 || helpers > start) throw new Error("setpoint helpers not found");
 vm.runInContext(src.slice(helpers, end + 1), ctx);

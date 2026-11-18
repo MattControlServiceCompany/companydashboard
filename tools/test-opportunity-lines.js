@@ -7,9 +7,11 @@
 //      of a sequence, missing point of a sequence) and the rows that are no opportunity (optional points, FDD, sensor checks).
 //   3. 1:1 both ways on the priced rows: every row is in exactly one line or in "Included"; no opportunity has two lines; in Full Scope every
 //      opportunity has a line; the visible list of the Service Proposal (_rptA36OppDetail, the panel HTML) has one entry per line.
-//   4. Setpoint reprogramming and the terminal unit upgrade are one row per library; the hours add up to 0.15 h x zones + 2 h per library.
-//   5. The new lines (override, schedules, exterior photocell, interior occupancy, power meter) are priced from the constants at the top of
-//      pricing-estimator.js and the project hourly rate; they are in Recommended and Full Scope, not in Compliance.
+//   4. The terminal unit upgrade is one row per library. The setpoint and schedule opportunities have NO priced row and NO line in any option
+//      (Matt 2026-11-18); the removed builder and constants are gone.
+//   5. The new lines (override, exterior photocell, interior occupancy, power meter) are priced from the constants at the top of
+//      pricing-estimator.js and the project hourly rate; they are in Recommended and Full Scope, not in Compliance. The schedule opportunities
+//      get no row.
 //   6. The count sentence "The Recommended option covers N of them." (cover) with N = the opportunities that have a line in Recommended;
 //      no sentence says that a library counts as one opportunity.
 // Run: CH_TMP_ROOT=<scratch> node tools/test-opportunity-lines.js   (exit 0 = all pass)
@@ -106,9 +108,18 @@ const near = (a, b) => Math.abs(a - b) < 0.006;
 
       // ---- per-library rows of the setpoint reprogramming and the terminal unit upgrade ----
       const rate = _pricingGetConfig().hourlyRate || COST_LABOR_RATE_DEFAULT;
-      const plan = _a36SetpointReprogramPlan(d);
-      const sprg = buildSetpointReprogramRows(PID);
-      res.sprg = { plan, rate, rows: sprg.map((r) => ({ b: r.building, qty: r.qty, hrs: r.hrsPerUnit * r.qty, total: r.lineTotal, id: r.id, oppKey: r.oppKey })) };
+      res.removed = {
+        builder: typeof buildSetpointReprogramRows,
+        plan: typeof _a36SetpointReprogramPlan,
+        sched: typeof SCHEDULE_HOURS_PER_UNIT,
+        schedB: typeof SCHEDULE_HOURS_PER_BUILDING,
+        sp: typeof SETPOINT_REPROGRAM_HOURS_PER_ZONE,
+      };
+      res.noPriceOpps = opps.filter((o) => ['zoneSetpoints', 'schedules', 'lightingSchedule'].indexOf(o.key) > -1).length;
+      res.spRows = {};
+      ['recommended', 'compliance', 'full-scope'].forEach((t) => {
+        res.spRows[t] = (sd.perTier[t] || []).filter((r) => /^sprg_/.test(r.id || '') || r.isSetpointReprogram || ['zoneSetpoints', 'schedules', 'lightingSchedule'].indexOf(r.oppKey) > -1).length;
+      });
       res.tstd = { plan: _a36TerminalStandardPlan(d), rows: buildTerminalStandardRows(PID).map((r) => ({ b: r.building, qty: r.qty, total: r.lineTotal })) };
 
       // ---- mapping rules on synthetic opportunities ----
@@ -119,7 +130,6 @@ const near = (a, b) => Math.abs(a - b) < 0.006;
         O('Lib', 'demandCtrl', 'seq', { missingKeys: ['co2_ahu'], category: 'ahu' }),
         O('Lib', 'ahu_min_oa', 'seq', { missingKeys: ['oaDampCmd'], category: 'ahu' }),
         O('Lib', 'discFlow', 'sensor', { category: 'vav' }),
-        O('Lib', 'zoneSetpoints', 'setpoint'),
         O('Lib', 'powerMeter', 'building'),
       ];
       const key = (r, list) => { const o = _pricingRowOpportunity(r, list || mo); return o ? o.key : null; };
@@ -131,7 +141,7 @@ const near = (a, b) => Math.abs(a - b) < 0.006;
         damper: key({ id: 'hw_x_damperPositionControl_0', phase: 1, _pointKey: 'damperPositionControl', building: 'Lib' }),
         sensor: key({ id: 'hw_x_discFlow_0', phase: 1, _pointKey: 'discFlow', building: 'Lib' }),
         seqRow: key({ id: 'seq_x_ahu_min_oa_gap_1', phase: 2, seqKey: 'ahu_min_oa', building: 'Lib' }),
-        oppKey: key({ id: 'sprg_Lib', phase: 2, oppKey: 'zoneSetpoints', building: 'Lib' }),
+        oppKey: key({ id: 'opp_powerMeter_Lib', phase: 1, oppKey: 'powerMeter', building: 'Lib' }),
         fso: key({ id: 'fso_x_sat_0', phase: 1, _pointKey: 'sat', building: 'Lib' }),
         fdd: key({ id: 'fsc_fdd_project_1', phase: 1, isFddAddon: true, building: 'Lib' }),
         sinv: key({ id: 'sinv_offline_x', phase: 2, building: 'Lib' }),
@@ -147,6 +157,7 @@ const near = (a, b) => Math.abs(a - b) < 0.006;
         S('Alpha Library', 'hwOverride', 'building', 1),
         S('Alpha Library', 'chwDpOverride', 'building', 1),
         S('Alpha Library', 'schedules', 'schedule', 4),
+        S('Alpha Library', 'lightingSchedule', 'schedule', 2),
         S('Alpha Library', 'lightingPhotocell', 'building', 3),
         S('Beta Library', 'lightingOccupancy', 'building', 5),
         S('Beta Library', 'powerMeter', 'building', 0),
@@ -156,7 +167,7 @@ const near = (a, b) => Math.abs(a - b) < 0.006;
       res.lab = {
         rate,
         rows: lab.map((r) => ({ id: r.id, b: r.building, phase: r.phase, qty: r.qty, total: r.lineTotal, parts: r.partsLineTotal == null ? null : r.partsLineTotal, instH: r.installHours == null ? null : r.installHours, hrsPerUnit: r.hrsPerUnit == null ? null : r.hrsPerUnit, oppKey: r.oppKey })),
-        c: { OVERRIDE_RELEASE_HOURS, SCHEDULE_HOURS_PER_UNIT, SCHEDULE_HOURS_PER_BUILDING, PHOTOCELL_MATERIAL_PRICE, PHOTOCELL_HOURS, OCCUPANCY_SENSOR_MATERIAL_PRICE, OCCUPANCY_SENSOR_HOURS, POWER_METER_MATERIAL_PRICE, POWER_METER_HOURS },
+        c: { OVERRIDE_RELEASE_HOURS, PHOTOCELL_MATERIAL_PRICE, PHOTOCELL_HOURS, OCCUPANCY_SENSOR_MATERIAL_PRICE, OCCUPANCY_SENSOR_HOURS, POWER_METER_MATERIAL_PRICE, POWER_METER_HOURS },
         inRec: _pricingTierRowsSplit(PID, 'recommended').base.filter((r) => /^opp_/.test(r.id)).map((r) => r.id).sort(),
         inFull: _pricingTierRowsSplit(PID, 'full-scope').base.filter((r) => /^opp_/.test(r.id)).map((r) => r.id).sort(),
         inComp: _pricingTierRowsSplit(PID, 'compliance').base.filter((r) => /^opp_/.test(r.id)).length,
@@ -191,7 +202,7 @@ const near = (a, b) => Math.abs(a - b) < 0.006;
     ok(out.map.hwdp === 'hwp_pump_dp_reset' && out.map.pump === 'hwp_pump_dp_reset', '2. the pressure sensor and the pump drive merge into the pump pressure reset: ' + out.map.hwdp + ' / ' + out.map.pump);
     ok(out.map.co2 === 'vav_dcv' && out.map.co2Ahu === 'demandCtrl', '2. the room CO2 sensors merge into the zone terminal ventilation, the duct CO2 sensors into the air handler ventilation: ' + out.map.co2 + ' / ' + out.map.co2Ahu);
     ok(out.map.damper === 'ahu_min_oa', '2. the damper actuator (blocking sensor of minimum outdoor air) merges into that sequence: ' + out.map.damper);
-    ok(out.map.sensor === 'discFlow' && out.map.seqRow === 'ahu_min_oa' && out.map.oppKey === 'zoneSetpoints', '2. a sensor opportunity, a sequence row and an oppKey row map to their opportunity');
+    ok(out.map.sensor === 'discFlow' && out.map.seqRow === 'ahu_min_oa' && out.map.oppKey === 'powerMeter', '2. a sensor opportunity, a sequence row and an oppKey row map to their opportunity');
     ok(out.map.fso === null && out.map.fdd === null && out.map.sinv === null, '2. the optional points, the FDD add-on and the sensor checks are no opportunity');
     ok(out.map.noOpp === null && out.map.noSeqRow === null && out.map.empty === null, '2. a row that no opportunity of its library names maps to nothing (it prints under Included)');
 
@@ -208,30 +219,26 @@ const near = (a, b) => Math.abs(a - b) < 0.006;
       ok(T.subtotalR === null || T.printed + (T.rounding || 0) === T.subtotalR, '3. ' + t + ': the printed whole-dollar lines + Rounding add up to the Devices and Programming parts of the option (' + T.printed + ' + ' + (T.rounding || 0) + ' = ' + T.subtotalR + ')');
     });
     const F = out.tiers['full-scope'];
-    ok(F.nLines === out.opps.length, '3. Full Scope: the number of lines (' + F.nLines + ') equals the number of opportunities (' + out.opps.length + ')');
+    ok(F.nLines === out.opps.length - out.noPriceOpps, '3. Full Scope: the number of lines (' + F.nLines + ') equals the number of opportunities (' + out.opps.length + ') minus the setpoint and schedule opportunities, which have no line (' + out.noPriceOpps + ')');
     ok(F.panelHasIncludedWord || F.nUnmapped === 0, '3. Full Scope: rows of no opportunity print under Included');
     ok(out.tiers.recommended.nLines <= out.opps.length && out.tiers.recommended.nLines > 0, '3. Recommended: ' + out.tiers.recommended.nLines + ' lines of ' + out.opps.length + ' opportunities');
     ok(near(F.sumLinesRows + F.sumRows - F.sumRows, F.sumLinesRows) && F.sumLinesRows <= F.sumRows + 0.01, '3. Full Scope: the lines hold the money of their rows (' + F.sumLinesRows + ' of ' + F.sumRows + ')');
 
     // ---- 4. per library ----
-    const zonesSum = out.sprg.rows.reduce((s, r) => s + r.qty, 0);
-    ok(out.sprg.rows.length === out.sprg.plan.libs.length && out.sprg.rows.length === out.sprg.plan.buildings, '4. one setpoint row per library with zones to reprogram: ' + JSON.stringify(out.sprg.rows.map((r) => r.b + ':' + r.qty)));
-    ok(new Set(out.sprg.rows.map((r) => r.b)).size === out.sprg.rows.length && out.sprg.rows.every((r) => r.b !== 'All Buildings'), '4. each setpoint row is of its own library');
-    ok(zonesSum === out.sprg.plan.zones, '4. the zones of the rows add up to the plan (' + zonesSum + ')');
-    const hrsSum = out.sprg.rows.reduce((s, r) => s + r.hrs, 0);
-    ok(near(hrsSum, 0.15 * out.sprg.plan.zones + 2 * out.sprg.plan.buildings), '4. the hours add up to 0.15 h x zones + 2 h x libraries: ' + hrsSum);
-    ok(out.sprg.rows.every((r) => near(r.hrs, 0.15 * r.qty + 2) && near(r.total, Math.round((0.15 * r.qty + 2) * out.sprg.rate * 100) / 100)), '4. each library row is 0.15 h x its zones + 2 h at the hourly rate');
+    ok(out.noPriceOpps > 0, '4. the synthetic project has setpoint opportunities (' + out.noPriceOpps + ') that the audit still reports');
+    ok(['recommended', 'compliance', 'full-scope'].every((t) => out.spRows[t] === 0), '4. no priced row of any option is a setpoint or schedule row: ' + JSON.stringify(out.spRows));
+    ok(['recommended', 'compliance', 'full-scope'].every((t) => !out.tiers[t].lineKeys.some((k) => /\|(zoneSetpoints|schedules|lightingSchedule)$/.test(k))), '4. no line of any option is a setpoint or schedule opportunity');
+    ok(out.removed.builder === 'undefined' && out.removed.plan === 'undefined' && out.removed.sched === 'undefined' && out.removed.schedB === 'undefined' && out.removed.sp === 'undefined', '4. the setpoint pricing builder, plan and constants no longer exist: ' + JSON.stringify(out.removed));
     ok(out.tstd.rows.length === out.tstd.plan.libs.length && out.tstd.rows.reduce((s, r) => s + r.qty, 0) === out.tstd.plan.boxes, '4. one terminal unit upgrade row per library; the units add up to the plan');
 
     // ---- 5. the new lines ----
     const R = (id) => out.lab.rows.find((r) => r.id === id) || {};
     const rate = out.lab.rate;
     const c = out.lab.c;
-    ok(c.OVERRIDE_RELEASE_HOURS === 1 && c.SCHEDULE_HOURS_PER_UNIT === 0.15 && c.SCHEDULE_HOURS_PER_BUILDING === 1 && c.PHOTOCELL_MATERIAL_PRICE === 150 && c.PHOTOCELL_HOURS === 3 && c.OCCUPANCY_SENSOR_MATERIAL_PRICE === 120 && c.OCCUPANCY_SENSOR_HOURS === 2 && c.POWER_METER_MATERIAL_PRICE === 1800 && c.POWER_METER_HOURS === 8, '5. the constants are 1 h, 0.15 h + 1 h, 150 + 3 h, 120 + 2 h, 1800 + 8 h');
-    ok(out.lab.rows.length === 6, '5. one row for each of the 6 new opportunities (the setpoint opportunity gets none here): ' + out.lab.rows.map((r) => r.id).join(', '));
+    ok(c.OVERRIDE_RELEASE_HOURS === 1 && c.PHOTOCELL_MATERIAL_PRICE === 150 && c.PHOTOCELL_HOURS === 3 && c.OCCUPANCY_SENSOR_MATERIAL_PRICE === 120 && c.OCCUPANCY_SENSOR_HOURS === 2 && c.POWER_METER_MATERIAL_PRICE === 1800 && c.POWER_METER_HOURS === 8, '5. the constants are 1 h, 150 + 3 h, 120 + 2 h, 1800 + 8 h');
+    ok(out.lab.rows.length === 5 && !out.lab.rows.some((r) => /schedules|lightingSchedule|zoneSetpoints/i.test(r.id)), '5. one row for each of the 5 priced opportunities (the schedule and setpoint opportunities get none): ' + out.lab.rows.map((r) => r.id).join(', '));
     ok(near(R('opp_hwOverride_Alpha Library').total, 1 * rate) && R('opp_hwOverride_Alpha Library').phase === 2, '5. an override: 1.0 h at the hourly rate, programming: ' + R('opp_hwOverride_Alpha Library').total);
     ok(near(R('opp_chwDpOverride_Alpha Library').total, 1 * rate), '5. a second override opportunity of the same library has its own line of 1.0 h');
-    ok(near(R('opp_schedules_Alpha Library').total, (0.15 * 4 + 1) * rate) && R('opp_schedules_Alpha Library').qty === 4, '5. schedules of 4 units: (0.15 h x 4 + 1 h) at the hourly rate: ' + R('opp_schedules_Alpha Library').total);
     const ph = R('opp_lightingPhotocell_Alpha Library');
     ok(ph.phase === 1 && ph.qty === 1 && near(ph.parts, 150) && ph.instH === 3 && near(ph.total, 150 + 3 * rate), '5. exterior photocell: $150 + 3 h per library, one row for 3 exterior units: ' + JSON.stringify(ph));
     const oc = R('opp_lightingOccupancy_Beta Library');
@@ -239,12 +246,12 @@ const near = (a, b) => Math.abs(a - b) < 0.006;
     const pm = R('opp_powerMeter_Beta Library');
     ok(pm.phase === 1 && pm.qty === 1 && near(pm.parts, 1800) && pm.instH === 8 && near(pm.total, 1800 + 8 * rate), '5. power meter: $1,800 + 8 h per library: ' + JSON.stringify(pm));
     ok(out.lab.rows.every((r) => r.oppKey), '5. every new row carries its opportunity key');
-    ok(out.lab.inRec.length === 6 && out.lab.inFull.length === 6, '5. the 6 new lines are in Recommended and in Full Scope: ' + out.lab.inRec.length + ' / ' + out.lab.inFull.length);
+    ok(out.lab.inRec.length === 5 && out.lab.inFull.length === 5, '5. the 5 new lines are in Recommended and in Full Scope: ' + out.lab.inRec.length + ' / ' + out.lab.inFull.length);
     ok(out.lab.inComp === 0, '5. none of them is in Compliance');
 
     // ---- 6. the count sentence ----
     ok(out.counts.total === out.opps.length, '6. the opportunity count of the report equals the model list (' + out.counts.total + ')');
-    ok(out.counts.fullScope === out.opps.length, '6. Full Scope has a line for every opportunity (' + out.counts.fullScope + ' of ' + out.opps.length + ')');
+    ok(out.counts.fullScope === out.opps.length - out.noPriceOpps, '6. Full Scope has a line for every opportunity except the setpoint and schedule ones (' + out.counts.fullScope + ' of ' + out.opps.length + ', ' + out.noPriceOpps + ' without a line)');
     ok(out.counts.recommended > 0 && out.counts.recommended <= out.counts.total, '6. Recommended covers ' + out.counts.recommended + ' of ' + out.counts.total);
     ok(String(out.counts.recommended) === out.coverSentence, '6. the cover says "The Recommended option covers N of them." with N = ' + out.counts.recommended + ' (cover: ' + out.coverSentence + ')');
     ok(out.coverCount >= 1 && out.coverCount <= 2, '6. the sentence is printed once per place that states the count (' + out.coverCount + ' times in the cover and the Executive Summary)');
