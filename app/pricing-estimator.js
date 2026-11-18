@@ -3374,6 +3374,8 @@ function _pricingComplianceRowsAll(projId) {
    Air handler CO2 (co2_ahu, demandCtrl) is not optional. Zones exempt by space type (restroom,
    corridor, mechanical) never reach buildCatalogRows as a CO2 gap (emComputeCompliance marks the
    category N/A), so they are in neither section.
+   2026-11-18: Full Scope is whole. Its zone CO2 rows are base rows (_pricingTierRowsSplit); only Recommended and Compliance
+   keep an optional section.
    The three public tier builders return the BASE rows. buildOptionalZoneCo2Rows returns the
    optional rows of the same tier. _pricingTierRowsSplit returns both from one build.
    ─────────────────────────────────────────────────────────────────────────── */
@@ -3400,6 +3402,10 @@ function _pricingTierRowsSplit(projId, tier) {
       : tier === 'full-scope'
         ? _pricingFullScopeRowsAll(projId)
         : _pricingComplianceRowsAll(projId);
+  // Full Scope includes the room CO2 sensors and the control sequences that use them (Matt 2026-11-18): its room CO2 rows stay in
+  // the base rows, so every reader (Cost Estimate tab, Service Proposal, Excel export) gets one Full Scope total and no optional
+  // section for Full Scope. Recommended and Compliance keep the split.
+  if (tier === 'full-scope') return { base: all, optional: [] };
   return _pricingSplitOptionalZoneCo2(all);
 }
 function buildComplianceRows(projId) {

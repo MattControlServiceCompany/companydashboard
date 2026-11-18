@@ -80,7 +80,8 @@ const proposalFns = [
   'rptPageASHRAE36ProposalPricing',
   '_rptA36CostSummaryHTML',
   '_rptA36TierDetailPanelHTML',
-  '_rptA36OptionalZoneCo2HTML',
+  '_rptA36TierScopeFacts',
+  '_rptA36ProposalSummaryData',
   '_rptA36RecommendedTimelineHTML',
   '_rptA36RecommendedServicesInnerHTML',
   '_rptA36WhyThisApproachHTML',
@@ -116,7 +117,7 @@ assert(/^Check a .* sensor that reads wrong$/.test(chk) && !/Investigation/.test
 const noCmt = (x) => x.replace(/^[ \t]*\/\/.*$/gm, '').replace(/[ \t]\/\/ .*$/gm, '');
 const proposalSrc = noCmt(fnSrc(RE, '_rptA36TopGaps') + fnSrc(RE, '_rptA36RecommendedStepPlan') + fnSrc(RE, '_rptA36HardwareCategoryAgg'));
 assert(!/Other Hardware|Flow Meters/.test(proposalSrc), 'no Other Hardware / Flow Meters labels');
-assert(/_rptA36OptionalCo2Qty/.test(fnSrc(RE, '_rptA36TopGaps')), 'top gaps read the optional CO2 count from the shared tier data');
+assert(/_rptA36RoomCo2Qty/.test(fnSrc(RE, '_rptA36TopGaps')), 'top gaps read the room CO2 count from the shared tier data');
 assert(/_rptA36RecommendedStepPlan/.test(fnSrc(RE, '_rptA36PhaseTableDerive')) && /_rptA36RecommendedStepPlan/.test(fnSrc(RE, '_rptA36RecommendedTimelineHTML')), 'step table and order table read one step plan');
 assert(!/Later/.test(noCmt(fnSrc(RE, '_rptA36RecommendedTimelineHTML'))), 'order table has no Later row');
 assert(!/plantsByName/.test(RE) && !/plantsByName/.test(fnSrc(RE, 'generateASHRAE36Preview')), 'one plant classification for every report: no plantsByName option (was: proposal data built with plantsByName)');

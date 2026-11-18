@@ -128,7 +128,7 @@ const RE = fs.readFileSync(path.join(ROOT, 'app', 'report-engine.js'), 'utf8');
 
     // ---- F7, F8: wording ----
     ok(!/zone setpoint control path/.test(RE) && /points on units that do not control a room temperature are not counted/.test(RE), 'F7. the cover sentence uses plain words');
-    ok(!/ no programming' : ''/.test(RE) && /not program the sensors/.test(RE), 'F8. the Optional row says "does not program the sensors"');
+    ok(!/not program the sensors/.test(RE) && !/_rptA36OptionalZoneCo2HTML/.test(RE), 'F8. (2026-11-18) the Optional row is gone: Full Scope includes the room CO2 sensors and sequences');
 
     ok(errs.length === 0, 'no page errors' + (errs.length ? ': ' + errs[0] : ''));
   } finally {

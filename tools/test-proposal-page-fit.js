@@ -87,7 +87,7 @@ const ok = (c, m) => {
         return out2;
       }, size);
       console.log(size + ': ' + JSON.stringify(res));
-      if (size === 'short') ok(res.n === 1, 'short portfolio: table, optional zone CO2 block and disclaimer share one page (' + res.n + ' page)');
+      if (size === 'short') ok(res.n === 1, 'short portfolio: table and closing sections share one page (' + res.n + ' page)');
       ok(res.bad.length === 0, size + ' portfolio (' + res.n + ' pages): no page content reaches the footer zone: ' + res.bad.join(' | '));
     }
     ok(errs.length === 0, 'no page errors: ' + errs.slice(0, 3).join(' | '));

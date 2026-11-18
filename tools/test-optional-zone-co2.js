@@ -144,11 +144,24 @@ for (const method of ['hourly', 'workbook']) {
     const base = builderOf(sb, t)('p');
     const opt = sb.buildOptionalZoneCo2Rows('p', t);
 
-    // 2. zone CO2 rows are out of the base and in the optional section, in every tier
+    // 2. Recommended and Compliance: zone CO2 rows are out of the base and in the optional section.
+    //    Full Scope (Matt 2026-11-18): the zone CO2 rows are base rows and there is no optional section.
+    if (t === 'full-scope') {
+      assert.strictEqual(opt.length, 0, t + ': no optional section for Full Scope');
+      assert.strictEqual(sum(base.filter(isZoneCo2Hw), (r) => r.qty), 3 + 2, t + ': zone CO2 sensors are base rows (3 VAV zones + 2 non-exempt fan-powered boxes)');
+      const gd = base.filter(isGapDcv);
+      assert.strictEqual(gd.length, 1, t + ': zone DCV gap labor is a base row');
+      assert.strictEqual(gd[0].qty, 3, t + ': zone DCV gap labor covers the 3 zones');
+      assert.ok(base.some((r) => r.phase === 1 && r._pointKey === 'co2_ahu'), t + ': air handler CO2 in base');
+      assert.ok(!/Restroom/.test(JSON.stringify(base.map((r) => r.equipment + '|' + r.id))), t + ': exempt space not counted');
+      assert.strictEqual(sum(base.filter((r) => isZoneCo2Hw(r) && r.category === 'fpb'), (r) => r.qty), 2, t + ': fan-powered boxes counted');
+      all[t] = { base, opt };
+      continue;
+    }
     assert.strictEqual(base.filter((r) => isZoneCo2Hw(r) || isGapDcv(r)).length, 0, t + ': no zone CO2 rows in base');
     const optHw = opt.filter(isZoneCo2Hw);
     const optQty = sum(optHw, (r) => r.qty);
-    const wantQty = t === 'full-scope' ? 3 + 2 : 3; // 3 VAV zones; Full Scope adds 2 non-exempt fan-powered boxes
+    const wantQty = 3; // 3 VAV zones
     assert.strictEqual(optQty, wantQty, t + ': optional zone CO2 sensor quantity');
     assert.ok(
       opt.every((r) => isZoneCo2Hw(r) || isGapDcv(r)),
@@ -181,7 +194,7 @@ for (const method of ['hourly', 'workbook']) {
     assert.strictEqual(sum(fpbOpt, (r) => r.qty), t === 'full-scope' ? 2 : 0, t + ': exempt fan-powered box not counted');
     all[t] = { base, opt };
   }
-  ok(method + ': zone CO2 out of base and in the optional section in all 3 tiers; AHU CO2 and ready DCV stay in base');
+  ok(method + ': zone CO2 out of base in Recommended and Compliance (optional section); Full Scope keeps it in its base; AHU CO2 and ready DCV stay in base');
   ok(method + ': exempt space type (restroom) is in neither section');
 
   // 5. totals: base excludes the optional rows; base + optional rows together equal the old total
@@ -189,6 +202,13 @@ for (const method of ['hourly', 'workbook']) {
   for (const t of TIERS) {
     const rowsBase = sb._pricingApplyQtyOverrides('p', sb._pricingApplyLaborOverrides('p', all[t].base));
     const rowsOpt = sb._pricingApplyQtyOverrides('p', sb._pricingApplyLaborOverrides('p', all[t].opt));
+    if (t === 'full-scope') {
+      assert.strictEqual(summary.optional[t].rows.length, 0, t + ': summary has no optional rows');
+      assert.strictEqual(summary.optional[t].sensorQty, 0, t + ': summary optional quantity 0');
+      assert.strictEqual(summary.optional[t].totals, null, t + ': summary has no optional total');
+      assert.strictEqual(summary.tierTotals[t].grand, sb._pricingComputeTotals(rowsBase, est, 'p').grand, t + ': one Full Scope total of all its rows');
+      continue;
+    }
     const baseTot = sb._pricingComputeTotals(rowsBase, est, 'p');
     assert.strictEqual(summary.tierTotals[t].grand, baseTot.grand, t + ': summary base total');
     assert.deepStrictEqual(plain(summary.perTier[t].map((r) => r.id)), plain(rowsBase.map((r) => r.id)));
@@ -207,7 +227,7 @@ for (const method of ['hourly', 'workbook']) {
   }
   // the same sensors show the same hardware figure in Compliance and Recommended; hardware + programming = section total
   assert.strictEqual(summary.optional.compliance.totals.phase1, summary.optional.recommended.totals.phase1, 'same hardware figure');
-  for (const t of TIERS) {
+  for (const t of ['compliance', 'recommended']) {
     const ot = summary.optional[t].totals;
     assert.ok(Math.abs(ot.phase1 + ot.phase2 - ot.grand) < 0.011, t + ': hardware + programming = optional total');
   }
@@ -223,58 +243,27 @@ for (const method of ['hourly', 'workbook']) {
       'Full Scope',
       'Opt CO2 Compliance',
       'Opt CO2 Recommended',
-      'Opt CO2 Full Scope',
     ]);
     sets.slice(3).forEach((s) => {
       assert.ok(s.grand > 0 && s.meta.title.indexOf('Optional: Zone CO2 Sensors') === 0);
       assert.ok(s.name.length <= 19, 'sheet prefix fits');
     });
-    ok('workbook: Excel export has an optional set per tier, sheet prefix within 19 characters');
+    ok('workbook: Excel export has an optional set for Recommended and Compliance only, sheet prefix within 19 characters');
   } else {
     assert.deepStrictEqual(plain(names), []);
     ok('hourly: Excel export unchanged (no sets)');
   }
 
-  // 7. proposal page block: reads summaryData.optional, prints quantity and cost per tier
+  // 7. the proposal no longer prints a separate optional block (Matt 2026-11-18): Full Scope includes the room CO2 work.
+  //    The price merge is _rptA36ProposalSummaryData (covered by tools/test-proposal-page-fit.js on real pages).
   const src = read('app/report-engine.js');
-  const grab = (name) => {
-    const i = src.indexOf('function ' + name + '(');
-    assert.ok(i >= 0, name);
-    let d = 0,
-      j = src.indexOf('{', i);
-    for (let k = j; k < src.length; k++) {
-      if (src[k] === '{') d++;
-      else if (src[k] === '}' && --d === 0) return src.slice(i, k + 1);
-    }
-  };
-  // The proposal heading style (one style for every proposal page) is a shared var the block reads.
-  const headVar = src.match(/var _RPT_A36_HEAD_STYLE =[\s\S]*?;\r?\n/);
-  assert.ok(headVar, '_RPT_A36_HEAD_STYLE');
-  vm.runInContext('var RPT_SECTION_HEAD_PX = 14;' + headVar[0], sb);
-  vm.runInContext(
-    ['_rptA36OptionalZoneCo2HTML', '_rptFootTier', '_rptRoundUp100'].map(grab).join('\n'),
-    sb,
-  );
-  const tierCols = [
-    { key: 'recommended', label: 'Recommended' },
-    { key: 'compliance', label: 'Compliance' },
-    { key: 'full-scope', label: 'Full Scope' },
-  ];
-  sb.__sd = summary;
-  sb.__tc = tierCols;
-  const html = vm.runInContext('_rptA36OptionalZoneCo2HTML(__sd, __tc)', sb);
-  assert.ok(html.indexOf('Optional: Carbon Dioxide (CO2) Sensors in Rooms') >= 0);
-  ['Recommended', 'Compliance', 'Full Scope'].forEach((l) => assert.ok(html.indexOf('>' + l + '<') >= 0, l));
-  assert.ok(/>3<\/td>/.test(html) && />5<\/td>/.test(html), 'quantities 3 and 5 in the table');
-  const fmt = (v) => sb._fmtUSD(v);
-  const fsT = summary.optional['full-scope'].totals;
-  const want = method === 'workbook' ? Math.round(fsT.grand) : Math.ceil(Math.round(fsT.grand * 100) / 100 / 100) * 100;
-  assert.ok(html.indexOf(fmt(want)) >= 0, 'Full Scope optional cost printed: ' + fmt(want));
-  ok(method + ': proposal block lists quantity and cost per tier');
+  assert.ok(!/_rptA36OptionalZoneCo2HTML|_rptA36OptionalCo2Qty/.test(src), 'the proposal optional block is gone');
+  assert.ok(!/\.optional\[/.test(src), 'the proposal reads no optional section: it reads the owner Full Scope rows');
+  ok(method + ': proposal has no separate optional block; Full Scope total is the owner total');
 
   // 8. Cost Estimate tab block: label, quantity, cost, and no row outside the section
-  const tabHtml = sb._pricingOptionalZoneCo2HTML('p', all['full-scope'].opt);
-  assert.ok(tabHtml.indexOf('Optional: Zone CO2 Sensors') >= 0 && tabHtml.indexOf('5 sensors') >= 0);
+  const tabHtml = sb._pricingOptionalZoneCo2HTML('p', all['recommended'].opt);
+  assert.ok(tabHtml.indexOf('Optional: Zone CO2 Sensors') >= 0 && tabHtml.indexOf('3 sensors') >= 0);
   assert.ok(tabHtml.indexOf('<tfoot>') >= 0);
   assert.strictEqual(sb._pricingOptionalZoneCo2HTML('p', []), '');
   ok(method + ': Cost Estimate tab section shows the label, the sensor quantity and a footer total');

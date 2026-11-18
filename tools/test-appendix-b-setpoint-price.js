@@ -161,9 +161,9 @@ const ok = (c, m) => {
 
     // ---- 6. one Step 1 text for the step table and the Order of Work; it names the Audit Report ----
     const s1 = await page.evaluate(() => [_rptA36Step1Text(273), _rptA36Step1Text(1), _rptA36Step1Text(0)]);
-    ok(s1[0] === 'Check the equipment and confirm what to program. Reset zone setpoints and schedules (273 zones, Audit Report Appendix A).', 'Step 1 text: ' + s1[0]);
+    ok(s1[0] === 'Control Service Company checks the equipment, confirms what to program, and resets the zone setpoints and schedules (273 zones, Audit Report Appendix A).', 'Step 1 text: ' + s1[0]);
     ok(/\(1 zone, Audit Report Appendix A\)\.$/.test(s1[1]), 'Step 1 text, 1 zone: ' + s1[1]);
-    ok(s1[2] === 'Check the equipment and confirm what to program.', 'Step 1 text, 0 zones: no setpoint sentence');
+    ok(s1[2] === 'Control Service Company checks the equipment and confirms what to program.', 'Step 1 text, 0 zones: no setpoint sentence');
     const src = require('fs').readFileSync(path.join(ROOT, 'app', 'report-engine.js'), 'utf8');
     ok((src.match(/_rptA36Step1Text\(plan\.setpointZones\)/g) || []).length === 2, 'the step table and the Order of Work both use _rptA36Step1Text');
   } finally {
