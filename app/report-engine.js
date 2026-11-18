@@ -18403,7 +18403,7 @@ function _a36ExecDeviceGroups(d) {
   var by = {};
   var list = [];
   ctx.model.findings.forEach(function (f) {
-    if (f.kind === 'seq' || A36_DET_DCV_KEYS.indexOf(f.key) > -1 || /\bCO2\b|carbon dioxide/i.test(f.label || '')) return;
+    if (f.kind === 'seq' || f.key === 'powerMeter' || A36_DET_DCV_KEYS.indexOf(f.key) > -1 || /\bCO2\b|carbon dioxide/i.test(f.label || '')) return;
     var k = f.label;
     if (!by[k]) list.push((by[k] = { label: f.label, libSet: {}, units: 0, typeSet: {} }));
     by[k].libSet[f.lib] = true;
@@ -18420,6 +18420,47 @@ function _a36ExecDeviceGroups(d) {
     }).sort(function (a, c) { return c.n - a.n; });
   });
   return list.sort(function (a, c) { return c.units - a.units || c.libs - a.libs || String(a.label).localeCompare(String(c.label)); });
+}
+
+// Whether a building without a power meter should have one (Matt 2026-11-18: worth it for 5 air handling units and 30 terminal units, not for
+// 2 electric heaters and an exhaust fan). Worth it with a heating or cooling water plant, 3 or more air handling units (rooftop and dedicated
+// outdoor air units included), or 10 or more zone terminal units. Returns the equipment phrase ("one hot water plant, 4 air handling units
+// and 31 terminal units") when it is worth it, else ''. groups: the equipment groups of the building (_a36DetGroups).
+function _a36PowerMeterWorthIt(groups) {
+  var n = function (cats) {
+    return (groups || []).reduce(function (sum, g) { return sum + (cats.indexOf(g.category) > -1 ? g.units.length : 0); }, 0);
+  };
+  var plants = n(['hwp', 'chwp']);
+  var air = n(['ahu', 'rtu', 'doas']);
+  var term = n(['vav', 'fpb', 'ddvav', 'zone']);
+  if (!(plants > 0 || air >= 3 || term >= 10)) return '';
+  var parts = [];
+  if (plants) parts.push(rptCount(plants) + (plants === 1 ? ' heating or cooling water plant' : ' heating and cooling water plants'));
+  if (air) parts.push(rptCount(air) + (air === 1 ? ' air handling unit' : ' air handling units'));
+  if (term) parts.push(rptCount(term) + (term === 1 ? ' terminal unit' : ' terminal units'));
+  return _a36DetJoin(parts);
+}
+
+// The power meter opportunities of the audit, in one sentence: where a meter is worth it and where it is not ('' when every building has one).
+function _a36ExecPowerMeterSentence(d) {
+  var ctx;
+  try {
+    ctx = d._a36AuditCtx || (d._a36AuditCtx = _a36DetContext(d));
+  } catch (e) {
+    console.error('_a36ExecPowerMeterSentence: findings model failed', e);
+    return '';
+  }
+  var libs = ctx.model.findings.filter(function (f) { return f.key === 'powerMeter'; }).map(function (f) { return f.lib; });
+  var without = d.buildings.filter(function (b) { return !b.hasPowerMonitoring; }).length;
+  if (!without) return '';
+  var rest = without - libs.length;
+  var nn = _a36BuildingNouns(d);
+  return (
+    (libs.length
+      ? 'A power meter is an opportunity at ' + _a36DetJoin(libs) + ', where the heating and cooling equipment is large enough for the meter to show what the controls save. '
+      : '') +
+    (rest > 0 ? (rest === 1 ? 'At the other ' + nn.one + ' without one' : 'At the other ' + rptCount(rest) + ' ' + nn.many + ' without one') + ', the equipment is too small for a meter to be worth it. ' : '')
+  );
 }
 
 // The sentences of the Simple Executive Summary about the scope: how much equipment the audit covered, by type, and how many findings it recorded.
@@ -18981,7 +19022,8 @@ function rptPageASHRAE36Executive(n, d, detailedTitles, view) {
     _sec('Zone Setpoints', _ctx);
     if (_nB)
       _sec('Power Metering and Outdoor Air Sensors', [
-        _a36DetUpperFirst(_haveN(d.buildings.filter(function (b) { return b.hasPowerMonitoring; }).length)) + ' a power monitoring meter on the building automation system. ' +
+        _a36DetUpperFirst(_haveN(d.buildings.filter(function (b) { return b.hasPowerMonitoring; }).length)) + ' a power meter on the building automation system. ' +
+        _a36ExecPowerMeterSentence(d) +
         _a36DetUpperFirst(_haveN(d.buildings.filter(function (b) { return b.hasOAConditions; }).length)) + ' dedicated outdoor air sensors, which the reset, economizer and ventilation sequences use.',
       ]);
     _sec('Organization of This Report', [
@@ -28050,6 +28092,35 @@ function _a36DetModel(d, rowsById, picMap, loaded) {
     work.building.seqs.forEach(function (w) {
       add(null, 'seq', w.row.seqKey, w.label, w.qty, w.row, {});
     });
+    // No power meter on the building automation system: an opportunity only where the HVAC equipment is large enough to justify one
+    // (_a36PowerMeterWorthIt). One building-wide item.
+    var pmWhy = !b.hasPowerMonitoring ? _a36PowerMeterWorthIt(groups) : '';
+    if (pmWhy) {
+      var pm = {
+        lib: _a36DisplayName(b),
+        groupLabel: 'Building-wide',
+        kind: 'building',
+        key: 'powerMeter',
+        label: 'Building power meter',
+        units: 0,
+        total: 0,
+        affected: [],
+        missing: [],
+        pic: null,
+        picCands: [],
+        section: '',
+        impact:
+          'The building automation system controls ' + pmWhy + '. A power meter on the system would record the electric demand and use of the building, so the system can trend it with the equipment that drives it and the savings of each control change can be measured.',
+        effect: 'Energy use',
+        observed: 'The building has no power meter on the building automation system.',
+        issueShort: 'No building power meter',
+      };
+      pm.headline = pm.observed;
+      pm.category = null;
+      lib.findings.push(pm);
+      all.push(pm);
+      pm.n = all.length;
+    }
     // Facility Audit deficiencies of this library (a deficiency with no library goes to the first library)
     var mine = [];
     defsLeft = defsLeft.filter(function (df) {
