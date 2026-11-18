@@ -18309,69 +18309,6 @@ function _a36ExecScopeSentence(d) {
  * audited by type and the number of findings of the audit. The ASHRAE 36 scores are on the first page of the ASHRAE 36 Sequences section
  * (rptPageASHRAE36Scores). Hero page: no interior header, uses CSC letterhead. No date line: the report date prints in the footer.
  */
-// Cover table of the buildings audited: Building | Equipment Units | Findings, with a total row. Findings per building come from the same
-// findings model as the building pages (_a36AuditFindingInfo byLib).
-function _a36CoverBuildingTable(d, info) {
-  if (!d.buildings || d.buildings.length < 2) return '';
-  var list = d.buildings.slice().sort(function (a, c) {
-    return rptBuildingNameSort(_a36DisplayName(a), _a36DisplayName(c));
-  });
-  // Compact rows (the cover must fit one page with up to ~15 buildings): the table style of the building pages, with smaller padding and text.
-  var td = A36_DET_TD + ';padding:2px 8px;font-size:11.5px';
-  var tdC = td + ';text-align:center';
-  var tot = td + ';font-weight:700;border-top:2px solid var(--rpt-table-tot-bdr)';
-  var rows = list.map(function (b) {
-    var name = _a36DisplayName(b);
-    return '<tr><td style="' + td + '">' + _escHtml(name) + '</td><td style="' + tdC + '">' + rptCount(b.equipCount || 0) + '</td>' +
-      (info ? '<td style="' + tdC + '">' + rptCount((info.byLib && info.byLib[name]) || 0) + '</td>' : '') + '</tr>';
-  });
-  rows.push('<tr><td style="' + tot + '">Total</td><td style="' + tot + ';text-align:center">' + rptCount(d.portfolio.totalEquip) + '</td>' +
-    (info ? '<td style="' + tot + ';text-align:center">' + rptCount(info.total) + '</td>' : '') + '</tr>');
-  return (
-    '<div style="margin-top:14px">' +
-    _a36DetTableOpen(info ? [56, 24, 20] : [70, 30], info ? ['Building', 'Equipment Units', 'Findings'] : ['Building', 'Equipment Units']) +
-    '<tbody>' + rows.join('') + '</tbody></table></div>'
-  );
-}
-
-// The Executive Summary table "Findings by Type" (Matt 2026-11-17: a full page Executive Summary at a minimum): the findings of the findings model
-// (the same list as the Findings Summary and the chapters) grouped by what is missing, with the number of buildings and of units. null when the
-// model has no findings. Returns { open, rows: [html], close } or null.
-function _a36ExecFindingTypesTable(d) {
-  var ctx;
-  try {
-    ctx = d._a36AuditCtx || (d._a36AuditCtx = _a36DetContext(d));
-  } catch (e) {
-    console.error('_a36ExecFindingTypesTable: findings model failed', e);
-    return null;
-  }
-  var TYPE = { seq: 'Control sequence', sensor: 'Sensor or point' };
-  var by = {};
-  var list = [];
-  ctx.model.findings.forEach(function (f) {
-    var type = TYPE[f.kind] || 'Equipment setup';
-    var k = type + '|' + f.label;
-    if (!by[k]) {
-      by[k] = { label: f.label, type: type, libs: {}, units: 0, n: 0 };
-      list.push(by[k]);
-    }
-    by[k].libs[f.lib] = true;
-    by[k].units += f.units || 0;
-    by[k].n++;
-  });
-  if (!list.length) return null;
-  list.sort(function (a, c) {
-    return Object.keys(c.libs).length - Object.keys(a.libs).length || c.units - a.units || String(a.label).localeCompare(String(c.label));
-  });
-  var td = A36_DET_TD + ';padding:2px 8px;font-size:11.5px';
-  var tdC = td + ';text-align:center';
-  var rows = list.map(function (r) {
-    return '<tr><td style="' + td + '">' + _escHtml(r.label) + '</td><td style="' + td + '">' + r.type + '</td><td style="' + tdC + '">' +
-      rptCount(Object.keys(r.libs).length) + '</td><td style="' + tdC + '">' + (r.units ? rptCount(r.units) : '—') + '</td></tr>';
-  });
-  return { open: _a36DetTableOpen([46, 24, 14, 16], ['Finding', 'Type', 'Buildings', 'Units']) + '<tbody>', rows: rows, close: '</tbody></table>' };
-}
-
 function rptPageASHRAE36Cover(n, d, perBuildingIncluded, detailed) {
   var p = d.portfolio;
   var info = _a36AuditFindingInfo(d);
@@ -18381,8 +18318,7 @@ function rptPageASHRAE36Cover(n, d, perBuildingIncluded, detailed) {
   var finding =
     'The audit covered ' + rptCount(p.totalEquip) + ' equipment unit' + (p.totalEquip !== 1 ? 's' : '') +
     (p.totalBuildings > 1 ? ' in ' + rptCount(p.totalBuildings) + ' buildings' : '') +
-    (info ? (info.total ? ' and recorded ' + _a36FindingsCount(info.total) + '. Each finding is a sensor, device, control point or control sequence that the system does not have.' : ' and recorded no findings.') : '.') +
-    (perBuildingIncluded === true && p.totalBuildings > 1 ? ' The table below lists the units and findings of each building.' : '');
+    (info ? (info.total ? ' and recorded ' + _a36FindingsCount(info.total) + '. Each finding is a sensor, device, control point or control sequence that the system does not have.' : ' and recorded no findings.') : '.');
 
   var statCard = function (value, label) {
     return (
@@ -18416,7 +18352,6 @@ function rptPageASHRAE36Cover(n, d, perBuildingIncluded, detailed) {
     statCard(rptCount(p.totalEquip), 'Equipment Units Audited') +
     (info ? statCard(rptCount(info.total), 'Findings') : '') +
     '</div>' +
-    _a36CoverBuildingTable(d, info) +
     '</div>';
 
   // Rule 2.3: reportDate drives the footer date; label is empty (no period range for audit reports).
@@ -18584,7 +18519,6 @@ function rptPageASHRAE36Executive(n, d, detailedTitles, view) {
   // lead-in at the very top of the page, BEFORE the five sequence paragraphs, explaining what
   // ASHRAE 36 control sequences are and why the top ones are listed here. Deliberately carries
   // NO numbers — the paragraphs and table below carry the real, derived figures.
-  var execTypes = null; // the Findings by Type table of the Detailed Executive Summary ({ head, contHead, open, rows, close })
   var execIntro =
     execHeader +
     (detailed
@@ -18859,12 +18793,6 @@ function rptPageASHRAE36Executive(n, d, detailedTitles, view) {
             .join('') +
           '</ul>'
         : '');
-    var _typesTable = _fInfo && _fInfo.total ? _a36ExecFindingTypesTable(d) : null;
-    if (_typesTable) {
-      execTypes = _typesTable;
-      execTypes.head = _subHtml('Findings by Type') + _pHtml('The ' + _a36FindingsCount(_fInfo.total) + ' of the audit, grouped by what the system does not have. Units counts the equipment units each finding affects; a building-wide finding shows a dash.');
-      execTypes.contHead = _subHtml('Findings by Type (continued)');
-    }
     execIntro = execHeader + _sumHtml;
   }
 
@@ -19487,57 +19415,26 @@ function rptPageASHRAE36Executive(n, d, detailedTitles, view) {
   var _paraMeasured = detailed && _pushTableToNextPage && view !== 'a36' ? _rptMeasureHtmlH(execIntro + dcvCallout + callout) : null;
   var _paraEstH = _paraMeasured !== null ? _paraMeasured : 34 + 150 + (detailed ? 300 : 0) + (dcvCallout ? 105 : 0) + 105 * topSeqTypes.length;
   var _paraSplit = _pushTableToNextPage && detailed && view !== 'a36' && _paraEstH > _rptContentBudget('flush') - EXEC_SAFETY_H && (dcvCallout || callout);
-  // The Findings by Type table fills the Executive Summary page to its bottom (Matt 2026-11-17: a full page at a minimum); the rows that do not fit
-  // continue on the next page under the same header. Measured, like the paragraph page above; without a measurement the table takes its own page.
-  var _typesContPages = 0;
-  function _execFillTypes(base) {
-    if (!execTypes) return { page: base, cont: '' };
-    var budget = _rptContentBudget('flush') - EXEC_SAFETY_H;
-    var t = execTypes;
-    var k = t.rows.length;
-    var h;
-    while (k > 0) {
-      h = _rptMeasureHtmlH(base + t.head + t.open + t.rows.slice(0, k).join('') + t.close);
-      if (h !== null && h !== undefined && h <= budget) break;
-      if (h === null || h === undefined) k = 0;
-      else k--;
-    }
-    if (k > 0 && k < 3) k = 0; // no table of one or two rows at a page bottom
-    return {
-      page: base + (k ? t.head + t.open + t.rows.slice(0, k).join('') + t.close : ''),
-      cont: k < t.rows.length ? (k ? t.contHead : t.head) + t.open + t.rows.slice(k).join('') + t.close : '',
-    };
-  }
   if (_pushTableToNextPage && view !== 'a36') {
     if (_paraSplit) {
       resultPages.push(
         rptPage(n, 'Audit Report: Executive Summary', execIntro, { hideIntHdr: true, data: fakeData, label: 'Page ' + n + ' — Executive Summary' }),
       );
-      var _fill2 = _execFillTypes(dcvCallout + callout);
       resultPages.push(
-        rptPage(n + 1, 'Audit Report: Executive Summary', _fill2.page, { hideIntHdr: true, data: fakeData, label: 'Page ' + (n + 1) + ' — Executive Summary' }),
+        rptPage(n + 1, 'Audit Report: Executive Summary', dcvCallout + callout, { hideIntHdr: true, data: fakeData, label: 'Page ' + (n + 1) + ' — Executive Summary' }),
       );
-      if (_fill2.cont) {
-        _typesContPages = 1;
-        resultPages.push(rptPage(n + 2, 'Audit Report: Executive Summary', _fill2.cont, { hideIntHdr: true, data: fakeData, label: 'Page ' + (n + 2) + ' — Executive Summary' }));
-      }
     } else {
-      var _fill = _execFillTypes(execIntro + dcvCallout + callout);
       resultPages.push(
-        rptPage(n, 'Audit Report: Executive Summary', _fill.page, {
+        rptPage(n, 'Audit Report: Executive Summary', execIntro + dcvCallout + callout, {
           hideIntHdr: true,
           data: fakeData,
           label: 'Page ' + n + ' — Executive Summary',
         }),
       );
-      if (_fill.cont) {
-        _typesContPages = 1;
-        resultPages.push(rptPage(n + 1, 'Audit Report: Executive Summary', _fill.cont, { hideIntHdr: true, data: fakeData, label: 'Page ' + (n + 1) + ' — Executive Summary' }));
-      }
     }
   }
   if (view === 'base') return resultPages; // the Executive Summary pages only
-  var _tableStartPageN = _pushTableToNextPage && view !== 'a36' ? n + (_paraSplit ? 2 : 1) + _typesContPages : n;
+  var _tableStartPageN = _pushTableToNextPage && view !== 'a36' ? n + (_paraSplit ? 2 : 1) : n;
 
   chunks.forEach(function (chunk, chunkIndex) {
     var tableRows = chunk
