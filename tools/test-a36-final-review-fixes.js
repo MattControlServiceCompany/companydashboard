@@ -60,15 +60,14 @@ ok(lits.every((s) => /variable-speed savings/.test(s)), '3. no report string say
     fnSrc(RE, '_a36DetFraction') + '\n' + fnSrc(RE, '_a36DetNormalizeText') + '\nreturn { f: _a36DetFraction, n: _a36DetNormalizeText };'
   )();
   // 2 / 9: the base and the noun of a count
-  ok(sandbox.f(13, 13, 'terminal', ' that need a CO2 sensor') === 'all 13 terminals that need a CO2 sensor', '2. a CO2 count that is all of its base says the base ("all 13 terminals that need a CO2 sensor")');
-  ok(sandbox.f(74, 94, 'terminal', ' that need a CO2 sensor') === '74 of the 94 terminals that need a CO2 sensor', '2. a CO2 count that is part of its base says the base ("74 of the 94 terminals that need a CO2 sensor")');
+  ok(!/that need a CO2 sensor/.test(RE) && /f\.dcvNote = dcvNarrow \? _a36DetDcvNote\(g, units\)/.test(RE), '2. a CO2 count is against the whole group with a note on the other units; no "that need a CO2 sensor" (Matt 2026-11-18: no unit needs a CO2 sensor)');
   ok(sandbox.f(3, 25) === '3 of 25 units' && sandbox.f(5, 5) === 'all 5 units' && sandbox.f(2, 2) === 'both units' && sandbox.f(1, 1) === 'the unit', '2. a count with no base text keeps the old words');
   ok(sandbox.f(1, 1, 'plant') === 'the plant' && sandbox.f(2, 2, 'plant') === 'both plants', '9. a plant is a plant, not a unit');
-  ok(/f\.fracNoun = g && \(g\.category === 'hwp' \|\| g\.category === 'chwp'\) \? 'plant'/.test(RE) && /_a36DetFraction\(f\.units, f\.total, f\.fracNoun, f\.fracTail\)/.test(RE), '2/9. the finding and the Findings Summary read the same noun and base text');
+  ok(/f\.fracNoun = g && \(g\.category === 'hwp' \|\| g\.category === 'chwp'\) \? 'plant'/.test(RE) && /_a36DetFraction\(f\.units, f\.groupTotal && f\.dcvNote \? f\.groupTotal : f\.total, f\.fracNoun, ''\)/.test(RE), '2/9. the finding and the Findings Summary read the same noun and base');
   // 3: the setpoint wording
-  ok(/zone setpoints that differ from the Control Service Company standard setpoints in Appendix A\./.test(RE) && !/ASHRAE 36 recommended values/.test(RE), '3. Key Findings: setpoints "differ from the Control Service Company standard setpoints in Appendix A" (they are the company setpoints, not ASHRAE 36 values)');
+  ok(/zone setpoints that differ from that standard\. A setpoint that differs is not a finding; Appendix A lists each one/.test(RE) && /compared the zone setpoints with the Control Service Company standard setpoints/.test(RE) && !/ASHRAE 36 recommended values/.test(RE), '3. Executive Summary: setpoints "differ from the Control Service Company standard setpoints in Appendix A" (they are the company setpoints, not ASHRAE 36 values)');
   // 4: every Key Findings phrase says only that the full sequence is missing
-  ok(/ahu_economizer: 'economizer',/.test(RE) && /'Air handlers lack these control sequences: '/.test(RE) && !/do not use outdoor air for free cooling/.test(RE), '4. the summary names the missing sequences and makes no claim about what a unit does');
+  ok(/ahu_economizer: 'economizer',/.test(RE) && /'Without these sequences, the units cannot make these adjustments\.'/.test(RE) && !/do not use outdoor air for free cooling|hold fixed settings/.test(RE), '4. the summary names the missing sequences and makes no claim about what a unit does');
   ok(!/do not use outdoor air for free cooling|hold one supply air temperature at all times|do not control their minimum outdoor air/.test(RE), '4. the three overclaiming phrases are gone');
   // 7: the PDF text layer writes the non-breaking hyphen of a tag as a plain hyphen, so search and copy find "UH-1"
   ok(/'‑': '-'/.test(fs.readFileSync(path.join(ROOT, 'app', 'report-pdf.js'), 'utf8')), '7. PDF text layer: non-breaking hyphen reads as a plain hyphen');

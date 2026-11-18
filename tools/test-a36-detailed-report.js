@@ -248,7 +248,7 @@ const ok = (c, m) => {
               }
               if (e.querySelector('p, div, img')) return;
               const tx = e.textContent.trim();
-              let m = /(?:\(|; )Figure (\d+)\)/.exec(tx);
+              let m = /Figure (\d+) shows /.exec(tx);
               if (m) mark = 'desc:' + m[1];
               m = /^\d+\.\d+\.\d+ (.*)$/.exec(tx);
               if (m) mark = 'find:' + (/economizer/i.test(m[1]) ? 'Economizer' : m[1]);
@@ -298,8 +298,8 @@ const ok = (c, m) => {
     ok(!/Guideline 36|outside air|set point|§|Cfm/.test(t), 'round 1: no "Guideline 36", "outside air", "set point", section sign or "Cfm" in the Detailed text');
     ok(!/Report date/.test(det.text) && !/Glossary|Share Mapped|Points by Equipment Type/.test(det.text) && !/ASHRAE Coverage|none are discarded|prioritized list/.test(det.text), 'cover has no Report date line; no Glossary page, no Share Mapped column; the old promise and wording are gone');
     ok(!/This system has/.test(t), 'cut 3: no "This system has N units" sentence (the System Overview table lists the units)');
-    ok(/Alpha Library is served by [^.]*two air handling units \(AHU‑1, AHU‑2\)/.test(t), 'System Overview (a paragraph): names and counts the 2 air handling units of Alpha Library');
-    ok(/Beta Library is served by one air handling unit \(AHU‑3\)/.test(t) && /three variable air volume terminals/.test(t) && !/Total\s*6/.test(t), 'System Overview: one unit is named, more than 3 are counted only, no Total line');
+    ok(/The building automation system of Alpha Library controls [^.]*two air handling units \(AHU‑1, AHU‑2\)/.test(t) && !/is served by/.test(t), 'System Overview (a paragraph): names and counts the 2 air handling units the building automation system of Alpha Library controls (Matt 2026-11-18: the audit sees the system, not the building)');
+    ok(/The building automation system of Beta Library controls one air handling unit \(AHU‑3\)/.test(t) && /three variable air volume terminals/.test(t) && !/Total\s*6/.test(t), 'System Overview: one unit is named, more than 3 are counted only, no Total line');
     ok(det.overviewNoTable === true, 'item 1: the System Overview has no <table> (the Findings Summary keeps its table)');
     ok(/Building automation controller: Sample Controller \(5 of 6 units\)/.test(t), 'BAS controller line from the rows (5 of 6 units in Alpha Library: the exhaust fan row has none)');
     ok(!/\bmonitors\b|by command|by an enable command|positioned by|set by a speed command|showed:|55\.2°F/.test(t), 'a: System Descriptions: no "monitors" list, no "by command", no reading (55.2°F), no "showed:" list');
@@ -360,12 +360,12 @@ const ok = (c, m) => {
     const nums = (det.figs.join('\n').match(/Figure (\d+):/g) || []).map((x) => parseInt(x.replace(/\D/g, ''), 10));
     ok(nums.length === 4 && nums.every((v, i) => v === i + 1), 'figure numbers run 1..N in page order (' + nums.join(',') + ')');
     ok(det.imgInfo.length === 4 && det.imgInfo.every((i) => i.src === 'data:image/jpeg;base64,'.slice(0, 22) && i.w > 0 && i.w <= 1200), 'figures are JPEG data: URLs at most 1200 px wide (' + det.imgInfo.map((i) => i.w).join(',') + ')');
-    ok(det.figs.some((f) => /Figure \d+: AHU‑1, Graphic$/.test(f)), 'caption names the equipment and the page type only');
+    ok(det.figs.some((f) => /Figure \d+: Alpha Library, AHU‑1, Graphic$/.test(f)), 'caption names the building, the equipment and the page type (Matt 2026-11-18)');
     ok(!/syn-5/.test(det.text) && det.figs.length === 4, 'the skipped "Not used" picture is not used');
     // the graphic of a unit sits directly under its own description; a finding figure sits directly under its own finding
     ok(det.order.join('|') === 'desc:1|desc:2|find:Economizer|desc:4', 'every figure is directly under its own description or finding: ' + det.order.join('|'));
-    ok(/Figure 3: Economizer: AHU\u20111, Properties(\n|$)/.test(det.figs.join('\n')), 'the finding figure caption names the condition: ' + det.figs.join(' / '));
-    ok(/(\(|; )Figure 1\)\./.test(t) && !/graphic of [^.]* is shown in Figure/.test(t) && /Missing: Outdoor Air Damper Actuator, Mixed Air Temperature/.test(t), 'the text cites the figure it introduces, in the sentence: "(Figure N)." (item 4)');
+    ok(/Figure 3: Economizer: Alpha Library, AHU\u20111, Properties(\n|$)/.test(det.figs.join('\n')), 'the finding figure caption names the condition: ' + det.figs.join(' / '));
+    ok(/Figure 1 shows the building automation system graphic of AHU‑1\./.test(t) && !/\(Figure \d+\)/.test(t) && /Missing: Outdoor Air Damper Actuator, Mixed Air Temperature/.test(t), 'the text introduces the figure with a sentence that says what it shows (Matt 2026-11-18), no bracket citation');
     ok(!/Pictures?: Figure/.test(t), 'no "Pictures: Figure" list under the findings');
     ok(!/\(1 of 1 unit\)/.test(t) && !/\((\d+) of \1 units\)/.test(t.replace(/Building automation controller[^\n]*/g, '')), 'D6: no "(N of N units)" noise in the text');
 
@@ -437,7 +437,7 @@ const ok = (c, m) => {
       const pick = (names, lib, all) => { const r = _a36DetLibraryPhotoFile(fl(names), lib, all || [lib]); return r ? r.name : null; };
       return {
         h1s, sumRows, execBold, execPageFill: fill, pointHeads, spText,
-        cite: { off: _a36DetCiteFigure('The unit is run by a mode point (Off).', 2), plain: _a36DetCiteFigure('The unit runs.', 3), noMark: _a36DetCiteFigure('The unit runs', 4) },
+        cite: { g: _a36DetFigureSentence(2, 'EF-1', 'Graphic'), p: _a36DetFigureSentence(3, 'AHU-1', 'Properties') },
         photoNames: [
           pick(['Alpha Library - Front.jpg'], 'Alpha Library'),
           pick(['alpha library - front.JPEG'], 'Alpha Library'),
@@ -477,8 +477,8 @@ const ok = (c, m) => {
     ok(!/recommend/i.test(lay.spText) && /Control Service Company standard: occupied 70°F heating \/ 74°F cooling; unoccupied 55°F heating \/ 85°F cooling; occupied during each building’s open hours, unoccupied when closed/.test(lay.spText), 'item 5: the standard setpoints and schedule are printed once in a box; no recommendation wording');
     ok(/All 2 zones match the standard defaults/.test(lay.spText), 'item 5: one-line status per building');
     ok(!/no zone-level set ?points/i.test(lay.spText), 'item 5: the wrong "no zone-level setpoints" reason is not printed');
-    ok(lay.execBold.includes('Overall Result') && lay.execBold.includes('Key Findings') && lay.execPageFill > 0.35, 'item 6: Executive Summary has the bold subheadings Overall Result and Key Findings (' + lay.execBold.length + ' bold lines) and the page is filled (' + Math.round(lay.execPageFill * 100) + '%)');
-    ok(lay.cite.off === 'The unit is run by a mode point (Off; Figure 2).' && lay.cite.plain === 'The unit runs (Figure 3).' && lay.cite.noMark === 'The unit runs (Figure 4)', 'item 8a: "(Off)" takes the figure inside the bracket, other sentences keep "(Figure N)": ' + JSON.stringify(lay.cite));
+    ok(['Scope and Method', 'Overall Result', 'Principal Findings'].every((h) => lay.execBold.includes(h)) && lay.execPageFill > 0.35, 'item 6: Executive Summary has the bold subheadings Scope and Method, Overall Result and Principal Findings (' + lay.execBold.length + ' bold lines) and the page is filled (' + Math.round(lay.execPageFill * 100) + '%)');
+    ok(lay.cite.g === 'Figure 2 shows the building automation system graphic of EF-1.' && lay.cite.p === 'Figure 3 shows the building automation system properties page of AHU-1.', 'item 8a: the figure sentence says what the figure shows: ' + JSON.stringify(lay.cite));
     ok(!/\) \(Figure \d+\)/.test(t), 'item 8a: no "(...) (Figure N)" in the chapters');
     ok(lay.photoNames.map((x) => x || 'none').join('|') === 'Alpha Library - Front.jpg|alpha library - front.JPEG|Alpha Library - front view.png|none|none|none|none|Alpha Library - Front.jpg|none|Alpha Library East - Front.jpg', 'item 7: the photo file name match (' + lay.photoNames.join(' | ') + ')');
     ok(det.photos.length === 1 && /Alpha Library/.test(det.photos[0].alt) && det.photos[0].w === 624 && det.photos[0].h === 336 && det.photos[0].afterTitle, 'item 7: Alpha Library has one photo, 624 x 336 px (6.5 x 3.5 in) directly under its title: ' + JSON.stringify(det.photos));
@@ -516,9 +516,9 @@ const ok = (c, m) => {
       const bad = [];
       all.forEach((f) => {
         if (f.kind === 'deficiency') return;
-        const frac = _a36DetFraction(f.units, f.total, f.fracNoun, f.fracTail);
+        const frac = _a36DetFraction(f.units, f.groupTotal && f.dcvNote ? f.groupTotal : f.total, f.fracNoun, '');
         const inText = !f.total || f.observed.indexOf(frac) >= 0;
-        if (!inText || f.units < 1 || (f.total && f.units > f.total)) bad.push(f.n + ': ' + f.observed + ' units ' + f.units + ' of ' + f.total);
+        if (!inText || f.units < 1 || (f.total && f.units > f.total) || /that need a CO2/.test(f.observed)) bad.push(f.n + ': ' + f.observed + ' units ' + f.units + ' of ' + f.total);
       });
       // m: no finding carries a Solution (the audit states facts only, 2026-11-17)
       const mbad = all.filter((f) => 'recommendation' in f).map((f) => f.n);

@@ -65,7 +65,7 @@ check(RE.includes(coilText) && PE.includes(coilText) && !/hot water flow through
 check(!/_todo\.push\('install ' \+/.test(RE) && !/_subHtml\('Recommendations'\)/.test(RE) && !/'The work needed is '/.test(RE), 'A1. Detailed summary has no Recommendations paragraph (removed 2026-11-17, facts only); the old "The work needed is" line is gone');
 
 // A2
-check(/_co2Parts\.push\(rptCount\(_dcvZonesMissing\) \+ ' of ' \+ rptCount\(dcv\.totalZones\) \+ ' zone'/.test(RE) && !/ rooms? have no carbon dioxide/.test(RE) && !/zones have no carbon dioxide sensor, so ventilation/.test(RE), 'A2. Summary gaps say "zones", not "rooms"');
+check(/_co2Parts\.push\(rptCount\(_dcvZonesMissing\) \+ ' zone terminal'/.test(RE) && !/ rooms? have no carbon dioxide/.test(RE) && !/zones have no carbon dioxide sensor, so ventilation/.test(RE), 'A2. Summary gaps say "zones", not "rooms"');
 check(!/Glossary/.test(RE.replace(/\/\/[^\n]*/g, '')) &&!/A room or area that one terminal unit controls/.test(RE), 'A2. the Glossary is gone (no Zone row)');
 
 // A6 (a reading and a share join with "for") is gone: a description holds no reading (2026-11-15, no narration).
