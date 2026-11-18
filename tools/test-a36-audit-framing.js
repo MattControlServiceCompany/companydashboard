@@ -108,6 +108,9 @@ const ok = (c, m) => {
       const cover = out[k][0];
       ok(cover && !/Report date/i.test(cover.text) && !/(January|February|March|April|May|June|July|August|September|October|November|December) \d{1,2}, \d{4}/.test(cover.text), k + ': the cover has no Report date and no date line');
       ok(/Audit Report/.test(cover.text) && /Across 2 buildings/.test(cover.text) && /recorded \d+ opportunit(y|ies)/.test(cover.text) && /Equipment Units Audited/.test(cover.text) && /Opportunities Found/.test(cover.text) && /Overall Score/.test(cover.text), k + ': the cover is the 11/15 page 1 without ASHRAE 36: rings, the Across paragraph with the counts, the stat row with Opportunities Found (Matt 2026-11-18)');
+      // Matt 2026-11-18 (5b90494a, d444f3ef): the cover states the units beside the opportunities; setpoints and schedules are opportunities, in the words of the audit.
+      ok(/recorded \d+ opportunit(y|ies) on [\d,]+ equipment units?:/.test(cover.text) && /setpoints that differ from the standard and the schedules that run units around the clock/.test(cover.text), k + ': the cover paragraph says "N opportunities on N equipment units" and names setpoints and schedules');
+      ok(!/finding/i.test(cover.text), k + ': the cover text has no "finding"');
       const bp = out[k].filter((p) => p.section === 'building');
       ok(bp.length >= 2, k + ': the base Per-Building Detail pages print (' + bp.length + ')');
       ['Alpha Library', 'Beta Library'].forEach((n) => ok(bp.some((p) => p.photos.indexOf('Photo of ' + n) >= 0), k + ': the per-building page of ' + n + ' has the library front photo'));

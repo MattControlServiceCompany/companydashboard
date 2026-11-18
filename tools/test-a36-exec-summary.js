@@ -78,8 +78,16 @@ const ok = (c, m) => {
             { phase: 2, seqKey: 'demandCtrl', qty: 20 },
             { phase: 2, seqKey: 'vav_dcv', qty: 220 },
           ];
-          // the Executive Summary reads the setpoint count of the Setpoint Programming Review through this one function
-          if (opts.spNeed != null) window._a36SetpointNeedsChangeCount = function () { return opts.spNeed; };
+          // the Executive Summary reads the setpoint opportunities of the findings model: put opts.spNeed libraries with 2 of 5 zones into it
+          if (opts.spNeed != null) {
+            const realCtx = window._a36DetContext0 || (window._a36DetContext0 = _a36DetContext);
+            window._a36DetContext = function (dd) {
+              const mctx = realCtx(dd);
+              mctx.model.findings = mctx.model.findings.filter((f) => f.kind !== 'setpoint');
+              for (let i = 0; i < opts.spNeed; i++) mctx.model.findings.push({ kind: 'setpoint', key: 'zoneSetpoints', lib: 'Library ' + i, units: 2, total: 5, affected: [], missing: [], label: 'Zone setpoints differ from the standard' });
+              return mctx;
+            };
+          } else if (window._a36DetContext0) window._a36DetContext = window._a36DetContext0;
           const counts = _a36ConsolidatedCounts(data);
           const sel = { cover: true, executive: true, costEstimate: true, setpointReview: opts.setpointReview !== false, detailed: opts.simple ? undefined : true };
           if (opts.simple) { sel.building = true; sel.pointInventory = true; }
@@ -123,7 +131,9 @@ const ok = (c, m) => {
     ok(/The most widespread opportunity concerns ventilation\. 203 zone terminal units and 5 air handling units have no carbon dioxide \(CO2\) sensor\./.test(t) && !/ of 232 /.test(t) && !/need a CO2/.test(t), 'Principal Opportunities: ventilation first, with the dcv counts and no base that differs from other pages (203 zone terminals, 5 air handling units)');
     ok(/In all, 240 units do not have occupancy-based ventilation programmed/.test(t), 'Principal Opportunities: ventilation total = demandCtrl 20 + vav_dcv 220 = 240');
     ok(/Of the air handling units, 9 units have no supply air temperature reset, 9 have no minimum outdoor air, 7 have no economizer and 3 have no duct static pressure reset\./.test(t) && /Without supply air temperature reset, the supply air temperature setpoint does not change/.test(t) && !/which condition air at one place/.test(t), 'Principal Opportunities: the four ahu counts of the priced scope (9, 9, 7, 3), each sequence explained, no claim about what a unit does');
-    ok(/9 of the 13 libraries have zone setpoints that differ from that standard\. Each differing setpoint is also an opportunity/.test(t), 'Context: setpoint count of _a36SetpointNeedsChangeCount (9 of 13), not a finding');
+    ok(/The audit also compared the zone setpoints with the Control Service Company standard setpoints\. 18 zones have setpoints that differ from the standard, at 9 of the 13 libraries\. Each library with differing zone setpoints counts as one opportunity\. Appendix A lists each setpoint/.test(t) && !/Each differing setpoint is also an opportunity/.test(t), 'Zone Setpoints: the setpoint opportunities of the findings model (9 libraries, 18 zones), counted as opportunities');
+    ok(/Overall ResultThe audit recorded \d+ opportunities on \d+ equipment units\./.test(t), 'Overall Result: "N opportunities on N equipment units" (Matt 2026-11-18, 5b90494a)');
+    ok(await page.evaluate(() => Object.keys(_a36AuditAffectedUnits([{ lib: 'A', affected: ['VAV-1', 'VAV-2'], category: 'vav' }, { lib: 'A', affected: ['vav-1'], category: '', affectedCategories: ['vav'] }, { lib: 'A', affected: [], category: null }, { lib: 'B', affected: ['VAV-1'], category: 'vav' }])).length === 3), 'unit count: a unit named by two opportunities counts once; a building-wide opportunity names no unit')
     ok(a.counts.sensors === 258 && a.counts.sequences === 9 + 9 + 7 + 3 + 20 + 220, 'shared: _a36ConsolidatedCounts = 258 devices, 268 sequences (' + a.counts.sensors + ', ' + a.counts.sequences + ')');
     ok(!/Install 258 sensors|The Service Proposal gives the cost|ASHRAE 36 standard for the equipment in scope/.test(t), 'Recommendations paragraph is gone (2026-11-17)');
 
@@ -136,11 +146,11 @@ const ok = (c, m) => {
     });
     const zt = z.pages.join(' ');
     ok(!/carbon dioxide/.test(zt) && !/concerns ventilation/.test(zt), 'zero carbon dioxide counts: the ventilation paragraph is gone');
-    ok(!/zone setpoints that differ/.test(zt) && !/change the zone setpoints/.test(zt), 'zero setpoint count: no setpoint sentence and no setpoint recommendation');
+    ok(!/setpoints that differ/.test(zt) && !/change the zone setpoints/.test(zt), 'zero setpoint count: no setpoint sentence and no setpoint recommendation');
     ok(!/\d control points/.test(zt) && /342 pieces of equipment\. /.test(zt), 'zero point count: the points are dropped from the first paragraph: ' + (zt.match(/.{60}342 equipment.{60}/) || [''])[0]);
     ok(!/ 0 of /.test(zt) && !/\b0 (sensors|units|control)/.test(zt), 'no "0 of" and no zero count anywhere in the text');
     const zno = await build({ setpointReview: false, spNeed: 9 });
-    ok(!/zone setpoints that differ/.test(zno.pages.join(' ')), 'Appendix A not printed: no setpoint sentence even when the count is above 0');
+    ok(/setpoints that differ from the standard/.test(zno.pages.join(' ')) && !/Appendix A/.test(zno.pages.join(' ')), 'Appendix A not printed: the setpoint sentence stays (it is an opportunity) but names no Appendix A');
     const gap = await build({ pointPct: 60, seqPct: 80 });
     ok(!/ASHRAE|Sequence readiness is|Sensor coverage is/.test(gap.pages[0] || ''), 'opposite gap: the base Executive Summary prints no readiness comparison, whatever the two percentages are');
 

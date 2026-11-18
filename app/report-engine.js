@@ -18291,16 +18291,38 @@ function _a36AuditFindingInfo(d) {
     ctx.model.findings.forEach(function (f) {
       byLib[f.lib] = (byLib[f.lib] || 0) + 1;
     });
-    return { total: ctx.model.findings.length, libs: Object.keys(byLib).length, byLib: byLib };
+    return { total: ctx.model.findings.length, units: Object.keys(_a36AuditAffectedUnits(ctx.model.findings)).length, libs: Object.keys(byLib).length, byLib: byLib };
   } catch (e) {
     console.error('_a36AuditFindingInfo: findings model failed', e);
     return null;
   }
 }
 
-// "1 finding" / "12 findings".
+// "1 opportunity" / "12 opportunities".
 function _a36FindingsCount(n) {
   return rptCount(n) + (n === 1 ? ' opportunity' : ' opportunities');
+}
+
+// The equipment units that at least one opportunity names (a unit with two opportunities counts once; an opportunity of the whole building names no
+// unit): { 'library|unit name': equipment category ('' when the opportunity has none) }. The one rule behind every "on N units" count of the audit and
+// behind the unit counts of the audit rings (_a36AuditRingStats). libName (optional) limits it to one library.
+function _a36AuditAffectedUnits(findings, libName) {
+  var hit = {};
+  (findings || []).forEach(function (f) {
+    if (libName && f.lib !== libName) return;
+    (f.affected || []).forEach(function (u, i) {
+      if (!u) return;
+      var k = f.lib + '|' + _a36DetNorm(u);
+      var cat = f.category || (f.affectedCategories && f.affectedCategories[i]) || '';
+      if (!hit[k] || cat) hit[k] = cat || hit[k];
+    });
+  });
+  return hit;
+}
+
+// "54 opportunities on 279 equipment units": the opportunities and the units they affect, from the info of _a36AuditFindingInfo.
+function _a36FindingsOnUnits(info) {
+  return _a36FindingsCount(info.total) + ' on ' + rptCount(info.units) + ' equipment unit' + (info.units === 1 ? '' : 's');
 }
 
 // The audit rings (the whole audit, not ASHRAE 36): of the equipment units of the report (or of one library: libName), how many have no
@@ -18330,14 +18352,7 @@ function _a36AuditRingStats(d, libName) {
       catUnits[k] = (catUnits[k] || 0) + (c[k] || 0);
     });
   });
-  var hit = {}; // lib|unit -> category
-  ctx.model.findings.forEach(function (f) {
-    if (libName && f.lib !== libName) return;
-    if (!f.category) return;
-    (f.affected || []).forEach(function (u) {
-      if (u) hit[f.lib + '|' + _a36DetNorm(u)] = f.category;
-    });
-  });
+  var hit = _a36AuditAffectedUnits(ctx.model.findings, libName); // lib|unit -> category
   var hitBy = {};
   Object.keys(hit).forEach(function (k) {
     hitBy[hit[k]] = (hitBy[hit[k]] || 0) + 1;
@@ -18412,7 +18427,7 @@ function _a36ExecDeviceGroups(d) {
   var by = {};
   var list = [];
   ctx.model.findings.forEach(function (f) {
-    if (f.kind === 'seq' || f.key === 'powerMeter' || A36_DET_DCV_KEYS.indexOf(f.key) > -1 || /\bCO2\b|carbon dioxide/i.test(f.label || '')) return;
+    if (f.kind === 'seq' || f.kind === 'setpoint' || f.kind === 'schedule' || f.key === 'powerMeter' || A36_DET_DCV_KEYS.indexOf(f.key) > -1 || /\bCO2\b|carbon dioxide/i.test(f.label || '')) return;
     var k = f.label;
     if (!by[k]) list.push((by[k] = { label: f.label, libSet: {}, units: 0, typeSet: {} }));
     by[k].libSet[f.lib] = true;
@@ -18478,8 +18493,43 @@ function _a36ExecScopeSentence(d) {
   var info = _a36AuditFindingInfo(d);
   return (
     'The audit covered ' + rptCount(d.portfolio.totalEquip) + ' piece' + (d.portfolio.totalEquip !== 1 ? 's' : '') + ' of equipment' + (types.length ? ': ' + _a36DetJoin(types) : '') + '. ' +
-    (info ? (info.total ? 'The audit recorded ' + _a36FindingsCount(info.total) + ' at ' + rptCount(info.libs) + (d.portfolio.totalBuildings > 1 ? ' of the ' + rptCount(d.portfolio.totalBuildings) + ' ' + _a36BuildingNouns(d).many : ' ' + _a36BuildingNouns(d).one) + '. ' : 'The audit recorded no opportunities. ') : '')
+    (info ? (info.total ? 'The audit recorded ' + _a36FindingsOnUnits(info) + ' at ' + rptCount(info.libs) + (d.portfolio.totalBuildings > 1 ? ' of the ' + rptCount(d.portfolio.totalBuildings) + ' ' + _a36BuildingNouns(d).many : ' ' + _a36BuildingNouns(d).one) + '. ' : 'The audit recorded no opportunities. ') : '')
   );
+}
+
+// The setpoint and schedule opportunities of the audit in plain sentences, from the findings model (the same list as the cover count, the building
+// pages and the chapters): { setpoints, schedules } ('' where no library has one). The counts are the zones and units of the model items.
+function _a36ExecSetpointScheduleSentences(d) {
+  var out = { setpoints: '', schedules: '' };
+  var ctx;
+  try {
+    ctx = d._a36AuditCtx || (d._a36AuditCtx = _a36DetContext(d));
+  } catch (e) {
+    console.error('_a36ExecSetpointScheduleSentences: findings model failed', e);
+    return out;
+  }
+  var nn = _a36BuildingNouns(d);
+  var listOf = function (kind) {
+    return ctx.model.findings.filter(function (f) { return f.kind === kind; });
+  };
+  var sp = listOf('setpoint');
+  var sc = listOf('schedule');
+  var sum = function (list) { return list.reduce(function (a, f) { return a + (f.units || 0); }, 0); };
+  var nTotal = d.portfolio.totalBuildings; // the one building count of the report
+  var where = function (list) {
+    return list.length === 1 && nTotal === 1
+      ? 'the ' + nn.one
+      : list.length === nTotal ? 'every ' + nn.one : list.length === 1 ? list[0].lib : rptCount(list.length) + ' of the ' + rptCount(nTotal) + ' ' + nn.many;
+  };
+  if (sp.length)
+    out.setpoints =
+      'The audit also compared the zone setpoints with the Control Service Company standard setpoints. ' + rptCount(sum(sp)) + ' zone' + (sum(sp) === 1 ? ' has' : 's have') +
+      ' setpoints that differ from the standard, at ' + where(sp) + '. Each ' + nn.one + ' with differing zone setpoints counts as one opportunity.';
+  if (sc.length)
+    out.schedules =
+      'The audit read the occupied schedule of each unit that has one in the building automation system. ' + rptCount(sum(sc)) + ' unit' + (sum(sc) === 1 ? ' runs' : 's run') +
+      ' around the clock or ' + (sum(sc) === 1 ? 'has' : 'have') + ' no occupied period, at ' + where(sc) + '. Each ' + nn.one + ' with such schedules counts as one opportunity.';
+  return out;
 }
 
 /**
@@ -18500,9 +18550,9 @@ function rptPageASHRAE36Cover(n, d, perBuildingIncluded, detailed) {
   // The three score rings of the 11/15 page 1: 110px, side by side, the label under each ring (one score owner: a36PortfolioScores).
   var ring = function (pct, color, label) {
     return (
-      '<td style="width:140px;text-align:center;vertical-align:top;padding:0 8px;border:none">' +
+      '<td style="width:170px;text-align:center;vertical-align:top;padding:0 8px;border:none">' +
       '<div style="display:inline-block">' + _a36GaugeSVG(pct, color, label, 110, true) + '</div>' +
-      '<div style="font-size:13.34px;color:var(--rpt-page-text);margin-top:4px;text-align:center">' + label + '</div></td>'
+      '<div style="font-size:13.34px;color:var(--rpt-page-text);margin-top:4px;text-align:center;white-space:nowrap">' + label + '</div></td>'
     );
   };
   var rings =
@@ -18516,7 +18566,7 @@ function rptPageASHRAE36Cover(n, d, perBuildingIncluded, detailed) {
     'Across <strong>' + rptCount(p.totalBuildings) + ' ' + (p.totalBuildings === 1 ? 'building' : 'buildings') + '</strong> and <strong>' + rptCount(p.totalEquip) + ' pieces of heating and cooling equipment</strong>' +
     (pts ? ' with <strong>' + rptCount(pts) + ' control points</strong>' : '') + ', the audit of <strong>' + _escHtml(d.project.name) + '</strong> recorded <strong>' +
     (info ? _a36FindingsCount(info.total) : 'no opportunities') + '</strong>' +
-    (info && info.total ? ': the sensors, control points and control sequences that the systems do not have. The sections that follow describe each ' + nouns.one + ', how its system controls the equipment today and each opportunity.' : '.');
+    (info && info.total ? ' on <strong>' + rptCount(info.units) + ' equipment unit' + (info.units === 1 ? '' : 's') + '</strong>: the sensors, control points and control sequences that the systems do not have, the zone setpoints that differ from the standard and the schedules that run units around the clock or hold no occupied period. The sections that follow describe each ' + nouns.one + ', how its system controls the equipment today and each opportunity.' : '.');
   var statCard = function (value, label) {
     return (
       '<td class="rpt-a36-stat-card" style="width:25%;text-align:center;vertical-align:top;padding:0 6px;border:none">' +
@@ -18806,6 +18856,19 @@ function rptPageASHRAE36Executive(n, d, detailedTitles, view) {
     callout = '';
   }
 
+  // Simple: the zone setpoint and schedule opportunities, two more paragraphs of the same shape (the Detailed text has them as sections).
+  var _spSchParas = 0;
+  if (!detailed) {
+    var _ss = _a36ExecSetpointScheduleSentences(d);
+    [['Zone Setpoints.', _ss.setpoints], ['Schedules.', _ss.schedules]].forEach(function (x) {
+      if (!x[1]) return;
+      _spSchParas++;
+      callout +=
+        '<div class="rpt-a36-callout" style="margin-bottom:10px;padding:0"><div style="font-size:' + RPT_BODY_PX + 'px;color:var(--rpt-page-text);line-height:1.6">' +
+        '<span style="font-weight:700">' + x[0] + '</span> ' + _escHtml(x[1]) + '</div></div>';
+    });
+  }
+
   // DCV readiness callout (first page only)
   var dcvCallout = '';
   var dcv = p.dcv || {};
@@ -18888,7 +18951,7 @@ function rptPageASHRAE36Executive(n, d, detailedTitles, view) {
         (_range.length || _zones
           ? 'The equipment includes ' + _a36DetJoin(_range.concat(_zones ? [_tierPhrase(_zones, 'zone ') + (_zones.of === 1 ? ', which controls' : ', which control') + ' the airflow to individual rooms'] : [])) + '. '
           : '') +
-        'For each unit, the audit compared what the system can measure, what it can command and what it is programmed to do with a defined set of sensors, control points and control sequences for that type of equipment. In this report, an opportunity is one sensor, control point or control sequence from that set that some or all units of one equipment type in one ' + _nounOne + ' do not have.',
+        'For each unit, the audit compared what the system can measure, what it can command and what it is programmed to do with a defined set of sensors, control points and control sequences for that type of equipment. In this report, an opportunity is one sensor, control point or control sequence from that set that some or all units of one equipment type in one ' + _nounOne + ' do not have. The zone setpoints of one ' + _nounOne + ' that differ from the standard setpoints are one opportunity, and so are the schedules of one ' + _nounOne + ' that run units around the clock or hold no occupied period.',
     ]);
 
     // Overall result
@@ -18902,7 +18965,7 @@ function rptPageASHRAE36Executive(n, d, detailedTitles, view) {
       else {
         // Matt 2026-11-18: one direction only (units WITH findings), and a library with none says what that means.
         var _cleanLibs = d.buildings.map(_a36DisplayName).filter(function (nm) { return !_fInfo.byLib[nm]; });
-        var _r1 = 'The audit recorded ' + _a36FindingsCount(_fInfo.total) + '.';
+        var _r1 = 'The audit recorded ' + _a36FindingsOnUnits(_fInfo) + '.';
         if (p.totalBuildings > 1)
           _r1 += _cleanLibs.length
             ? ' ' + rptCount(_fInfo.libs) + ' of the ' + rptCount(p.totalBuildings) + ' ' + _nounMany + (_fInfo.libs === 1 ? ' has' : ' have') + ' at least one opportunity. ' +
@@ -19008,27 +19071,16 @@ function rptPageASHRAE36Executive(n, d, detailedTitles, view) {
     }
     _sec('Principal Opportunities', _princ);
 
-    // Context: the setpoints of Appendix A and the building infrastructure (neither is a finding)
-    var _spNeed = 0;
-    if (detailedTitles.setpointAppendix) {
-      try {
-        _spNeed = _a36SetpointNeedsChangeCount(_a36SetpointBuildingRows(d).buildingRows);
-      } catch (e) {
-        console.error('rptPageASHRAE36Executive: setpoint count failed', e);
-      }
-    }
+    // The setpoint and schedule opportunities come from the findings model (the same list as the cover count and the chapters).
+    var _spSch = _a36ExecSetpointScheduleSentences(d);
     var _nB = d.buildings.length;
     var _haveN = function (k) {
       return k === _nB ? (_nB === 1 ? 'the ' + _nounOne + ' has' : 'all ' + rptCount(_nB) + ' ' + _nounMany + ' have') : k ? rptCount(k) + ' of the ' + rptCount(_nB) + ' ' + _nounMany + (k === 1 ? ' has' : ' have') : 'none of the ' + _nounMany + ' has';
     };
     // Matt 2026-11-18: not "Context"; each topic gets its own plain heading.
-    var _ctx = [];
-    if (_spNeed > 0)
-      _ctx.push(
-        'The audit also compared the zone setpoints with the Control Service Company standard setpoints. ' +
-        (_spNeed >= p.totalBuildings ? (p.totalBuildings === 1 ? 'The ' + _nounOne + ' has' : 'All ' + rptCount(p.totalBuildings) + ' ' + _nounMany + ' have') : rptCount(_spNeed) + ' of the ' + rptCount(p.totalBuildings) + ' ' + _nounMany + (_spNeed === 1 ? ' has' : ' have')) + ' zone setpoints that differ from that standard. Each differing setpoint is also an opportunity; Appendix A lists each one with the standard value beside it.'
-      );
+    var _ctx = _spSch.setpoints ? [_spSch.setpoints + (detailedTitles.setpointAppendix ? ' Appendix A lists each setpoint with the standard value beside it.' : '')] : [];
     _sec('Zone Setpoints', _ctx);
+    _sec('Schedules', _spSch.schedules ? [_spSch.schedules] : []);
     if (_nB)
       _sec('Power Metering and Outdoor Air Sensors', [
         _a36DetUpperFirst(_haveN(d.buildings.filter(function (b) { return b.hasPowerMonitoring; }).length)) + ' a power meter on the building automation system. ' +
@@ -19118,7 +19170,7 @@ function rptPageASHRAE36Executive(n, d, detailedTitles, view) {
   // sequence's plain-language description is one sentence, not two) — all comfortably inside the
   // 146px-per-block budget already established for this exact markup, so no new constant needed
   // and this is a deliberately conservative (safe-side) budget, not a tight fit.
-  _firstChromeH += 105 * topSeqTypes.length; // same re-measured per-paragraph budget as dcvCallout above
+  _firstChromeH += 105 * (topSeqTypes.length + _spSchParas); // same re-measured per-paragraph budget as dcvCallout above
   _firstChromeH += 32; // tableTitle — measured
   _firstChromeH += EXEC_THEAD_H_DENSE; // table head is INSIDE the dense table — dense variant
   _firstChromeH += EXEC_FOOTNOTE_H;
@@ -21152,6 +21204,8 @@ function _a36SetpointBuildingRows(d) {
         // Setpoint & Schedule export and BAS Calc auto-fill use (item 5aj).
         existingSchedule: eq.existingSchedule || null,
         recommended: eq.recommended || null,
+        unitName: eq.name || 'Unknown',
+        category: eq.category,
       });
     });
   });
@@ -21366,6 +21420,10 @@ function _a36SetpointBuildingRows(d) {
       unoccCoolDefault: unoccCoolDefault,
       bStatus: bStatus,
       deviatorCount: deviatorCount,
+      // the zones that deviate, by name and equipment category (the findings model names the units of the setpoint opportunity)
+      deviatorUnits: bldg.singleZone
+        ? []
+        : zones.filter(function (z) { return z.displayStatus === 'NEEDS_REVIEW'; }).map(function (z) { return { name: z.unitName, category: z.category }; }),
       totalZones: zones.length,
       // Existing schedule (Monday-Friday averaged; Saturday & Sunday is never
       // itemized in the source Effective Schedules export — see comment above).
@@ -27794,6 +27852,12 @@ function _a36DetModel(d, rowsById, picMap, loaded) {
   };
   var savings = typeof SEQUENCE_SAVINGS_IMPACT !== 'undefined' ? SEQUENCE_SAVINGS_IMPACT : {};
   var defsLeft = _a36DetDeficiencies(d);
+  var spRows = [];
+  try {
+    spRows = _a36SetpointBuildingRows(d).buildingRows;
+  } catch (e) {
+    console.error('_a36DetModel: zone setpoint rows failed', e);
+  }
   d.buildings.forEach(function (b, bi) {
     var groups = _a36DetGroups(b, rowsById);
     var work = _a36DetScopedWork(d, b, groups);
@@ -28090,6 +28154,98 @@ function _a36DetModel(d, rowsById, picMap, loaded) {
       lib.findings.push(pm);
       all.push(pm);
       pm.n = all.length;
+    }
+    // Zone setpoints that differ from the standard (one opportunity per library: the zones of _a36SetpointBuildingRows, the one rule of Appendix A) and
+    // schedules the audit can state as a fact (a unit with a 24-hour occupied block, or an imported schedule with no occupied period; the formatter is
+    // emZoneScheduleDisplay, the same as the System Descriptions). Matt 2026-11-18: setpoints, schedules and a worthwhile power meter are opportunities.
+    var spRow = spRows.filter(function (r) {
+      return r.name === b.name && !r.singleZone && r.deviatorCount > 0;
+    })[0];
+    // The text holds the fraction of the group (_a36DetFraction, the same as every other opportunity: "3 of 12 zones").
+    var addPlain = function (key, kind, label, units, total, noun, text, observed, unitList) {
+      var f = {
+        lib: _a36DisplayName(b),
+        groupLabel: kind === 'setpoint' ? 'Zone setpoints' : 'Schedules',
+        kind: kind,
+        key: key,
+        label: label,
+        units: units,
+        total: total,
+        affected: unitList.map(function (u) { return u.name; }),
+        affectedCategories: unitList.map(function (u) { return u.category; }),
+        missing: [],
+        missingText: [],
+        missingKeys: [],
+        pic: null,
+        picCands: [],
+        section: '',
+        impact: '',
+        effect: 'Equipment control',
+        observed: observed,
+        issueShort: label,
+        headline: text,
+        category: null,
+        fracNoun: noun,
+        groupTotal: total,
+        dcvNote: '',
+      };
+      lib.findings.push(f);
+      all.push(f);
+      f.n = all.length;
+    };
+    if (spRow) {
+      var spFrac = _a36DetFraction(spRow.deviatorCount, spRow.totalZones, 'zone', '');
+      addPlain(
+        'zoneSetpoints',
+        'setpoint',
+        'Zone setpoints differ from the standard',
+        spRow.deviatorCount,
+        spRow.totalZones,
+        'zone',
+        _a36DetUpperFirst(spFrac) + (spRow.deviatorCount >= spRow.totalZones ? (spRow.totalZones === 1 ? ' has' : ' have') : spRow.deviatorCount === 1 ? ' has' : ' have') + ' setpoints that differ from the standard setpoints.',
+        'Zone setpoints differ from the standard setpoints on ' + spFrac + '.',
+        spRow.deviatorUnits,
+      );
+    }
+    var schedAll = 0;
+    var schedNone = 0;
+    var schedTotal = 0;
+    var schedUnits = [];
+    (b.equipResults || []).forEach(function (eq) {
+      var row = rowsById[eq.id];
+      if (!row || !row.existingSchedule || typeof emZoneScheduleDisplay !== 'function') return;
+      schedTotal++;
+      var t = emZoneScheduleDisplay(row);
+      if (t.indexOf('Occ ') === 0) {
+        if (t.slice(4).split('; ').map(_a36DetScheduleBlock).indexOf('24 hours') > -1) {
+          schedAll++;
+          schedUnits.push({ name: eq.name || 'Unknown', category: eq.category });
+        }
+      } else {
+        schedNone++;
+        schedUnits.push({ name: eq.name || 'Unknown', category: eq.category });
+      }
+    });
+    if (schedAll + schedNone > 0) {
+      var schedFrac = _a36DetFraction(schedAll + schedNone, schedTotal, 'scheduled unit', '');
+      var runs = rptCount(schedAll) + (schedAll === 1 ? ' runs' : ' run') + ' around the clock';
+      var holds = rptCount(schedNone) + (schedNone === 1 ? ' has' : ' have') + ' no occupied period';
+      addPlain(
+        'schedules',
+        'schedule',
+        'Occupied schedules',
+        schedAll + schedNone,
+        schedTotal,
+        'scheduled unit',
+        _a36DetUpperFirst(schedFrac) +
+          (schedAll && schedNone
+            ? ' ' + (schedAll + schedNone >= schedTotal && schedTotal === 1 ? 'is' : 'are') + ' on an around-the-clock schedule or ' + (schedAll + schedNone === 1 ? 'has' : 'have') + ' no occupied period: ' + runs + ' and ' + holds + '.'
+            : schedAll
+              ? ' ' + (schedAll === 1 ? 'runs' : 'run') + ' around the clock.'
+              : ' ' + (schedNone === 1 ? 'has' : 'have') + ' no occupied period.'),
+        'The occupied schedule runs around the clock or holds no occupied period on ' + schedFrac + '.',
+        schedUnits,
+      );
     }
     // Facility Audit deficiencies of this library (a deficiency with no library goes to the first library)
     var mine = [];
