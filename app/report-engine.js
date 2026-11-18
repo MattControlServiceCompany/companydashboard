@@ -18295,9 +18295,9 @@ function _a36FindingsCount(n) {
 }
 
 // The audit rings (the whole audit, not ASHRAE 36): of the equipment units of the report (or of one library: libName), how many have no
-// finding, no missing sensor or point (a sensor finding, or a sequence finding with missing points) and no control sequence finding (the findings model, the same list as the chapters), and how many zones
-// hold the standard setpoints of Appendix A (_a36SetpointBuildingRows, the one owner of that count). null when the findings model fails.
-// Returns { units, clean, sensorClean, seqClean, zones, zonesOk } (zones 0 when no zone setpoint was read).
+// finding, no missing sensor or point (a sensor finding, or a sequence finding with missing points) and no control sequence finding (the findings
+// model, the same list as the chapters). No setpoint ring: a setpoint that differs from the standard of Appendix A is not a finding.
+// null when the findings model fails. Returns { units, clean, sensorClean, seqClean }.
 function _a36AuditRingStats(d, libName) {
   var ctx;
   try {
@@ -18325,18 +18325,7 @@ function _a36AuditRingStats(d, libName) {
   var n = function (o) {
     return Math.min(units, Object.keys(o).length);
   };
-  var zones = 0;
-  var zonesOk = 0;
-  try {
-    (d._a36SpRows || (d._a36SpRows = _a36SetpointBuildingRows(d).buildingRows)).forEach(function (r) {
-      if (libName && (r.displayName || rptBuildingDisplayName(r.name)) !== libName) return;
-      zones += r.totalZones || 0;
-      zonesOk += (r.totalZones || 0) - (r.deviatorCount || 0);
-    });
-  } catch (e) {
-    console.error('_a36AuditRingStats: setpoint rows failed', e);
-  }
-  return { units: units, clean: units - n(any), sensorClean: units - n(sensor), seqClean: units - n(seq), zones: zones, zonesOk: zonesOk };
+  return { units: units, clean: units - n(any), sensorClean: units - n(sensor), seqClean: units - n(seq) };
 }
 
 // The ring color: green at 80 % or more, orange at 50 % or more, else red (the report status colors).
@@ -18353,7 +18342,6 @@ function _a36AuditRingsHtml(st, size) {
     { label: 'Sensors and Points', n: st.sensorClean, of: st.units, noun: 'units' },
     { label: 'Control Sequences', n: st.seqClean, of: st.units, noun: 'units' },
   ];
-  if (st.zones) items.push({ label: 'Standard Setpoints', n: st.zonesOk, of: st.zones, noun: 'zones' });
   var w = Math.floor(100 / items.length);
   return (
     '<table style="width:100%;border-collapse:collapse;table-layout:fixed;margin:6px 0 10px 0"><tr>' +
@@ -18445,28 +18433,26 @@ function _a36ExecAuditParas(d) {
       head: 'Equipment with no findings.',
       text:
         rptCount(st.clean) + ' of the ' + rptCount(st.units) + ' equipment units (' + Math.round((100 * st.clean) / st.units) + '%) have no findings. ' +
-        rptCount(st.sensorClean) + ' have all the sensors and points of their sequences, and ' + rptCount(st.seqClean) + ' have all their control sequences programmed.' +
-        (st.zones ? ' ' + rptCount(st.zonesOk) + ' of ' + rptCount(st.zones) + ' zones hold the standard setpoints of Appendix A.' : '') +
+        rptCount(st.sensorClean) + ' have every sensor and point their control sequences need, and ' + rptCount(st.seqClean) + ' have all their control sequences programmed.' +
         (cleanLibs.length && d.buildings.length > 1 ? ' ' + _a36DetJoin(cleanLibs) + (cleanLibs.length === 1 ? ' has' : ' have') + ' no findings.' : ''),
     });
   }
-  var meter = d.buildings.filter(function (b) { return b.hasPowerMonitoring; }).length;
-  var oa = d.buildings.filter(function (b) { return b.hasOAConditions; }).length;
-  if (d.buildings.length)
+  var nB = d.buildings.length;
+  var have = function (k) {
+    return k === nB ? (nB === 1 ? 'The ' + nouns.one + ' has' : 'All ' + libWord(nB) + ' have') : k ? rptCount(k) + ' of ' + libWord(nB) + (k === 1 ? ' has' : ' have') : 'None of the ' + libWord(nB) + ' has';
+  };
+  if (nB)
     out.push({
       head: 'Building infrastructure.',
       text:
-        (meter ? rptCount(meter) + ' of ' + libWord(d.buildings.length) + (meter === 1 ? ' has' : ' have') : 'None of the ' + libWord(d.buildings.length) + ' has') +
-        ' a dedicated power monitoring meter on the building automation system. ' +
-        (oa ? rptCount(oa) + ' of ' + libWord(d.buildings.length) + (oa === 1 ? ' has' : ' have') : 'None of the ' + libWord(d.buildings.length) + ' has') +
-        ' dedicated outdoor air temperature and humidity sensors, which the outdoor air lockouts, the economizer and the reset sequences read.',
+        have(d.buildings.filter(function (b) { return b.hasPowerMonitoring; }).length) + ' a dedicated building automation system power monitoring meter. ' +
+        have(d.buildings.filter(function (b) { return b.hasOAConditions; }).length) + ' dedicated outdoor air sensors.',
     });
   out.push({
     head: 'How this report is organized.',
     text:
       'The pages that follow give one page per ' + nouns.one + ' with its equipment and findings, then one chapter per ' + nouns.one + '. ' +
-      'Each chapter describes how the systems are controlled today, then lists each finding with the equipment it affects and the graphic of that equipment. ' +
-      'The appendices list the zone setpoints and the standard values they are compared with.',
+      'Each chapter describes how the systems are controlled today, then lists each finding with the equipment it affects and the graphic of that equipment.',
   });
   return out;
 }
@@ -19597,12 +19583,48 @@ function rptPageASHRAE36Executive(n, d, detailedTitles, view) {
     var _execAll = [execHeader + execBlocks[0]].concat(execBlocks.slice(1), [dcvCallout, callout].filter(Boolean));
     var _execPages = [];
     var _execCur = '';
+    var _fits = function (html) {
+      var h = _rptMeasureHtmlH(html);
+      return h !== null && h !== undefined && h <= _execBudget;
+    };
     _execAll.forEach(function (bh) {
-      var h = _execCur ? _rptMeasureHtmlH(_execCur + bh) : 0;
-      if (_execCur && (h === null || h === undefined || h > _execBudget)) {
+      if (!_execCur || _fits(_execCur + bh)) {
+        _execCur += bh;
+        return;
+      }
+      // A paragraph that does not fit: the most words that fit stay on this page, the rest continues at the top of the next (as in print).
+      // A part of under 12 words is not split off, so no page starts or ends with a lone line.
+      var pAt = bh.lastIndexOf('<p ');
+      var cut = null;
+      if (pAt >= 0 && /<\/p>$/.test(bh)) {
+        var openEnd = bh.indexOf('>', pAt) + 1;
+        var inner = bh.slice(openEnd, -4);
+        var from = inner.indexOf('</strong>') + 1; // never a cut inside the bold lead words
+        var ends = [];
+        inner.replace(/ /g, function (m, at) {
+          if (at > from) ends.push(at);
+          return m;
+        });
+        var lo = 0;
+        var hi = ends.length - 1;
+        var best = -1;
+        while (lo <= hi) {
+          var mid = (lo + hi) >> 1;
+          if (_fits(_execCur + bh.slice(0, openEnd) + inner.slice(0, ends[mid]) + '</p>')) {
+            best = mid;
+            lo = mid + 1;
+          } else hi = mid - 1;
+        }
+        if (best >= 12 && ends.length - best > 12)
+          cut = { head: bh.slice(0, openEnd) + inner.slice(0, ends[best]) + '</p>', rest: bh.slice(pAt, openEnd) + inner.slice(ends[best] + 1) + '</p>' };
+      }
+      if (cut) {
+        _execPages.push(_execCur + cut.head);
+        _execCur = cut.rest;
+      } else {
         _execPages.push(_execCur);
         _execCur = bh;
-      } else _execCur += bh;
+      }
     });
     if (_execCur) _execPages.push(_execCur);
     _execPages.forEach(function (html, k) {
