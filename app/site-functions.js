@@ -2507,6 +2507,10 @@ async function siteResetAllMeterTableSettings() {
    site-ui.js delegates to this array and should NOT maintain its own copy.
 */
 var RELEASE_NOTES = [
+  { v: 'v2026.11.18.349', date: '2026-11-18', title: 'Audit Report: Opportunities Found and the 11/15 cover layout',
+    items: [ { type: 'improved', text: 'Audit Report: page 1 has the layout of the 11/15 report (score rings, summary paragraph, four counts) without ASHRAE 36 wording.' },
+             { type: 'improved', text: 'Audit Report: the report says opportunity in place of finding. A building without a power meter is an opportunity when it has a plant, 3 or more air handling units or 10 or more terminal units.' },
+             { type: 'improved', text: 'Audit Report: the building page label is Building power meter.' } ] },
   { v: 'v2026.11.18.348', date: '2026-11-18', title: 'Audit Report: score rings back, clearer Executive Summary',
     items: [ { type: 'fixed', text: 'Audit Report: the cover and each building page show the score rings again: Overall Score, Sensor Coverage and Sequence Readiness.' },
              { type: 'improved', text: 'Audit Report: the Executive Summary states the findings in one direction, names every missing device with its equipment and library, explains what each missing air handling unit sequence means, and has plain section headings.' },
