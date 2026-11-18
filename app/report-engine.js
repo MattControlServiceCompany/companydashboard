@@ -18427,7 +18427,7 @@ function _a36ExecDeviceGroups(d) {
   var by = {};
   var list = [];
   ctx.model.findings.forEach(function (f) {
-    if (f.kind === 'seq' || f.kind === 'setpoint' || f.kind === 'schedule' || f.key === 'powerMeter' || f.key === 'hwOverride' || A36_DET_DCV_KEYS.indexOf(f.key) > -1 || /\bCO2\b|carbon dioxide/i.test(f.label || '')) return;
+    if (f.kind === 'seq' || f.kind === 'setpoint' || f.kind === 'schedule' || f.key === 'powerMeter' || A36_DET_OVERRIDE_KEYS.indexOf(f.key) > -1 || A36_DET_DCV_KEYS.indexOf(f.key) > -1 || /\bCO2\b|carbon dioxide/i.test(f.label || '')) return;
     var k = f.label;
     if (!by[k]) list.push((by[k] = { label: f.label, libSet: {}, units: 0, typeSet: {} }));
     by[k].libSet[f.lib] = true;
@@ -28247,44 +28247,53 @@ function _a36DetModel(d, rowsById, picMap, loaded) {
         schedUnits,
       );
     }
-    // A hot water plant whose supply setpoint is held by a manual override that is active on the WebCTRL screen (row.value of the sequence
-    // water_fixed_override): the outdoor air reset does not run. One building-wide opportunity (the same pattern as powerMeter).
-    var hwHeld = [];
-    groups.forEach(function (g) {
-      if (g.category !== 'hwp') return;
-      g.units.forEach(function (eq) {
-        _a36DetSequenceIds(eq && eq.name, _a36DisplayName(b), d.project && d.project.id).forEach(function (r) {
-          if (r.id === 'water_fixed_override' && r.status === 'enabled' && r.value !== undefined && r.value !== null && r.value !== '' && isFinite(Number(r.value))) hwHeld.push(Number(r.value));
+    // A setpoint held by a manual override that is active on the WebCTRL screen (row.value of the override sequence, A36_DET_OVERRIDE): the reset of that
+    // setpoint does not run. One opportunity of the library for each kind of override (the same pattern as powerMeter); it names the units that hold it,
+    // so the unit counts (_a36AuditAffectedUnits) stay the distinct units.
+    A36_DET_OVERRIDE.forEach(function (ov) {
+      var hit = [];
+      var ovTotal = 0;
+      groups.forEach(function (g) {
+        if (ov.cats.indexOf(g.category) < 0) return;
+        ovTotal += g.units.length;
+        g.units.forEach(function (eq) {
+          var vals = [];
+          _a36DetSequenceIds(eq && eq.name, _a36DisplayName(b), d.project && d.project.id).forEach(function (r) {
+            if (r.id === ov.id && r.status === 'enabled' && r.value !== undefined && r.value !== null && r.value !== '' && isFinite(Number(r.value)) && vals.indexOf(Number(r.value)) < 0) vals.push(Number(r.value));
+          });
+          if (vals.length) hit.push({ name: eq.name || 'Unknown', category: g.category, dual: /dual-duct/i.test(g.label || ''), values: vals });
         });
       });
-    });
-    if (hwHeld.length) {
-      var held = hwHeld.filter(function (v, i) { return hwHeld.indexOf(v) === i; }).map(function (v) { return v + '°F'; });
+      if (!hit.length) return;
       var ho = {
         lib: _a36DisplayName(b),
         groupLabel: 'Building-wide',
         kind: 'building',
-        key: 'hwOverride',
-        label: 'Hot water reset overridden',
-        units: 0,
-        total: 0,
-        affected: [],
+        key: ov.key,
+        label: ov.label,
+        units: hit.length,
+        total: ovTotal,
+        affected: hit.map(function (h) { return h.name; }),
+        affectedCategories: hit.map(function (h) { return h.category; }),
         missing: [],
         pic: null,
         picCands: [],
         section: '',
-        impact:
-          'The hot water plant resets its supply setpoint on outdoor air temperature and on heating requests, so the plant supplies cooler water as the building needs less heat. A manual override that is active holds the setpoint at a fixed value and the reset does not run.',
+        impact: ov.impact,
         effect: 'Energy use',
-        observed: (hwHeld.length === 1 ? 'The hot water supply setpoint is held at ' + held[0] : 'The hot water supply setpoints are held at ' + _a36DetJoin(held)) + ' by a manual override, so the outdoor air reset does not run.',
-        issueShort: 'Hot water reset overridden',
+        observed: _a36DetOverrideText(ov, hit, _a36DisplayName(b)),
+        issueShort: ov.label,
+        fracNoun: ov.fracNoun,
+        groupTotal: ovTotal,
+        dcvNote: '',
       };
       ho.headline = ho.observed;
-      ho.category = null;
+      // The opportunity sits on the building-page row of its equipment type (a plant row must not say "No opportunities" next to it).
+      ho.category = hit.every(function (h) { return h.category === hit[0].category; }) ? hit[0].category : null;
       lib.findings.push(ho);
       all.push(ho);
       ho.n = all.length;
-    }
+    });
     // Facility Audit deficiencies of this library (a deficiency with no library goes to the first library)
     var mine = [];
     defsLeft = defsLeft.filter(function (df) {
@@ -28934,6 +28943,110 @@ function _a36DetResetFamily(id) {
   return k || '';
 }
 
+// A value with its unit as the audit prints it: '180°F', '45%', '1.5 in. w.c.', '8 psi'. unit = 'F', '%', 'in. w.c.' or 'psi' (the unit codes of row.reset).
+function _a36DetUnitValue(v, unit) {
+  return unit === 'F' ? v + '°F' : unit === '%' ? v + '%' : v + ' ' + unit.replace(/ /g, ' '); // "1 in. w.c." never wraps
+}
+
+// The manual overrides that hold a setpoint a reset would otherwise move (backlog bc1d9d95). An override is active when its row of
+// en_auditseq_<projectId> is enabled and holds row.value (the value on the WebCTRL screen, written by 2026-11-18-set-auditseq-reset.py). Each entry is
+// ONE opportunity of a library: id = the sequence id of the override row; cats = the equipment categories it applies to; noun / consequence = the
+// setpoint and what does not run; named = the sentence names the units (air units; a plant is the one of the building); dualNoun / dualConsequence =
+// the wording when every unit is dual duct (the cold deck setpoint); unit = the unit of row.value; impact = what the reset does. The same table gives the
+// unit of the value in the System Description sentence (_a36DetOverrideUnit).
+var A36_DET_OVERRIDE = [
+  {
+    key: 'hwOverride',
+    id: 'water_fixed_override',
+    cats: ['hwp'],
+    label: 'Hot water reset overridden',
+    noun: 'hot water supply setpoint',
+    consequence: 'the outdoor air reset does not run',
+    unit: 'F',
+    fracNoun: 'plant',
+    impact:
+      'The hot water plant resets its supply setpoint on outdoor air temperature and on heating requests, so the plant supplies cooler water as the building needs less heat. A manual override that is active holds the setpoint at a fixed value and the reset does not run.',
+  },
+  {
+    key: 'hwDpOverride',
+    id: 'pump_dp_fixed',
+    cats: ['hwp'],
+    label: 'Hot water pump pressure reset overridden',
+    noun: 'hot water differential pressure setpoint',
+    consequence: 'the pump speed reset on requests does not run',
+    unit: 'psi',
+    fracNoun: 'plant',
+    impact:
+      'The hot water pumps slow down when the differential pressure setpoint resets lower on requests from the building, because fewer valves are open. A manual override that is active holds the setpoint at a fixed value and the reset does not run.',
+  },
+  {
+    key: 'chwDpOverride',
+    id: 'pump_dp_fixed',
+    cats: ['chwp'],
+    label: 'Chilled water pump pressure reset overridden',
+    noun: 'chilled water differential pressure setpoint',
+    consequence: 'the pump speed reset on requests does not run',
+    unit: 'psi',
+    fracNoun: 'plant',
+    impact:
+      'The chilled water pumps slow down when the differential pressure setpoint resets lower on requests from the building, because fewer valves are open. A manual override that is active holds the setpoint at a fixed value and the reset does not run.',
+  },
+  {
+    key: 'satOverride',
+    id: 'sat_fixed_override',
+    cats: ['ahu', 'rtu', 'doas'],
+    label: 'Supply air temperature reset overridden',
+    noun: 'supply air temperature setpoint',
+    consequence: 'the supply air temperature reset does not run',
+    dualNoun: 'cold deck setpoint',
+    dualConsequence: 'the cold deck reset does not run',
+    named: true,
+    unit: 'F',
+    fracNoun: 'unit',
+    impact:
+      'The air handling unit resets its supply air temperature setpoint on cooling requests, so the unit supplies warmer air and the cooling plant does less work when the spaces need less cooling. A manual override that is active holds the setpoint at a fixed value and the reset does not run.',
+  },
+  {
+    key: 'spOverride',
+    id: 'sp_fixed',
+    cats: ['ahu', 'rtu', 'doas'],
+    label: 'Duct static pressure reset overridden',
+    noun: 'duct static pressure setpoint',
+    consequence: 'the duct static pressure reset does not run',
+    named: true,
+    unit: 'in. w.c.',
+    fracNoun: 'unit',
+    impact:
+      'The air handling unit lowers its duct static pressure setpoint on terminal airflow requests, so the supply fan slows down when fewer zones call for air. A manual override that is active holds the setpoint at a fixed value and the reset does not run.',
+  },
+];
+var A36_DET_OVERRIDE_KEYS = A36_DET_OVERRIDE.map(function (o) { return o.key; });
+
+// The unit ('F', 'psi', 'in. w.c.') of the value of an override sequence id, '' when the id is no override.
+function _a36DetOverrideUnit(id) {
+  var o = A36_DET_OVERRIDE.filter(function (x) { return x.id === id; })[0];
+  return o ? o.unit : '';
+}
+
+// The sentence of one override opportunity of a library. ov = an entry of A36_DET_OVERRIDE; hit = [{ name, dual, values: [numbers] }] (the units that hold
+// a value). "The chilled water differential pressure setpoint is held at 15 psi by a manual override, so the pump speed reset on requests does not run."
+function _a36DetOverrideText(ov, hit, libName) {
+  var fmt = function (v) { return _a36DetUnitValue(v, ov.unit); };
+  var dual = !!ov.dualNoun && hit.every(function (h) { return h.dual; });
+  var many = hit.length > 1;
+  var all = [];
+  hit.forEach(function (h) {
+    h.values.forEach(function (v) { if (all.indexOf(v) < 0) all.push(v); });
+  });
+  var names = ov.named ? hit.map(function (h) { return _a36DetEquipName(h.name, libName); }) : [];
+  var subject = 'The ' + (dual ? ov.dualNoun : ov.noun) + (many ? 's' : '') + (names.length ? ' of ' + _a36DetJoin(names) : '');
+  var tail = ', so ' + (dual ? ov.dualConsequence : ov.consequence) + '.';
+  if (ov.named && many && all.length > 1) {
+    return subject + ' are held by a manual override (' + _a36DetJoin(hit.map(function (h, i) { return names[i] + ' at ' + _a36DetJoin(h.values.map(fmt)); })) + ')' + tail;
+  }
+  return subject + (many ? ' are' : ' is') + ' held at ' + _a36DetJoin(all.map(fmt)) + ' by a manual override' + tail;
+}
+
 // The sentence of the reset limits of a setpoint. sets = the limits of each unit that has the reset ({} when the unit has none recorded). The
 // sentence prints only when every unit has the same limits; else ''. Every value is a setting of the control program, so it is adjustable.
 function _a36DetResetText(sets, noun) {
@@ -28950,7 +29063,7 @@ function _a36DetResetText(sets, noun) {
   var lim = has(['min', 'max']);
   if ((!oa && !lim) || !r.unit) return '';
   var V = function (v) {
-    return r.unit === 'F' ? v + '°F' : r.unit === '%' ? v + '%' : v + ' ' + r.unit;
+    return _a36DetUnitValue(v, r.unit);
   };
   if (oa) {
     return (
@@ -29129,6 +29242,19 @@ function _a36DetControlSentences(g, f, params, proof) {
     });
     return text;
   }
+  // A manual override with a recorded value (row.value, every enabled unit): "fixes the X" reads "holds the X at 15 psi", "at a fixed value" reads the value;
+  // units with different values read "at 55°F to 60°F, depending on the unit". Without values the sentence keeps no number.
+  function withHeldValue(text, id) {
+    var c = seqIds[id];
+    var unit = _a36DetOverrideUnit(id);
+    if (!unit || !c || !c.values || c.values.length < c.on) return text;
+    var vals = c.values.slice().sort(function (a, b) { return a - b; });
+    var lo = vals[0];
+    var hi = vals[vals.length - 1];
+    var at = lo === hi ? ' at ' + _a36DetUnitValue(lo, unit) : ' at ' + _a36DetUnitValue(lo, unit) + ' to ' + _a36DetUnitValue(hi, unit) + ', depending on the unit';
+    if (/ at a fixed value\.$/.test(text)) return text.replace(/ at a fixed value\.$/, at + '.');
+    return text.replace(/^A manual override fixes (.*)\.$/, 'A manual override holds $1' + at + '.');
+  }
   // The reset limits (A36_DET_RESET) of the setpoints of ids, after the sentence of the reset: once for each setpoint of the group.
   var resetDone = {};
   function resetAdd(ids, fn) {
@@ -29182,7 +29308,7 @@ function _a36DetControlSentences(g, f, params, proof) {
           if (state === 'on' && v.all && total > 1 && n === total) text = v.all;
           if (state === 'on' && v.dual && /dual-duct/i.test(g.label)) text = v.dual;
           if (state === 'on' && v.own && ownAll) text = v.own;
-          if (state === 'on') text = withSetpointValue(text, [id]);
+          if (state === 'on') text = withHeldValue(withSetpointValue(text, [id]), id);
           if (n < total) text = 'On ' + n + ' of the ' + total + ' ' + seqNoun + 's, ' + text.charAt(0).toLowerCase() + text.slice(1);
           add(text, fn);
           if (state === 'on') resetAdd([id], fn);
