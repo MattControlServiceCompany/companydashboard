@@ -22075,7 +22075,7 @@ function _rptA36ExistingPointsLine(qty) {
 
 /**
  * _rptA36CostSummaryHTML - the high-level cost table of the Service Proposal (page 1): Option | What it
- * includes | One-time cost, one row per option, then the optional carbon dioxide sensor line.
+ * includes | Estimated cost, one row per option, then the optional carbon dioxide sensor line.
  */
 function _rptA36CostSummaryHTML(d, HEAD, BODY) {
   var cost = _rptA36TierCostData(d);
@@ -22147,11 +22147,11 @@ function _rptA36CostSummaryHTML(d, HEAD, BODY) {
       : '';
   return (
     '<div style="' + HEAD + '">Cost Summary</div>' +
-    '<div style="' + BODY + ';margin-bottom:6px">Each cost is a one-time cost. There is no monthly fee. ' +
+    '<div style="' + BODY + ';margin-bottom:6px">Each cost is an estimate for the work. There is no monthly fee. ' +
     'Pick one option.' + whyLess + '</div>' +
     '<table style="width:100%;border-collapse:collapse;table-layout:fixed;page-break-inside:avoid;break-inside:avoid">' +
     '<colgroup><col style="width:16%"><col style="width:47%"><col style="width:37%"></colgroup>' +
-    '<thead><tr><th style="' + th + '">Option</th><th style="' + th + '">What it includes</th><th style="' + th + '">One-time cost</th></tr></thead>' +
+    '<thead><tr><th style="' + th + '">Option</th><th style="' + th + '">What it includes</th><th style="' + th + '">Estimated cost</th></tr></thead>' +
     '<tbody>' + rows + optLine + '</tbody></table>'
   );
 }
@@ -24957,7 +24957,7 @@ function rptPageASHRAE36ProposalPricing(n, d, opts) {
 
   var intro =
     '<div style="font-size:10px;color:var(--rpt-page-text);line-height:1.6;margin-bottom:12px">' +
-    'The options below are three ways to do the work. Each cost is a one-time cost. There is no monthly ' +
+    'The options below are three ways to do the work. Each cost is an estimate for the work. There is no monthly ' +
     'fee. Pick one option.' +
     '</div>';
 
@@ -25009,7 +25009,7 @@ function rptPageASHRAE36ProposalPricing(n, d, opts) {
           '<td style="' +
           lblStyle +
           '">' +
-          'One-Time Cost' +
+          'Estimated Cost' +
           '</td>'
         );
       })

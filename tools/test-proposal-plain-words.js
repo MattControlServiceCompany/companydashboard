@@ -106,7 +106,7 @@ assert(/^181 existing control points need programming only/.test(sb2._rptA36Exis
 assert(/\(no device to install\)\.$/.test(sb2._rptA36ExistingPointsLine(3)), 'says there is no device to install');
 
 
-// ---- 5. round 3: plain names, one count, one step plan, one-time cost said twice ----------------------
+// ---- 5. round 3: plain names, one count, one step plan, estimated cost said twice ----------------------
 const sb3 = {};
 vm.createContext(sb3);
 ['_rptA36PlainName', '_rptA36PlainRowLabel'].forEach((f) => vm.runInContext(fnSrc(RE, f), sb3));
@@ -120,8 +120,9 @@ assert(/_rptA36OptionalCo2Qty/.test(fnSrc(RE, '_rptA36TopGaps')), 'top gaps read
 assert(/_rptA36RecommendedStepPlan/.test(fnSrc(RE, '_rptA36PhaseTableDerive')) && /_rptA36RecommendedStepPlan/.test(fnSrc(RE, '_rptA36RecommendedTimelineHTML')), 'step table and order table read one step plan');
 assert(!/Later/.test(noCmt(fnSrc(RE, '_rptA36RecommendedTimelineHTML'))), 'order table has no Later row');
 assert(!/plantsByName/.test(RE) && !/plantsByName/.test(fnSrc(RE, 'generateASHRAE36Preview')), 'one plant classification for every report: no plantsByName option (was: proposal data built with plantsByName)');
-const oneTime = noCmt(['rptPageASHRAE36ProposalCover', '_rptA36CostSummaryHTML', 'rptPageASHRAE36ProposalPricing', '_rptA36RecommendedServicesInnerHTML', '_rptA36VisionInnerHTML'].map((f) => fnSrc(RE, f)).join('\n')).match(/Each cost is a one-time cost/g) || [];
-assert(oneTime.length === 2, 'one-time cost sentence appears twice (page 1 and Cost Estimate page): ' + oneTime.length);
+const oneTime = noCmt(['rptPageASHRAE36ProposalCover', '_rptA36CostSummaryHTML', 'rptPageASHRAE36ProposalPricing', '_rptA36RecommendedServicesInnerHTML', '_rptA36VisionInnerHTML'].map((f) => fnSrc(RE, f)).join('\n')).match(/Each cost is an estimate for the work/g) || [];
+assert(oneTime.length === 2, 'estimated cost sentence appears twice (page 1 and Cost Estimate page; Matt 2026-11-18: no number sounds final): ' + oneTime.length);
+assert(!/One-time cost|One-Time Cost|Each cost is a one-time cost/.test(noCmt(['_rptA36CostSummaryHTML', 'rptPageASHRAE36ProposalPricing'].map((f) => fnSrc(RE, f)).join('\n'))), 'no One-Time Cost label in the Service Proposal (Estimated Cost)');
 
 console.log('\n' + passed + ' passed, ' + failed + ' failed');
 process.exit(failed ? 1 : 0);

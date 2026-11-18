@@ -254,7 +254,7 @@ const REGISTRY = [
       });
       return {
         pass: bad.length === 0,
-        expected: 'Devices and installation + Programming === One-Time Cost for compliance and full-scope, exactly',
+        expected: 'Devices and installation + Programming === Estimated Cost for compliance and full-scope, exactly',
         actual: bad.length === 0 ? b.tierRendered : bad,
       };
     },
