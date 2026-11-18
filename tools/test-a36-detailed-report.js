@@ -300,7 +300,7 @@ const ok = (c, m) => {
     ok(!/Report date/.test(det.text) && !/Glossary|Share Mapped|Points by Equipment Type/.test(det.text) && !/ASHRAE Coverage|none are discarded|prioritized list/.test(det.text), 'cover has no Report date line; no Glossary page, no Share Mapped column; the old promise and wording are gone');
     ok(!/This system has/.test(t), 'cut 3: no "This system has N units" sentence (the System Overview table lists the units)');
     ok(/The building automation system of Alpha Library controls [^.]*two air handling units \(AHU‑1, AHU‑2\)/.test(t) && !/is served by/.test(t), 'System Overview (a paragraph): names and counts the 2 air handling units the building automation system of Alpha Library controls (Matt 2026-11-18: the audit sees the system, not the building)');
-    ok(/The building automation system of Beta Library controls one air handling unit \(AHU‑3\)/.test(t) && /three variable air volume terminals/.test(t) && !/Total\s*6/.test(t), 'System Overview: one unit is named, more than 3 are counted only, no Total line');
+    ok(/The building automation system of Beta Library controls one air handling unit \(AHU‑3\)/.test(t) && /three variable air volume terminal units/.test(t) && !/Total\s*6/.test(t), 'System Overview: one unit is named, more than 3 are counted only, no Total line');
     ok(det.overviewNoTable === true, 'item 1: the System Overview has no <table> (the Findings Summary keeps its table)');
     ok(/Building automation controller: Sample Controller \(5 of 6 units\)/.test(t), 'BAS controller line from the rows (5 of 6 units in Alpha Library: the exhaust fan row has none)');
     ok(!/\bmonitors\b|by command|by an enable command|positioned by|set by a speed command|showed:|55\.2°F/.test(t), 'a: System Descriptions: no "monitors" list, no "by command", no reading (55.2°F), no "showed:" list');
@@ -819,7 +819,7 @@ const ok = (c, m) => {
     ok(!/6:00 AM|occupied schedule is/.test(allText(r3.vavSched)), 'c: a terminal group prints no schedule time and no "The occupied schedule is" sentence (' + allText(r3.vavSched) + ')');
     ok(!/start and stop on the occupied schedule|enables the supply fan/.test(allText(r3.ahuSched.map((s) => s.text))) && /heating coil valve and cooling coil valve modulate in sequence to hold the supply air temperature\./.test(allText(r3.ahuSched.map((s) => s.text))) && /fan speed holds the duct static pressure/.test(allText(r3.ahuSched.map((s) => s.text))) && !/monitors|by command|positioned|1\.1|55°F|5:00 AM/.test(allText(r3.ahuSched.map((s) => s.text))), 'c: an air handler has no obvious start and stop sentence, each loop without its setpoint value, no "monitors" list and no "by command" (' + allText(r3.ahuSched.map((s) => s.text)) + ')');
     ok(!/\d/.test(allText(r3.vavNoSp)) && !/held between/.test(allText(r3.vavNoSp)), 'c: no setpoint value, no number printed (' + allText(r3.vavNoSp) + ')');
-    ok(r3.counts.join(' / ') === 'Air Handler / Air Handlers / Heater / Exhaust Fan / Dedicated Outdoor Air System Unit / Variable Air Volume Terminals / Hot Water Plant', 'd: the type count line is singular for one unit (' + r3.counts.join(' / ') + ')');
+    ok(r3.counts.join(' / ') === 'Air Handler / Air Handlers / Heater / Exhaust Fan / Dedicated Outdoor Air System Unit / Variable Air Volume Terminal Units / Hot Water Plant', 'd: the type count line is singular for one unit (' + r3.counts.join(' / ') + ')');
     ok(!/adjust|0\.0/.test(allText(r3.adjZero)), '2: no adjustment sentence and no adjustment value is printed: ' + allText(r3.adjZero));
     ok(!/adjust|1\.5/.test(allText(r3.adjSome)), '2: a stored adjustment is a reading, not printed: ' + allText(r3.adjSome));
     ok(!/resets between/.test(allText(r3.noProof)) && /resets between its minimum and maximum/.test(allText(r3.proof)), '7: "airflow setpoint resets between minimum and maximum" only with the stored minimum and maximum airflow setpoints');
@@ -844,12 +844,12 @@ const ok = (c, m) => {
         a2: { id: 'a2', pointsRaw: { 'Supply Air Temp': '55', 'Supply Fan Status': 'On' } },
       };
       const eq = (id, category, label) => ({ id, name: id, category, categoryLabel: label, compliance: { coveredPoints: [], missingPoints: [] } });
-      const b = { name: 'Test Library', equipResults: [eq('t1', 'vav', 'Variable Air Volume Terminal'), eq('t2', 'vav', 'Variable Air Volume Terminal'), eq('t3', 'vav', 'Variable Air Volume Terminal'), eq('a1', 'ahu', 'Air Handling Unit'), eq('a2', 'ahu', 'Air Handling Unit')] };
+      const b = { name: 'Test Library', equipResults: [eq('t1', 'vav', 'Variable Air Volume Terminal Unit'), eq('t2', 'vav', 'Variable Air Volume Terminal Unit'), eq('t3', 'vav', 'Variable Air Volume Terminal Unit'), eq('a1', 'ahu', 'Air Handling Unit'), eq('a2', 'ahu', 'Air Handling Unit')] };
       const groups = _a36DetGroups(b, rows);
       const texts = groups.map((g) => _a36DetDescriptionParas(g, { rowsById: rows, setpointAppendix: false, libGroups: groups }, 0).join(' ')).join(' ');
       return { labels: groups.map((g) => g.label + ':' + g.category + ':' + g.units.length), texts };
     });
-    ok(dd.labels.some((l) => /^Dual-Duct Terminal:ddvav:1$/.test(l)) && dd.labels.some((l) => /^Variable Air Volume Terminal:vav:2$/.test(l)), 'dual-duct terminals: own hot and cold deck flow controls are dual duct; a single Flow Control with only Air Source Hot/Cold Deck copies is not (rule 6b, 2026-11-17)' + dd.labels.join(' | '));
+    ok(dd.labels.some((l) => /^Dual-Duct Terminal Unit:ddvav:1$/.test(l)) && dd.labels.some((l) => /^Variable Air Volume Terminal Unit:vav:2$/.test(l)), 'dual-duct terminals: own hot and cold deck flow controls are dual duct; a single Flow Control with only Air Source Hot/Cold Deck copies is not (rule 6b, 2026-11-17)' + dd.labels.join(' | '));
     ok(dd.labels.some((l) => /^Dual-Duct .*Air Handling Unit:ahu:1$/.test(l)) && !dd.labels.some((l) => /Multi-Zone.*:ahu:1/.test(l) && /Dual/.test(l)), 'an air handler whose points show a hot deck and a cold deck is labeled dual-duct, not multi-zone: ' + dd.labels.join(' | '));
     ok(!/ASHRAE/.test(dd.texts) && !/\d\s?(°F|%|in\.)/.test(dd.texts), 'the descriptions hold no ASHRAE word and no digits followed by °F, % or in.: ' + dd.texts.slice(0, 300));
 
@@ -1119,7 +1119,7 @@ const ok = (c, m) => {
     ok(co2.dcv.totalAHU === 3 && co2.dcv.ahuMissingCO2 === 2, 'item 7: air handlers count air handling units and rooftop units: ' + JSON.stringify(co2.dcv));
     ok(co2.dcv.totalZones === 2 && co2.dcv.zonesMissingCO2 === 1, 'item 7: zones leave out the monitoring-only unit (no cooling and no heating set point): ' + JSON.stringify(co2.dcv));
     ok(/2 of 3 air handlers and 1 of 2 zones have no carbon dioxide sensor/.test(co2.text), 'item 7: the Executive Summary sentence uses those counts');
-    ok(/(Not installed|Installed)\s*Building automation power monitoring meter/.test(co2.text) && /(Not installed|Installed)\s*Outdoor air sensors/.test(co2.text) && !/Installation recommended/.test(co2.text) && !/None in the reviewed points/.test(co2.text), 'item 6: the building page cards state Installed or Not installed for the meter and the outdoor air sensors (no recommendation)');
+    ok(/Building automation power monitoring meter\s*(Not installed|Installed)/.test(co2.text) && /Outdoor air sensors\s*(Not installed|Installed)/.test(co2.text) && !/Installation recommended/.test(co2.text) && !/None in the reviewed points/.test(co2.text), 'item 6: the building page cards state Installed or Not installed for the meter and the outdoor air sensors (no recommendation)');
 
     // ---- report length (2026-11-11): Min OA + CO2 merged into one finding per unit; Appendix B lists the single-zone-only libraries ----
     const PID4 = await page.evaluate(async () => {

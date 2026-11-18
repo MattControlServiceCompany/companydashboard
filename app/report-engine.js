@@ -17461,15 +17461,15 @@ function collectASHRAE36Data(projId, reportDate, buildingNames) {
   var CAT_LABELS = {
     ahu: 'Air Handling Unit',
     rtu: 'Rooftop Unit',
-    vav: 'Variable Air Volume Terminal',
-    fpb: 'Fan-Powered Terminal',
-    ddvav: 'Dual-Duct Terminal',
+    vav: 'Variable Air Volume Terminal Unit',
+    fpb: 'Fan-Powered Terminal Unit',
+    ddvav: 'Dual-Duct Terminal Unit',
     hwp: 'Hot Water Plant',
     chwp: 'Chilled Water Plant',
     ct: 'Cooling Tower',
     doas: 'Dedicated Outdoor Air System',
     fcu: 'Fan Coil Unit',
-    zone: 'Zone Terminal',
+    zone: 'Zone Terminal Unit',
     furnace: 'Furnace',
     heater: 'Heater',
     ef: 'Exhaust Fan',
@@ -18301,7 +18301,7 @@ function _a36FindingsCount(n) {
 var A36_AUDIT_RING_TIERS = [
   { label: 'Plants', one: 'plant', many: 'plants', cats: ['chwp', 'hwp', 'ct'] },
   { label: 'Air Handling Units', one: 'unit', many: 'units', cats: ['ahu', 'rtu', 'doas', 'furnace'] },
-  { label: 'Zone Terminals', one: 'terminal', many: 'terminals', cats: ['vav', 'fpb', 'ddvav', 'zone', 'fcu'] },
+  { label: 'Zone Terminal Units', one: 'terminal unit', many: 'terminal units', cats: ['vav', 'fpb', 'ddvav', 'zone', 'fcu'] },
 ];
 function _a36AuditRingStats(d, libName) {
   var ctx;
@@ -18416,7 +18416,7 @@ function _a36ExecDeviceGroups(d) {
     g.libs = g.libNames.length;
     // The equipment the device is missing on, by group label ("Air Handling Units"), largest first; one/many: the label in the singular and plural.
     g.types = Object.keys(g.typeSet).map(function (t) {
-      return { n: g.typeSet[t], many: t, one: t.replace(/ies$/, 'y').replace(/([^s])s$/, '$1') };
+      return { n: g.typeSet[t], one: t, many: /s$/.test(t) ? t : t + 's' };
     }).sort(function (a, c) { return c.n - a.n; });
   });
   return list.sort(function (a, c) { return c.units - a.units || c.libs - a.libs || String(a.label).localeCompare(String(c.label)); });
@@ -18820,7 +18820,7 @@ function rptPageASHRAE36Executive(n, d, detailedTitles, view) {
     // Scope and method
     var _plants = _tierOf('Plants');
     var _ahus = _tierOf('Air Handling Units');
-    var _zones = _tierOf('Zone Terminals');
+    var _zones = _tierOf('Zone Terminal Units');
     var _range = [_plants ? _tierPhrase(_plants, 'heating and cooling ') : '', _ahus ? _tierPhrase(_ahus, 'air handling ') : ''].filter(Boolean);
     _sec('Scope and Method', [
       'This audit examined how the building automation system' + (p.totalBuildings > 1 ? 's' : '') + ' of ' +
@@ -18896,7 +18896,7 @@ function rptPageASHRAE36Executive(n, d, detailedTitles, view) {
     };
     var _seqSentence = function (list, who) {
       return who + ' ' + _a36DetJoin(list.map(function (s, i) {
-        return (i ? rptCount(s.qty) : rptCount(s.qty) + (s.qty === 1 ? ' unit has' : ' units have')) + ' no ' + ASHRAE36_SEQUENCE_EXEC_PHRASE[s.key];
+        return rptCount(s.qty) + (i ? (s.qty === 1 ? ' has' : ' have') : s.qty === 1 ? ' unit has' : ' units have') + ' no ' + ASHRAE36_SEQUENCE_EXEC_PHRASE[s.key];
       })) + '.';
     };
     var _whyOf = function (list) {
@@ -18910,7 +18910,7 @@ function rptPageASHRAE36Executive(n, d, detailedTitles, view) {
     var _nth = 0;
     if (_missingCO2 > 0) {
       var _co2Parts = [];
-      if (_dcvZonesMissing > 0) _co2Parts.push(rptCount(_dcvZonesMissing) + ' zone terminal' + (_dcvZonesMissing > 1 ? 's' : ''));
+      if (_dcvZonesMissing > 0) _co2Parts.push(rptCount(_dcvZonesMissing) + ' zone terminal unit' + (_dcvZonesMissing > 1 ? 's' : ''));
       if (_dcvAhuMissing > 0) _co2Parts.push(rptCount(_dcvAhuMissing) + ' air handling unit' + (_dcvAhuMissing > 1 ? 's' : ''));
       var _obvQty = _seqQty('demandCtrl') + _seqQty('vav_dcv');
       _princ.push(
@@ -25994,15 +25994,15 @@ function rptPageASHRAE36PointInventory(n, d) {
 var A36_CAT_COUNT_LABELS = {
   ahu: ['Air Handler', 'Air Handlers'],
   rtu: ['Rooftop Unit', 'Rooftop Units'],
-  vav: ['Variable Air Volume Terminal', 'Variable Air Volume Terminals'],
-  fpb: ['Fan-Powered Terminal', 'Fan-Powered Terminals'],
-  ddvav: ['Dual-Duct Terminal', 'Dual-Duct Terminals'],
+  vav: ['Variable Air Volume Terminal Unit', 'Variable Air Volume Terminal Units'],
+  fpb: ['Fan-Powered Terminal Unit', 'Fan-Powered Terminal Units'],
+  ddvav: ['Dual-Duct Terminal Unit', 'Dual-Duct Terminal Units'],
   hwp: ['Hot Water Plant', 'Hot Water Plants'],
   chwp: ['Chilled Water Plant', 'Chilled Water Plants'],
   ct: ['Cooling Tower', 'Cooling Towers'],
   doas: ['Dedicated Outdoor Air System Unit', 'Dedicated Outdoor Air System Units'],
   fcu: ['Fan Coil Unit', 'Fan Coil Units'],
-  zone: ['Zone Terminal', 'Zone Terminals'],
+  zone: ['Zone Terminal Unit', 'Zone Terminal Units'],
   furnace: ['Furnace', 'Furnaces'],
   heater: ['Heater', 'Heaters'],
   ef: ['Exhaust Fan', 'Exhaust Fans'],
@@ -26238,7 +26238,7 @@ function _a36DetGroups(b, rowsById) {
     if (_a36DetDualDuctUnit(eq, row)) {
       if (cat === 'ahu' || cat === 'rtu') label = 'Dual-Duct ' + label.replace(/^(?:Single Zone|Variable Air Volume|Multi-Zone)\s+/i, '');
       else {
-        label = 'Dual-Duct Terminal';
+        label = 'Dual-Duct Terminal Unit';
         cat = 'ddvav';
       }
     }
@@ -27825,7 +27825,7 @@ function _a36DetModel(d, rowsById, picMap, loaded) {
       };
       // What the count is of: a plant is a plant and a terminal is a terminal, not a unit; a CO2 count is against the whole group, with a note on the other units.
       var dcvNarrow = !!g && A36_DET_DCV_KEYS.indexOf(key) > -1 && f.total !== g.units.length;
-      f.fracNoun = g && (g.category === 'hwp' || g.category === 'chwp') ? 'plant' : g && A36_DET_TERMINALS[g.category] ? 'terminal' : 'unit';
+      f.fracNoun = g && (g.category === 'hwp' || g.category === 'chwp') ? 'plant' : g && A36_DET_TERMINALS[g.category] ? 'terminal unit' : 'unit';
       // Matt 2026-11-18: no unit "needs" a CO2 sensor. The text counts against the whole group ("16 of the 19 dual-duct terminals") and a
       // note says what the other units are (they have the sensor, the system only monitors them, or the sequence does not apply).
       f.fracTail = '';
@@ -28127,7 +28127,8 @@ function _a36DetFindingTok(f, impactSeen) {
   }
   return _a36DetTok(
     '<div style="margin:0 0 6px 0"><div style="' +
-      A36_DET_H3 +
+      // Matt 2026-11-18: the numbered finding is body text, not bold.
+      A36_DET_P_TIGHT +
       '">' +
       // "1." under the N.3 Findings heading right above it; the full "2.3.1" only in the Findings Summary, far from the heading (Matt 2026-11-18)
       _escHtml((f.num ? String(f.num).split('.').pop() + '. ' : '') + f.headline) +
@@ -28779,7 +28780,7 @@ function _a36DetControlSentences(g, f, params, proof) {
   // the units says how many ("On 2 of the 3 units, ..."); a sequence that is available but not enabled has its own sentence. skip = { id: true }
   // for an id whose sentence the points of the group already wrote. The economizer is introduced, and enthalpy explained, once.
   var seqClasses = _a36DetSeqClasses(g.category);
-  var seqNoun = seqClasses.indexOf('plant') >= 0 ? 'plant' : seqClasses.indexOf('air') >= 0 || seqClasses.indexOf('fcu') >= 0 ? 'unit' : seqClasses.indexOf('term') >= 0 ? 'terminal' : seqClasses.indexOf('heater') >= 0 ? 'heater' : 'exhaust fan';
+  var seqNoun = seqClasses.indexOf('plant') >= 0 ? 'plant' : seqClasses.indexOf('air') >= 0 || seqClasses.indexOf('fcu') >= 0 ? 'unit' : seqClasses.indexOf('term') >= 0 ? 'terminal unit' : seqClasses.indexOf('heater') >= 0 ? 'heater' : 'exhaust fan';
   // A unit with its own factory controller (unit_own_controller on every unit of the group): the building automation system sends it targets.
   var ownAll = total > 0 && seqCount('unit_own_controller', 'on') === total && seqClasses.indexOf('air') >= 0;
   function seqCount(id, state) {
@@ -29081,18 +29082,18 @@ function _a36DetControlSentences(g, f, params, proof) {
     var dampKey = has('dampCmd') ? 'dampCmd' : '';
     var tz = has('zoneTemp');
     var sps = has('htgSP') && has('coolSP');
-    var who = total === 1 ? 'The terminal' : 'Each terminal';
-    var damperWho = total === 1 ? 'The damper of the terminal' : 'The damper of each terminal';
+    var who = total === 1 ? 'The terminal unit' : 'Each terminal unit';
+    var damperWho = total === 1 ? 'The damper of the terminal unit' : 'The damper of each terminal unit';
     var measured = false;
     var deckFlow = tcfg.length > 0 && tcfg.every(function (c) { return c.dualDuct && c.deckSensors > 0; });
     if (tcfg.length && tcfg.every(function (c) { return c.dualDuct; })) {
-      add((total === 1 ? 'The terminal unit' : 'Each terminal unit') + ' is a dual-duct terminal: it receives a warm air stream from the hot deck and a cool air stream from the cold deck of the air handler, and it blends the two to maintain the temperature of its room.', 'config');
+      add((total === 1 ? 'The terminal unit' : 'Each terminal unit') + ' is a dual-duct unit: it receives a warm air stream from the hot deck and a cool air stream from the cold deck of the air handler, and it blends the two to maintain the temperature of its room.', 'config');
       _a36DetFactSentences(
         tcfg.map(function (c) {
           return c.deckSensors === 2 ? 'has a flow sensor on each deck, which measures the hot deck airflow and the cold deck airflow separately' : c.deckSensors === 1 ? 'has a single flow sensor for both decks' : '';
         }),
-        { one: 'The terminal', each: 'Each terminal' },
-        'terminal',
+        { one: 'The terminal unit', each: 'Each terminal unit' },
+        'terminal unit',
       ).forEach(function (t) {
         add(t, 'config');
       });
@@ -29102,8 +29103,8 @@ function _a36DetControlSentences(g, f, params, proof) {
         tcfg.map(function (c) {
           return c.electricReheat ? 'has electric reheat' : c.heating === 'airOnly' ? 'has no reheat coil and gets its heat from the hot deck air' : '';
         }),
-        { one: 'The terminal', each: 'Each terminal' },
-        'terminal',
+        { one: 'The terminal unit', each: 'Each terminal unit' },
+        'terminal unit',
       ).forEach(function (t) {
         add(t, 'config');
       });
@@ -29112,22 +29113,22 @@ function _a36DetControlSentences(g, f, params, proof) {
     if (tcfg.length) {
       var perim = tcfg.filter(function (c) { return c.perimeterHeat; }).length;
       if (perim === tcfg.length) add(who + ' also controls perimeter baseboard heat.', 'config');
-      else if (perim > 0) add('On ' + _a36DetCountWord(perim) + ' of the ' + _a36DetCountWord(tcfg.length) + ' terminals, the building automation system also controls perimeter baseboard heat.', 'config');
+      else if (perim > 0) add('On ' + _a36DetCountWord(perim) + ' of the ' + _a36DetCountWord(tcfg.length) + ' terminal units, the building automation system also controls perimeter baseboard heat.', 'config');
     }
     if (flowKey && dampKey) {
       var holdText = flowKey === 'primaryFlow' ? 'its primary airflow setpoint' : 'its airflow setpoint';
-      add(some([flowKey, dampKey], 'terminal') ? lead([flowKey, dampKey], 'terminal', 'The damper modulates to hold ' + holdText + '.') : damperWho + ' modulates to hold ' + holdText + '.', 'airflow');
-    } else if (dampKey) add(some([dampKey], 'terminal') ? lead([dampKey], 'terminal', 'The damper modulates.') : damperWho + ' modulates.', 'airflow');
+      add(some([flowKey, dampKey], 'terminal unit') ? lead([flowKey, dampKey], 'terminal unit', 'The damper modulates to hold ' + holdText + '.') : damperWho + ' modulates to hold ' + holdText + '.', 'airflow');
+    } else if (dampKey) add(some([dampKey], 'terminal unit') ? lead([dampKey], 'terminal unit', 'The damper modulates.') : damperWho + ' modulates.', 'airflow');
     else if (flowKey) {
-      if (!deckFlow) add(some([flowKey], 'terminal') ? lead([flowKey], 'terminal', 'The terminal measures its airflow.') : who + ' measures its airflow.', 'airflow');
+      if (!deckFlow) add(some([flowKey], 'terminal unit') ? lead([flowKey], 'terminal unit', 'The terminal unit measures its airflow.') : who + ' measures its airflow.', 'airflow');
       measured = true; // the airflow measurement is stated here: the sensor sentence does not state it again
     }
     var controlled = !!(dampKey || has('reheatValve'));
     if (flowKey && dampKey && tz && sps && proof.flowReset) add('The airflow setpoint resets between its minimum and maximum to hold the zone temperature.', 'airflow');
     if (has('reheatValve')) {
       var reheat = has('hwPlantStatus') ? 'hot water reheat valve' : 'reheat valve';
-      if (flowKey && dampKey && proof.flowReset) add(lead(['reheatValve'], 'terminal', 'The ' + reheat + ' opens after the airflow reaches its minimum.'), 'airflow');
-      else add(lead(['reheatValve'], 'terminal', 'The ' + reheat + ' modulates' + (tz && has('htgSP') ? ' to hold the zone at its heating setpoint' : '') + '.'), 'airflow');
+      if (flowKey && dampKey && proof.flowReset) add(lead(['reheatValve'], 'terminal unit', 'The ' + reheat + ' opens after the airflow reaches its minimum.'), 'airflow');
+      else add(lead(['reheatValve'], 'terminal unit', 'The ' + reheat + ' modulates' + (tz && has('htgSP') ? ' to hold the zone at its heating setpoint' : '') + '.'), 'airflow');
     }
     if (tz && sps) zoneSentences('terminal', controlled);
     seqAdd('zone');

@@ -111,7 +111,10 @@ const ok = (c, m) => {
       const bp = out[k].filter((p) => p.section === 'building');
       ok(bp.length >= 2, k + ': the base Per-Building Detail pages print (' + bp.length + ')');
       ['Alpha Library', 'Beta Library'].forEach((n) => ok(bp.some((p) => p.photos.indexOf('Photo of ' + n) >= 0), k + ': the per-building page of ' + n + ' has the library front photo'));
-      const alpha = bp.filter((p) => /Alpha Library/.test(p.text)).map((p) => p.text).join(' ');
+      // every page of Alpha Library: its first page up to the first page of Beta Library (a long table continues on the next page)
+      const a0 = bp.findIndex((p) => /Alpha Library/.test(p.text));
+      const b0 = bp.findIndex((p) => /Beta Library/.test(p.text));
+      const alpha = bp.slice(a0, b0 > a0 ? b0 : bp.length).map((p) => p.text).join(' ');
       ok(/Exhaust Fan/.test(alpha) && /Air Handlers/.test(alpha) && /Variable Air Volume/.test(alpha) && /\d+ findings/.test(alpha) && !/None needed|No ASHRAE 36 sequence applies/.test(alpha), k + ': the per-building page lists every audited equipment type (exhaust fan too) and the findings count, with no "None needed"');
       ok(!/Finding \d+:/.test(all(k)), k + ': no "Finding N:" heading anywhere');
     });

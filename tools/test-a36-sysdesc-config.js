@@ -263,7 +263,7 @@ const ok = (c, m) => {
     ok(!/which is called/.test([r.tHwSecondary, r.tHwIntegration, r.tHwPrimary].join(' ')) && /over a network connection \(an integration\)\./.test(r.tHwIntegration), 'an integration is one clause "(an integration)", never "which is called"');
     ok(!/changes the speed of an electric motor/.test(r.vfdPlant + ' ' + r.vfdAir + ' ' + r.vfdAirAlone) && /equipped with a variable frequency drive\./.test(r.vfdAir), 'no definition of a variable frequency drive (Matt 2026-11-17: obvious): ' + r.vfdPlant + ' || ' + r.vfdAir);
     ok(/measures its airflow/.test(r.tTermMeasure) && !/airflow measurement/.test(r.tTermMeasure), 'the airflow measurement is stated once (no "has an airflow measurement" after "measures its airflow"): ' + r.tTermMeasure);
-    ok(!/\b[Ee]ach (terminal|unit|heater|exhaust fan)\b/.test(r.tTermOne + ' ' + r.tHeaterOne) && /The damper of the terminal modulates/.test(r.tTermOne), 'a single unit group has no "each" wording: ' + r.tTermOne + ' || ' + r.tHeaterOne);
+    ok(!/\b[Ee]ach (terminal|unit|heater|exhaust fan)\b/.test(r.tTermOne + ' ' + r.tHeaterOne) && /The damper of the terminal unit modulates/.test(r.tTermOne), 'a single unit group has no "each" wording: ' + r.tTermOne + ' || ' + r.tHeaterOne);
     ok(/monitors the run status of the chiller and each pump\./.test(r.tChwStatus2) && /monitors the run status of the chiller and the pump\./.test(r.tChwStatus1), 'run status wording follows the counts: "the chiller and each pump", "the chiller and the pump": ' + r.tChwStatus2 + ' || ' + r.tChwStatus1);
     ok(![r.tHwSecondary, r.tHwPlain, r.tHwEnableOnly, r.tHwIntegration, r.tChwStatus2, r.tSeq, r.tSeqOne, r.tSeqHeater].some((x) => /(The building automation system [^.]*\. ){3}The building automation system /.test(x)), 'no four sentences in a row open with "The building automation system"');
     var every = [r.tHwSecondary, r.tHwPlain, r.tHwPrimary, r.tChwAir, r.tChwNoType, r.tHwEnableOnly, r.tHwIntegration, r.tAirGas, r.tAirCoil, r.tAirTwo, r.tAirSensors, r.tSeq, r.tSeqSome, r.tSeqAll, r.tSeqOne, r.econAll3, r.econDry, r.econEnth, r.econDryEnth, r.econDiff, r.econSome, r.tOwn, r.tOwnOne, r.tSeqEf, r.tSeqHeater, r.vfdPlant, r.vfdAir, r.tTermMeasure, r.tTermOne, r.tChwStatus2].join(' ');
@@ -276,9 +276,9 @@ const ok = (c, m) => {
     ok(/gas heat with one heating stage/.test(r.tAirGas) && /The gas heat modulates to hold the supply air temperature/.test(r.tAirGas) && !/gas heating valve/.test(r.tAirGas) && !/heating coil valve|compressor|condensing/.test(r.tAirGas) && /two cooling stages/.test(r.tAirGas), 'gas valve: gas heat, the valve is not a coil valve, stages are counts only: ' + r.tAirGas);
     ok(/heating coil valve modulates/.test(r.tAirCoil) && !/gas/.test(r.tAirCoil), 'a heating valve with no gas point stays a heating coil valve: ' + r.tAirCoil);
     ok(/One of the two units has two compressors\./.test(r.tAirTwo) && /One of the two units has one cooling stage\./.test(r.tAirTwo), 'a fact of one unit of two prints as "One of the two units has ...": ' + r.tAirTwo);
-    ok(/The terminal also controls perimeter baseboard heat\./.test(r.phOne) && !/Each terminal/.test(r.phOne), 'perimeter heat, one unit: ' + r.phOne);
-    ok(/On one of the three terminals, the building automation system also controls perimeter baseboard heat\./.test(r.phSome), 'perimeter heat, some units: ' + r.phSome);
-    ok(/Each terminal also controls perimeter baseboard heat\./.test(r.phAll), 'perimeter heat, every unit: ' + r.phAll);
+    ok(/The terminal unit also controls perimeter baseboard heat\./.test(r.phOne) && !/Each terminal/.test(r.phOne), 'perimeter heat, one unit: ' + r.phOne);
+    ok(/On one of the three terminal units, the building automation system also controls perimeter baseboard heat\./.test(r.phSome), 'perimeter heat, some units: ' + r.phSome);
+    ok(/Each terminal unit also controls perimeter baseboard heat\./.test(r.phAll), 'perimeter heat, every unit: ' + r.phAll);
     ok(!/perimeter/i.test(r.phNone), 'no perimeter heat sentence when no unit has the points: ' + r.phNone);
     ok(JSON.stringify(r.phDetect) === '[true,true,true,true,true,false]', 'perimeterHeat detects baseboard, perimeter, radiation and fin-tube points only: ' + JSON.stringify(r.phDetect));
     ok(errs.length === 0, 'no page error' + (errs.length ? ': ' + errs.join(' | ') : ''));

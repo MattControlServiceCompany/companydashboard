@@ -2507,6 +2507,10 @@ async function siteResetAllMeterTableSettings() {
    site-ui.js delegates to this array and should NOT maintain its own copy.
 */
 var RELEASE_NOTES = [
+  { v: 'v2026.11.18.348', date: '2026-11-18', title: 'Audit Report: score rings back, clearer Executive Summary',
+    items: [ { type: 'fixed', text: 'Audit Report: the cover and each building page show the score rings again: Overall Score, Sensor Coverage and Sequence Readiness.' },
+             { type: 'improved', text: 'Audit Report: the Executive Summary states the findings in one direction, names every missing device with its equipment and library, explains what each missing air handling unit sequence means, and has plain section headings.' },
+             { type: 'improved', text: 'Audit Report: terminal units are called terminal units. Building facts show the label above the value. Numbered findings are not bold.' } ] },
   { v: 'v2026.11.18.347', date: '2026-11-18', title: 'Audit Report: research-style Executive Summary and clearer findings',
     items: [ { type: 'improved', text: 'Audit Report: the Executive Summary explains the audit in connected paragraphs: scope and method, overall result, the principal findings and what they mean, the context and how the report is organized.' },
              { type: 'improved', text: 'Audit Report: the cover shows the counts first and larger rings. Each ring says what it counts (for example 6 of 9 plants with no findings). A row with no findings says that the units have every sensor, point and control sequence the audit checks. The building facts have no boxes.' },
