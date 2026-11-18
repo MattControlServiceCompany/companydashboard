@@ -29546,7 +29546,8 @@ function _a36DetPhotoHtml(photo, libraryName, scale) {
 // d._a36LibraryPhotos, printed at 75 percent so the table fits under it on an 8.5 x 11 in page), the equipment audited by type with the findings of
 // each type, and the total. A library with no photo prints no picture. No ASHRAE 36 text: the scores and the devices to install and sequences to
 // program of the building are in the ASHRAE 36 Sequences section.
-var A36_AUDIT_PHOTO_SCALE = 0.62;
+var A36_AUDIT_PHOTO_SCALE = 0.62;
+var A36_AUDIT_PHOTO_SCALE_SMALL = 0.5; // a building page too short for the table at the full photo size
 function _a36AuditBuildingTokens(d, b, ctx, showBuildingInfra) {
   var name = _a36DisplayName(b);
   var lib = ctx.model.libs.filter(function (l) {
@@ -29598,19 +29599,27 @@ function _a36AuditBuildingTokens(d, b, ctx, showBuildingInfra) {
       : '') +
     '</table>';
   var photo = d._a36LibraryPhotos && d._a36LibraryPhotos[name];
-  tokens.push(
-    _a36DetTok(
+  var photoTok = function (scale) {
+    return _a36DetTok(
       photo
         ? '<table style="width:100%;border-collapse:collapse;table-layout:fixed;margin:0 0 4px 0"><colgroup><col style="width:' +
-            Math.round(A36_DET_PHOTO_W * A36_AUDIT_PHOTO_SCALE + 8) + 'px"><col></colgroup><tr>' +
-            '<td style="vertical-align:top;padding:0;border:none">' + _a36DetPhotoHtml(photo, name, A36_AUDIT_PHOTO_SCALE).replace('margin:0 0 12px 0', 'margin:0') + '</td>' +
+            Math.round(A36_DET_PHOTO_W * scale + 8) + 'px"><col></colgroup><tr>' +
+            '<td style="vertical-align:top;padding:0;border:none">' + _a36DetPhotoHtml(photo, name, scale).replace('margin:0 0 12px 0', 'margin:0') + '</td>' +
             '<td style="vertical-align:top;padding:0;border:none">' + cards + '</td></tr></table>'
         : cards,
       true,
-    ),
-  );
-  var rings = _a36AuditRingsHtml(_a36AuditRingStats(d, name), 72);
-  if (rings) tokens.push(_a36DetTok(rings, true));
+    );
+  };
+  var ringStats = _a36AuditRingStats(d, name);
+  var ringsTok = function (size) {
+    var h = _a36AuditRingsHtml(ringStats, size);
+    return h ? _a36DetTok(h, true) : null;
+  };
+  var headAt = tokens.length;
+  tokens.push(photoTok(A36_AUDIT_PHOTO_SCALE));
+  var rt = ringsTok(72);
+  if (rt) tokens.push(rt);
+  var headEnd = tokens.length;
   // One row per equipment type; a finding is listed on the row of its type. A finding of no listed type goes on the Building-wide row.
   var byCat = {};
   var wide = [];
@@ -29659,10 +29668,22 @@ function _a36AuditBuildingTokens(d, b, ctx, showBuildingInfra) {
   });
   // The heading, photo, rings and table stay on one page when they fit. When they are taller than a page the table runs on (header row
   // repeated): its rows are not kept together, so no page holds a single token.
-  var whole = tokens.reduce(function (sum, t, i) {
-    return sum + _a36DetCost(t, tokens[i - 1]);
-  }, 0);
-  if (whole > _rptContentBudget('flush') - A36_DET_PAGE_SAFETY_H) {
+  // A page too short for it all first gets a smaller photo and smaller rings, then no rings (the table holds the same facts), so a table
+  // never leaves one or two rows alone on the next page.
+  var budget = _rptContentBudget('flush') - A36_DET_PAGE_SAFETY_H;
+  var cost = function () {
+    return tokens.reduce(function (sum, t, i) {
+      return sum + _a36DetCost(t, tokens[i - 1]);
+    }, 0);
+  };
+  var setHead = function (list) {
+    tokens.splice.apply(tokens, [headAt, headEnd - headAt].concat(list));
+    headEnd = headAt + list.length;
+  };
+  if (cost() > budget) setHead([photoTok(A36_AUDIT_PHOTO_SCALE_SMALL)].concat(ringsTok(56) || []));
+  if (cost() > budget) setHead([photoTok(A36_AUDIT_PHOTO_SCALE_SMALL)]);
+  if (cost() > budget) {
+    setHead([photoTok(A36_AUDIT_PHOTO_SCALE)].concat(rt || []));
     tableToks.forEach(function (t) {
       t.keepNext = false;
     });
