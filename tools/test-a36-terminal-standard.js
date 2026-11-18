@@ -108,7 +108,7 @@ const ok = (c, m) => {
     ok(r.distinct.length === 4 && r.distinct.join(',') === 'Test Library|vav-1,Test Library|vav-2,Test Library|vav-3,Test Library|vav-7', 'distinct units through _a36AuditAffectedUnits (the opportunity listed twice counts each unit once): ' + JSON.stringify(r.distinct));
     ok(r.t && r.t.keys.join(',') === 'dat,lockout,standby,co2', 'features named in the table order: ' + (r.t && r.t.keys.join(',')));
     ok(
-      r.t && r.t.headline === 'The control programs of 4 of the 6 terminal units the audit read have no discharge air temperature control with a 50°F floor, no heating lockout above 50°F outdoor air, no occupancy standby and no CO2 ventilation reset. The Control Service Company standard terminal unit sequence includes each of these.',
+      r.t && /^The programs of .+ have no discharge air temperature control with a 50°F floor, no heating lockout above 50°F outdoor air, no occupancy standby and no CO2 ventilation reset\. The Control Service Company standard terminal unit sequence includes each of these\.$/.test(r.t.headline),
       'headline, as printed: ' + (r.t && r.t.headline)
     );
     ok(
@@ -120,15 +120,15 @@ const ok = (c, m) => {
       'Impact holds one expert sentence per feature, in table order'
     );
     ok(
-      r.t && /The audit read the control program page of 6 of the 7 terminal units of the library and states nothing about the other 1\. The audit recommends upgrading the terminal unit programs of the library to the Control Service Company standard terminal unit sequence\.$/.test(r.t.impact),
+      r.t && !/The audit read/.test(r.t.impact) && /reset[^.]*\. The audit recommends upgrading the terminal unit programs of the library to the Control Service Company standard terminal unit sequence\.$/.test(r.t.impact),
       'Impact ends with the extent of the reading and the recommendation: ' + (r.t && r.t.impact.slice(-260))
     );
     ok(r.t && r.t.key === 'terminalStandard' && r.t.effect === 'Energy use' && r.t.category === 'vav' && r.t.groupLabel === 'Zone terminal units', 'key, effect, equipment type and group of the opportunity');
     ok(
-      r.para.indexOf('The audit compared the terminal unit control programs with the Control Service Company standard terminal unit sequence. At Test Library, the audit read the control programs of 6 terminal units. 4 of them lack one or more of the features of that sequence: discharge air temperature control with a 50°F floor, heating lockout above 50°F outdoor air, occupancy standby and CO2 ventilation reset. These features protect a zone in heating from cold discharge air, save reheat energy in mild weather, save heating, cooling and fan energy in vacant zones and save ventilation energy in lightly used zones.') === 0,
+      r.para.indexOf('The terminal unit programs at Test Library fall short of the Control Service Company standard terminal unit sequence. The library has 7 terminal units. The programs have no discharge air temperature control with a 50°F floor, no heating lockout above 50°F outdoor air, no occupancy standby and no CO2 ventilation reset. These features protect a zone in heating from cold discharge air, save reheat energy in mild weather, save heating, cooling and fan energy in vacant zones and save ventilation energy in lightly used zones.') === 0,
       'Executive Summary paragraph: ' + r.para
     );
-    ok(/The audit recommends upgrading the terminal unit programs at these libraries to the standard\. Each library with such terminal units counts as one opportunity\.$/.test(r.para), 'Executive paragraph ends with the recommendation and the counting rule');
+    ok(/The audit recommends upgrading the terminal unit programs at (these libraries|Test Library) to the standard\.$/.test(r.para), 'Executive paragraph ends with the recommendation');
     ok(r.devGroups.every((g) => !/terminal unit programs/i.test(g)), 'the opportunity is not listed as a missing device');
     ok(r.noRows === 0 && r.noRowsPara === '', 'no program page read: no opportunity and no paragraph');
     ok(r.info && r.info.byLib['Test Library'] >= 1, 'the opportunity counts in the audit totals of the library');

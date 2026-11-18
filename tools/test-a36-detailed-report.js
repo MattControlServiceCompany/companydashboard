@@ -517,7 +517,7 @@ const ok = (c, m) => {
       const bad = [];
       all.forEach((f) => {
         if (f.kind === 'deficiency') return;
-        const frac = _a36DetFraction(f.units, f.groupTotal && f.dcvNote ? f.groupTotal : f.total, f.fracNoun, '');
+        const frac = _a36DetFraction(f.units, f.groupTotal && f.dcvNarrow ? f.groupTotal : f.total, f.fracNoun, '');
         const inText = !f.total || f.observed.indexOf(frac) >= 0;
         if (!inText || f.units < 1 || (f.total && f.units > f.total) || /that need a CO2/.test(f.observed)) bad.push(f.n + ': ' + f.observed + ' units ' + f.units + ' of ' + f.total);
       });

@@ -1780,7 +1780,9 @@ function _docxStampLiveStyles(liveRoot, cloneRoot) {
       if (liveCols) t.setAttribute('data-dx-live-cols', '1');
       var first = live[i].querySelector('td');
       if (first) {
-        var bc = _docxCssColorToHex(getComputedStyle(first).borderTopColor);
+        var fcs = getComputedStyle(first);
+        // border:none on the cells -> no Word border lines (the computed color of a missing border is the text color: a white line on a blue band)
+        var bc = fcs.borderTopStyle === 'none' ? 'none' : _docxCssColorToHex(fcs.borderTopColor);
         if (bc) t.setAttribute('data-dx-border', bc);
       }
     }
@@ -2573,7 +2575,7 @@ function _docxTranslateTable(tableEl, ctx) {
     // Report tables: fixed column widths (the widths the PDF shows), light borders, cell padding.
     var bcol = _docxEscapeXml(tableEl.getAttribute('data-dx-border'));
     var edge = function (n) {
-      return '<w:' + n + ' w:val="single" w:sz="4" w:space="0" w:color="' + bcol + '"/>';
+      return bcol === 'none' ? '<w:' + n + ' w:val="nil"/>' : '<w:' + n + ' w:val="single" w:sz="4" w:space="0" w:color="' + bcol + '"/>';
     };
     tblPr =
       '<w:tblPr><w:tblStyle w:val="TableGrid"/>' +

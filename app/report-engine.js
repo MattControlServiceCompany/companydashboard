@@ -18443,12 +18443,17 @@ function _a36ExecLightingSentence(d, oppsOnly) {
       'The audit covered ' + rptCount(p.totalLighting) + ' lighting control ' + (p.totalLighting === 1 ? 'unit' : 'units') +
       (d.buildings.length > 1 ? ' at ' + rptCount(withLight) + ' of the ' + rptCount(d.buildings.length) + ' ' + nn.many : '') +
       (ext ? ', ' + rptCount(ext) + ' of them exterior' : '') + '. ';
+  // Matt 2026-11-18 ("What is this actually telling the reader?"): say what the lights do and what it costs, not which points are missing.
   var ph = libsOf('lightingPhotocell');
   var sc = libsOf('lightingSchedule');
-  var oc = libsOf('lightingOccupancy');
-  if (ph.length) txt += 'The exterior lighting has no photocell point at ' + _a36DetJoin(ph) + '. ';
-  if (sc.length) txt += 'Some lighting units have no schedule point at ' + _a36DetJoin(sc) + '. ';
-  if (oc.length) txt += 'Some interior lighting units have a schedule point but no occupancy mode, occupancy sensor or override point at ' + _a36DetJoin(oc) + '. ';
+  var oc = ctx ? ctx.model.findings.filter(function (f) { return f.key === 'lightingOccupancy'; }) : [];
+  if (ph.length)
+    txt += 'At ' + _a36DetJoin(ph) + ', the system switches the exterior lights by the clock alone, with no photocell. Clock times do not follow sunrise and sunset through the year, so the lights burn in daylight for part of the year or come on after dark. A photocell switches them by daylight. ';
+  if (sc.length) txt += 'At ' + _a36DetJoin(sc) + ', some lighting units have no schedule on the building automation system, so the system cannot switch them off after hours. ';
+  oc.forEach(function (f) {
+    txt += 'At ' + f.lib + ', ' + (f.units === f.total ? (f.total === 1 ? 'the interior lighting unit follows' : 'all ' + rptCount(f.total) + ' interior lighting units follow') : rptCount(f.units) + ' of the ' + rptCount(f.total) + ' interior lighting units follow') +
+      ' the time schedule alone: with no occupancy sensor or override, the lights stay on in empty rooms during the schedule and cannot be held on for an after-hours event. ';
+  });
   return txt.replace(/\s+$/, '');
 }
 
@@ -18648,15 +18653,17 @@ function _a36ExecPowerMeterSentence(d) {
     return '';
   }
   var libs = ctx.model.findings.filter(function (f) { return f.key === 'powerMeter'; }).map(function (f) { return f.lib; });
-  var without = d.buildings.filter(function (b) { return !b.hasPowerMonitoring; }).length;
-  if (!without) return '';
-  var rest = without - libs.length;
-  var nn = _a36BuildingNouns(d);
+  var restNames = d.buildings
+    .filter(function (b) { return !b.hasPowerMonitoring; })
+    .map(_a36DisplayName)
+    .filter(function (nm) { return libs.indexOf(nm) < 0; });
+  if (!libs.length && !restNames.length) return '';
   return (
     (libs.length
       ? 'A power meter is an opportunity at ' + _a36DetJoin(libs) + ', where the heating and cooling equipment is large enough for the meter to show what the controls save. '
       : '') +
-    (rest > 0 ? (rest === 1 ? 'At the other ' + nn.one + ' without one' : 'At the other ' + rptCount(rest) + ' ' + nn.many + ' without one') + ', the equipment is too small for a meter to be worth it. ' : '')
+    // Matt 2026-11-18: name the other libraries too ("Why would you not list out the 2 other libraries").
+    (restNames.length ? _a36DetJoin(restNames) + (restNames.length === 1 ? ' has' : ' also have') + ' no power meter, but ' + (restNames.length === 1 ? 'its' : 'their') + ' equipment is too small for a meter to be worth it. ' : '')
   );
 }
 
@@ -18697,13 +18704,42 @@ function _a36ExecSetpointScheduleSentences(d) {
   };
   if (sp.length)
     out.setpoints =
-      'The audit also compared the zone setpoints with the Control Service Company standard setpoints. ' + rptCount(sum(sp)) + ' zone' + (sum(sp) === 1 ? ' has' : 's have') +
-      ' setpoints that differ from the standard, at ' + where(sp) + '. Each ' + nn.one + ' with differing zone setpoints counts as one opportunity.';
+      // Matt 2026-11-18 ("What standard???"; context before the new information): the recommended setpoints first, then where and how many differ.
+      (_a36SetpointStandardPhrase(d)
+        ? 'Control Service Company recommends zone setpoints of ' + _a36SetpointStandardPhrase(d) + '. '
+        : 'The audit compared the setpoints of each zone with the setpoints Control Service Company recommends. ') +
+      'At ' + where(sp) + ', ' + rptCount(sum(sp)) + ' zone' + (sum(sp) === 1 ? ' has' : 's have') + ' setpoints that differ from these.';
   if (sc.length)
     out.schedules =
-      'The audit read the occupied schedule of each unit that has one in the building automation system. ' + rptCount(sum(sc)) + ' unit' + (sum(sc) === 1 ? ' runs' : 's run') +
-      ' around the clock or ' + (sum(sc) === 1 ? 'has' : 'have') + ' no occupied period, at ' + where(sc) + '. Each ' + nn.one + ' with such schedules counts as one opportunity.';
+      // Matt 2026-11-18: the libraries first, then the units ("At Merriam Plaza Library, 17 of 18 scheduled units run around the clock.").
+      (sc.length <= 3
+        ? sc.map(function (f) { return 'At ' + f.lib + ', ' + f.headline.charAt(0).toLowerCase() + f.headline.slice(1); }).join(' ')
+        : 'At ' + where(sc) + ', ' + rptCount(sum(sc)) + ' unit' + (sum(sc) === 1 ? ' runs' : 's run') + ' around the clock or ' + (sum(sc) === 1 ? 'has' : 'have') + ' no occupied period.');
   return out;
+}
+
+// The recommended zone setpoints in words ("70°F heating / 75°F cooling while occupied and 60°F heating / 85°F cooling while unoccupied"), from the
+// recommended setpoints of the zones (collectASHRAE36Data equipResults[].recommended: the company standard / Report Inputs). The unoccupied pair is
+// left out when it differs by heating type. '' when the occupied pair is not one value.
+function _a36SetpointStandardPhrase(d) {
+  var occ = {};
+  var un = {};
+  (d.buildings || []).forEach(function (b) {
+    (b.equipResults || []).forEach(function (eq) {
+      var r = eq.recommended;
+      if (!eq.spCompliance || !r || r.occHeat == null || r.occCool == null) return;
+      occ[r.occHeat + '/' + r.occCool] = 1;
+      if (r.unoccHeat != null && r.unoccCool != null) un[r.unoccHeat + '/' + r.unoccCool] = 1;
+    });
+  });
+  var pair = function (k) {
+    var v = k.split('/');
+    return v[0] + '°F heating / ' + v[1] + '°F cooling';
+  };
+  var o = Object.keys(occ);
+  var u = Object.keys(un);
+  if (o.length !== 1) return '';
+  return pair(o[0]) + ' while occupied' + (u.length === 1 ? ' and ' + pair(u[0]) + ' while unoccupied' : ', with a wider band while unoccupied');
 }
 
 // The terminal unit opportunity of the audit in one paragraph for the Executive Summary: the libraries whose terminal unit control programs lack features of the
@@ -18721,19 +18757,24 @@ function _a36ExecTerminalStandardParagraph(d) {
   if (!list.length) return '';
   var nn = _a36BuildingNouns(d);
   var nTotal = d.portfolio.totalBuildings;
-  var units = list.reduce(function (a, f) { return a + (f.units || 0); }, 0);
-  var read = list.reduce(function (a, f) { return a + (f.read || 0); }, 0);
+  // Matt 2026-11-18: no "the audit read the control programs of N units" (no value to the reader): name the libraries, their terminal units and
+  // what the programs lack; a feature missing at only some of the libraries names them.
+  var boxes = list.reduce(function (a, f) { return a + (f.libTerminals || 0); }, 0);
   var feats = A36_TERM_STD.filter(function (f) {
     return list.some(function (x) { return x.stdKeys.indexOf(f.key) > -1; });
   });
-  var where = list.length === 1 && nTotal === 1 ? 'the ' + nn.one : list.length === nTotal && nTotal > 1 ? 'every ' + nn.one : list.length <= 3 ? _a36DetJoin(list.map(function (f) { return f.lib; })) : rptCount(list.length) + ' of the ' + rptCount(nTotal) + ' ' + nn.many;
+  var one = list.length === 1;
+  var where = one && nTotal === 1 ? 'the ' + nn.one : _a36DetJoin(list.map(function (f) { return f.lib; }));
+  var lacks = feats.map(function (f) {
+    var at = list.filter(function (x) { return x.stdKeys.indexOf(f.key) > -1; });
+    return (at.length < list.length ? 'at ' + _a36DetJoin(at.map(function (x) { return x.lib; })) + ', ' : '') + 'no ' + f.noun;
+  });
   return (
-    'The audit compared the terminal unit control programs with the Control Service Company standard terminal unit sequence. ' +
-    'At ' + where + ', the audit read the control program' + (read === 1 ? '' : 's') + ' of ' + rptCount(read) + ' terminal unit' + (read === 1 ? '' : 's') + '. ' +
-    (units >= read ? (read === 1 ? 'It lacks' : 'All ' + rptCount(read) + ' lack') : rptCount(units) + ' of them ' + (units === 1 ? 'lacks' : 'lack')) + ' one or more of the features of that sequence: ' +
-    _a36DetJoin(feats.map(function (f) { return f.noun; })) + '. ' +
+    'The terminal unit programs at ' + where + ' fall short of the Control Service Company standard terminal unit sequence. ' +
+    (boxes ? (one ? 'The ' + nn.one + ' has ' : 'These ' + nn.many + ' have ') + rptCount(boxes) + ' terminal unit' + (boxes === 1 ? '' : 's') + '. ' : '') +
+    'The programs have ' + _a36DetJoin(lacks) + '. ' +
     'These features ' + _a36DetJoin(feats.map(function (f) { return f.gain; })) + '. ' +
-    'The audit recommends upgrading the terminal unit programs at ' + (list.length === 1 && nTotal === 1 ? 'the ' + nn.one : 'these ' + nn.many) + ' to the standard. Each ' + nn.one + ' with such terminal units counts as one opportunity.'
+    'The audit recommends upgrading the terminal unit programs at ' + (one ? (nTotal === 1 ? 'the ' + nn.one : list[0].lib) : 'these ' + nn.many) + ' to the standard.'
   );
 }
 
@@ -18772,7 +18813,7 @@ function rptPageASHRAE36Cover(n, d, perBuildingIncluded, detailed) {
     (p.totalLighting ? ' and <strong>' + rptCount(p.totalLighting) + ' lighting control ' + (p.totalLighting === 1 ? 'unit' : 'units') + '</strong>' : '') +
     (pts ? ' with <strong>' + rptCount(pts) + ' control points</strong>' : '') + ', the audit of <strong>' + _escHtml(d.project.name) + '</strong> recorded <strong>' +
     (info ? _a36FindingsCount(info.total) : 'no opportunities') + '</strong>' +
-    (info && info.total ? ' on <strong>' + rptCount(info.units) + ' equipment unit' + (info.units === 1 ? '' : 's') + '</strong>: the sensors, control points and control sequences that the systems do not have, the zone setpoints that differ from the standard and the schedules that run units around the clock or hold no occupied period. The sections that follow describe each ' + nouns.one + ', how its system controls the equipment today and each opportunity.' : '.');
+    (info && info.total ? ' on <strong>' + rptCount(info.units) + ' equipment unit' + (info.units === 1 ? '' : 's') + '</strong>: the sensors, control points and control sequences that the systems do not have, the zone setpoints that differ from the recommended setpoints and the schedules that run units around the clock or hold no occupied period. The sections that follow describe each ' + nouns.one + ', how its system controls the equipment today and each opportunity.' : '.');
   var statCard = function (value, label) {
     return (
       '<td class="rpt-a36-stat-card" style="width:25%;text-align:center;vertical-align:top;padding:0 6px;border:none">' +
@@ -19219,9 +19260,9 @@ function rptPageASHRAE36Executive(n, d, detailedTitles, view) {
       ahu_economizer: 'Without an economizer sequence, the unit does not use outdoor air for cooling when the outdoor air is cool enough.',
       ahu_dsp_reset: 'Without duct static pressure reset, the duct pressure setpoint does not drop when fewer zones call for air.',
     };
-    var _seqSentence = function (list, who) {
+    var _seqSentence = function (list, who, counted) {
       return who + ' ' + _a36DetJoin(list.map(function (s, i) {
-        return rptCount(s.qty) + (i ? (s.qty === 1 ? ' has' : ' have') : s.qty === 1 ? ' unit has' : ' units have') + ' no ' + ASHRAE36_SEQUENCE_EXEC_PHRASE[s.key];
+        return rptCount(s.qty) + (i || counted ? (s.qty === 1 ? ' has' : ' have') : s.qty === 1 ? ' unit has' : ' units have') + ' no ' + ASHRAE36_SEQUENCE_EXEC_PHRASE[s.key];
       })) + '.';
     };
     var _whyOf = function (list) {
@@ -19253,7 +19294,14 @@ function rptPageASHRAE36Executive(n, d, detailedTitles, view) {
     if (_ahuSeq.length)
       _princ.push(
         // Matt 2026-11-18: start with the findings, then say what the problem is; the readers know HVAC.
-        (_ordinal[_nth++] || 'A further opportunity') + ' concerns the air handling unit sequences. ' + _seqSentence(_ahuSeq, 'Of the air handling units,') + ' ' +
+        (_ordinal[_nth++] || 'A further opportunity') + ' concerns the air handling unit sequences. ' + (function () {
+          // Matt 2026-11-18: start with how many units there are ("Of the 23 air handling units, 9 have no ...").
+          var cats = A36_AUDIT_RING_TIERS[1].cats;
+          var nAir = (d.buildings || []).reduce(function (a, b) {
+            return a + (b.equipResults || []).filter(function (eq) { return cats.indexOf(eq.category) > -1; }).length;
+          }, 0);
+          return nAir ? _seqSentence(_ahuSeq, 'Of the ' + rptCount(nAir) + ' air handling units,', true) : _seqSentence(_ahuSeq, 'Of the air handling units,');
+        })() + ' ' +
         _ahuSeq.map(function (s) { return _seqProblem[s.key]; }).filter(Boolean).join(' ') +
         ' In each case the setpoint does not follow the load, so the fan, cooling and heating energy of the unit does not drop when the zones need less.'
       );
@@ -19285,7 +19333,7 @@ function rptPageASHRAE36Executive(n, d, detailedTitles, view) {
       return k === _nB ? (_nB === 1 ? 'the ' + _nounOne + ' has' : 'all ' + rptCount(_nB) + ' ' + _nounMany + ' have') : k ? rptCount(k) + ' of the ' + rptCount(_nB) + ' ' + _nounMany + (k === 1 ? ' has' : ' have') : 'none of the ' + _nounMany + ' has';
     };
     // Matt 2026-11-18: not "Context"; each topic gets its own plain heading.
-    var _ctx = _spSch.setpoints ? [_spSch.setpoints + (detailedTitles.setpointAppendix ? ' Appendix A lists each setpoint with the standard value beside it.' : '')] : [];
+    var _ctx = _spSch.setpoints ? [_spSch.setpoints + (detailedTitles.setpointAppendix ? ' Appendix A lists each setpoint with the recommended value beside it.' : '')] : [];
     _sec('Zone Setpoints', _ctx);
     _sec('Schedules', _spSch.schedules ? [_spSch.schedules] : []);
     if (_nB)
@@ -21667,6 +21715,26 @@ function _a36SetpointBuildingRows(d) {
 // _a36SetpointBuildingRows. Single-zone-unit rows (no zone review) and buildings with 0 zones to reprogram add nothing.
 // Returns { zones, buildings } (buildings = number of buildings with at least one zone to reprogram). buildingRows is optional: a caller that
 // already has the rows of _a36SetpointBuildingRows passes them, so they are not built twice.
+// The terminal unit program upgrade the Audit Report recommends (terminalStandard opportunities of _a36DetModel): every terminal unit of each
+// library with that opportunity. The one count pricing-estimator.js buildTerminalStandardRows prices. { boxes, buildings }.
+function _a36TerminalStandardPlan(d) {
+  var ctx;
+  try {
+    ctx = d._a36AuditCtx || (d._a36AuditCtx = _a36DetContext(d));
+  } catch (e) {
+    console.error('_a36TerminalStandardPlan: findings model failed', e);
+    return { boxes: 0, buildings: 0 };
+  }
+  var boxes = 0;
+  var buildings = 0;
+  ctx.model.findings.forEach(function (f) {
+    if (f.key !== 'terminalStandard') return;
+    boxes += f.libTerminals || 0;
+    buildings++;
+  });
+  return { boxes: boxes, buildings: buildings };
+}
+
 function _a36SetpointReprogramPlan(d, buildingRows) {
   var zones = 0;
   var buildings = 0;
@@ -26459,14 +26527,10 @@ function _a36DetDcvNote(g, units) {
   var verb = function (n, one, many) {
     return rptCount(n) + ' ' + (n === 1 ? one : many);
   };
-  var parts = [];
-  if (withIt) parts.push(verb(withIt, 'has', 'have') + ' a CO2 sensor point');
-  if (monitor)
-    parts.push(verb(monitor, 'has', 'have') + ' no zone heating or cooling setpoint in the building automation system, so the audit does not check ' + (monitor === 1 ? 'it' : 'them') + ' for occupancy-based ventilation');
-  if (na) parts.push(rptCount(na) + ' ' + (na === 1 ? 'is' : 'are') + ' not checked for occupancy-based ventilation, because the equipment record of ' + (na === 1 ? 'the unit' : 'these units') + ' has no CO2 sensor option');
-  if (!parts.length) return '';
-  if (parts.length === 1) return 'The other ' + parts[0].replace(/^\d[\d,]* /, rptCount(rest) + ' ') + '.';
-  return 'Of the other ' + rptCount(rest) + ', ' + _a36DetJoin(parts) + '.';
+  // Matt 2026-11-18 ("What does this even mean???"): say only which of the other units have the sensor; no "not checked, because the
+  // equipment record ..." (that is how the audit works, not a fact the reader can use).
+  if (!withIt) return '';
+  return withIt === rest ? 'The other ' + verb(rest, 'has', 'have') + ' a CO2 sensor point.' : 'Of the other ' + rptCount(rest) + ', ' + verb(withIt, 'has', 'have') + ' a CO2 sensor point.';
 }
 function _a36DetDcvBase(g) {
   var n = g.units.filter(function (u) { return _a36DcvUnitKind(u) !== ''; }).length;
@@ -28122,6 +28186,7 @@ function _a36DetModel(d, rowsById, picMap, loaded) {
       // note says what the other units are (they have the sensor, the system only monitors them, or the sequence does not apply).
       f.fracTail = '';
       f.groupTotal = g ? g.units.length : f.total;
+      f.dcvNarrow = dcvNarrow;
       f.dcvNote = dcvNarrow ? _a36DetDcvNote(g, units) : '';
       var frac = _a36DetFraction(units, dcvNarrow ? f.groupTotal : f.total, f.fracNoun, '');
       var szGroup = !!(g && g.singleZone);
@@ -28389,6 +28454,7 @@ function _a36DetModel(d, rowsById, picMap, loaded) {
         affectedCategories: tsu.items.map(function (it) { return it.category; }),
         stdKeys: tst.feats.map(function (f) { return f.key; }),
         read: tsu.read,
+        libTerminals: tsu.total,
         missing: [],
         missingText: [],
         missingKeys: [],
@@ -28452,12 +28518,12 @@ function _a36DetModel(d, rowsById, picMap, loaded) {
       addPlain(
         'zoneSetpoints',
         'setpoint',
-        'Zone setpoints differ from the standard',
+        'Zone setpoints differ from the recommended setpoints',
         spRow.deviatorCount,
         spRow.totalZones,
         'zone',
-        _a36DetUpperFirst(spFrac) + (spRow.deviatorCount >= spRow.totalZones ? (spRow.totalZones === 1 ? ' has' : ' have') : spRow.deviatorCount === 1 ? ' has' : ' have') + ' setpoints that differ from the standard setpoints.',
-        'Zone setpoints differ from the standard setpoints on ' + spFrac + '.',
+        _a36DetUpperFirst(spFrac) + (spRow.deviatorCount >= spRow.totalZones ? (spRow.totalZones === 1 ? ' has' : ' have') : spRow.deviatorCount === 1 ? ' has' : ' have') + ' setpoints that differ from the recommended setpoints.',
+        'Zone setpoints differ from the recommended setpoints on ' + spFrac + '.',
         spRow.deviatorUnits,
       );
     }
@@ -29161,14 +29227,12 @@ function _a36TerminalStandardText(ts) {
   ts.items.forEach(function (it) { it.lacks.forEach(function (k) { n[k] = (n[k] || 0) + 1; }); });
   var feats = A36_TERM_STD.filter(function (f) { return n[f.key]; });
   var a = ts.items.length;
-  var who = a >= ts.read ? (ts.read === 1 ? 'The control program of the one terminal unit the audit read has' : 'The control programs of all ' + rptCount(ts.read) + ' terminal units the audit read have') : 'The control programs of ' + rptCount(a) + ' of the ' + rptCount(ts.read) + ' terminal units the audit read have';
+  var who = a >= ts.read ? 'The terminal unit programs have' : 'The programs of ' + _a36DetJoin(ts.items.map(function (it) { return it.name; })) + ' have';
   var headline =
     who + ' ' + _a36DetJoin(feats.map(function (f) { return 'no ' + f.noun; })) + '. The Control Service Company standard terminal unit sequence includes ' + (feats.length === 1 ? 'it' : 'each of these') + '.';
   var rest = ts.total - ts.read;
   var impact =
     feats.map(function (f) { return f.why; }).join(' ') + ' ' +
-    'The audit read the control program page of ' + rptCount(ts.read) + ' of the ' + rptCount(ts.total) + ' terminal units of the library' +
-    (rest > 0 ? ' and states nothing about the other ' + rptCount(rest) + '.' : '.') + ' ' +
     'The audit recommends upgrading the terminal unit programs of the library to the Control Service Company standard terminal unit sequence.';
   return { headline: headline, impact: impact, feats: feats, counts: n };
 }
@@ -30530,6 +30594,13 @@ function _a36DetPhotoHtml(photo, libraryName, scale) {
 // program of the building are in the ASHRAE 36 Sequences section.
 var A36_AUDIT_PHOTO_SCALE = 0.62;
 var A36_AUDIT_PHOTO_SCALE_SMALL = 0.5; // a building page too short for the table at the full photo size
+// The first sentence of a text: the per-building table states each opportunity in one sentence; the chapters explain it
+// (Matt 2026-11-18: "You should not be explaining a bunch in that text").
+function _a36FirstSentence(t) {
+  var m = String(t || '').match(/^.*?[.!?](?=\s+[A-Z0-9]|$)/);
+  return m ? m[0] : String(t || '');
+}
+
 function _a36AuditBuildingTokens(d, b, ctx, showBuildingInfra) {
   var name = _a36DisplayName(b);
   var lib = ctx.model.libs.filter(function (l) {
@@ -30550,7 +30621,8 @@ function _a36AuditBuildingTokens(d, b, ctx, showBuildingInfra) {
   // facts of the building beside it; the audit rings of the building; the equipment table with a blue header row and colored finding marks.
   tokens.push(
     _a36DetTok(
-      '<table style="width:100%;border-collapse:collapse;margin:0 0 8px 0"><tr>' +
+      // One fill for the whole band (Matt 2026-11-18: the two cell fills showed a seam at the center of the page).
+      '<table style="width:100%;border-collapse:collapse;border-spacing:0;margin:0 0 8px 0;background:var(--rpt-blue)"><tr>' +
         '<td style="background:var(--rpt-blue);color:#ffffff;padding:8px 12px;font-size:21px;font-weight:700;border:none">' + _escHtml(name) + '</td>' +
         '<td style="background:var(--rpt-blue);color:#ffffff;padding:8px 12px;font-size:13.34px;text-align:right;white-space:nowrap;border:none">' +
         rptCount(_a36AuditUnitsOf(b)) + ' equipment unit' + (_a36AuditUnitsOf(b) === 1 ? '' : 's') + ' &nbsp;|&nbsp; ' + _a36FindingsCount(nF) + '</td>' +
@@ -30558,14 +30630,20 @@ function _a36AuditBuildingTokens(d, b, ctx, showBuildingInfra) {
       true,
     ),
   );
-  var card = function (value, label, color) {
+  var card = function (value, label, color, note) {
     return (
       '<td style="width:50%;vertical-align:top;padding:4px 8px 10px 8px;border:none">' +
       // Matt 2026-11-18: the label on top, the value below.
       '<div style="font-size:12px;color:var(--rpt-page-text);margin-bottom:2px">' + label + '</div>' +
-      '<div style="font-size:20px;font-weight:700;line-height:1.15;color:' + color + '">' + value + '</div></td>'
+      '<div style="font-size:20px;font-weight:700;line-height:1.15;color:' + color + '">' + value + '</div>' +
+      (note ? '<div style="font-size:12px;color:var(--rpt-page-text);margin-top:2px">' + note + '</div>' : '') +
+      '</td>'
     );
   };
+  // Matt 2026-11-18: the recommendation under a missing power meter: recommended where the equipment is large enough for the meter to show
+  // what the controls save (the powerMeter opportunity, _a36PowerMeterWorthIt), otherwise not needed.
+  var pmRec = findings.some(function (f) { return f.key === 'powerMeter'; });
+  var pmNote = b.hasPowerMonitoring ? '' : pmRec ? 'Recommended' : 'Not recommended: the equipment is too small for a meter to be worth it';
   var infraVal = function (on) {
     return on ? 'Installed' : 'Not installed';
   };
@@ -30576,7 +30654,7 @@ function _a36AuditBuildingTokens(d, b, ctx, showBuildingInfra) {
     '</tr>' +
     (showBuildingInfra
       ? '<tr>' +
-        card(infraVal(b.hasPowerMonitoring), 'Building power meter', b.hasPowerMonitoring ? 'var(--rpt-green-dark)' : 'var(--rpt-orange)') +
+        card(infraVal(b.hasPowerMonitoring), 'Building power meter', b.hasPowerMonitoring ? 'var(--rpt-green-dark)' : pmRec ? 'var(--rpt-orange)' : 'var(--rpt-page-text)', pmNote) +
         card(infraVal(b.hasOAConditions), 'Outdoor air sensors', b.hasOAConditions ? 'var(--rpt-green-dark)' : 'var(--rpt-orange)') +
         '</tr>'
       : '') +
@@ -30615,7 +30693,7 @@ function _a36AuditBuildingTokens(d, b, ctx, showBuildingInfra) {
     return list.length
       ? list
           .map(function (f) {
-            return '<div style="margin:0 0 4px 0;padding-left:14px;text-indent:-14px"><span style="color:var(--rpt-orange);font-weight:700">&#9679;</span>&nbsp; ' + _escHtml(f.headline) + '</div>';
+            return '<div style="margin:0 0 4px 0;padding-left:14px;text-indent:-14px"><span style="color:var(--rpt-orange);font-weight:700">&#9679;</span>&nbsp; ' + _escHtml(_a36FirstSentence(f.headline)) + '</div>';
           })
           .join('')
       : '<span style="color:var(--rpt-green-dark);font-weight:700">&#10003;</span>&nbsp; ' + _a36NoFindingText(cat, n);
@@ -30653,8 +30731,8 @@ function _a36AuditBuildingTokens(d, b, ctx, showBuildingInfra) {
   });
   // The heading, photo, rings and table stay on one page when they fit. When they are taller than a page the table runs on (header row
   // repeated): its rows are not kept together, so no page holds a single token.
-  // A page too short for it all first gets a smaller photo and smaller rings, then no rings (the table holds the same facts), so a table
-  // never leaves one or two rows alone on the next page.
+  // A page too short for it all first gets a smaller photo and smaller rings; when that is still too tall, the full-size rings stay and the
+  // table runs on. Every building page has its rings (Matt 2026-11-18: "Why do not all buildings in the per building pages have the rings?").
   var budget = _rptContentBudget('flush') - A36_DET_PAGE_SAFETY_H;
   var cost = function () {
     return tokens.reduce(function (sum, t, i) {
@@ -30666,7 +30744,6 @@ function _a36AuditBuildingTokens(d, b, ctx, showBuildingInfra) {
     headEnd = headAt + list.length;
   };
   if (cost() > budget) setHead([photoTok(A36_AUDIT_PHOTO_SCALE_SMALL)].concat(ringsTok(56) || []));
-  if (cost() > budget) setHead([photoTok(A36_AUDIT_PHOTO_SCALE_SMALL)]);
   if (cost() > budget) {
     setHead([photoTok(A36_AUDIT_PHOTO_SCALE)].concat(rt || []));
     tableToks.forEach(function (t) {

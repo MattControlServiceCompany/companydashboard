@@ -56,6 +56,9 @@ const COST_PER_SEQ_HOURS_DEFAULT = {
 // Covering estimate, Manager 2026-11-15: setpoint and schedule changes per zone plus a schedule set-up and check per building; editable.
 const SETPOINT_REPROGRAM_HOURS_PER_ZONE = 0.15;
 const SETPOINT_REPROGRAM_HOURS_PER_BUILDING = 2;
+// Matt 2026-11-18 (f3b50ab2): upgrade of a terminal unit program to the Control Service Company standard terminal unit sequence (load the
+// program, set its values, test it): 1.0 hour per terminal unit, Recommended and Full Scope (not Compliance: no ASHRAE 36 requirement).
+const TERMINAL_STANDARD_HOURS_PER_BOX = 1.0;
 
 /* ── Physical install labor — Deliverable E (2026-07-19), unified rate (2026-07-28) ─────────
    COST_LABOR_RATE_DEFAULT above + COST_PER_SEQ_HOURS_DEFAULT price BAS sequence PROGRAMMING
@@ -3255,6 +3258,43 @@ function buildSetpointReprogramRows(projId, buildingNames) {
   ];
 }
 
+/* ── buildTerminalStandardRows(projId, buildingNames) ──
+   The Audit Report recommends upgrading the terminal unit programs to the Control Service Company standard terminal unit sequence where the
+   programs it read are below it. ONE priced line: every terminal unit of those libraries (report-engine.js _a36TerminalStandardPlan, the one
+   count) x TERMINAL_STANDARD_HOURS_PER_BOX x the project hourly rate. In Recommended and Full Scope. [] when no library has the opportunity. */
+function buildTerminalStandardRows(projId, buildingNames) {
+  if (typeof collectASHRAE36Data !== 'function' || typeof _a36TerminalStandardPlan !== 'function') return [];
+  var ashData = collectASHRAE36Data(projId, null, buildingNames);
+  if (!ashData || !ashData.buildings) return [];
+  var plan = _a36TerminalStandardPlan(ashData);
+  if (!(plan.boxes > 0)) return [];
+  var hourlyRate = _pricingGetConfig().hourlyRate || COST_LABOR_RATE_DEFAULT;
+  var hours = TERMINAL_STANDARD_HOURS_PER_BOX * plan.boxes;
+  return [
+    {
+      id: 'tstd_terminal_standard',
+      building: 'All Buildings',
+      item: 'Terminal Unit Program Upgrade',
+      type: 'Programming',
+      equipment: plan.boxes + ' terminal unit' + (plan.boxes !== 1 ? 's' : '') + ' in ' + plan.buildings + ' building' + (plan.buildings !== 1 ? 's' : ''),
+      qty: plan.boxes,
+      sku: null,
+      engReview: false,
+      noSku: false,
+      ioOnly: false,
+      unitPrice: TERMINAL_STANDARD_HOURS_PER_BOX * hourlyRate,
+      listPrice: null,
+      netPrice: null,
+      contractPrice: null,
+      lineTotal: parseFloat((hours * hourlyRate).toFixed(2)),
+      note: 'Upgrade the terminal unit programs to the Control Service Company standard terminal unit sequence.',
+      phase: 2,
+      hrsPerUnit: TERMINAL_STANDARD_HOURS_PER_BOX,
+      isTerminalStandard: true,
+    },
+  ];
+}
+
 function buildSensorInvestigationRows(projId) {
   if (typeof emLoadMatrix !== 'function' || typeof emComputeSensorDeficiencyInventory !== 'function') return [];
   var matData = emLoadMatrix(projId);
@@ -4802,7 +4842,7 @@ function _pricingRecommendedRowsAll(projId) {
   // sequence), not the Compliance-restricted subset — Recommended candidates
   // include savings sequences Compliance no longer carries.
   var catRows = buildCatalogRows(projId);
-  if (!catRows.length) return buildSetpointReprogramRows(projId); // no device or sequence gap: only the Appendix A line can remain
+  if (!catRows.length) return buildSetpointReprogramRows(projId).concat(buildTerminalStandardRows(projId)); // no device or sequence gap: only the Appendix A and terminal upgrade lines can remain
 
   var catalog = sget('en_pricing_catalog', null);
   var cfg = _pricingGetConfig();
@@ -4961,7 +5001,7 @@ function _pricingRecommendedRowsAll(projId) {
   // trying to rescue the discarded clone. _pricingComputeRecommendedTimeline's existing "unclaimed
   // row" safety net (see that function's header comment) picks these up as their own single-row
   // units for phase scheduling, same as any other unbundled row.
-  recRows = recRows.concat(buildSensorInvestigationRows(projId)).concat(buildSetpointReprogramRows(projId));
+  recRows = recRows.concat(buildSensorInvestigationRows(projId)).concat(buildSetpointReprogramRows(projId)).concat(buildTerminalStandardRows(projId));
 
   // ── Phase 5: Two-key sort for phase-2 rows within each building group (correction #3)
   // Apply sort within building groups, preserve building order and phase-1/phase-2 structure.
@@ -5319,7 +5359,7 @@ function buildOptionalPointRows(projId) {
    ─────────────────────────────────────────────────────────────────────────── */
 function _pricingFullScopeRowsAll(projId) {
   var catRows = buildCatalogRows(projId);
-  if (!catRows.length) return buildSetpointReprogramRows(projId); // no device or sequence gap: only the Appendix A line can remain
+  if (!catRows.length) return buildSetpointReprogramRows(projId).concat(buildTerminalStandardRows(projId)); // no device or sequence gap: only the Appendix A and terminal upgrade lines can remain
 
   var catalog = sget('en_pricing_catalog', null);
   var cfg = _pricingGetConfig();
@@ -5337,8 +5377,8 @@ function _pricingFullScopeRowsAll(projId) {
   });
 
   // Appendix A setpoint and schedule reprogramming: recommended work in every option.
-  buildSetpointReprogramRows(projId).forEach(function (row) {
-    fsRows.push(row);
+  buildSetpointReprogramRows(projId).concat(buildTerminalStandardRows(projId)).forEach(function (row) {
+    fsRows.push(row); // + the terminal unit program upgrade (Recommended and Full Scope, Matt 2026-11-18)
   });
 
   // c82cc354 REV 2 (Step 4): optional (beyond-compliance) point rows
