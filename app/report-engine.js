@@ -17308,6 +17308,130 @@ function a36AuditableRows(rows) {
   return auditableRows;
 }
 
+// ── Lighting controls of the audit (backlog 50b0ecdc, 2026-11-18) ─────────────────────────────────────────────────
+// The audit covers the whole building automation system, so the lighting controls are audited equipment. They are NOT ASHRAE 36 equipment: a
+// lighting unit never enters a36AuditableRows, a36ScoreBuilding or a36PortfolioScores (the scores do not move) and no sentence about it names
+// ASHRAE 36. ONE owner of: which Equipment Matrix rows are lighting (a36IsLightingRow), what each unit has (a36LightingUnits) and the facts and
+// opportunities of one building (a36LightingFacts). Every page, the findings model and the executive summaries read a36LightingFacts.
+// The point groups are read from the point names of the row (pointsRaw, else points).
+var A36_LIGHT_PT = {
+  sched: /schedule/i,
+  mode: /\b(?:un)?occupied control mode\b/i,
+  occSensor: /occ(?:upancy)?[ _]?sensor|occupancy status|\bvacant\b/i,
+  override: /override|force occupancy/i,
+  photo: /photocell/i,
+  dim: /\bload\s*\d+(?:-\d+)?\s*level\b|\bdemand level\b|dimm|light(?:ing)? level/i,
+  control: /relay|circuit|\bload\s*\d+(?:-\d+)?\s*(?:cmd|level)|\blights? (?:on|off)\b|\blighting (?:on|off)\b|lighting group/i,
+};
+var A36_LIGHT_EXT_RE = /exterior|\[ext|\bext[.\-]\d|parking|walkway|flag ?pole|patio|soffit|landscape|\bsign\b|bench light/i;
+function _a36LightKeys(r) {
+  return Object.keys(r.pointsRaw || r.points || {});
+}
+// A row is a lighting unit when it is stored as lighting, or stored as other with a lighting name or location and a lighting control point
+// (an exterior lighting panel or a sign that the import left in "other").
+function a36IsLightingRow(r) {
+  if (!r) return false;
+  if (r.category === 'lighting') return true;
+  if (r.category !== 'other') return false;
+  if (!/light|exterior/i.test((r.equipName || '') + ' ' + (r.bacnetLocation || ''))) return false;
+  return _a36LightKeys(r).some(function (k) {
+    return A36_LIGHT_PT.control.test(k) || A36_LIGHT_PT.photo.test(k);
+  });
+}
+// The lighting units of a list of rows: [{ id, name, exterior, has: { sched, mode, occSensor, override, photo, dim, control } }]. A lighting
+// program with no schedule, control, photocell, level, override or mode point (a controller statistics or temperature monitor program) is not a unit.
+function a36LightingUnits(rows) {
+  var out = [];
+  (rows || []).forEach(function (r) {
+    if (!a36IsLightingRow(r)) return;
+    var keys = _a36LightKeys(r);
+    var has = {};
+    Object.keys(A36_LIGHT_PT).forEach(function (g) {
+      has[g] = keys.some(function (k) {
+        return A36_LIGHT_PT[g].test(k);
+      });
+    });
+    if (!(has.sched || has.control || has.photo || has.dim || has.override || has.mode)) return;
+    // Exterior: an exterior name or location, or a photocell point with no occupancy mode, sensor or override point (a unit that follows daylight only).
+    var exterior = A36_LIGHT_EXT_RE.test((r.equipName || '') + ' ' + (r.bacnetLocation || '')) || (has.photo && !(has.mode || has.occSensor || has.override));
+    out.push({ id: r.id, name: r.equipName || 'Unknown', exterior: exterior, has: has });
+  });
+  return out;
+}
+// The lighting facts of one building, or null when it has no lighting unit: { count, units, interior: [unit], exterior: [unit], cnt: { group: units
+// that have it }, opps: [{ key, label, issueShort, observed, impact, n, total }] }. The three opportunity rules (each from points the units have or lack):
+//  lightingPhotocell: the building has exterior lighting units and none of them has a photocell point (a schedule switches at fixed clock times).
+//  lightingSchedule: lighting units that have a control point but no schedule point.
+//  lightingOccupancy: interior units with a schedule point and no occupancy mode, occupancy sensor or override point.
+function a36LightingFacts(rows) {
+  var units = a36LightingUnits(rows);
+  if (!units.length) return null;
+  var f = { count: units.length, units: units, interior: [], exterior: [], cnt: {}, opps: [] };
+  units.forEach(function (u) {
+    (u.exterior ? f.exterior : f.interior).push(u);
+    Object.keys(u.has).forEach(function (g) {
+      if (u.has[g]) f.cnt[g] = (f.cnt[g] || 0) + 1;
+    });
+  });
+  var n = function (x) {
+    return typeof rptCount === 'function' ? rptCount(x) : String(x);
+  };
+  var some = function (k, total, noun) {
+    return k === total ? (total === 1 ? 'The ' + noun : 'All ' + n(total) + ' ' + noun + 's') : n(k) + ' of the ' + n(total) + ' ' + noun + 's';
+  };
+  if (f.exterior.length && !f.exterior.some(function (u) { return u.has.photo; })) {
+    var ne = f.exterior.length;
+    var neNames = f.exterior.map(function (u) { return u.name; });
+    var allSched = f.exterior.every(function (u) { return u.has.sched; });
+    f.opps.push({
+      key: 'lightingPhotocell',
+      label: 'Exterior lighting photocell',
+      issueShort: 'No photocell on exterior lighting',
+      observed:
+        (ne === 1 ? 'The exterior lighting unit has no photocell point' : 'None of the ' + n(ne) + ' exterior lighting units has a photocell point') +
+        ' on the building automation system.' +
+        (allSched ? ' The system switches ' + (ne === 1 ? 'it' : 'them') + ' on a time schedule.' : ''),
+      impact:
+        'A photocell point lets the system switch exterior lighting by daylight. A time schedule switches it at fixed clock times, which do not follow the change in sunrise and sunset through the year.',
+      n: ne,
+      total: ne,
+      names: neNames,
+    });
+  }
+  var noSched = units.filter(function (u) { return u.has.control && !u.has.sched; });
+  if (noSched.length) {
+    f.opps.push({
+      key: 'lightingSchedule',
+      label: 'Lighting schedule',
+      issueShort: 'No schedule on lighting units',
+      observed: some(noSched.length, units.length, 'lighting unit') + (noSched.length === 1 ? ' has' : ' have') + ' no schedule point on the building automation system.',
+      impact: 'Without a schedule point the system cannot switch these lighting units on and off at set times.',
+      n: noSched.length,
+      total: units.length,
+      names: noSched.map(function (u) { return u.name; }),
+    });
+  }
+  var noOcc = f.interior.filter(function (u) { return u.has.sched && !(u.has.mode || u.has.occSensor || u.has.override); });
+  if (noOcc.length) {
+    f.opps.push({
+      key: 'lightingOccupancy',
+      label: 'Lighting occupancy control',
+      issueShort: 'No occupancy control on interior lighting',
+      observed: some(noOcc.length, f.interior.length, 'interior lighting unit') + (noOcc.length === 1 ? ' has' : ' have') + ' a schedule point but no occupancy mode, occupancy sensor or override point on the building automation system.',
+      impact: 'These units follow the time schedule alone: the system has no point to turn the lights off when the space is vacant or to hold them on after hours.',
+      n: noOcc.length,
+      total: f.interior.length,
+      names: noOcc.map(function (u) { return u.name; }),
+    });
+  }
+  return f;
+}
+// Units audited in one building or in the whole report: the equipment units of the audit plus the lighting units (the one count of the cover, the
+// executive summaries and the building pages). equipCount stays the ASHRAE 36 weight: the scores never read this.
+function _a36AuditUnitsOf(b) {
+  return (b.equipCount || 0) + (b.lighting ? b.lighting.count : 0);
+}
+
 // One building's score. onRow(row, terms) is optional: the Audit Report uses it for its gap detail.
 // terms = { flags, result, seqReadiness, ptsRequired, ptsMatched, seqRequired, seqMatched }.
 function a36ScoreBuilding(projId, auditableRows, maps, onRow) {
@@ -17534,6 +17658,7 @@ function collectASHRAE36Data(projId, reportDate, buildingNames) {
 
     var auditableRows = a36AuditableRows(rows);
     if (!auditableRows.length) return;
+    var lightingFacts = a36LightingFacts(rows); // lighting controls: audited, never scored (a36LightingFacts)
 
     // Per-equipment compliance via emComputeCompliance
     var equipResults = [];
@@ -17756,6 +17881,7 @@ function collectASHRAE36Data(projId, reportDate, buildingNames) {
       // programs in the BAS export for this building (not a compliance score).
       hasPowerMonitoring: hasPowerMonitoring,
       hasOAConditions: hasOAConditions,
+      lighting: lightingFacts,
     });
   });
 
@@ -17917,6 +18043,10 @@ function collectASHRAE36Data(projId, reportDate, buildingNames) {
       totalBuildings: buildingsData.length,
       totalEquip: buildingsData.reduce(function (s, b) {
         return s + b.equipCount;
+      }, 0),
+      // Lighting control units audited (not ASHRAE 36 equipment; a36LightingFacts). All units audited = totalEquip + totalLighting (_a36AuditUnitsTotal).
+      totalLighting: buildingsData.reduce(function (s, b) {
+        return s + (b.lighting ? b.lighting.count : 0);
       }, 0),
       totalMissingHardwarePoints: totalMissingHardwarePoints,
       totalNotReadySequences: totalNotReadySequences,
@@ -18276,9 +18406,50 @@ function _a36AuditEquipTypes(d) {
     if (ci === -1) ci = 99;
     return ai - ci;
   });
-  return cats.map(function (cat) {
+  var types = cats.map(function (cat) {
     return rptCount(tot[cat]) + ' ' + _a36CatCountLabel(cat, tot[cat]);
   });
+  var lt = (d.portfolio && d.portfolio.totalLighting) || 0;
+  if (lt) types.push(rptCount(lt) + ' ' + _a36CatCountLabel('lighting', lt)); // lighting controls: audited, not ASHRAE 36 equipment (a36LightingFacts)
+  return types;
+}
+
+// All units audited of the report portfolio (equipment plus lighting control units): the one count of the cover and the executive summaries.
+function _a36AuditUnitsTotal(p) {
+  return (p.totalEquip || 0) + (p.totalLighting || 0);
+}
+
+// The lighting controls in the executive summaries, from the lighting facts of the buildings (a36LightingFacts) and the lighting opportunities of the
+// findings model: how many lighting control units the audit covered and the libraries with each lighting opportunity. oppsOnly: leave out the
+// first sentence (the Simple summary already counts the lighting units in its equipment sentence). '' when the report has no lighting unit.
+function _a36ExecLightingSentence(d, oppsOnly) {
+  var p = d.portfolio;
+  if (!p.totalLighting) return '';
+  var ctx = null;
+  try {
+    ctx = d._a36AuditCtx || (d._a36AuditCtx = _a36DetContext(d));
+  } catch (e) {
+    console.error('_a36ExecLightingSentence: findings model failed', e);
+  }
+  var nn = _a36BuildingNouns(d);
+  var withLight = d.buildings.filter(function (b) { return b.lighting; }).length;
+  var ext = d.buildings.reduce(function (sum, b) { return sum + (b.lighting ? b.lighting.exterior.length : 0); }, 0);
+  var libsOf = function (key) {
+    return ctx ? ctx.model.findings.filter(function (f) { return f.key === key; }).map(function (f) { return f.lib; }) : [];
+  };
+  var txt = '';
+  if (!oppsOnly)
+    txt +=
+      'The audit covered ' + rptCount(p.totalLighting) + ' lighting control ' + (p.totalLighting === 1 ? 'unit' : 'units') +
+      (d.buildings.length > 1 ? ' at ' + rptCount(withLight) + ' of the ' + rptCount(d.buildings.length) + ' ' + nn.many : '') +
+      (ext ? ', ' + rptCount(ext) + ' of them exterior' : '') + '. ';
+  var ph = libsOf('lightingPhotocell');
+  var sc = libsOf('lightingSchedule');
+  var oc = libsOf('lightingOccupancy');
+  if (ph.length) txt += 'The exterior lighting has no photocell point at ' + _a36DetJoin(ph) + '. ';
+  if (sc.length) txt += 'Some lighting units have no schedule point at ' + _a36DetJoin(sc) + '. ';
+  if (oc.length) txt += 'Some interior lighting units have a schedule point but no occupancy mode, occupancy sensor or override point at ' + _a36DetJoin(oc) + '. ';
+  return txt.replace(/\s+$/, '');
 }
 
 // The findings of the whole audit: { total, libs (libraries with at least one finding), byLib: { display name: count } } from the findings model
@@ -18311,6 +18482,7 @@ var A36_AUDIT_RING_TIERS = [
   { label: 'Plants', one: 'plant', many: 'plants', cats: ['chwp', 'hwp', 'ct'] },
   { label: 'Air Handling Units', one: 'unit', many: 'units', cats: ['ahu', 'rtu', 'doas', 'furnace'] },
   { label: 'Zone Terminal Units', one: 'terminal unit', many: 'terminal units', cats: ['vav', 'fpb', 'ddvav', 'zone', 'fcu'] },
+  { label: 'Lighting Control Units', one: 'unit', many: 'units', cats: ['lighting'] },
 ];
 function _a36AuditRingStats(d, libName) {
   var ctx;
@@ -18324,11 +18496,12 @@ function _a36AuditRingStats(d, libName) {
   var catUnits = {};
   d.buildings.forEach(function (b) {
     if (libName && _a36DisplayName(b) !== libName) return;
-    units += b.equipCount || 0;
+    units += _a36AuditUnitsOf(b);
     var c = b.equipCounts || {};
     Object.keys(c).forEach(function (k) {
       catUnits[k] = (catUnits[k] || 0) + (c[k] || 0);
     });
+    if (b.lighting) catUnits.lighting = (catUnits.lighting || 0) + b.lighting.count;
   });
   var hit = {}; // lib|unit -> category
   ctx.model.findings.forEach(function (f) {
@@ -18412,7 +18585,7 @@ function _a36ExecDeviceGroups(d) {
   var by = {};
   var list = [];
   ctx.model.findings.forEach(function (f) {
-    if (f.kind === 'seq' || f.key === 'powerMeter' || A36_DET_DCV_KEYS.indexOf(f.key) > -1 || /\bCO2\b|carbon dioxide/i.test(f.label || '')) return;
+    if (f.kind === 'seq' || f.key === 'powerMeter' || f.category === 'lighting' || A36_DET_DCV_KEYS.indexOf(f.key) > -1 || /\bCO2\b|carbon dioxide/i.test(f.label || '')) return;
     var k = f.label;
     if (!by[k]) list.push((by[k] = { label: f.label, libSet: {}, units: 0, typeSet: {} }));
     by[k].libSet[f.lib] = true;
@@ -18477,8 +18650,9 @@ function _a36ExecScopeSentence(d) {
   var types = _a36AuditEquipTypes(d);
   var info = _a36AuditFindingInfo(d);
   return (
-    'The audit covered ' + rptCount(d.portfolio.totalEquip) + ' piece' + (d.portfolio.totalEquip !== 1 ? 's' : '') + ' of equipment' + (types.length ? ': ' + _a36DetJoin(types) : '') + '. ' +
-    (info ? (info.total ? 'The audit recorded ' + _a36FindingsCount(info.total) + ' at ' + rptCount(info.libs) + (d.portfolio.totalBuildings > 1 ? ' of the ' + rptCount(d.portfolio.totalBuildings) + ' ' + _a36BuildingNouns(d).many : ' ' + _a36BuildingNouns(d).one) + '. ' : 'The audit recorded no opportunities. ') : '')
+    'The audit covered ' + rptCount(_a36AuditUnitsTotal(d.portfolio)) + ' piece' + (_a36AuditUnitsTotal(d.portfolio) !== 1 ? 's' : '') + ' of equipment' + (types.length ? ': ' + _a36DetJoin(types) : '') + '. ' +
+    (info ? (info.total ? 'The audit recorded ' + _a36FindingsCount(info.total) + ' at ' + rptCount(info.libs) + (d.portfolio.totalBuildings > 1 ? ' of the ' + rptCount(d.portfolio.totalBuildings) + ' ' + _a36BuildingNouns(d).many : ' ' + _a36BuildingNouns(d).one) + '. ' : 'The audit recorded no opportunities. ') : '') +
+    (_a36ExecLightingSentence(d, true) ? _a36ExecLightingSentence(d, true) + ' ' : '')
   );
 }
 
@@ -18514,6 +18688,7 @@ function rptPageASHRAE36Cover(n, d, perBuildingIncluded, detailed) {
     '<div style="font-size:13.34px;color:var(--rpt-page-text);text-align:center;margin:0 0 18px 0">Each percentage shows how much of the sensors and control sequences the audit checks is already in place: 100% means nothing is missing.</div>';
   var finding =
     'Across <strong>' + rptCount(p.totalBuildings) + ' ' + (p.totalBuildings === 1 ? 'building' : 'buildings') + '</strong> and <strong>' + rptCount(p.totalEquip) + ' pieces of heating and cooling equipment</strong>' +
+    (p.totalLighting ? ' and <strong>' + rptCount(p.totalLighting) + ' lighting control ' + (p.totalLighting === 1 ? 'unit' : 'units') + '</strong>' : '') +
     (pts ? ' with <strong>' + rptCount(pts) + ' control points</strong>' : '') + ', the audit of <strong>' + _escHtml(d.project.name) + '</strong> recorded <strong>' +
     (info ? _a36FindingsCount(info.total) : 'no opportunities') + '</strong>' +
     (info && info.total ? ': the sensors, control points and control sequences that the systems do not have. The sections that follow describe each ' + nouns.one + ', how its system controls the equipment today and each opportunity.' : '.');
@@ -18533,7 +18708,7 @@ function rptPageASHRAE36Cover(n, d, perBuildingIncluded, detailed) {
     '<div style="font-size:14px;color:var(--rpt-page-text);line-height:1.6;margin-bottom:28px">' + finding + '</div>' +
     '<table style="width:100%;border-collapse:collapse;table-layout:fixed"><tr>' +
     statCard(rptCount(p.totalBuildings), 'Buildings Assessed') +
-    statCard(rptCount(p.totalEquip), 'Equipment Units Audited') +
+    statCard(rptCount(_a36AuditUnitsTotal(p)), 'Equipment Units Audited') +
     (pts ? statCard(rptCount(pts), 'Control Points Reviewed') : '') +
     statCard(info ? rptCount(info.total) : '0', 'Opportunities Found') +
     '</tr></table>' +
@@ -18881,12 +19056,12 @@ function rptPageASHRAE36Executive(n, d, detailedTitles, view) {
     _sec('Scope and Method', [
       'This audit examined how the building automation system' + (p.totalBuildings > 1 ? 's' : '') + ' of ' +
         (p.totalBuildings > 1 ? 'the ' + rptCount(p.totalBuildings) + ' ' + _nounMany : 'the ' + _nounOne) +
-        ' control' + (p.totalBuildings > 1 ? '' : 's') + ' the heating, ventilation and air conditioning equipment. ' +
+        ' control' + (p.totalBuildings > 1 ? '' : 's') + ' the heating, ventilation and air conditioning equipment' + (p.totalLighting ? ' and the lighting' : '') + '. ' +
         // Matt 2026-11-18: one clear sentence for what was reviewed, one for what the equipment is.
-        'Control Service Company reviewed ' + _plural(p.totalEquip, 'piece of equipment', 'pieces of equipment') +
-        (_inv > 0 ? ' and the ' + _plural(_inv, 'control point', 'control points') + ' connected to ' + (p.totalEquip === 1 ? 'it' : 'them') : '') + '. ' +
+        'Control Service Company reviewed ' + _plural(_a36AuditUnitsTotal(p), 'piece of equipment', 'pieces of equipment') +
+        (_inv > 0 ? ' and the ' + _plural(_inv, 'control point', 'control points') + ' connected to ' + (_a36AuditUnitsTotal(p) === 1 ? 'it' : 'them') : '') + '. ' +
         (_range.length || _zones
-          ? 'The equipment includes ' + _a36DetJoin(_range.concat(_zones ? [_tierPhrase(_zones, 'zone ') + (_zones.of === 1 ? ', which controls' : ', which control') + ' the airflow to individual rooms'] : [])) + '. '
+          ? 'The equipment includes ' + _a36DetJoin(_range.concat(p.totalLighting ? [rptCount(p.totalLighting) + ' lighting control ' + (p.totalLighting === 1 ? 'unit' : 'units')] : []).concat(_zones ? [_tierPhrase(_zones, 'zone ') + (_zones.of === 1 ? ', which controls' : ', which control') + ' the airflow to individual rooms'] : [])) + '. '
           : '') +
         'For each unit, the audit compared what the system can measure, what it can command and what it is programmed to do with a defined set of sensors, control points and control sequences for that type of equipment. In this report, an opportunity is one sensor, control point or control sequence from that set that some or all units of one equipment type in one ' + _nounOne + ' do not have.',
     ]);
@@ -19035,6 +19210,7 @@ function rptPageASHRAE36Executive(n, d, detailedTitles, view) {
         _a36ExecPowerMeterSentence(d) +
         _a36DetUpperFirst(_haveN(d.buildings.filter(function (b) { return b.hasOAConditions; }).length)) + ' dedicated outdoor air sensors, which the reset, economizer and ventilation sequences use.',
       ]);
+    _sec('Lighting Controls', [_a36ExecLightingSentence(d)]);
     _sec('Organization of This Report', [
       'The report continues with one page for each ' + _nounOne + ', which lists its equipment and its opportunities, followed by one chapter for each ' + _nounOne + '. ' +
       'Each chapter first describes how the system controls the equipment today, then explains each opportunity, the equipment it affects and a graphic of that equipment.',
@@ -26024,10 +26200,12 @@ var A36_CAT_COUNT_LABELS = {
   furnace: ['Furnace', 'Furnaces'],
   heater: ['Heater', 'Heaters'],
   ef: ['Exhaust Fan', 'Exhaust Fans'],
+  lighting: ['Lighting Control Unit', 'Lighting Control Units'], // audited, never scored (a36LightingFacts)
 };
 // The text of an equipment row with no findings (Matt 2026-11-18: say what "no findings" means): what the audit checks for the type (its
 // required points, EM_POINT_CATEGORIES, and its control sequences, EM_SEQUENCE_DEFS) and that the units have it all.
 function _a36NoFindingText(cat, n) {
+  if (cat === 'lighting') return 'No opportunities: no schedule, photocell or occupancy point that the audit checks is missing';
   var req = typeof EM_POINT_CATEGORIES !== 'undefined' && EM_POINT_CATEGORIES[cat] ? EM_POINT_CATEGORIES[cat].filter(function (c) { return c.required; }).length : 0;
   var seqs = typeof EM_SEQUENCE_DEFS !== 'undefined' ? EM_SEQUENCE_DEFS.filter(function (sd) { return (sd.equipTypes || []).indexOf(cat) > -1; }).length : 0;
   if (req && seqs) return 'No opportunities: ' + (n === 1 ? 'has' : 'have') + ' every sensor, point and control sequence the audit checks';
@@ -28091,6 +28269,34 @@ function _a36DetModel(d, rowsById, picMap, loaded) {
       all.push(pm);
       pm.n = all.length;
     }
+    // Lighting opportunities of this library (a36LightingFacts: the three rules, each from the points the units have or lack). Building-wide items of
+    // the lighting units; `affected` names the lighting units, so the unit counts of the audit rings read them like any other unit.
+    ((b.lighting && b.lighting.opps) || []).forEach(function (o) {
+      var lf = {
+        lib: _a36DisplayName(b),
+        groupLabel: 'Lighting',
+        kind: 'building',
+        key: o.key,
+        label: o.label,
+        units: o.n,
+        total: o.total,
+        fracNoun: o.key === 'lightingOccupancy' ? 'interior lighting unit' : o.key === 'lightingPhotocell' ? 'exterior lighting unit' : 'lighting unit',
+        affected: o.names.slice(),
+        missing: [],
+        pic: null,
+        picCands: [],
+        section: '',
+        impact: o.impact,
+        effect: 'Energy use',
+        observed: o.observed,
+        issueShort: o.issueShort,
+      };
+      lf.headline = o.observed;
+      lf.category = 'lighting';
+      lib.findings.push(lf);
+      all.push(lf);
+      lf.n = all.length;
+    });
     // Facility Audit deficiencies of this library (a deficiency with no library goes to the first library)
     var mine = [];
     defsLeft = defsLeft.filter(function (df) {
@@ -29388,7 +29594,7 @@ function _a36DetTypePlural(label, n) {
 // multi-zone air handling unit (AHU-1 - BVL), 23 variable air volume terminals and one exhaust fan (EF-1)." From the equipment groups
 // of the chapter (_a36DetGroups, the same list the descriptions use), so the count is the count of the units. The units of a type are
 // named when there are 1 to 3 of them; more are counted only.
-function _a36DetOverviewText(libraryName, groups) {
+function _a36DetOverviewText(libraryName, groups, lighting) {
   var parts = groups.map(function (g) {
     var n = g.units.length;
     var text = _a36DetCountWord(n) + ' ' + _a36DetTypePlural(g.label, n);
@@ -29403,6 +29609,7 @@ function _a36DetOverviewText(libraryName, groups) {
     });
     return plain ? text + ' (' + names.join(', ') + ')' : text;
   });
+  if (lighting) parts.push(_a36DetCountWord(lighting.count) + ' lighting control ' + (lighting.count === 1 ? 'unit' : 'units'));
   if (!parts.length) return libraryName + ' has no equipment in the audit.';
   return 'The building automation system of ' + libraryName + ' controls ' + _a36DetJoin(parts) + '.';
 }
@@ -29508,6 +29715,62 @@ function _a36DetDescriptionParas(g, ctx) {
   });
 }
 
+// The System Descriptions paragraphs of the lighting of one library (plain text), from the lighting facts (a36LightingFacts): how many lighting control
+// units, interior and exterior, and which control points they have (what the points show, nothing else). The occupied schedule is the imported one
+// (_a36DetSchedules, the one formatter).
+function _a36DetLightingParas(lf, ctx) {
+  var N = lf.count;
+  var cw = function (n) {
+    return n > 9 ? rptCount(n) : _a36DetCountWord(n);
+  };
+  var kinds = [];
+  if (lf.interior.length) kinds.push(cw(lf.interior.length) + ' interior');
+  if (lf.exterior.length) kinds.push(cw(lf.exterior.length) + ' exterior');
+  var first =
+    'The building automation system controls ' +
+    (kinds.length === 2 ? kinds[0] + ' and ' + kinds[1] + ' lighting control units' : kinds[0] + ' lighting control ' + (N === 1 ? 'unit' : 'units')) +
+    '.';
+  var nouns = [
+    ['control', 'relay or load command points'],
+    ['sched', 'a schedule point'],
+    ['mode', 'occupied and unoccupied control modes'],
+    ['occSensor', 'occupancy sensor points'],
+    ['override', 'an override point'],
+    ['dim', 'a light level point'],
+    ['photo', 'a photocell point'],
+  ].filter(function (x) {
+    return lf.cnt[x[0]];
+  });
+  var second = '';
+  if (nouns.length) {
+    if (N === 1) second = 'The unit has ' + _a36DetJoin(nouns.map(function (x) { return x[1]; })) + '.';
+    else
+      second =
+        'Of the ' + cw(N) + ' units, ' +
+        _a36DetJoin(
+          nouns.map(function (x) {
+            var c = lf.cnt[x[0]];
+            return (c === N ? (N === 2 ? 'both' : 'all') : cw(c)) + ' ' + (c === 1 ? 'has ' : 'have ') + x[1];
+          }),
+        ) +
+        '.';
+  }
+  var ext = lf.exterior.length;
+  if (ext) {
+    var ph = lf.exterior.filter(function (u) { return u.has.photo; }).length;
+    second +=
+      ' ' +
+      (ph === 0
+        ? ext === 1 ? 'The exterior unit has no photocell point.' : (ext === 2 ? 'Neither exterior unit has' : 'None of the ' + cw(ext) + ' exterior units has') + ' a photocell point.'
+        : ph === ext
+          ? ext === 1 ? 'The exterior unit has a photocell point.' : (ext === 2 ? 'Both' : 'All ' + cw(ext)) + ' exterior units have a photocell point.'
+          : _a36DetUpperFirst(cw(ph)) + ' of the ' + cw(ext) + ' exterior units ' + (ph === 1 ? 'has' : 'have') + ' a photocell point.');
+  }
+  var sch = _a36DetSchedules({ units: lf.units }, (ctx && ctx.rowsById) || {});
+  if (sch) second += ' The occupied schedule imported for the lighting is ' + sch + '.';
+  return second ? [first, second.replace(/^\s+/, '')] : [first];
+}
+
 /**
  * _a36DetLibraryTokens — the flow tokens of the chapter of one library in the Detailed Audit Report: System Overview, System
  * Descriptions (prose, the graphic of the representative unit directly under it), Findings (one block per finding, a figure only under
@@ -29531,7 +29794,7 @@ function _a36DetLibraryTokens(d, b, ctx, sectionNo) {
 
   // N.1 System Overview: one paragraph (no table)
   tokens.push(_a36DetTok('<h2 style="margin:0 0 6px 0">' + sectionNo + '.1 System Overview</h2>', true));
-  tokens.push(_a36DetTok('<p style="' + A36_DET_P + '">' + _escHtml(_a36DetOverviewText(_a36DisplayName(b), groups)) + '</p>'));
+  tokens.push(_a36DetTok('<p style="' + A36_DET_P + '">' + _escHtml(_a36DetOverviewText(_a36DisplayName(b), groups, b.lighting)) + '</p>'));
   var ctl = _a36DetController(b, ctx.rowsById);
   if (ctl) {
     tokens.push(_a36DetTok('<p style="' + A36_DET_P + '">Building automation controller: ' + _escHtml(ctl.type) + ' (' + _a36DetOf(ctl.n, ctl.total) + ').</p>'));
@@ -29564,6 +29827,15 @@ function _a36DetLibraryTokens(d, b, ctx, sectionNo) {
       tokens.push(dft);
     }
   });
+
+  // The lighting controls of the library (a36LightingFacts): audited like the other systems, not ASHRAE 36 equipment.
+  if (b.lighting) {
+    tokens.push(_a36DetTok('<div style="' + A36_DET_H3 + '">Lighting</div>', true));
+    var lightParas = _a36DetLightingParas(b.lighting, ctx);
+    lightParas.forEach(function (t, k) {
+      tokens.push(_a36DetTok('<p style="' + A36_DET_P + '">' + _escHtml(t) + '</p>', k < lightParas.length - 1));
+    });
+  }
 
   // N.3 Findings: one block per finding (the same list as the Findings Summary; each finding has its own Recommendation line)
   tokens.push(_a36DetTok('<h2 style="margin:10px 0 6px 0">' + sectionNo + '.3 Opportunities</h2>', true));
@@ -29670,7 +29942,7 @@ function _a36AuditBuildingTokens(d, b, ctx, showBuildingInfra) {
       '<table style="width:100%;border-collapse:collapse;margin:0 0 8px 0"><tr>' +
         '<td style="background:var(--rpt-blue);color:#ffffff;padding:8px 12px;font-size:21px;font-weight:700;border:none">' + _escHtml(name) + '</td>' +
         '<td style="background:var(--rpt-blue);color:#ffffff;padding:8px 12px;font-size:13.34px;text-align:right;white-space:nowrap;border:none">' +
-        rptCount(b.equipCount || 0) + ' equipment unit' + (b.equipCount === 1 ? '' : 's') + ' &nbsp;|&nbsp; ' + _a36FindingsCount(nF) + '</td>' +
+        rptCount(_a36AuditUnitsOf(b)) + ' equipment unit' + (_a36AuditUnitsOf(b) === 1 ? '' : 's') + ' &nbsp;|&nbsp; ' + _a36FindingsCount(nF) + '</td>' +
         '</tr></table>',
       true,
     ),
@@ -29688,7 +29960,7 @@ function _a36AuditBuildingTokens(d, b, ctx, showBuildingInfra) {
   };
   var cards =
     '<table style="width:100%;border-collapse:collapse;table-layout:fixed"><tr>' +
-    card(rptCount(b.equipCount || 0), 'Equipment units audited', 'var(--rpt-blue)') +
+    card(rptCount(_a36AuditUnitsOf(b)), 'Equipment units audited', 'var(--rpt-blue)') +
     card(rptCount(nF), nF === 1 ? 'Opportunity' : 'Opportunities', nF ? 'var(--rpt-orange)' : 'var(--rpt-green-dark)') +
     '</tr>' +
     (showBuildingInfra
@@ -29722,8 +29994,10 @@ function _a36AuditBuildingTokens(d, b, ctx, showBuildingInfra) {
   // One row per equipment type; a finding is listed on the row of its type. A finding of no listed type goes on the Building-wide row.
   var byCat = {};
   var wide = [];
+  var lightF = []; // the lighting opportunities go on the Lighting row (lighting is not in equipCounts: audited, never scored)
   findings.forEach(function (f) {
-    if (f.category && counts[f.category]) (byCat[f.category] = byCat[f.category] || []).push(f);
+    if (f.category === 'lighting') lightF.push(f);
+    else if (f.category && counts[f.category]) (byCat[f.category] = byCat[f.category] || []).push(f);
     else wide.push(f);
   });
   var findingsCell = function (list, cat, n) {
@@ -29752,10 +30026,11 @@ function _a36AuditBuildingTokens(d, b, ctx, showBuildingInfra) {
   var rows = cats.map(function (cat, k) {
     return row([_escHtml(_a36CatCountLabel(cat, 2)), rptCount(counts[cat]), findingsCell(byCat[cat] || [], cat, counts[cat])], k);
   });
+  if (b.lighting) rows.push(row([_escHtml(_a36CatCountLabel('lighting', 2)), rptCount(b.lighting.count), findingsCell(lightF, 'lighting', b.lighting.count)], rows.length));
   if (wide.length) rows.push(row(['Building-wide', '—', findingsCell(wide)], rows.length));
   var totalTd = TD + ';font-weight:700;border-top:2px solid var(--rpt-blue);border-bottom:2px solid var(--rpt-blue)';
   rows.push(
-    '<tr><td style="' + totalTd + '">Total</td><td style="' + totalTd + ';text-align:center">' + rptCount(b.equipCount) + '</td><td style="' + totalTd + '">' + _a36FindingsCount(nF) + '</td></tr>',
+    '<tr><td style="' + totalTd + '">Total</td><td style="' + totalTd + ';text-align:center">' + rptCount(_a36AuditUnitsOf(b)) + '</td><td style="' + totalTd + '">' + _a36FindingsCount(nF) + '</td></tr>',
   );
   var open =
     '<table style="width:100%;border-collapse:collapse;table-layout:fixed;margin:0 0 10px 0"><colgroup><col style="width:26%"><col style="width:9%"><col style="width:65%"></colgroup><thead><tr>' +
