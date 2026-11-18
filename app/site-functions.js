@@ -2507,6 +2507,12 @@ async function siteResetAllMeterTableSettings() {
    site-ui.js delegates to this array and should NOT maintain its own copy.
 */
 var RELEASE_NOTES = [
+  { v: 'v2026.11.18.351', date: '2026-11-18', title: 'Audit Report: counts by unit, setpoints and schedules as opportunities, reset limits, expert system descriptions',
+    items: [ { type: 'improved', text: 'Audit Report: each unit is counted once. The cover says how many opportunities were found on how many equipment units.' },
+             { type: 'improved', text: 'Audit Report: zone setpoints that differ from the standard and schedules that run units around the clock are opportunities, one per library.' },
+             { type: 'improved', text: 'Audit Report: the reset sentences print the reset limits from the WebCTRL screens, marked adjustable. A hot water reset held by a manual override is an opportunity.' },
+             { type: 'improved', text: 'Audit Report: the System Descriptions start with the number of units of each type, say which sensors each system has and what a missing sensor means, and leave out low-value schedule lines.' },
+             { type: 'fixed', text: 'Audit Report: the Sequence Readiness label is on one line. A plant named Hot Water reads the Hot Water System.' } ] },
   { v: 'v2026.11.18.350', date: '2026-11-18', title: 'Service Proposal: Estimated Cost, Full Scope with room CO2, clearer pages',
     items: [ { type: 'improved', text: 'Service Proposal: each price is an Estimated Cost. The text says each cost is an estimate for the work.' },
              { type: 'improved', text: 'Service Proposal and Cost Estimate tab: Full Scope includes the room CO2 sensors and the control sequences that use them. The proposal has no Optional row.' },
