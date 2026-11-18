@@ -279,6 +279,8 @@ const plain = (x) => JSON.parse(JSON.stringify(x));
           '_rptA36TierDetailAggByPhase',
           '_rptA36HardwareCategoryAgg',
           '_rptA36HardwareLabel',
+          '_rptA36OppLineName',
+          '_rptA36OneDevice',
           '_rptA36OppDetail',
           '_rptA36OppPriceText',
           '_rptA36OppPrintedSum',

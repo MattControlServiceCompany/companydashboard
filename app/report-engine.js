@@ -25017,6 +25017,31 @@ function _rptA36HardwareCategoryAgg(rows, toggles) {
  * subtotalR = the Devices and Programming parts the cost table prints; rounding = what the printed whole-dollar lines miss of it (null: none).
  * Returns { lines, included, subtotalR, rounding, noCatalog }.
  */
+// The name of one cost line: a short title-case name of the work (the Audit Report wording of an opportunity is a sentence:
+// "Zone setpoints differ from the recommended setpoints" prints as "Zone Setpoint Reprogramming").
+function _rptA36OppLineName(opp) {
+  var A36_OPP_LINE_NAME = {
+    zoneSetpoints: 'Zone Setpoint Reprogramming',
+    terminalStandard: 'Terminal Unit Program Upgrade',
+    powerMeter: 'Building Power Meter',
+    lightingPhotocell: 'Exterior Lighting Photocell',
+    lightingOccupancy: 'Interior Lighting Occupancy Sensors',
+    lightingSchedule: 'Lighting Schedules',
+    schedules: 'Occupied Schedules',
+  };
+  if (A36_OPP_LINE_NAME[opp.key]) return A36_OPP_LINE_NAME[opp.key];
+  var t = _rptA36PlainName(opp.label).replace(/ reset overridden$/i, ' reset override').replace(/ overridden$/i, ' override');
+  return t.replace(/(^|[\s(\/-])([a-z])/g, function (m, sp, c) {
+    return sp + c.toUpperCase();
+  }).replace(/\b(And|Of|The|In|On|For|To|With)\b/g, function (w, x, i) {
+    return i === 0 ? w : w.toLowerCase();
+  });
+}
+// One device of a plural device label: "Differential Pressure Sensors" -> "Differential Pressure Sensor",
+// "Carbon Dioxide Sensors in Air Handler Ducts" -> "Carbon Dioxide Sensor in Air Handler Ducts".
+function _rptA36OneDevice(label) {
+  return String(label).replace(/s(?=( in | for | on |$))/, '');
+}
 function _rptA36OppDetail(summaryData, estimateState, key, tt) {
   var toggles = (estimateState && estimateState.rowToggles) || {};
   var rows = ((summaryData && summaryData.perTier && summaryData.perTier[key]) || []).filter(function (r) {
@@ -25055,14 +25080,14 @@ function _rptA36OppDetail(summaryData, estimateState, key, tt) {
         }
       }
     });
-    var title = _rptA36PlainName(g.opp.label);
+    var title = _rptA36OppLineName(g.opp);
     var desc = [];
     if (devOrder.length) {
       desc.push(
         'Devices: ' +
           devOrder
             .map(function (l) {
-              return dev[l] + ' ' + l;
+              return dev[l] + ' ' + (dev[l] === 1 ? _rptA36OneDevice(l) : l);
             })
             .join(', ') +
           '.',
