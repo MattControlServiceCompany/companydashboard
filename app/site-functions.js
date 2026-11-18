@@ -2507,6 +2507,9 @@ async function siteResetAllMeterTableSettings() {
    site-ui.js delegates to this array and should NOT maintain its own copy.
 */
 var RELEASE_NOTES = [
+  { v: 'v2026.11.18.346', date: '2026-11-18', title: 'Audit Report: full-page Executive Summary, rings and building pages in color',
+    items: [ { type: 'improved', text: 'Audit Report: the Executive Summary is full text paragraphs over more than one page. The cover and each building page show rings of the equipment units with no findings (all equipment, plants, air handling units, zone terminals). Each building page has a color title band, the photo beside the building facts, and a color equipment table.' },
+             { type: 'removed', text: 'Audit Report: the building table on the cover and the Findings by Type table in the Executive Summary.' } ] },
   { v: 'v2026.11.17.345', date: '2026-11-17', title: 'Audit Report: no half-empty chapter ends',
     items: [ { type: 'fixed', text: 'Audit Report: a building chapter starts under the findings of the building before it when that page has room, so a chapter end no longer leaves a mostly empty page.' } ] },
   { v: 'v2026.11.17.344', date: '2026-11-17', title: 'Bill reading: RKVA from scanned bills',
