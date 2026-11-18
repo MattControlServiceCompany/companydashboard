@@ -18295,7 +18295,7 @@ function _a36FindingsCount(n) {
 }
 
 // The audit rings (the whole audit, not ASHRAE 36): of the equipment units of the report (or of one library: libName), how many have no
-// finding, no sensor or point finding and no control sequence finding (the findings model, the same list as the chapters), and how many zones
+// finding, no missing sensor or point (a sensor finding, or a sequence finding with missing points) and no control sequence finding (the findings model, the same list as the chapters), and how many zones
 // hold the standard setpoints of Appendix A (_a36SetpointBuildingRows, the one owner of that count). null when the findings model fails.
 // Returns { units, clean, sensorClean, seqClean, zones, zonesOk } (zones 0 when no zone setpoint was read).
 function _a36AuditRingStats(d, libName) {
@@ -18319,7 +18319,7 @@ function _a36AuditRingStats(d, libName) {
       var k = f.lib + '|' + _a36DetNorm(u);
       any[k] = true;
       if (f.kind === 'seq') seq[k] = true;
-      else sensor[k] = true;
+      if (f.kind !== 'seq' || (f.missing && f.missing.length)) sensor[k] = true; // a point a sequence needs and the system lacks
     });
   });
   var n = function (o) {
@@ -18374,12 +18374,12 @@ function _a36AuditRingsHtml(st, size) {
 }
 
 // A finding label in a sentence: "Occupancy-Based Ventilation (Zone Terminals)" -> "occupancy-based ventilation (zone terminals)"; a word with two
-// capitals or a digit (CO2, AHU) keeps its case.
+// capitals in a row or a digit (CO2, AHU) keeps its case.
 function _a36ExecLabelWords(label) {
   return String(label)
     .split(' ')
     .map(function (w) {
-      return /[A-Z].*[A-Z]|\d/.test(w.replace(/^\(/, '')) ? w : w.toLowerCase();
+      return /[A-Z]{2}|\d/.test(w) ? w : w.toLowerCase();
     })
     .join(' ');
 }
@@ -18697,6 +18697,7 @@ function rptPageASHRAE36Executive(n, d, detailedTitles, view) {
   // lead-in at the very top of the page, BEFORE the five sequence paragraphs, explaining what
   // ASHRAE 36 control sequences are and why the top ones are listed here. Deliberately carries
   // NO numbers — the paragraphs and table below carry the real, derived figures.
+  var execBlocks = null; // Detailed: the Executive Summary as blocks (a heading stays with its paragraph) that flow over as many pages as they need
   var execIntro =
     execHeader +
     (detailed
@@ -18962,11 +18963,11 @@ function rptPageASHRAE36Executive(n, d, detailedTitles, view) {
       );
     };
 
-    var _sumHtml =
-      _pHtml(_sumDid) +
-      (_sumResult ? _subHtml('Overall Result') + _pHtml(_sumResult) : '') +
-      (_findings.length ? _subHtml('Key Findings') + _findings.map(_paraItem).join('') : '') +
-      (_moreParas.length ? _subHtml('Findings in Detail') + _moreParas.map(_paraItem).join('') : '');
+    execBlocks = [_pHtml(_sumDid)]
+      .concat(_sumResult ? [_subHtml('Overall Result') + _pHtml(_sumResult)] : [])
+      .concat(_findings.map(function (f, k) { return (k ? '' : _subHtml('Key Findings')) + _paraItem(f); }))
+      .concat(_moreParas.map(function (f, k) { return (k ? '' : _subHtml('Findings in Detail')) + _paraItem(f); }));
+    var _sumHtml = execBlocks.join('');
     execIntro = execHeader + _sumHtml;
   }
 
@@ -19589,7 +19590,26 @@ function rptPageASHRAE36Executive(n, d, detailedTitles, view) {
   var _paraMeasured = detailed && _pushTableToNextPage && view !== 'a36' ? _rptMeasureHtmlH(execIntro + dcvCallout + callout) : null;
   var _paraEstH = _paraMeasured !== null ? _paraMeasured : 34 + 150 + (detailed ? 300 : 0) + (dcvCallout ? 105 : 0) + 105 * topSeqTypes.length;
   var _paraSplit = _pushTableToNextPage && detailed && view !== 'a36' && _paraEstH > _rptContentBudget('flush') - EXEC_SAFETY_H && (dcvCallout || callout);
-  if (_pushTableToNextPage && view !== 'a36') {
+  var _execPageCount = 0;
+  if (_pushTableToNextPage && view !== 'a36' && execBlocks) {
+    // Matt 2026-11-18: the Executive Summary is at least one full page of text. The blocks fill a page to its bottom, then continue on the next.
+    var _execBudget = _rptContentBudget('flush') - EXEC_SAFETY_H;
+    var _execAll = [execHeader + execBlocks[0]].concat(execBlocks.slice(1), [dcvCallout, callout].filter(Boolean));
+    var _execPages = [];
+    var _execCur = '';
+    _execAll.forEach(function (bh) {
+      var h = _execCur ? _rptMeasureHtmlH(_execCur + bh) : 0;
+      if (_execCur && (h === null || h === undefined || h > _execBudget)) {
+        _execPages.push(_execCur);
+        _execCur = bh;
+      } else _execCur += bh;
+    });
+    if (_execCur) _execPages.push(_execCur);
+    _execPages.forEach(function (html, k) {
+      resultPages.push(rptPage(n + k, 'Audit Report: Executive Summary', html, { hideIntHdr: true, data: fakeData, label: 'Page ' + (n + k) + ' — Executive Summary' }));
+    });
+    _execPageCount = _execPages.length;
+  } else if (_pushTableToNextPage && view !== 'a36') {
     if (_paraSplit) {
       resultPages.push(
         rptPage(n, 'Audit Report: Executive Summary', execIntro, { hideIntHdr: true, data: fakeData, label: 'Page ' + n + ' — Executive Summary' }),
@@ -19608,7 +19628,7 @@ function rptPageASHRAE36Executive(n, d, detailedTitles, view) {
     }
   }
   if (view === 'base') return resultPages; // the Executive Summary pages only
-  var _tableStartPageN = _pushTableToNextPage && view !== 'a36' ? n + (_paraSplit ? 2 : 1) : n;
+  var _tableStartPageN = _pushTableToNextPage && view !== 'a36' ? n + (_execPageCount || (_paraSplit ? 2 : 1)) : n;
 
   chunks.forEach(function (chunk, chunkIndex) {
     var tableRows = chunk
