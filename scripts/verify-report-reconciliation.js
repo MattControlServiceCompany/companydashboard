@@ -165,9 +165,9 @@ const REGISTRY = [
     predicate: 'Audit = full BAS audit (2026-11-17): the cover states buildings and units audited, never priced device or sequence counts',
     run(b) {
       const c = b.coverStats;
-      const pass = c['Buildings Assessed'] === b.totalBuildings && c['Equipment Units Audited'] === b.totalEquip &&
+      const pass = c['Buildings Assessed'] === b.totalBuildings && c['Equipment Units Audited'] === b.totalEquip + b.totalLighting &&
         !('Devices to Install' in c) && !('Sequences to Program' in c);
-      return { pass, expected: { buildings: b.totalBuildings, units: b.totalEquip, pricedCards: 'none' }, actual: c };
+      return { pass, expected: { buildings: b.totalBuildings, units: b.totalEquip + b.totalLighting, pricedCards: 'none' }, actual: c };
     },
   },
   {
@@ -342,7 +342,7 @@ async function gatherPageData(page, projId) {
       out.seqCategoriesInU = Object.keys(seqCatSet);
       out.totalBuildings = data.portfolio.totalBuildings;
       out.totalEquip = data.portfolio.totalEquip;
-      out.totalEquip = data.portfolio.totalEquip;
+      out.totalLighting = data.portfolio.totalLighting || 0; // lighting control units are audited units on the cover (_a36AuditUnitsTotal)
       out.composite = data.portfolio.composite;
       out.pointPct = data.portfolio.pointPct;
       out.seqPct = data.portfolio.seqPct;
