@@ -2507,6 +2507,11 @@ async function siteResetAllMeterTableSettings() {
    site-ui.js delegates to this array and should NOT maintain its own copy.
 */
 var RELEASE_NOTES = [
+  { v: 'v2026.11.18.347', date: '2026-11-18', title: 'Audit Report: research-style Executive Summary and clearer findings',
+    items: [ { type: 'improved', text: 'Audit Report: the Executive Summary explains the audit in connected paragraphs: scope and method, overall result, the principal findings and what they mean, the context and how the report is organized.' },
+             { type: 'improved', text: 'Audit Report: the cover shows the counts first and larger rings. Each ring says what it counts (for example 6 of 9 plants with no findings). A row with no findings says that the units have every sensor, point and control sequence the audit checks. The building facts have no boxes.' },
+             { type: 'improved', text: 'Audit Report: each figure caption names its building, and the text says what each figure shows. A lockout or freeze protection temperature from the control program is marked adjustable.' },
+             { type: 'fixed', text: 'Audit Report: findings are numbered 1, 2, 3 under their Findings heading, without a Missing line that repeated the finding. CO2 findings no longer say units need a CO2 sensor. The text states what the building automation system shows, not the whole building.' } ] },
   { v: 'v2026.11.18.346', date: '2026-11-18', title: 'Audit Report: full-page Executive Summary, rings and building pages in color',
     items: [ { type: 'improved', text: 'Audit Report: the Executive Summary is full text paragraphs over more than one page. The cover and each building page show rings of the equipment units with no findings (all equipment, plants, air handling units, zone terminals). Each building page has a color title band, the photo beside the building facts, and a color equipment table.' },
              { type: 'removed', text: 'Audit Report: the building table on the cover and the Findings by Type table in the Executive Summary.' } ] },
