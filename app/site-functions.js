@@ -2508,6 +2508,12 @@ async function siteResetAllMeterTableSettings() {
    site-ui.js delegates to this array and should NOT maintain its own copy.
 */
 var RELEASE_NOTES = [
+  { v: 'v2026.11.18.354', date: '2026-11-18', title: 'Audit Report utility use; one opportunity = one cost line',
+    items: [ { type: 'improved', text: 'Audit Report: each building page shows its 12-month utility use, floor area and Energy Use Intensity, and a new page compares the buildings.' },
+             { type: 'improved', text: 'Service Proposal: each opportunity is one line in the cost estimate. Setpoints and the terminal unit upgrade have one line per building.' },
+             { type: 'improved', text: 'Service Proposal: manual overrides, schedules, exterior lighting photocells, interior lighting occupancy sensors and building power meters have a priced line.' },
+             { type: 'improved', text: 'Audit Report: the cover says how many of the opportunities the Recommended option covers.' },
+             { type: 'fixed', text: 'Sidebar: the weekday is next to the time, so the date does not wrap.' } ] },
   { v: 'v2026.11.18.353', date: '2026-11-18', title: 'Audit Report: clearer wording, building pages, terminal unit upgrade price',
     items: [ { type: 'improved', text: 'Audit Report: sentences give the library and the unit total first, then the number. The zone setpoints name the recommended values. Lighting says what the lights do.' },
              { type: 'improved', text: 'Audit Report: industry terms are spelled out once with the abbreviation, then abbreviated (BAS, AHU, VAV, RTU, FCU, DOAS, ERV).' },
