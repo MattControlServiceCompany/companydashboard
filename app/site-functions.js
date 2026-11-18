@@ -2507,6 +2507,11 @@ async function siteResetAllMeterTableSettings() {
    site-ui.js delegates to this array and should NOT maintain its own copy.
 */
 var RELEASE_NOTES = [
+  { v: 'v2026.11.18.350', date: '2026-11-18', title: 'Service Proposal: Estimated Cost, Full Scope with room CO2, clearer pages',
+    items: [ { type: 'improved', text: 'Service Proposal: each price is an Estimated Cost. The text says each cost is an estimate for the work.' },
+             { type: 'improved', text: 'Service Proposal and Cost Estimate tab: Full Scope includes the room CO2 sensors and the control sequences that use them. The proposal has no Optional row.' },
+             { type: 'improved', text: 'Service Proposal: Step 1 says Control Service Company does the work. What you get is bold with more space above it. The What the names mean list is removed.' },
+             { type: 'fixed', text: 'Service Proposal: the Cost Summary table no longer reaches the page footer. Recommended Work, Compliance Work and Full Scope Work are together, and the pages are filled by measured height (6 pages in place of 9 for the largest project).' } ] },
   { v: 'v2026.11.18.349', date: '2026-11-18', title: 'Audit Report: Opportunities Found and the 11/15 cover layout',
     items: [ { type: 'improved', text: 'Audit Report: page 1 has the layout of the 11/15 report (score rings, summary paragraph, four counts) without ASHRAE 36 wording.' },
              { type: 'improved', text: 'Audit Report: the report says opportunity in place of finding. A building without a power meter is an opportunity when it has a plant, 3 or more air handling units or 10 or more terminal units.' },
