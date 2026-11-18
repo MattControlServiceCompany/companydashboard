@@ -11,7 +11,6 @@ function siteTickClock() {
   var ap = h >= 12 ? 'PM' : 'AM';
   h = h % 12;
   if (h === 0) h = 12;
-  el.textContent = (h < 10 ? '0' : '') + h + ':' + (m < 10 ? '0' : '') + m + ' ' + ap;
   var days = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
   var months = [
     'January',
@@ -27,7 +26,9 @@ function siteTickClock() {
     'November',
     'December',
   ];
-  ed.textContent = days[now.getDay()] + ', ' + months[now.getMonth()] + ' ' + now.getDate() + ', ' + now.getFullYear();
+  // Matt 2026-11-18: the long date wrapped in the sidebar; the weekday goes to the right of the time, the date on its own line.
+  el.textContent = (h < 10 ? '0' : '') + h + ':' + (m < 10 ? '0' : '') + m + ' ' + ap + ' ' + days[now.getDay()];
+  ed.textContent = months[now.getMonth()] + ' ' + now.getDate() + ', ' + now.getFullYear();
 }
 document.addEventListener('DOMContentLoaded', function () {
   siteTickClock();
