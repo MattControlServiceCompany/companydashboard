@@ -18295,9 +18295,14 @@ function _a36FindingsCount(n) {
 }
 
 // The audit rings (the whole audit, not ASHRAE 36): of the equipment units of the report (or of one library: libName), how many have no
-// finding, no missing sensor or point (a sensor finding, or a sequence finding with missing points) and no control sequence finding (the findings
-// model, the same list as the chapters). No setpoint ring: a setpoint that differs from the standard of Appendix A is not a finding.
-// null when the findings model fails. Returns { units, clean, sensorClean, seqClean }.
+// finding, for all the equipment and for each tier (plants, air handling units, zone terminals), from the findings model (the same list as the
+// chapters). A finding of no equipment type (building-wide) counts against no unit. No setpoint ring: a setpoint that differs from the standard
+// of Appendix A is not a finding. null when the findings model fails. Returns { units, clean, tiers: [{ label, of, n }] } (tiers with units only).
+var A36_AUDIT_RING_TIERS = [
+  { label: 'Plants', cats: ['chwp', 'hwp', 'ct'] },
+  { label: 'Air Handling Units', cats: ['ahu', 'rtu', 'doas', 'furnace'] },
+  { label: 'Zone Terminals', cats: ['vav', 'fpb', 'ddvav', 'zone', 'fcu'] },
+];
 function _a36AuditRingStats(d, libName) {
   var ctx;
   try {
@@ -18307,25 +18312,41 @@ function _a36AuditRingStats(d, libName) {
     return null;
   }
   var units = 0;
+  var catUnits = {};
   d.buildings.forEach(function (b) {
-    if (!libName || _a36DisplayName(b) === libName) units += b.equipCount || 0;
-  });
-  var any = {};
-  var sensor = {};
-  var seq = {};
-  ctx.model.findings.forEach(function (f) {
-    if (libName && f.lib !== libName) return;
-    (f.affected || []).forEach(function (u) {
-      var k = f.lib + '|' + _a36DetNorm(u);
-      any[k] = true;
-      if (f.kind === 'seq') seq[k] = true;
-      if (f.kind !== 'seq' || (f.missing && f.missing.length)) sensor[k] = true; // a point a sequence needs and the system lacks
+    if (libName && _a36DisplayName(b) !== libName) return;
+    units += b.equipCount || 0;
+    var c = b.equipCounts || {};
+    Object.keys(c).forEach(function (k) {
+      catUnits[k] = (catUnits[k] || 0) + (c[k] || 0);
     });
   });
-  var n = function (o) {
-    return Math.min(units, Object.keys(o).length);
+  var hit = {}; // lib|unit -> category
+  ctx.model.findings.forEach(function (f) {
+    if (libName && f.lib !== libName) return;
+    if (!f.category) return;
+    (f.affected || []).forEach(function (u) {
+      if (u) hit[f.lib + '|' + _a36DetNorm(u)] = f.category;
+    });
+  });
+  var hitBy = {};
+  Object.keys(hit).forEach(function (k) {
+    hitBy[hit[k]] = (hitBy[hit[k]] || 0) + 1;
+  });
+  var sum = function (cats, o) {
+    return cats.reduce(function (a, c) {
+      return a + (o[c] || 0);
+    }, 0);
   };
-  return { units: units, clean: units - n(any), sensorClean: units - n(sensor), seqClean: units - n(seq) };
+  var all = Object.keys(catUnits);
+  var tiers = A36_AUDIT_RING_TIERS.map(function (t) {
+    var of = sum(t.cats, catUnits);
+    return { label: t.label, of: of, n: Math.max(0, of - Math.min(of, sum(t.cats, hitBy))) };
+  }).filter(function (t) {
+    return t.of > 0;
+  });
+  var clean = Math.max(0, units - Math.min(units, sum(all, hitBy)));
+  return { units: units, clean: clean, tiers: tiers };
 }
 
 // The ring color: green at 80 % or more, orange at 50 % or more, else red (the report status colors).
@@ -18333,18 +18354,16 @@ function _a36AuditRingColor(pct) {
   return pct >= 80 ? 'var(--rpt-green)' : pct >= 50 ? 'var(--rpt-orange)' : 'var(--rpt-red)';
 }
 
-// A row of audit rings: each ring prints its percent, a label and the count it is made of ("246 of 342 units"). size: the ring diameter in px.
-// A layout table (not flex), so Word keeps the row (the rings become pictures there: _rptSwapGaugeRingForPng).
+// A row of audit rings: All Equipment, then each tier; each ring prints the percent of units with no findings, its label and the count
+// ("117 of 342 with no findings"). size: the ring diameter in px. A layout table (not flex), so Word keeps the row (the rings become pictures
+// there: _rptSwapGaugeRingForPng).
 function _a36AuditRingsHtml(st, size) {
   if (!st || !st.units) return '';
-  var items = [
-    { label: 'No Findings', n: st.clean, of: st.units, noun: 'units' },
-    { label: 'Sensors and Points', n: st.sensorClean, of: st.units, noun: 'units' },
-    { label: 'Control Sequences', n: st.seqClean, of: st.units, noun: 'units' },
-  ];
+  var items = [{ label: 'All Equipment', n: st.clean, of: st.units }].concat(st.tiers);
   var w = Math.floor(100 / items.length);
   return (
-    '<table style="width:100%;border-collapse:collapse;table-layout:fixed;margin:6px 0 10px 0"><tr>' +
+    '<div style="font-size:13.34px;font-weight:700;color:var(--rpt-blue);text-align:center;margin:8px 0 2px 0">Equipment Units With No Findings</div>' +
+    '<table style="width:100%;border-collapse:collapse;table-layout:fixed;margin:2px 0 10px 0"><tr>' +
     items
       .map(function (it) {
         var pct = it.of ? Math.round((100 * it.n) / it.of) : 0;
@@ -18352,7 +18371,7 @@ function _a36AuditRingsHtml(st, size) {
           '<td style="width:' + w + '%;text-align:center;vertical-align:top;padding:0 4px;border:none">' +
           '<div style="display:inline-block">' + _a36GaugeSVG(pct, _a36AuditRingColor(pct), it.label, size, true) + '</div>' +
           '<div style="font-size:13.34px;font-weight:700;color:var(--rpt-page-text);margin-top:2px">' + it.label + '</div>' +
-          '<div style="font-size:13.34px;color:var(--rpt-page-text)">' + rptCount(it.n) + ' of ' + rptCount(it.of) + ' ' + it.noun + '</div>' +
+          '<div style="font-size:13.34px;color:var(--rpt-page-text)">' + rptCount(it.n) + ' of ' + rptCount(it.of) + '</div>' +
           '</td>'
         );
       })
@@ -18433,7 +18452,7 @@ function _a36ExecAuditParas(d) {
       head: 'Equipment with no findings.',
       text:
         rptCount(st.clean) + ' of the ' + rptCount(st.units) + ' equipment units (' + Math.round((100 * st.clean) / st.units) + '%) have no findings. ' +
-        rptCount(st.sensorClean) + ' have every sensor and point their control sequences need, and ' + rptCount(st.seqClean) + ' have all their control sequences programmed.' +
+        (st.tiers.length ? 'By type: ' + _a36DetJoin(st.tiers.map(function (t) { return rptCount(t.n) + ' of ' + rptCount(t.of) + ' ' + t.label.toLowerCase(); })) + ' have no findings.' : '') +
         (cleanLibs.length && d.buildings.length > 1 ? ' ' + _a36DetJoin(cleanLibs) + (cleanLibs.length === 1 ? ' has' : ' have') + ' no findings.' : ''),
     });
   }
