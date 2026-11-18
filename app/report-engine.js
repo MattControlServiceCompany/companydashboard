@@ -18371,7 +18371,8 @@ function _a36AuditRingsHtml(st, size) {
           '<td style="width:' + w + '%;text-align:center;vertical-align:top;padding:0 4px;border:none">' +
           '<div style="display:inline-block">' + _a36GaugeSVG(pct, _a36AuditRingColor(pct), it.label, size, true) + '</div>' +
           '<div style="font-size:13.34px;font-weight:700;color:var(--rpt-page-text);margin-top:2px">' + it.label + '</div>' +
-          '<div style="font-size:12px;color:var(--rpt-page-text)">' + rptCount(it.n) + ' of ' + rptCount(it.of) + ' ' + (it.of === 1 ? it.one : it.many) + ' with no findings</div>' +
+          '<div style="font-size:12px;color:var(--rpt-page-text)">' + rptCount(it.n) + ' of ' + rptCount(it.of) + ' ' + (it.of === 1 ? it.one : it.many) + '</div>' +
+          '<div style="font-size:12px;color:var(--rpt-page-text)">with no findings</div>' +
           '</td>'
         );
       })
@@ -18442,9 +18443,9 @@ function rptPageASHRAE36Cover(n, d, perBuildingIncluded, detailed) {
 
   var statCard = function (value, label) {
     return (
-      '<div class="rpt-a36-stat-card" style="flex:1;padding:10px 12px;text-align:center">' +
-      '<div style="font-size:20px;font-weight:700;color:var(--rpt-blue)">' + value + '</div>' +
-      '<div style="font-size:10px;color:var(--rpt-page-text)">' + label + '</div>' +
+      '<div class="rpt-a36-stat-card" style="flex:1;padding:6px 12px;text-align:center">' +
+      '<div style="font-size:34px;font-weight:700;line-height:1.2;color:var(--rpt-blue);text-align:center">' + value + '</div>' +
+      '<div style="font-size:13.34px;color:var(--rpt-page-text);text-align:center">' + label + '</div>' +
       '</div>'
     );
   };
@@ -18466,13 +18467,12 @@ function rptPageASHRAE36Cover(n, d, perBuildingIncluded, detailed) {
     '</div>' +
     '<div style="height:8px"></div>' +
     '<div class="rpt-a36-callout" style="font-size:14px;line-height:1.6;color:var(--rpt-page-text)">' + finding + '</div>' +
-    '<div style="height:8px"></div>' +
-    _a36AuditRingsHtml(_a36AuditRingStats(d), 96) +
-    '<div style="display:flex;gap:16px;margin-top:4px">' +
+    '<div style="display:flex;gap:16px;margin:22px 0 18px 0;border-top:1px solid var(--rpt-border);border-bottom:1px solid var(--rpt-border);padding:8px 0">' +
     statCard(rptCount(p.totalBuildings), 'Buildings Assessed') +
     statCard(rptCount(p.totalEquip), 'Equipment Units Audited') +
     (info ? statCard(rptCount(info.total), 'Findings') : '') +
     '</div>' +
+    _a36AuditRingsHtml(_a36AuditRingStats(d), 120) +
     '</div>';
 
   // Rule 2.3: reportDate drives the footer date; label is empty (no period range for audit reports).
