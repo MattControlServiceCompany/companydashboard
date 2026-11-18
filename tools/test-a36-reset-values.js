@@ -86,11 +86,11 @@ const ok = (c, m) => {
     ok(!/resets from/.test(r.differ) && /with an outdoor air high limit/.test(r.differ), 'two plants with different limits: no value printed: ' + r.differ);
     ok(r.same.indexOf(HW) > -1, 'two plants with the same limits: the value prints: ' + r.same);
     ok(/Trim and respond requests hold the supply air setpoint between 55°F and 70°F \(adjustable\)\./.test(r.air), 'request limits only: the short sentence: ' + r.air);
-    ok(/Trim and respond requests hold the duct static pressure setpoint between 0\.8 in\. w\.c\. and 1\.5 in\. w\.c\. \(adjustable\)\./.test(r.air), 'static pressure limits print with the unit in. w.c.: ' + r.air);
+    ok(/Trim and respond requests hold the duct static pressure setpoint between 0\.8\u00a0in\.\u00a0w\.c\. and 1\.5\u00a0in\.\u00a0w\.c\. \(adjustable\)\./.test(r.air), 'static pressure limits print with the unit in. w.c.: ' + r.air);
     ok(/The supply air setpoint resets from 70°F at 10°F outdoor air to 55°F at 50°F outdoor air \(adjustable\), with trim and respond requests holding it between 55°F and 70°F \(adjustable\)\./.test(r.airOa), 'air unit with the outdoor air limit: range and limits: ' + r.airOa);
     ok(!/\d°F/.test(r.off), 'a sequence that is not enabled prints no value: ' + r.off);
     ok(r.partial === '' && r.noUnit === '', 'a partial range or a value with no unit prints nothing');
-    ok(r.psi === 'Trim and respond requests hold the differential pressure setpoint between 2 psi and 8 psi (adjustable).', 'psi unit: ' + r.psi);
+    ok(r.psi === 'Trim and respond requests hold the differential pressure setpoint between 2 psi and 8 psi (adjustable).', 'psi unit: ' + r.psi);
     ok(!/ASHRAE/.test(r.hw + r.chw + r.air + r.airOa), 'no ASHRAE word in the sentences');
 
     // ---- the override opportunity (one building-wide item, same pattern as the power meter) ----
@@ -119,7 +119,7 @@ const ok = (c, m) => {
       return out;
     });
     ok(m.held.length === 1 && m.held[0].label === 'Hot water reset overridden' && m.held[0].observed === 'The hot water supply setpoint is held at 120°F by a manual override, so the outdoor air reset does not run.', 'override with a value: one opportunity with the observed fact: ' + JSON.stringify(m.held));
-    ok(m.held[0] && m.held[0].kind === 'building' && m.held[0].effect === 'Energy use' && m.held[0].category === null && m.held[0].headline === m.held[0].observed, 'the opportunity is building-wide, an energy item, with no equipment category');
+    ok(m.held[0] && m.held[0].kind === 'building' && m.held[0].effect === 'Energy use' && m.held[0].category === 'hwp' && m.held[0].headline === m.held[0].observed, 'the opportunity is an energy item on the hot water plant row of the building page');
     ok(m.noValue.length === 0 && m.notEnabled.length === 0 && m.none.length === 0, 'no override value, a sequence that is not enabled, or no record: no opportunity');
     ok(errs.length === 0, 'no page errors: ' + errs.join(' | '));
   } finally {
