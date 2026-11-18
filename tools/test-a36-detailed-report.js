@@ -250,7 +250,7 @@ const ok = (c, m) => {
               const tx = e.textContent.trim();
               let m = /Figure (\d+) shows /.exec(tx);
               if (m) mark = 'desc:' + m[1];
-              m = /^\d+\.\d+\.\d+ (.*)$/.exec(tx);
+              m = /^\d+\. (.*)$/.exec(tx);
               if (m) mark = 'find:' + (/economizer/i.test(m[1]) ? 'Economizer' : m[1]);
             });
           });
@@ -291,7 +291,8 @@ const ok = (c, m) => {
     ok(!/Issues Log|Appendix A: Deficiency List|Appendix B|Appendix C/.test(det.text), 'N2: no Issues Log, no Appendix B, no Appendix C');
     ok(s.indexOf('setpointReview') > s.lastIndexOf('detailedLibrary') && /Appendix A: Setpoint Programming Review/.test(det.text), 'Appendix A (the setpoint review) prints last when zone setpoint data exists (Detailed turns the review on by itself)');
     const t = det.libText;
-    [/\d+\. Alpha Library/.exec(t) && /\d+\. Alpha Library/.exec(t)[0], /\d+\.1 System Overview/.exec(t) && /\d+\.1 System Overview/.exec(t)[0], /\d+\.2 System Descriptions/.exec(t) && /\d+\.2 System Descriptions/.exec(t)[0], /\d+\.3 Findings/.exec(t) && /\d+\.3 Findings/.exec(t)[0], '2.3.1 ', 'Missing:'].forEach((x) => ok(t.indexOf(x) >= 0, 'chapters contain "' + x + '"'));
+    [/\d+\. Alpha Library/.exec(t) && /\d+\. Alpha Library/.exec(t)[0], /\d+\.1 System Overview/.exec(t) && /\d+\.1 System Overview/.exec(t)[0], /\d+\.2 System Descriptions/.exec(t) && /\d+\.2 System Descriptions/.exec(t)[0], /\d+\.3 Findings/.exec(t) && /\d+\.3 Findings/.exec(t)[0]].forEach((x) => ok(t.indexOf(x) >= 0, 'chapters contain "' + x + '"'));
+    ok(/\.3 Findings\s*1\. [A-Z]/.test(t) && !/\d+\.\d+\.\d+ [A-Z]/.test(t) && !/Missing:/.test(t), 'chapter findings are numbered 1. 2. 3. under the N.3 heading, with no repeating Missing line (Matt 2026-11-18)');
     ok(!/Recommended Work/.test(t), 'cut 1: no per-chapter Recommended Work table');
     ok(!/\bIssue\./.test(t) && !/\bObserved\b|\bRecommendation\b|is not fully in place/.test(t) && !/ASHRAE 36, Section/.test(t), 'cut 2: no Issue line, no Observed or Recommendation label; no ASHRAE 36 section citation in the base report');
     // Round 1 (2026-11-14): wording rules of the Detailed report, on the final text. SYNTHETIC project.
@@ -365,7 +366,7 @@ const ok = (c, m) => {
     // the graphic of a unit sits directly under its own description; a finding figure sits directly under its own finding
     ok(det.order.join('|') === 'desc:1|desc:2|find:Economizer|desc:4', 'every figure is directly under its own description or finding: ' + det.order.join('|'));
     ok(/Figure 3: Economizer: Alpha Library, AHU\u20111, Properties(\n|$)/.test(det.figs.join('\n')), 'the finding figure caption names the condition: ' + det.figs.join(' / '));
-    ok(/Figure 1 shows the building automation system graphic of AHU‑1\./.test(t) && !/\(Figure \d+\)/.test(t) && /Missing: Outdoor Air Damper Actuator, Mixed Air Temperature/.test(t), 'the text introduces the figure with a sentence that says what it shows (Matt 2026-11-18), no bracket citation');
+    ok(/Figure 1 shows the building automation system graphic of AHU‑1\./.test(t) && !/\(Figure \d+\)/.test(t), 'the text introduces the figure with a sentence that says what it shows (Matt 2026-11-18), no bracket citation');
     ok(!/Pictures?: Figure/.test(t), 'no "Pictures: Figure" list under the findings');
     ok(!/\(1 of 1 unit\)/.test(t) && !/\((\d+) of \1 units\)/.test(t.replace(/Building automation controller[^\n]*/g, '')), 'D6: no "(N of N units)" noise in the text');
 
@@ -542,11 +543,12 @@ const ok = (c, m) => {
       });
       const body = [];
       let sec = '';
+      let secNo = '';
       document.querySelectorAll('#reportPages .rpt-page[data-section="detailedLibrary"] div, #reportPages .rpt-page[data-section="detailedLibrary"] h2, #reportPages .rpt-page[data-section="detailedLibrary"] tr').forEach((el) => {
-        if (el.tagName === 'H2') { sec = /^\d+\.\d+ (.*)$/.exec(el.textContent.trim())[1]; return; }
+        if (el.tagName === 'H2') { const h = /^(\d+\.\d+) (.*)$/.exec(el.textContent.trim()); secNo = h[1]; sec = h[2]; return; }
         if (el.tagName === 'DIV' && sec === 'Findings') {
-          const m = /^(\d+\.\d+\.\d+) /.exec(el.textContent.trim());
-          if (m && el.children.length === 0) body.push(m[1]);
+          const m = /^(\d+)\. /.exec(el.textContent.trim());
+          if (m && el.children.length === 0) body.push(secNo + '.' + m[1]);
         }
       });
       return { total: all.length, dups, bad, mbad, split, sum, body, pointSeqOverlap: all.filter((f) => f.kind === 'sensor').filter((f) => all.some((s) => s.kind === 'seq' && s.lib === f.lib && s.groupLabel === f.groupLabel && s.missing.indexOf(f.label) >= 0)).map((f) => f.n) };

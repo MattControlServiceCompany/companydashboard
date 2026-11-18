@@ -28091,10 +28091,10 @@ function _a36DetContext(d) {
 
 var A36_DET_P_TIGHT = 'margin:0 0 4px 0;font-size:13.34px;line-height:1.4;color:var(--rpt-page-text)';
 
-// One finding: heading (the section number, for example "3.3.1", and the headline: one plain sentence that says what was found), then one
-// paragraph: Missing (what is missing and where), Impact (only when an approved text exists and only on the first finding of that point in
-// the chapter: the text says what the point does, not what is wrong with this unit). The audit states facts only: no Solution line (Matt
-// 2026-11-17). A Facility Audit deficiency has Issue only. impactSeen = { key: true } of the chapter (updated here).
+// One finding: heading (the section number, for example "3.3.1", and the headline: one plain sentence that says what was found), then the
+// Impact paragraph (only when an approved text exists and only on the first finding of that point in the chapter: the text says what the
+// point does, not what is wrong with this unit). No "Missing:" or "Issue:" line: it repeated the headline (Matt 2026-11-18). The audit states
+// facts only: no Solution line (Matt 2026-11-17). impactSeen = { key: true } of the chapter (updated here).
 function _a36DetFindingTok(f, impactSeen) {
   var showImpact = f.impact && !(impactSeen && impactSeen[f.key]);
   if (f.impact && impactSeen) impactSeen[f.key] = true;
@@ -28105,12 +28105,11 @@ function _a36DetFindingTok(f, impactSeen) {
     '<div style="margin:0 0 6px 0"><div style="' +
       A36_DET_H3 +
       '">' +
-      _escHtml((f.num ? f.num + ' ' : '') + f.headline) +
-      '</div><p style="' +
-      A36_DET_P_TIGHT +
-      '">' +
-      [part(f.kind === 'deficiency' ? 'Issue' : 'Missing', f.observed), showImpact ? part('Impact', f.impact) : ''].filter(Boolean).join(' ') +
-      '</p></div>',
+      // "1." under the N.3 Findings heading right above it; the full "2.3.1" only in the Findings Summary, far from the heading (Matt 2026-11-18)
+      _escHtml((f.num ? String(f.num).split('.').pop() + '. ' : '') + f.headline) +
+      '</div>' +
+      (showImpact ? '<p style="' + A36_DET_P_TIGHT + '">' + part('Impact', f.impact) + '</p>' : '') +
+      '</div>',
   );
 }
 

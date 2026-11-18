@@ -115,7 +115,7 @@ const ok = (c, m) => {
       ok(/Exhaust Fan/.test(alpha) && /Air Handlers/.test(alpha) && /Variable Air Volume/.test(alpha) && /\d+ findings/.test(alpha) && !/None needed|No ASHRAE 36 sequence applies/.test(alpha), k + ': the per-building page lists every audited equipment type (exhaust fan too) and the findings count, with no "None needed"');
       ok(!/Finding \d+:/.test(all(k)), k + ': no "Finding N:" heading anywhere');
     });
-    ok(/\d+\.3\.1 [A-Z]/.test(all('det_off')) && !/Finding \d+/.test(all('det_off')), 'det_off: the findings of a library chapter are numbered with the section number (N.3.1) and a one-sentence headline');
+    ok(/\d+\.3 Findings\s*1\. [A-Z]/.test(all('det_off')) && !/Finding \d+/.test(all('det_off')), 'det_off: the findings of a library chapter are numbered with the section number (N.3.1) and a one-sentence headline');
     ok(!/ASHRAE 36, Section/.test(all('det_off')) && !/ASHRAE 36, Section/.test(base('det_on')), 'no "ASHRAE 36, Section x" citation in the base report');
     ok(errs.length === 0, 'no page errors: ' + errs.join(' | '));
   } finally {
