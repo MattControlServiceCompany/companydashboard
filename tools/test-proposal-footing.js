@@ -58,6 +58,7 @@ const pre = [
   'function _rptTextLineH(){ return 16; }',
   'function getPresentedPrintedValue(){ return undefined; }',
   'var __budget = null;',
+  'var SEQUENCE_BLOCKING_SENSORS = {};',
   'function _pricingGetBudget(){ return __budget; }',
 ].join('\n');
 const reFns = [
@@ -72,6 +73,10 @@ const reFns = [
   '_rptA36PlainRowLabel',
   '_rptA36TierDetailAggByPhase',
   '_rptA36HardwareCategoryAgg',
+  '_rptA36HardwareLabel',
+  '_rptA36OppDetail',
+  '_rptA36OppPriceText',
+  '_rptA36OppPrintedSum',
   '_rptA36TierDetailPanelHTML',
   '_rptContractProjection',
   '_rptBilledToDate',
@@ -79,7 +84,8 @@ const reFns = [
 ];
 vm.runInContext(
   [pre, rd('lib/formatting.js'), rd('computations/csc.js'), rd('app/report-printed.js')]
-    .concat([loadFn('app/pricing-estimator.js', '_pricingMonthlyAllowanceAmount')])
+    .concat(['_pricingMonthlyAllowanceAmount', '_pricingRowOpportunity', '_pricingOpportunityLines', '_hwRowKeyMatchesBlocking'].map((f) => loadFn('app/pricing-estimator.js', f)))
+    .concat([loadFn('app/audit-estimate.js', '_auditEstShareLines')])
     .concat(reFns.map((f) => loadFn(REP, f)))
     .join('\n\n'),
   sb,
@@ -98,22 +104,28 @@ for (const RATE of [170, 173]) {
     unfooted = 0;
   for (const h of HOURS) {
     for (let qty = 2; qty <= 60; qty++) {
-      const rows = [{ id: 'r1', item: 'Seq A', phase: 2, qty: qty, lineTotal: qty * h * RATE }];
+      const rows = [{ id: 'r1', item: 'Seq A', phase: 2, qty: qty, lineTotal: qty * h * RATE, building: 'Lib', oppKey: 'oA' }];
       // a second item so the section has more than one line
-      rows.push({ id: 'r2', item: 'Seq B', phase: 2, qty: 3, lineTotal: 3 * 0.75 * RATE });
+      rows.push({ id: 'r2', item: 'Seq B', phase: 2, qty: 3, lineTotal: 3 * 0.75 * RATE, building: 'Lib', oppKey: 'oB' });
       const grand = rows[0].lineTotal + rows[1].lineTotal;
       const tt = { recommended: null, compliance: { grand: grand, phase1: 0, phase2: grand } };
       sb.__tt = tt;
-      sb.__sd = { perTier: { compliance: rows } };
+      sb.__sd = {
+        perTier: { compliance: rows },
+        opps: [
+          { bName: 'Lib', lib: 'Lib', key: 'oA', kind: 'seq', label: 'Seq A' },
+          { bName: 'Lib', lib: 'Lib', key: 'oB', kind: 'seq', label: 'Seq B' },
+        ],
+      };
       const html = ev("_rptA36TierDetailPanelHTML('compliance', __tt, __sd, {rowToggles:{}}, true, _fmtUSD)");
-      const progSection = html.slice(html.indexOf('Programming'));
+      const progSection = html.slice(html.indexOf('Opportunities'));
       const re = /<li>(.*?)<\/li>/g;
       let m,
         printedSum = 0,
         roundingDelta = 0;
       while ((m = re.exec(progSection))) {
         const t = m[1];
-        const mul = /: (\d+) × (\$[\d,]+) = (\$[\d,]+)/.exec(t);
+        const mul = null; // one opportunity = one line with ONE whole-dollar price (no qty x unit text)
         const one = /: (-?\$[\d,]+)$/.exec(t);
         if (mul) {
           lines++;
@@ -126,8 +138,8 @@ for (const RATE of [170, 173]) {
           printedSum += usd(one[1]);
         }
       }
-      const sub = /Programming<\/div>|Programming.*?<span style="font-weight:700">(\$[\d,]+)<\/span>/.exec(html);
-      const subtotal = sub && sub[1] ? usd(sub[1]) : NaN;
+      const ft = ev('_rptFootTier(' + grand + ', 0, ' + grand + ')'); // the Devices and Programming parts the cost table prints
+      const subtotal = ft.p1r + ft.p2r;
       sections++;
       if (printedSum + roundingDelta !== subtotal) unfooted++;
     }
@@ -162,10 +174,10 @@ for (let g = 100.5; g < 250000; g += 7919.37) {
 assert(true, 'sweep of totals foots');
 sb.__tt = { 'full-scope': { grand: 1422158.1999999993, phase1: 1084721.7, phase2: 337436.5 } };
 sb.__sd = { perTier: { 'full-scope': [] } };
-const panel = ev("_rptA36TierDetailPanelHTML('full-scope', __tt, __sd, {rowToggles:{}}, false, _fmtUSD)");
+const det = ev("_rptA36OppDetail(__sd, {rowToggles:{}}, 'full-scope', __tt)");
 assert(
-  panel.includes(fmtUSD(full.p1r)) && panel.includes(fmtUSD(full.p2r)),
-  'detail panel prints the same Hardware/Programming parts as _rptFootTier (page 7)',
+  det.subtotalR === full.p1r + full.p2r,
+  'detail panel foots to the same Devices + Programming parts as _rptFootTier (page 7): ' + det.subtotalR,
 );
 // page 7 and the detail pages must call the one function
 const src = rd(REP);

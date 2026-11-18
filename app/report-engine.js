@@ -18479,6 +18479,20 @@ function _a36FindingsCount(n) {
   return rptCount(n) + (n === 1 ? ' opportunity' : ' opportunities');
 }
 
+// " The Recommended option covers 62 of them." The Recommended option covers the opportunities that have a cost line in it (_rptA36OppCounts: the
+// same lines as the Service Proposal; the optional room carbon dioxide scope is not in the Recommended total). '' when the proposal has no priced
+// scope, or when there is only one opportunity.
+function _a36RecommendedCoverText(d) {
+  var c;
+  try {
+    c = _rptA36OppCounts(d);
+  } catch (e) {
+    return '';
+  }
+  if (!c || c.total < 2 || !(c.fullScope > 0)) return '';
+  return ' The Recommended option covers ' + rptCount(c.recommended) + ' of them.';
+}
+
 // The equipment units that at least one opportunity names (a unit with two opportunities counts once; an opportunity of the whole building names no
 // unit): { 'library|unit name': equipment category ('' when the opportunity has none) }. The one rule behind every "on N units" count of the audit and
 // behind the unit counts of the audit rings (_a36AuditRingStats). libName (optional) limits it to one library.
@@ -18673,7 +18687,7 @@ function _a36ExecScopeSentence(d) {
   var info = _a36AuditFindingInfo(d);
   return (
     'The audit covered ' + rptCount(_a36AuditUnitsTotal(d.portfolio)) + ' piece' + (_a36AuditUnitsTotal(d.portfolio) !== 1 ? 's' : '') + ' of equipment' + (types.length ? ': ' + _a36DetJoin(types) : '') + '. ' +
-    (info ? (info.total ? 'The audit recorded ' + _a36FindingsOnUnits(info) + ' at ' + rptCount(info.libs) + (d.portfolio.totalBuildings > 1 ? ' of the ' + rptCount(d.portfolio.totalBuildings) + ' ' + _a36BuildingNouns(d).many : ' ' + _a36BuildingNouns(d).one) + '. ' : 'The audit recorded no opportunities. ') : '') +
+    (info ? (info.total ? 'The audit recorded ' + _a36FindingsOnUnits(info) + ' at ' + rptCount(info.libs) + (d.portfolio.totalBuildings > 1 ? ' of the ' + rptCount(d.portfolio.totalBuildings) + ' ' + _a36BuildingNouns(d).many : ' ' + _a36BuildingNouns(d).one) + '.' + _a36RecommendedCoverText(d) + ' ' : 'The audit recorded no opportunities. ') : '') +
     (_a36ExecLightingSentence(d, true) ? _a36ExecLightingSentence(d, true) + ' ' : '')
   );
 }
@@ -18819,7 +18833,7 @@ function rptPageASHRAE36Cover(n, d, perBuildingIncluded, detailed) {
     (p.totalLighting ? ' and <strong>' + rptCount(p.totalLighting) + ' lighting control ' + (p.totalLighting === 1 ? 'unit' : 'units') + '</strong>' : '') +
     (pts ? ' with <strong>' + rptCount(pts) + ' control points</strong>' : '') + ', the audit of <strong>' + _escHtml(d.project.name) + '</strong> recorded <strong>' +
     (info ? _a36FindingsCount(info.total) : 'no opportunities') + '</strong>' +
-    (info && info.total ? ' on <strong>' + rptCount(info.units) + ' equipment unit' + (info.units === 1 ? '' : 's') + '</strong>: the sensors, control points and control sequences that the systems do not have, the zone setpoints that differ from the recommended setpoints and the schedules that run units around the clock or hold no occupied period. The sections that follow describe each ' + nouns.one + ', how its system controls the equipment today and each opportunity.' : '.');
+    (info && info.total ? ' on <strong>' + rptCount(info.units) + ' equipment unit' + (info.units === 1 ? '' : 's') + '</strong>: the sensors, control points and control sequences that the systems do not have, the zone setpoints that differ from the recommended setpoints and the schedules that run units around the clock or hold no occupied period. The sections that follow describe each ' + nouns.one + ', how its system controls the equipment today and each opportunity.' + _a36RecommendedCoverText(d) : '.');
   var statCard = function (value, label) {
     return (
       '<td class="rpt-a36-stat-card" style="width:25%;text-align:center;vertical-align:top;padding:0 6px;border:none">' +
@@ -19218,7 +19232,7 @@ function rptPageASHRAE36Executive(n, d, detailedTitles, view) {
       else {
         // Matt 2026-11-18: one direction only (units WITH findings), and a library with none says what that means.
         var _cleanLibs = d.buildings.map(_a36DisplayName).filter(function (nm) { return !_fInfo.byLib[nm]; });
-        var _r1 = 'The audit recorded ' + _a36FindingsOnUnits(_fInfo) + '.';
+        var _r1 = 'The audit recorded ' + _a36FindingsOnUnits(_fInfo) + '.' + _a36RecommendedCoverText(d);
         if (p.totalBuildings > 1)
           _r1 += _cleanLibs.length
             ? ' ' + rptCount(_fInfo.libs) + ' of the ' + rptCount(p.totalBuildings) + ' ' + _nounMany + (_fInfo.libs === 1 ? ' has' : ' have') + ' at least one opportunity. ' +
@@ -21729,27 +21743,45 @@ function _a36TerminalStandardPlan(d) {
     ctx = d._a36AuditCtx || (d._a36AuditCtx = _a36DetContext(d));
   } catch (e) {
     console.error('_a36TerminalStandardPlan: findings model failed', e);
-    return { boxes: 0, buildings: 0 };
+    return { boxes: 0, buildings: 0, libs: [] };
   }
   var boxes = 0;
   var buildings = 0;
+  var libs = [];
   ctx.model.findings.forEach(function (f) {
     if (f.key !== 'terminalStandard') return;
     boxes += f.libTerminals || 0;
     buildings++;
+    libs.push({ name: f.bName, boxes: f.libTerminals || 0 });
   });
-  return { boxes: boxes, buildings: buildings };
+  return { boxes: boxes, buildings: buildings, libs: libs };
+}
+
+// _a36OpportunityList(d) - the opportunities of the audit: the findings of the findings model, one per opportunity of one library
+// (Matt 2026-11-18: 1 opportunity = 1 line in the cost estimate). The one list the cost lines, the Service Proposal and the counts read.
+// Each has lib (display name), bName (the library name of the priced rows), key, label, kind, units, affected.
+function _a36OpportunityList(d) {
+  var ctx;
+  try {
+    ctx = d._a36AuditCtx || (d._a36AuditCtx = _a36DetContext(d));
+  } catch (e) {
+    console.error('_a36OpportunityList: findings model failed', e);
+    return [];
+  }
+  return ctx.model.findings;
 }
 
 function _a36SetpointReprogramPlan(d, buildingRows) {
   var zones = 0;
   var buildings = 0;
+  var libs = [];
   (buildingRows || _a36SetpointBuildingRows(d).buildingRows).forEach(function (r) {
     if (r.singleZone || !(r.deviatorCount > 0)) return;
     zones += r.deviatorCount;
     buildings++;
+    libs.push({ name: r.name, zones: r.deviatorCount });
   });
-  return { zones: zones, buildings: buildings };
+  return { zones: zones, buildings: buildings, libs: libs };
 }
 
 // _a36SetpointNeedsChangeCount(buildingRows) - the number of rows of _a36SetpointBuildingRows that need setpoints changed (bStatus
@@ -22399,6 +22431,8 @@ function _rptA36ProposalSummaryData(d) {
       else if (r.phase === 2 && r.seqKey) seqQty += r.qty || 0;
     });
     sd.roomCo2 = qty > 0 ? { qty: qty, seqQty: seqQty } : null;
+    // The opportunities of the audit: every cost line of the proposal is one of them (_pricingOpportunityLines).
+    sd.opps = typeof _a36OpportunityList === 'function' ? _a36OpportunityList(d) : [];
   }
   if (d) d._a36ProposalSummary = sd;
   return sd;
@@ -24926,6 +24960,21 @@ var _RPT_A36_POINT_CATEGORY_LABEL = {
  * dollar figure here is a sum of the SAME row.lineTotal values the prior bullet list totaled, just
  * grouped by category instead of by item name.
  */
+function _rptA36HardwareLabel(r) {
+  var cls = (typeof POINT_KEY_INSTALL_CLASS !== 'undefined' && POINT_KEY_INSTALL_CLASS[r._pointKey]) || null;
+  // A fan coil unit carries its carbon dioxide sensor in the unit, not in an air handler duct.
+  return (
+    r.deviceLabel ||
+    (r._pointKey === 'co2_ahu' && r.category === 'fcu' ? 'Carbon Dioxide Sensors in Fan Coil Units' : '') ||
+    _RPT_A36_POINT_CATEGORY_LABEL[r._pointKey] ||
+    (cls && _RPT_A36_DEVICE_CLASS_LABEL[cls]) ||
+    (r.isFddAddon ? 'Equipment Fault Reports' : '') ||
+    (r._pointKey && typeof _pricingPointLabel === 'function' ? _pricingPointLabel(r._pointKey) : '') ||
+    _rptA36PlainName(r.item) ||
+    'Devices'
+  );
+}
+
 function _rptA36HardwareCategoryAgg(rows, toggles) {
   var included = rows.filter(function (r) {
     var key = r._baseId || r.id;
@@ -24941,16 +24990,7 @@ function _rptA36HardwareCategoryAgg(rows, toggles) {
       ioOnlyCount++;
       return;
     }
-    var cls = (typeof POINT_KEY_INSTALL_CLASS !== 'undefined' && POINT_KEY_INSTALL_CLASS[r._pointKey]) || null;
-    // A fan coil unit carries its carbon dioxide sensor in the unit, not in an air handler duct.
-    var label =
-      (r._pointKey === 'co2_ahu' && r.category === 'fcu' ? 'Carbon Dioxide Sensors in Fan Coil Units' : '') ||
-      _RPT_A36_POINT_CATEGORY_LABEL[r._pointKey] ||
-      (cls && _RPT_A36_DEVICE_CLASS_LABEL[cls]) ||
-      (r.isFddAddon ? 'Equipment Fault Reports' : '') ||
-      (r._pointKey && typeof _pricingPointLabel === 'function' ? _pricingPointLabel(r._pointKey) : '') ||
-      _rptA36PlainName(r.item) ||
-      'Devices';
+    var label = _rptA36HardwareLabel(r);
     if (!byCat[label]) {
       byCat[label] = { label: label, qty: 0, lineTotal: 0 };
       order.push(label);
@@ -24969,148 +25009,185 @@ function _rptA36HardwareCategoryAgg(rows, toggles) {
 }
 
 /**
- * _rptA36TierDetailPanelHTML — the collapsible content itself: a concise, HIGH-LEVEL breakdown
- * of one tier's Hardware & Installation and Programming & Commissioning content. The two
- * subtotal dollar figures are the SAME tt[key].phase1 / tt[key].phase2 values the phaseSplitRow
- * above already prints (so the detail can never disagree with the tier table) — no new pricing
- * math. Programming still lists one row per sequence (already category-level — a handful of rows,
- * never the length complaint). Hardware & Installation (2026-07-27 rework — Matt, repeat
- * complaint: "too much detail" + "The Compliance and Full Scope is huge!") now groups by DEVICE
- * CATEGORY via _rptA36HardwareCategoryAgg instead of one bullet per distinct item name — a
- * portfolio with 40+ distinct hardware line items previously produced 40+ bullets; it now produces
- * one line per category (a handful) plus one summary line for every existing-controller I/O point
- * needing only programming exposure. Starts hidden (display:none) — downloadReportPdf() forces
- * every tier's panel open before html2canvas so nothing is hidden in the flat PDF.
+ * _rptA36OppDetail - the cost lines of one option (Matt 2026-11-18: 1 opportunity = 1 line in the cost estimate). The priced rows that count
+ * are merged by _pricingOpportunityLines (the one rule that says which opportunity a row belongs to) into one line per opportunity of one
+ * library: item = library and opportunity, desc = the devices and the programming of the line, qty = the devices to install (the units
+ * programmed when the line has no device), lineTotal = the sum of its rows. A row of no opportunity (the optional status points, the fault
+ * report add-on, the sensor checks) is an "Included" line and is not counted. In workbook mode the lines are shares of the workbook subtotal.
+ * subtotalR = the Devices and Programming parts the cost table prints; rounding = what the printed whole-dollar lines miss of it (null: none).
+ * Returns { lines, included, subtotalR, rounding, noCatalog }.
  */
-function _rptA36TierDetailPanelHTML(key, tt, summaryData, estimateState, wantItemized, fmtUSD) {
-  var rows = (summaryData && summaryData.perTier && summaryData.perTier[key]) || [];
+function _rptA36OppDetail(summaryData, estimateState, key, tt) {
   var toggles = (estimateState && estimateState.rowToggles) || {};
-  var hwAgg = _rptA36HardwareCategoryAgg(rows, toggles);
-  var lb = _rptA36TierDetailAggByPhase(rows, 2, toggles);
-  // Every option, Recommended included, is a one-time cost with its own priced parts (Matt, 2026-11-02:
-  // "There is no monthly allowance. Make it a 1 time cost.").
-  var noCat = !!(tt && tt[key] && tt[key].noCatalog);
-  var wbTier = !!(tt && tt[key] && tt[key].method === 'workbook');
-  var foot = tt && tt[key] ? _rptFootTier(tt[key].grand, tt[key].phase1, tt[key].phase2, wbTier) : null;
-  if (wbTier && foot) {
-    // Workbook mode: rows show their share of the workbook subtotal (lines add up exactly).
-    hwAgg = {
-      categories: _auditEstShareLines(hwAgg.categories, foot.p1r),
-      ioOnlyQty: hwAgg.ioOnlyQty,
-      ioOnlyCount: hwAgg.ioOnlyCount,
-    };
-    lb = _auditEstShareLines(lb, foot.p2r);
-  }
-  var p1 = foot ? fmtUSD(foot.p1r) : null;
-  var p2 = foot ? fmtUSD(foot.p2r) : null;
-
-  function _sectionHTMLCategories(subtotalStr, subtotalR, noCatFlag, agg) {
-    var subtotalHTML = noCatFlag
-      ? ' <span style="font-weight:400;color:var(--rpt-page-text)">(CSV needed for pricing)</span>'
-      : subtotalStr
-        ? ': <span style="font-weight:700">' + subtotalStr + '</span>'
-        : '';
-    var printed = [];
-    var catLines = agg.categories.map(function (c) {
-      var priceStr = '';
-      // Same no-bare-$0 rule as every other price cell in this report (fix/65ce578b, 2026-07-27):
-      // a category whose only members are ioOnly/unpriced (null coerced to 0 when summed) must
-      // read as "no additional cost", never a literal "$0".
-      if (wantItemized && c.lineTotal === 0) {
-        priceStr = ': ' + c.qty + (c.qty === 1 ? ' unit' : ' units') + ', no hardware cost';
-      } else if (wantItemized && c.lineTotal != null && fmtUSD(c.lineTotal)) {
-        priceStr = ': ' + c.qty + ' units, ' + fmtUSD(c.lineTotal);
-        printed.push(Math.round(c.lineTotal));
+  var rows = ((summaryData && summaryData.perTier && summaryData.perTier[key]) || []).filter(function (r) {
+    return toggles[r._baseId || r.id] !== false;
+  });
+  var grouped = _pricingOpportunityLines(rows, (summaryData && summaryData.opps) || []);
+  var lines = grouped.lines.map(function (g) {
+    var dev = {};
+    var devOrder = [];
+    var prog = {};
+    var progOrder = [];
+    var devQty = 0;
+    var progQty = 0;
+    var ioQty = 0;
+    var total = 0;
+    g.rows.forEach(function (r) {
+      total += r.lineTotal || 0;
+      if (r.phase === 1) {
+        if (r.ioOnly) {
+          ioQty += r.qty || 0;
+          return;
+        }
+        devQty += r.qty || 0;
+        var dl = _rptA36HardwareLabel(r);
+        if (!dev[dl]) {
+          dev[dl] = 0;
+          devOrder.push(dl);
+        }
+        dev[dl] += r.qty || 0;
       } else {
-        priceStr = ' (qty ' + c.qty + ')'; // every line shows its quantity
+        progQty += r.qty || 0;
+        var pl = _rptA36PlainRowLabel(r);
+        if (!prog[pl]) {
+          prog[pl] = true;
+          progOrder.push(pl);
+        }
       }
-      return '<li>' + _escHtml(c.label) + priceStr + '</li>';
     });
-    var catDelta = wantItemized && printed.length && subtotalR != null ? _rptRoundingDelta(subtotalR, printed) : null;
-    if (catDelta !== null) catLines.push('<li>Rounding: ' + fmtUSD(catDelta) + '</li>');
-    // Single summary line for every existing-controller I/O point (ioOnly, real scope, $0
-    // hardware — see buildCatalogRows) instead of enumerating each one separately.
-    if (agg.ioOnlyCount > 0) {
-      catLines.push(
-        '<li>' + _rptA36ExistingPointsLine(agg.ioOnlyQty) + '</li>',
+    var title = _rptA36PlainName(g.opp.label);
+    var desc = [];
+    if (devOrder.length) {
+      desc.push(
+        'Devices: ' +
+          devOrder
+            .map(function (l) {
+              return dev[l] + ' ' + l;
+            })
+            .join(', ') +
+          '.',
       );
     }
-    var listHTML = catLines.length
-      ? '<ul style="margin:2px 0 0;padding-left:14px;font-size:8.5px;color:var(--rpt-page-text);line-height:1.6">' +
-        catLines.join('') +
-        '</ul>'
-      : '<div style="font-size:8.5px;color:var(--rpt-page-text);margin-top:2px">No items in this scope.</div>';
-    return (
-      '<div style="margin-bottom:6px">' +
-      '<div style="font-size:9px;font-weight:700;color:var(--rpt-page-text)">' +
-      'Devices and Installation' +
-      subtotalHTML +
-      '</div>' +
-      listHTML +
-      '</div>'
-    );
-  }
-
-  function _sectionHTML(title, subtotalStr, subtotalR, noCatFlag, items) {
-    // Grey (#666) removed (report-standard rule: grey text is banned in client documents) —
-    // de-emphasis now comes from font-weight/size only, same convention used elsewhere in this
-    // report (e.g. the footnote below this table).
-    var subtotalHTML = noCatFlag
-      ? ' <span style="font-weight:400;color:var(--rpt-page-text)">(CSV needed for pricing)</span>'
-      : subtotalStr
-        ? ': <span style="font-weight:700">' + subtotalStr + '</span>'
-        : '';
-    var printedTotals = [];
-    var itemLines = items.map(function (it) {
-      var priceStr = '';
-      // fix/65ce578b (2026-07-27): a real, computed $0 (ioOnly rows -- existing controller
-      // I/O points that need no new hardware, see pricing-estimator.js's ioOnly branch)
-      // was rendering as "N x $0 = $0" / a bare "$0" -- banned per the no-$0-in-client-
-      // output rule. These are real scope the client should still see (Matt: "do not
-      // silently drop scope"), so the row/item stays; only the misleading $0 math is
-      // replaced with a plain-English "no additional cost" label.
-      if (wantItemized && it.lineTotal === 0) {
-        priceStr = ': ' + it.qty + (it.qty === 1 ? ' unit' : ' units') + ', no hardware cost';
-      } else if (wantItemized && it.lineTotal != null && fmtUSD(it.lineTotal)) {
-        var ln = _rptItemizedLineText(it.qty, it.lineTotal, fmtUSD, wbTier);
-        priceStr = ln.text;
-        printedTotals.push(ln.total);
-      } else {
-        priceStr = ' (qty ' + it.qty + ')'; // every line shows its quantity
-      }
-      return '<li>' + _escHtml(it.item || '') + priceStr + '</li>';
+    var progText = progOrder.filter(function (l) {
+      return l.toLowerCase() !== title.toLowerCase();
     });
-    var itemDelta =
-      wantItemized && printedTotals.length && subtotalR != null ? _rptRoundingDelta(subtotalR, printedTotals) : null;
-    if (itemDelta !== null) itemLines.push('<li>Rounding: ' + fmtUSD(itemDelta) + '</li>');
-    var listHTML = itemLines.length
-      ? '<ul style="margin:2px 0 0;padding-left:14px;font-size:8.5px;color:var(--rpt-page-text);line-height:1.6">' +
-        itemLines.join('') +
-        '</ul>'
+    if (ioQty) progText.push(ioQty + ' existing control point' + (ioQty === 1 ? '' : 's'));
+    if (progText.length) desc.push('Programming: ' + progText.join(', ') + '.');
+    return { item: g.opp.lib + ': ' + title, desc: desc.join(' '), qty: devQty || progQty || ioQty, lineTotal: total, oppKey: g.opp.key };
+  });
+  var inc = {};
+  var incOrder = [];
+  grouped.unmapped.forEach(function (r) {
+    var label =
+      r.phase === 1
+        ? r.ioOnly
+          ? 'Existing control points (programming only)'
+          : _rptA36HardwareLabel(r)
+        : _rptA36PlainRowLabel(r) || '(unnamed)';
+    if (!inc[label]) {
+      inc[label] = { item: label, desc: '', qty: 0, lineTotal: 0 };
+      incOrder.push(label);
+    }
+    inc[label].qty += r.qty || 0;
+    inc[label].lineTotal += r.lineTotal || 0;
+  });
+  var included = incOrder.map(function (k) {
+    return inc[k];
+  });
+  var wbTier = !!(tt && tt[key] && tt[key].method === 'workbook');
+  var foot = tt && tt[key] ? _rptFootTier(tt[key].grand, tt[key].phase1, tt[key].phase2, wbTier) : null;
+  var subtotalR = foot ? foot.p1r + foot.p2r : null;
+  if (wbTier && foot) {
+    var shared = _auditEstShareLines(lines.concat(included), subtotalR);
+    lines = shared.slice(0, lines.length);
+    included = shared.slice(lines.length);
+  }
+  var printed = [];
+  lines.concat(included).forEach(function (it) {
+    if (it.lineTotal > 0) printed.push(Math.round(it.lineTotal));
+  });
+  return {
+    lines: lines,
+    included: included,
+    subtotalR: subtotalR,
+    rounding: printed.length && subtotalR !== null ? _rptRoundingDelta(subtotalR, printed) : null,
+    noCatalog: !!(tt && tt[key] && tt[key].noCatalog),
+  };
+}
+
+// The text after the name of one cost line: its whole-dollar price, "no additional cost" for a line that costs nothing, or the quantity
+// when the report prints no prices. A line is never printed as "$0".
+function _rptA36OppPriceText(it, wantItemized, fmtUSD) {
+  if (!wantItemized) return ' (qty ' + it.qty + ')';
+  if (!(it.lineTotal > 0)) return ': no additional cost';
+  return ': ' + (fmtUSD(Math.round(it.lineTotal)) || '');
+}
+
+// The sum of the whole-dollar prices the lines of a list print.
+function _rptA36OppPrintedSum(items) {
+  return items.reduce(function (s, it) {
+    return s + (it.lineTotal > 0 ? Math.round(it.lineTotal) : 0);
+  }, 0);
+}
+
+// _rptA36OppCounts(d) - the number of opportunities of the audit, and how many of them have a cost line in the Recommended option and in Full
+// Scope (the same lines the Service Proposal prints). The optional room carbon dioxide scope is not in the Recommended total, so an opportunity
+// that only it prices has no line there. Cached on d.
+function _rptA36OppCounts(d) {
+  if (d._a36OppCounts) return d._a36OppCounts;
+  var sd = _rptA36ProposalSummaryData(d);
+  var out = { total: _a36OpportunityList(d).length, recommended: 0, fullScope: 0 };
+  if (sd && sd.perTier) {
+    var est = typeof _pricingGetEstimate === 'function' ? _pricingGetEstimate(d.project.id) : null;
+    out.recommended = _rptA36OppDetail(sd, est, 'recommended', null).lines.length;
+    out.fullScope = _rptA36OppDetail(sd, est, 'full-scope', null).lines.length;
+  }
+  d._a36OppCounts = out;
+  return out;
+}
+
+/**
+ * _rptA36TierDetailPanelHTML — the collapsible content itself: the cost lines of one option (_rptA36OppDetail): one line per opportunity of one
+ * library with its price, then the "Included" lines that are no opportunity, then a Rounding line so the printed lines add up to the Devices and
+ * Programming parts of the option (the same parts the cost table prints). No new pricing math. Starts hidden (display:none) — downloadReportPdf()
+ * forces every tier's panel open before html2canvas so nothing is hidden in the flat PDF.
+ */
+function _rptA36TierDetailPanelHTML(key, tt, summaryData, estimateState, wantItemized, fmtUSD) {
+  var det = _rptA36OppDetail(summaryData, estimateState, key, tt);
+  function listHTML(items, extra) {
+    var lis = items.map(function (it) {
+      return '<li>' + _escHtml(it.item || '') + _rptA36OppPriceText(it, wantItemized, fmtUSD) + '</li>';
+    });
+    if (extra) lis.push(extra);
+    return lis.length
+      ? '<ul style="margin:2px 0 0;padding-left:14px;font-size:8.5px;color:var(--rpt-page-text);line-height:1.6">' + lis.join('') + '</ul>'
       : '<div style="font-size:8.5px;color:var(--rpt-page-text);margin-top:2px">No items in this scope.</div>';
+  }
+  function sectionHTML(title, items, extra) {
+    var sum = wantItemized ? _rptA36OppPrintedSum(items) : 0;
+    var subtotalHTML = det.noCatalog
+      ? ' <span style="font-weight:400;color:var(--rpt-page-text)">(CSV needed for pricing)</span>'
+      : wantItemized && sum > 0
+        ? ': <span style="font-weight:700">' + (fmtUSD(sum) || '') + '</span>'
+        : '';
     return (
       '<div style="margin-bottom:6px">' +
       '<div style="font-size:9px;font-weight:700;color:var(--rpt-page-text)">' +
       _escHtml(title) +
       subtotalHTML +
       '</div>' +
-      listHTML +
+      listHTML(items, extra) +
       '</div>'
     );
   }
-
-  // Design-language pass (report-export-fixes, 2026-07-22): dropped the bordered/rounded/
-  // white-fill card treatment (box styling banned in client reports, rule 4.3) — plain spacing
-  // with a single thin top divider, same "whitespace + thin border only" convention as
-  // .rpt-a36-callout and the disclaimer block below this table.
-
+  var roundingLi = wantItemized && det.rounding !== null ? '<li>Rounding: ' + fmtUSD(det.rounding) + '</li>' : '';
   return (
     '<div id="rpt-tier-detail-' +
     key +
     '" style="display:none;margin-top:6px;padding-top:6px;' +
     'border-top:1px solid var(--rpt-rule);text-align:left">' +
-    _sectionHTMLCategories(p1, foot ? foot.p1r : null, noCat, hwAgg) +
-    _sectionHTML('Programming', p2, foot ? foot.p2r : null, false, lb) +
+    sectionHTML('Opportunities (' + det.lines.length + ')', det.lines, det.included.length ? '' : roundingLi) +
+    (det.included.length ? sectionHTML('Included', det.included, roundingLi) : '') +
     '</div>'
   );
 }
@@ -25457,15 +25534,10 @@ function rptPageASHRAE36ProposalPricing(n, d, opts) {
   var DETAIL_INLINE_ROW_LIMIT = 24; // combined Hardware+Programming row count considered safe inline
   var detailFitsInline = true;
   if (summaryData && summaryData.perTier) {
-    var _toggles0 = (estimateState && estimateState.rowToggles) || {};
     var _maxTierRows = 0;
     tierCols.forEach(function (c) {
-      var _rows = summaryData.perTier[c.key] || [];
-      var _hwAgg0 = _rptA36HardwareCategoryAgg(_rows, _toggles0);
-      var _n =
-        _hwAgg0.categories.length +
-        (_hwAgg0.ioOnlyCount > 0 ? 1 : 0) +
-        _rptA36TierDetailAggByPhase(_rows, 2, _toggles0).length;
+      var _det0 = _rptA36OppDetail(summaryData, estimateState, c.key, tt);
+      var _n = _det0.lines.length + _det0.included.length + 2 + (_det0.rounding !== null ? 1 : 0);
       if (_n > _maxTierRows) _maxTierRows = _n;
     });
     detailFitsInline = _maxTierRows <= DETAIL_INLINE_ROW_LIMIT;
@@ -25673,56 +25745,24 @@ function rptPageASHRAE36ProposalPricing(n, d, opts) {
       });
       if (!included.length) return;
 
-      // Hardware & Installation rows (phase 1) are CATEGORY-summarized here too (2026-07-27,
-      // same rework as _rptA36HardwareCategoryAgg used by the Install & Programming Detail
-      // pages above — Matt, repeat complaint: "too much detail" / "Compliance and Full Scope is
-      // huge"). A category has no single clientSummary sentence (it can span several distinct
-      // items with different savings rationale), so the category rows carry no sub-line here —
-      // Programming (phase 2) rows below are UNCHANGED: still one row per sequence with its
-      // clientSummary sentence, since that list was never the length complaint (a handful of
-      // sequences, not dozens of hardware line items).
-      var hwAgg = _rptA36HardwareCategoryAgg(rows, toggles);
-      var hwCategoryRows = hwAgg.categories.map(function (cat) {
-        return { item: cat.label, qty: cat.qty, lineTotal: cat.lineTotal, clientSummary: null, _isCategory: true };
-      });
-      if (hwAgg.ioOnlyCount > 0) {
-        hwCategoryRows.push({
-          item: _rptA36ExistingPointsLine(hwAgg.ioOnlyQty),
-          qty: hwAgg.ioOnlyQty,
-          lineTotal: 0,
-          clientSummary: null,
-          _isCategory: true,
-        });
-      }
-
-      var byItem = {};
-      var order = [];
-      included
-        .filter(function (r) {
-          return r.phase === 2;
-        })
-        .forEach(function (r) {
-          var key = _rptA36PlainRowLabel(r) || '(unnamed)';
-          if (!byItem[key]) {
-            byItem[key] = { item: key, qty: 0, lineTotal: 0, clientSummary: r.clientSummary || null };
-            order.push(key);
-          }
-          byItem[key].qty += r.qty || 0;
-          byItem[key].lineTotal += r.lineTotal || 0;
-        });
-      var programmingRows = order.map(function (k) {
-        return byItem[k];
-      });
-
-      var wbItem = tt && tt[c.key] && tt[c.key].method === 'workbook';
-      if (wbItem) {
-        // Workbook mode: row prices are shares of the tier's workbook Hardware / Programming
-        // subtotals, so the table adds up to the tier total exactly.
-        hwCategoryRows = _auditEstShareLines(hwCategoryRows, Math.round(tt[c.key].phase1 || 0));
-        programmingRows = _auditEstShareLines(programmingRows, Math.round(tt[c.key].phase2 || 0));
-      }
-      var agg = hwCategoryRows.concat(programmingRows);
-      if (!agg.length) return;
+      // One row per cost line of the option (_rptA36OppDetail): the opportunities first, each with the devices and the programming of its line
+      // under the name; the "Included" lines that are no opportunity after them. The prices print as whole dollars with a Rounding row, so the
+      // table adds up to the Devices and Programming parts of the option.
+      var det = _rptA36OppDetail(summaryData, estimateState, c.key, tt);
+      var agg = [{ _heading: 'Opportunities (' + det.lines.length + ')' }]
+        .concat(
+          det.lines.map(function (l) {
+            return { item: l.item, qty: l.qty, lineTotal: l.lineTotal, clientSummary: l.desc || null };
+          }),
+        )
+        .concat(det.included.length ? [{ _heading: 'Included' }] : [])
+        .concat(
+          det.included.map(function (l) {
+            return { item: l.item, qty: l.qty, lineTotal: l.lineTotal, clientSummary: null };
+          }),
+        )
+        .concat(det.rounding !== null ? [{ item: 'Rounding', qty: null, lineTotal: det.rounding, clientSummary: null }] : []);
+      if (!det.lines.length && !det.included.length) return;
 
       var itColgroup = '<colgroup><col style="width:474px"><col style="width:100px"><col style="width:110px"></colgroup>';
       var itThStyle =
@@ -25748,6 +25788,7 @@ function rptPageASHRAE36ProposalPricing(n, d, opts) {
         var td =
           'padding:5px 8px;font-size:9px;color:var(--rpt-page-text);border:1px solid var(--rpt-border);vertical-align:top';
         var tdR = td + ';text-align:right';
+        if (row._heading) return '<tr><td colspan="3" style="' + td + ';font-weight:700">' + _escHtml(row._heading) + '</td></tr>';
         var nameHTML =
           '<div>' +
           _escHtml(row.item || '') +
@@ -25767,7 +25808,7 @@ function rptPageASHRAE36ProposalPricing(n, d, opts) {
           '<td style="' +
           tdR +
           '">' +
-          (row.qty || 0).toLocaleString() +
+          (row.qty === null ? '' : (row.qty || 0).toLocaleString()) +
           '</td>' +
           // fix/65ce578b (2026-07-27): a real, computed $0 (ioOnly rows -- existing controller
           // I/O points needing no new hardware) must not print as a bare "$0" (banned per the
@@ -25776,7 +25817,7 @@ function rptPageASHRAE36ProposalPricing(n, d, opts) {
           '<td style="' +
           tdR +
           '">' +
-          (row.lineTotal === 0 ? 'No hardware cost' : _fmtUSD(row.lineTotal) || '—') +
+          (row.lineTotal === 0 ? 'No additional cost' : _fmtUSD(row.lineTotal) || '—') +
           '</td>' +
           '</tr>'
         );
@@ -25894,58 +25935,14 @@ function rptPageASHRAE36ProposalPricing(n, d, opts) {
       );
     }
 
-    function categoryBulletHTML(c, showPrice, printed) {
-      var priceStr = '';
-      // Same no-bare-$0 rule as _sectionHTMLCategories above.
-      if (showPrice && wantItemized && c.lineTotal === 0) {
-        priceStr = ': ' + c.qty + (c.qty === 1 ? ' unit' : ' units') + ', no hardware cost';
-      } else if (showPrice && wantItemized && c.lineTotal != null && _fmtUSD(c.lineTotal)) {
-        priceStr = ': ' + c.qty + ' units, ' + _fmtUSD(c.lineTotal);
-        printed.push(Math.round(c.lineTotal));
-      } else {
-        priceStr = ' (qty ' + c.qty + ')';
-      }
-      return (
-        '<div style="font-size:9px;color:var(--rpt-page-text);line-height:1.45;padding-left:14px;position:relative">' +
-        '<span style="position:absolute;left:0">&#8226;</span>' +
-        _escHtml(c.label) +
-        priceStr +
-        '</div>'
-      );
-    }
-
-    function ioOnlySummaryHTML(agg) {
-      return (
-        '<div style="font-size:9px;color:var(--rpt-page-text);line-height:1.45;padding-left:14px;position:relative">' +
-        '<span style="position:absolute;left:0">&#8226;</span>' +
-        _rptA36ExistingPointsLine(agg.ioOnlyQty) +
-        '</div>'
-      );
-    }
-
-    function bulletHTML(it, showPrice, printed, wb) {
-      var priceStr = '';
-      // fix/65ce578b (2026-07-27): same $0/no-catalog-price fix as _rptA36TierDetailPanelHTML's
-      // _sectionHTML above -- a real, computed $0 (ioOnly rows) must not render as "N × $0 = $0"
-      // / a bare "$0". Row stays (real scope the client should see); only the price text changes.
-      if (showPrice && wantItemized && it.lineTotal === 0) {
-        priceStr = ': ' + it.qty + (it.qty === 1 ? ' unit' : ' units') + ', no hardware cost';
-      } else if (showPrice && wantItemized && it.lineTotal != null && _fmtUSD(it.lineTotal)) {
-        var ln = _rptItemizedLineText(it.qty, it.lineTotal, _fmtUSD, wb);
-        priceStr = ln.text;
-        printed.push(ln.total);
-      } else {
-        priceStr = ' (qty ' + it.qty + ')';
-      }
-      // Self-contained fragment (no wrapping <ul>/<table> required) so _rptPaginateTokens can
-      // split the token stream at any row boundary without ever leaving an unclosed tag —
-      // same "each token is one complete, independently valid HTML fragment" rule
-      // _buildItemizedPages() above follows with its <tr>...</tr> rows.
+    // One cost line: the library and opportunity with its price; the devices and the programming of the line under it.
+    function lineBulletHTML(it, wb) {
       return (
         '<div style="font-size:9px;color:var(--rpt-page-text);line-height:1.45;padding-left:14px;position:relative">' +
         '<span style="position:absolute;left:0">&#8226;</span>' +
         _escHtml(it.item || '') +
-        priceStr +
+        _rptA36OppPriceText(it, wantItemized, _fmtUSD) +
+        (it.desc ? '<div style="font-size:8px;line-height:1.4">' + _escHtml(it.desc) + '</div>' : '') +
         '</div>'
       );
     }
@@ -25967,68 +25964,22 @@ function rptPageASHRAE36ProposalPricing(n, d, opts) {
     }
 
     tierCols.forEach(function (c) {
-      var rows = summaryData.perTier[c.key] || [];
-      var hwAgg = _rptA36HardwareCategoryAgg(rows, toggles);
-      var lb = _rptA36TierDetailAggByPhase(rows, 2, toggles);
-      var hasHw = hwAgg.categories.length > 0 || hwAgg.ioOnlyCount > 0;
-      if (!hasHw && !lb.length) return;
-
-      // D-12 (WP-21): the Hardware / Programming subtotals come from the same _rptFootTier call
-      // page 7 uses, so the two pages agree. The bullet lines below print whole-dollar qty x unit
-      // = total; a visible "Rounding" line closes the gap to the subtotal.
-      var tt_ = tt && tt[c.key] ? tt[c.key] : null;
-      var noCat = !!(tt_ && tt_.noCatalog);
-      var wb_ = !!(tt_ && tt_.method === 'workbook');
-      var foot_ = tt_ ? _rptFootTier(tt_.grand, tt_.phase1, tt_.phase2, wb_) : null;
-      if (wb_ && foot_) {
-        hwAgg = {
-          categories: _auditEstShareLines(hwAgg.categories, foot_.p1r),
-          ioOnlyQty: hwAgg.ioOnlyQty,
-          ioOnlyCount: hwAgg.ioOnlyCount,
-        };
-        lb = _auditEstShareLines(lb, foot_.p2r);
-      }
-      var p1 = foot_ ? _fmtUSD(foot_.p1r) : null;
-      var p2 = foot_ ? _fmtUSD(foot_.p2r) : null;
-      var hwPrinted = [];
-      var pgPrinted = [];
-
+      var det = _rptA36OppDetail(summaryData, estimateState, c.key, tt);
+      if (!det.lines.length && !det.included.length) return;
       var tokens = [];
-      // 2026-08-02 (fix/docx-proposal-pagination-orphans): bullet/section-title estH bumped
-      // 15 -> 30 and 24 -> 30. A real Word round-trip render of the live Client D "Full Scope" tier
-      // found this WHOLE 28-token list (2 section titles + 26 bullets) estimated at only 438px
-      // under the OLD 15/24 constants — comfortably under the 900px _scopeBudget, so
-      // _rptPaginateTokens never even split it into multiple chunks (numChunks stayed 1). But the
-      // real exported PDF (word/document.xml row-top deltas, "Install & Programming Detail — Full
-      // Scope" page) measured a CONSISTENT ~20.05pt = ~26.7px-equivalent per bullet row and
-      // ~20.7pt = ~27.6px-equivalent for the section-title-to-next-row gap — i.e. every token in
-      // this list was underestimated by roughly HALF (15 vs 26.7 real, 24 vs 27.6 real). The real
-      // total for those same 28 tokens is ~830px, close enough to the page's real available height
-      // that the last bullet ("Sensor Investigation — Discharge Airflow") didn't fit and was
-      // orphaned alone on the next page. 30 (both constants unified, matching the itemized table's
-      // own plain-row value) covers the measured real heights with genuine margin instead of an
-      // estimate that was never validated against Word. See docs/dashboardlogic.md 2026-08-02.
-      if (hasHw) {
-        tokens.push({ type: 'row', title: true, estH: 30, html: sectionTitleHTML('Devices and Installation', p1, noCat) });
-        hwAgg.categories.forEach(function (c2) {
-          tokens.push({ type: 'row', estH: 30, html: categoryBulletHTML(c2, true, hwPrinted) });
+      // Each list line is one token; the list prints whole dollars, and a visible Rounding line closes the gap to the Devices and Programming
+      // parts of the option (the same parts the cost table prints). A token is about 30px (the estimate of the Word page fit, 2026-08-02).
+      tokens.push({ type: 'row', title: true, estH: 30, html: sectionTitleHTML('Opportunities (' + det.lines.length + ')', wantItemized ? _fmtUSD(_rptA36OppPrintedSum(det.lines)) : null, det.noCatalog) });
+      det.lines.forEach(function (it) {
+        tokens.push({ type: 'row', estH: it.desc ? 44 : 30, html: lineBulletHTML(it) });
+      });
+      if (det.included.length) {
+        tokens.push({ type: 'row', title: true, estH: 30, html: sectionTitleHTML('Included', wantItemized ? _fmtUSD(_rptA36OppPrintedSum(det.included)) : null, false) });
+        det.included.forEach(function (it) {
+          tokens.push({ type: 'row', estH: 30, html: lineBulletHTML(it) });
         });
-        if (hwAgg.ioOnlyCount > 0) {
-          tokens.push({ type: 'row', estH: 30, html: ioOnlySummaryHTML(hwAgg) });
-        }
-        var hwDelta =
-          wantItemized && hwPrinted.length && foot_ ? _rptRoundingDelta(foot_.p1r, hwPrinted) : null;
-        if (hwDelta !== null) tokens.push({ type: 'row', estH: 30, html: roundingBulletHTML(hwDelta) });
       }
-      if (lb.length) {
-        tokens.push({ type: 'row', title: true, estH: 30, html: sectionTitleHTML('Programming', p2, false) });
-        lb.forEach(function (it) {
-          tokens.push({ type: 'row', estH: 30, html: bulletHTML(it, true, pgPrinted, wb_) });
-        });
-        var pgDelta =
-          wantItemized && pgPrinted.length && foot_ ? _rptRoundingDelta(foot_.p2r, pgPrinted) : null;
-        if (pgDelta !== null) tokens.push({ type: 'row', estH: 30, html: roundingBulletHTML(pgDelta) });
-      }
+      if (wantItemized && det.rounding !== null) tokens.push({ type: 'row', estH: 30, html: roundingBulletHTML(det.rounding) });
 
       // One piece per list line; a section title travels with the line after it. The packer (above) puts the pieces on
       // pages by MEASURED height and splits a list between pages at a line (2026-11-18: no half-empty pages).
@@ -28207,27 +28158,16 @@ function _a36DetModel(d, rowsById, picMap, loaded) {
       var pumpUnits = driveUnits('hwPumpSpeed');
       var pumpDrive = pumpUnits.length > 0;
       if (kind === 'seq') {
-        // extra.keys: one finding that stands for two sequences on the same units (Minimum Outside Air with Occupancy-Based
-        // Ventilation of the air handling units); the finding names both sequences and both Guideline 36 sections.
-        var seqKeys = extra.keys || [key];
-        var many = seqKeys.length > 1;
-        f.keys = seqKeys; // the sequences this finding stands for
-        // One section list: a plain section that a range of another sequence already covers ("5.16.3" inside "5.16.3 to 5.16.6") prints once.
-        // A group of single-zone air handlers cites Section 5.18 (emSingleZoneSection); a sequence without a 5.18 counterpart keeps its 5.16 section.
-        var _secList = seqKeys.map(function (k) { return (szGroup && emSingleZoneSection(k)) || _a36DetSeqSection(k); }).filter(Boolean);
-        _secList = _secList.filter(function (s, i) {
-          return _secList.indexOf(s) === i && !_secList.some(function (o, j) { return j !== i && o !== s && o.split(' to ').indexOf(s) > -1; });
-        });
-        f.section = _secList.join(' and ');
-        f.sectionPlural = many && f.section.indexOf(' and ') > -1;
+        // One finding is one sequence of one library (Matt 2026-11-18: 1 opportunity = 1 line). A group of single-zone air handlers cites
+        // Section 5.18 (emSingleZoneSection); a sequence without a 5.18 counterpart keeps its 5.16 section.
+        f.section = (szGroup && emSingleZoneSection(key)) || _a36DetSeqSection(key) || '';
         // What a sequence does is printed once, in Control Sequences (the Impact line of a sequence finding is gone).
         f.impact = '';
-        f.effect = seqKeys.some(function (k) { return savings[k] && savings[k].type === 'savings'; }) ? 'Energy use' : 'Equipment control';
+        f.effect = savings[key] && savings[key].type === 'savings' ? 'Energy use' : 'Equipment control';
         var plural = f.missing.length > 1 ? 's' : '';
         // The finding names no ASHRAE 36 section: the audit is not framed on the standard (the section number stays in f.section for the ASHRAE 36 Sequences section).
         var secPart = '';
-        var seqNoun = label + (many ? ' sequences' : ' sequence');
-        var seqBe = many ? ' are' : ' is';
+        var seqNoun = label + ' sequence';
         // Missing: the points the sequence needs, with the section, on the units that lack them (a sequence with no missing point names the sequence).
         f.observed =
           (f.missing.length ? _a36DetJoin(f.missingText).replace(/^./, function (c) { return c.toUpperCase(); }) + ' point' + plural : seqNoun) +
@@ -28253,7 +28193,7 @@ function _a36DetModel(d, rowsById, picMap, loaded) {
       if (f.dcvNote && f.headline) f.headline += ' ' + f.dcvNote;
       f.category = g ? g.category : null; // the equipment type of the finding (the per-building page lists a finding on the row of its type)
       // A picture only when the listed page text names the topic of this finding, on a non-graphic page of an affected unit.
-      var wordList = (extra.keys || [key]).map(function (k) { return A36_DET_FINDING_PAGE_WORDS[k]; }).filter(Boolean);
+      var wordList = [A36_DET_FINDING_PAGE_WORDS[key]].filter(Boolean);
       if (g && wordList.length && f.affected.length) {
         var pk = _a36DetPickPictures(picMap, bn, f.affected, loaded, {
           page: function (t) {
@@ -28276,11 +28216,49 @@ function _a36DetModel(d, rowsById, picMap, loaded) {
       all.push(f);
       f.n = all.length;
     }
-    groups.forEach(function (g, gi) {
-      var sw = work.byGroup[gi];
+    // The units of a group that lack the sequences of seqs and the points they lack.
+    function seqDetail(g, seqs) {
+      var affected = [];
+      var missing = [];
+      var missingKeys = []; // the point keys, in the order of missing
+      var unitsMissing = {};
+      g.units.forEach(function (eq) {
+        var cats = [];
+        var hit = false;
+        seqs.forEach(function (s) {
+          var sr = sequenceOf(eq, s.key);
+          if (!sr) return;
+          hit = true;
+          (sr.missingCats || []).forEach(function (c) {
+            if (cats.indexOf(c) === -1) cats.push(c);
+          });
+        });
+        if (!hit) return;
+        // The priced scope leaves out a monitoring-only zone unit (no heating and no cooling set point); the finding counts
+        // and names the same units as the priced quantity (one rule: _pricingIsMonitoringOnlyZoneUnit).
+        if (typeof _pricingIsMonitoringOnlyZoneUnit === 'function' && _pricingIsMonitoringOnlyZoneUnit(eq)) return;
+        affected.push(eq.name || 'Unknown');
+        cats.forEach(function (c) {
+          var pointLabel = _a36DetCatLabel(c);
+          if (!unitsMissing[pointLabel]) {
+            missing.push(pointLabel);
+            missingKeys.push(c);
+          }
+          unitsMissing[pointLabel] = (unitsMissing[pointLabel] || 0) + 1;
+        });
+      });
+      // A point that only some of the affected units miss carries its own unit count ("Damper Actuator (on 20 units)").
+      var missingText = missing.map(function (pointLabel) {
+        var count = unitsMissing[pointLabel];
+        return count < affected.length ? pointLabel + ' (on ' + count + ' ' + (count === 1 ? 'unit' : 'units') + ')' : pointLabel;
+      });
+      return { affected: affected, missing: missing, missingText: missingText, missingKeys: missingKeys };
+    }
+    // The sequences of each group: seqList in first-seen order, seqBy by key (rows of the same sequence add up).
+    var seqInfo = groups.map(function (g, gi) {
       var seqList = [];
       var seqBy = {};
-      sw.seqs.forEach(function (w) {
+      work.byGroup[gi].seqs.forEach(function (w) {
         var key = w.row.seqKey;
         if (!seqBy[key]) {
           seqBy[key] = { key: key, label: w.label, row: w.row, qty: 0 };
@@ -28288,6 +28266,43 @@ function _a36DetModel(d, rowsById, picMap, loaded) {
         }
         seqBy[key].qty += w.qty;
       });
+      return { seqList: seqList, seqBy: seqBy };
+    });
+    // Occupancy-based ventilation of the zone terminals is ONE opportunity of a library, whatever the number of terminal groups that lack it
+    // (Matt 2026-11-18: 1 opportunity = 1 line in the cost estimate). Added at the first group that has it. With one group the finding is
+    // that group's; with several the finding is of the terminals of all of them (a group of zone terminal units, the category of the largest group).
+    var dcvAdded = false;
+    function addZoneVentilation() {
+      var parts = [];
+      groups.forEach(function (g, gi) {
+        if (seqInfo[gi].seqBy.vav_dcv) parts.push({ g: g, s: seqInfo[gi].seqBy.vav_dcv });
+      });
+      var fg = parts[0].g;
+      if (parts.length > 1) {
+        var units = [];
+        var big = parts[0].g;
+        parts.forEach(function (p) {
+          units = units.concat(p.g.units);
+          if (p.g.units.length > big.units.length) big = p.g;
+        });
+        units.sort(function (a, c) {
+          return String(a.name || '').localeCompare(String(c.name || ''), undefined, { numeric: true });
+        });
+        var names = units.map(function (eq) {
+          return eq.name || 'Unknown';
+        });
+        fg = { label: 'Zone Terminal Unit', category: big.category, units: units, names: names, shown: names.map(_a36DetEquipNameIn(_a36DisplayName(b))), singleZone: false };
+      }
+      var qty = 0;
+      parts.forEach(function (p) {
+        qty += p.s.qty;
+      });
+      var det = seqDetail(fg, [parts[0].s]);
+      add(fg, 'seq', 'vav_dcv', parts[0].s.label, Math.min(qty, fg.units.length), parts[0].s.row, { affected: det.affected, missing: det.missing, missingText: det.missingText, missingKeys: det.missingKeys });
+    }
+    groups.forEach(function (g, gi) {
+      var sw = work.byGroup[gi];
+      var seqList = seqInfo[gi].seqList;
       var ptList = [];
       var ptBy = {};
       sw.sensors.forEach(function (w) {
@@ -28336,68 +28351,13 @@ function _a36DetModel(d, rowsById, picMap, loaded) {
         if (!units) return;
         add(g, 'sensor', p.key, label, units, p.row, { affected: missingUnits > 0 ? remain : [] });
       });
-      // The units of the group that lack the sequences of seqs (one sequence, or two that make one finding) and the points they lack.
-      function seqDetail(seqs) {
-        var affected = [];
-        var missing = [];
-        var missingKeys = []; // the point keys, in the order of missing
-        var unitsMissing = {};
-        g.units.forEach(function (eq) {
-          var cats = [];
-          var hit = false;
-          seqs.forEach(function (s) {
-            var sr = sequenceOf(eq, s.key);
-            if (!sr) return;
-            hit = true;
-            (sr.missingCats || []).forEach(function (c) {
-              if (cats.indexOf(c) === -1) cats.push(c);
-            });
-          });
-          if (!hit) return;
-          // The priced scope leaves out a monitoring-only zone unit (no heating and no cooling set point); the finding counts
-          // and names the same units as the priced quantity (one rule: _pricingIsMonitoringOnlyZoneUnit).
-          if (typeof _pricingIsMonitoringOnlyZoneUnit === 'function' && _pricingIsMonitoringOnlyZoneUnit(eq)) return;
-          affected.push(eq.name || 'Unknown');
-          cats.forEach(function (c) {
-            var pointLabel = _a36DetCatLabel(c);
-            if (!unitsMissing[pointLabel]) {
-              missing.push(pointLabel);
-              missingKeys.push(c);
-            }
-            unitsMissing[pointLabel] = (unitsMissing[pointLabel] || 0) + 1;
-          });
-        });
-        // A point that only some of the affected units miss carries its own unit count ("Damper Actuator (on 20 units)").
-        var missingText = missing.map(function (pointLabel) {
-          var count = unitsMissing[pointLabel];
-          return count < affected.length ? pointLabel + ' (on ' + count + ' ' + (count === 1 ? 'unit' : 'units') + ')' : pointLabel;
-        });
-        return { affected: affected, missing: missing, missingText: missingText, missingKeys: missingKeys };
-      }
-      // Minimum Outside Air and Occupancy-Based Ventilation (air handling units) on the very same units is ONE finding that names both
-      // (Matt, 2026-11-11: "Min OA and CO2: merge into one row per unit"). When the two lists of units differ, the two stay separate.
-      var pairKeys = ['ahu_min_oa', 'demandCtrl'];
-      var pair = seqBy[pairKeys[0]] && seqBy[pairKeys[1]] ? [seqBy[pairKeys[0]], seqBy[pairKeys[1]]] : null;
-      var pairDetail = null;
-      if (pair) {
-        var d0 = seqDetail([pair[0]]);
-        var d1 = seqDetail([pair[1]]);
-        var n0 = Math.min(pair[0].qty, g.units.length);
-        if (d0.affected.length && d0.affected.join('|') === d1.affected.join('|') && n0 === Math.min(pair[1].qty, g.units.length)) pairDetail = seqDetail(pair);
-      }
       seqList.forEach(function (s) {
-        if (pairDetail && s === pair[1]) return; // printed with the first sequence of the pair
-        if (pairDetail && s === pair[0]) {
-          add(g, 'seq', s.key, _a36DetJoin([pair[0].label, pair[1].label]), Math.min(s.qty, g.units.length), s.row, {
-            affected: pairDetail.affected,
-            missing: pairDetail.missing,
-            missingText: pairDetail.missingText,
-            missingKeys: pairDetail.missingKeys,
-            keys: pairKeys,
-          });
+        if (s.key === 'vav_dcv') {
+          if (!dcvAdded) addZoneVentilation();
+          dcvAdded = true;
           return;
         }
-        var one = seqDetail([s]);
+        var one = seqDetail(g, [s]);
         add(g, 'seq', s.key, s.label, Math.min(s.qty, g.units.length), s.row, { affected: one.affected, missing: one.missing, missingText: one.missingText, missingKeys: one.missingKeys });
       });
     });
@@ -28696,6 +28656,9 @@ function _a36DetModel(d, rowsById, picMap, loaded) {
       lib.findings.push(f);
       all.push(f);
       f.n = all.length;
+    });
+    lib.findings.forEach(function (f) {
+      f.bName = b.name; // the library name of the priced rows (row.building); f.lib is the display name
     });
     libs.push(lib);
   });

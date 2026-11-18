@@ -50,6 +50,7 @@ const ok = (c, m) => {
       host.id = 'reportPages';
       host.innerHTML = html;
       document.body.appendChild(host);
+      if (typeof _rptApplyMinFontFloor === 'function') _rptApplyMinFontFloor(host); // the real overlay applies the 10pt floor (showReportOverlay) before the pages are measured
       host.querySelectorAll('[id^="rpt-tier-detail-"]').forEach((p) => (p.style.display = 'block'));
       const g = _rptGeometry();
       const pages = [...host.querySelectorAll('.rpt-page')].map((pg) => {

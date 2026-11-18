@@ -59,6 +59,18 @@ const SETPOINT_REPROGRAM_HOURS_PER_BUILDING = 2;
 // Matt 2026-11-18 (f3b50ab2): upgrade of a terminal unit program to the Control Service Company standard terminal unit sequence (load the
 // program, set its values, test it): 1.0 hour per terminal unit, Recommended and Full Scope (not Compliance: no ASHRAE 36 requirement).
 const TERMINAL_STANDARD_HOURS_PER_BOX = 1.0;
+// Manager covering estimate 2026-11-18, editable: the price of the opportunities that had no priced line (1 opportunity = 1 line in the
+// cost estimate). Labor at the project hourly rate; material is the price of the device per unit. A catalog item of the same kind does not
+// replace these (the catalog holds no photocell; its power meter and occupancy sensor SKUs are other devices than the ones these lines cover).
+const OVERRIDE_RELEASE_HOURS = 1.0; // release one manual override (one opportunity of a library)
+const SCHEDULE_HOURS_PER_UNIT = 0.15; // set the occupied schedule of one affected unit
+const SCHEDULE_HOURS_PER_BUILDING = 1; // schedule set-up and check, once per library
+const PHOTOCELL_MATERIAL_PRICE = 150; // exterior lighting photocell, per library
+const PHOTOCELL_HOURS = 3; // install and wire it, per library
+const OCCUPANCY_SENSOR_MATERIAL_PRICE = 120; // interior lighting occupancy sensor, per affected interior lighting unit
+const OCCUPANCY_SENSOR_HOURS = 2; // install and wire it, per unit
+const POWER_METER_MATERIAL_PRICE = 1800; // building power meter, per library
+const POWER_METER_HOURS = 8; // install and commission it, per library
 
 /* ── Physical install labor — Deliverable E (2026-07-19), unified rate (2026-07-28) ─────────
    COST_LABOR_RATE_DEFAULT above + COST_PER_SEQ_HOURS_DEFAULT price BAS sequence PROGRAMMING
@@ -3230,16 +3242,17 @@ function buildSetpointReprogramRows(projId, buildingNames) {
   var plan = _a36SetpointReprogramPlan(ashData);
   if (!plan || !(plan.zones > 0)) return [];
   var hourlyRate = _pricingGetConfig().hourlyRate || COST_LABOR_RATE_DEFAULT;
-  var hours = SETPOINT_REPROGRAM_HOURS_PER_ZONE * plan.zones + SETPOINT_REPROGRAM_HOURS_PER_BUILDING * plan.buildings;
-  var hrsPerUnit = hours / plan.zones;
-  return [
-    {
-      id: 'sprg_setpoint_reprogram',
-      building: 'All Buildings',
+  // One row per library (1 opportunity = 1 line): the hours of a library are 0.15 x its zones + 2.
+  return plan.libs.map(function (lb) {
+    var hours = SETPOINT_REPROGRAM_HOURS_PER_ZONE * lb.zones + SETPOINT_REPROGRAM_HOURS_PER_BUILDING;
+    var hrsPerUnit = hours / lb.zones;
+    return {
+      id: 'sprg_' + lb.name,
+      building: lb.name,
       item: 'Setpoint and Schedule Reprogramming',
       type: 'Programming',
-      equipment: plan.zones + ' zone' + (plan.zones !== 1 ? 's' : '') + ' in ' + plan.buildings + ' building' + (plan.buildings !== 1 ? 's' : ''),
-      qty: plan.zones,
+      equipment: lb.zones + ' zone' + (lb.zones !== 1 ? 's' : ''),
+      qty: lb.zones,
       sku: null,
       engReview: false,
       noSku: false,
@@ -3253,15 +3266,15 @@ function buildSetpointReprogramRows(projId, buildingNames) {
       phase: 2,
       hrsPerUnit: hrsPerUnit,
       isSetpointReprogram: true,
-      setpointBuildings: plan.buildings,
-    },
-  ];
+      oppKey: 'zoneSetpoints',
+    };
+  });
 }
 
 /* ── buildTerminalStandardRows(projId, buildingNames) ──
    The Audit Report recommends upgrading the terminal unit programs to the Control Service Company standard terminal unit sequence where the
-   programs it read are below it. ONE priced line: every terminal unit of those libraries (report-engine.js _a36TerminalStandardPlan, the one
-   count) x TERMINAL_STANDARD_HOURS_PER_BOX x the project hourly rate. In Recommended and Full Scope. [] when no library has the opportunity. */
+   programs it read are below it. ONE priced line per library: its terminal units (report-engine.js _a36TerminalStandardPlan, the one count)
+   x TERMINAL_STANDARD_HOURS_PER_BOX x the project hourly rate. In Recommended and Full Scope. [] when no library has the opportunity. */
 function buildTerminalStandardRows(projId, buildingNames) {
   if (typeof collectASHRAE36Data !== 'function' || typeof _a36TerminalStandardPlan !== 'function') return [];
   var ashData = collectASHRAE36Data(projId, null, buildingNames);
@@ -3269,15 +3282,15 @@ function buildTerminalStandardRows(projId, buildingNames) {
   var plan = _a36TerminalStandardPlan(ashData);
   if (!(plan.boxes > 0)) return [];
   var hourlyRate = _pricingGetConfig().hourlyRate || COST_LABOR_RATE_DEFAULT;
-  var hours = TERMINAL_STANDARD_HOURS_PER_BOX * plan.boxes;
-  return [
-    {
-      id: 'tstd_terminal_standard',
-      building: 'All Buildings',
+  return plan.libs.map(function (lb) {
+    var hours = TERMINAL_STANDARD_HOURS_PER_BOX * lb.boxes;
+    return {
+      id: 'tstd_' + lb.name,
+      building: lb.name,
       item: 'Terminal Unit Program Upgrade',
       type: 'Programming',
-      equipment: plan.boxes + ' terminal unit' + (plan.boxes !== 1 ? 's' : '') + ' in ' + plan.buildings + ' building' + (plan.buildings !== 1 ? 's' : ''),
-      qty: plan.boxes,
+      equipment: lb.boxes + ' terminal unit' + (lb.boxes !== 1 ? 's' : ''),
+      qty: lb.boxes,
       sku: null,
       engReview: false,
       noSku: false,
@@ -3291,8 +3304,173 @@ function buildTerminalStandardRows(projId, buildingNames) {
       phase: 2,
       hrsPerUnit: TERMINAL_STANDARD_HOURS_PER_BOX,
       isTerminalStandard: true,
-    },
-  ];
+      oppKey: 'terminalStandard',
+    };
+  });
+}
+
+/* ── buildOpportunityLaborRows(projId, buildingNames) ──
+   The priced line of every opportunity that had none (Matt 2026-11-18: 1 opportunity = 1 line in the cost estimate): a manual override to
+   release, the occupied schedules, the exterior lighting photocell, the interior lighting occupancy sensors and the building power meter.
+   One row per opportunity of the findings model (report-engine.js _a36OpportunityList, the one list), with the constants at the top of this
+   file. Labor at the project hourly rate. In Recommended and Full Scope (not Compliance: none of these is an ASHRAE 36 requirement). */
+function buildOpportunityLaborRows(projId, buildingNames) {
+  if (typeof collectASHRAE36Data !== 'function' || typeof _a36OpportunityList !== 'function') return [];
+  var ashData = collectASHRAE36Data(projId, null, buildingNames);
+  if (!ashData || !ashData.buildings) return [];
+  var rate = _pricingGetConfig().hourlyRate || COST_LABOR_RATE_DEFAULT;
+  var rows = [];
+  function labor(f, qty, hours, equipment, note) {
+    var hrsPerUnit = hours / qty;
+    rows.push({
+      id: 'opp_' + f.key + '_' + f.bName,
+      building: f.bName,
+      item: f.label,
+      type: 'Programming',
+      equipment: equipment,
+      qty: qty,
+      sku: null,
+      engReview: false,
+      noSku: false,
+      ioOnly: false,
+      unitPrice: hrsPerUnit * rate,
+      listPrice: null,
+      netPrice: null,
+      contractPrice: null,
+      lineTotal: parseFloat((hours * rate).toFixed(2)),
+      note: note,
+      phase: 2,
+      hrsPerUnit: hrsPerUnit,
+      oppKey: f.key,
+    });
+  }
+  function device(f, qty, material, hours, equipment, note, deviceLabel) {
+    var install = parseFloat((hours * qty * rate).toFixed(2));
+    var parts = parseFloat((material * qty).toFixed(2));
+    rows.push({
+      id: 'opp_' + f.key + '_' + f.bName,
+      building: f.bName,
+      item: f.label,
+      type: 'Device',
+      equipment: equipment,
+      qty: qty,
+      sku: null,
+      engReview: false,
+      noSku: false,
+      ioOnly: false,
+      unitPrice: parseFloat((material + hours * rate).toFixed(2)),
+      partsUnitPrice: material,
+      partsLineTotal: parts,
+      installHours: hours,
+      installLaborRate: rate,
+      installLaborTotal: install,
+      listPrice: null,
+      netPrice: null,
+      contractPrice: null,
+      lineTotal: parseFloat((parts + install).toFixed(2)),
+      note: note,
+      phase: 1,
+      oppKey: f.key,
+      deviceLabel: deviceLabel, // the plain name of the device in the lines of the Service Proposal
+    });
+  }
+  function plural(n, word) {
+    return n + ' ' + word + (n !== 1 ? 's' : '');
+  }
+  _a36OpportunityList(ashData).forEach(function (f) {
+    if (typeof A36_DET_OVERRIDE_KEYS !== 'undefined' && A36_DET_OVERRIDE_KEYS.indexOf(f.key) > -1) {
+      labor(f, 1, OVERRIDE_RELEASE_HOURS, '1 manual override', 'Release the manual override so the reset runs.');
+    } else if (f.key === 'schedules' || f.key === 'lightingSchedule') {
+      var u = Math.max(f.units || 0, 1);
+      labor(f, u, SCHEDULE_HOURS_PER_UNIT * u + SCHEDULE_HOURS_PER_BUILDING, plural(u, 'unit'), 'Set the occupied schedules and check them.');
+    } else if (f.key === 'lightingPhotocell') {
+      device(f, 1, PHOTOCELL_MATERIAL_PRICE, PHOTOCELL_HOURS, '1 photocell', 'Photocell for the exterior lighting.', 'Exterior Lighting Photocells');
+    } else if (f.key === 'lightingOccupancy') {
+      var n = Math.max(f.units || 0, 1);
+      device(f, n, OCCUPANCY_SENSOR_MATERIAL_PRICE, OCCUPANCY_SENSOR_HOURS, plural(n, 'interior lighting unit'), 'Occupancy sensor for each interior lighting unit.', 'Occupancy Sensors for Interior Lighting');
+    } else if (f.key === 'powerMeter') {
+      device(f, 1, POWER_METER_MATERIAL_PRICE, POWER_METER_HOURS, '1 power meter', 'Building power meter on the building automation system.', 'Building Power Meters');
+    }
+  });
+  return rows;
+}
+
+/* ── _pricingProgramRows(projId) ── every programming line the findings add to Recommended and Full Scope: the setpoint and schedule
+   reprogramming and the terminal unit upgrade of each library, and the priced override, schedule, lighting and power meter opportunities. */
+function _pricingProgramRows(projId) {
+  return buildSetpointReprogramRows(projId).concat(buildTerminalStandardRows(projId)).concat(buildOpportunityLaborRows(projId));
+}
+
+/* ── _pricingRowOpportunity(row, opps) ── THE one rule that says which opportunity a priced row belongs to (Matt 2026-11-18: 1 opportunity = 1
+   line in the cost estimate). opps = the opportunities (findings of report-engine.js _a36OpportunityList) of the row's library. Returns the
+   opportunity, or null when the row is no opportunity (the optional status points, the FDD line, the sensor checks: they print as "Included").
+   1. A row with oppKey (the setpoint, terminal, override, schedule, lighting and power meter rows) is the opportunity with that key.
+   2. A programming row of a sequence is the sequence opportunity of that key.
+   3. A device row is, in this order: the sensor opportunity of its point; the sequence that the point is a blocking sensor of
+      (SEQUENCE_BLOCKING_SENSORS: the CO2 sensors of occupancy-based ventilation, the pressure sensor and pump drive of the pump pressure reset);
+      the sequence whose missing points name it. */
+function _pricingRowOpportunity(row, opps) {
+  if (!row || !opps || !opps.length) return null;
+  if (/^(fso_|opt_|sinv_)/.test(row.id || '') || row.isFddAddon) return null;
+  function byKey(key, kind) {
+    var hits = opps.filter(function (o) {
+      return o.key === key && (!kind || o.kind === kind);
+    });
+    if (hits.length > 1 && row.category) {
+      var cat = hits.filter(function (o) {
+        return o.category === row.category || (row.categoryQty && o.category && row.categoryQty[o.category]);
+      });
+      if (cat.length) return cat[0];
+    }
+    return hits[0] || null;
+  }
+  if (row.oppKey) return byKey(row.oppKey);
+  if (row.phase === 2) return row.seqKey ? byKey(row.seqKey, 'seq') : null;
+  var pk = row._pointKey;
+  if (row.phase !== 1 || !pk) return null;
+  var sensor = byKey(pk, 'sensor');
+  if (sensor) return sensor;
+  var seqs = opps.filter(function (o) {
+    return o.kind === 'seq';
+  });
+  var viaBlocking = seqs.filter(function (o) {
+    return _hwRowKeyMatchesBlocking(pk, SEQUENCE_BLOCKING_SENSORS[o.key] || []);
+  });
+  if (viaBlocking.length) return viaBlocking[0];
+  var norm = /^co2/.test(pk) ? 'co2' : pk;
+  var viaMissing = seqs.filter(function (o) {
+    return (o.missingKeys || []).some(function (k) {
+      return (/^co2/.test(k) ? 'co2' : k) === norm;
+    });
+  });
+  return viaMissing[0] || null;
+}
+
+/* ── _pricingOpportunityLines(rows, opps) ── groups priced rows into the cost lines of the estimate: one line per opportunity of one library
+   (every row of an opportunity merges into its line), the rows of no opportunity apart. rows = the rows that count (switched on, base rows of
+   the tier); opps = _a36OpportunityList. Returns { lines: [{ opp, rows }] in the order of opps, unmapped: [rows] }. */
+function _pricingOpportunityLines(rows, opps) {
+  var byLib = {};
+  (opps || []).forEach(function (o) {
+    (byLib[o.bName] = byLib[o.bName] || []).push(o);
+  });
+  var lineOf = [];
+  var unmapped = [];
+  (rows || []).forEach(function (r) {
+    var o = _pricingRowOpportunity(r, byLib[r.building] || []);
+    if (!o) {
+      unmapped.push(r);
+      return;
+    }
+    var i = (opps || []).indexOf(o);
+    (lineOf[i] = lineOf[i] || { opp: o, rows: [] }).rows.push(r);
+  });
+  return {
+    lines: lineOf.filter(function (l) {
+      return !!l;
+    }),
+    unmapped: unmapped,
+  };
 }
 
 function buildSensorInvestigationRows(projId) {
@@ -4842,7 +5020,7 @@ function _pricingRecommendedRowsAll(projId) {
   // sequence), not the Compliance-restricted subset — Recommended candidates
   // include savings sequences Compliance no longer carries.
   var catRows = buildCatalogRows(projId);
-  if (!catRows.length) return buildSetpointReprogramRows(projId).concat(buildTerminalStandardRows(projId)); // no device or sequence gap: only the Appendix A and terminal upgrade lines can remain
+  if (!catRows.length) return _pricingProgramRows(projId); // no device or sequence gap: only the programming lines of the findings can remain
 
   var catalog = sget('en_pricing_catalog', null);
   var cfg = _pricingGetConfig();
@@ -5001,7 +5179,7 @@ function _pricingRecommendedRowsAll(projId) {
   // trying to rescue the discarded clone. _pricingComputeRecommendedTimeline's existing "unclaimed
   // row" safety net (see that function's header comment) picks these up as their own single-row
   // units for phase scheduling, same as any other unbundled row.
-  recRows = recRows.concat(buildSensorInvestigationRows(projId)).concat(buildSetpointReprogramRows(projId)).concat(buildTerminalStandardRows(projId));
+  recRows = recRows.concat(buildSensorInvestigationRows(projId)).concat(_pricingProgramRows(projId));
 
   // ── Phase 5: Two-key sort for phase-2 rows within each building group (correction #3)
   // Apply sort within building groups, preserve building order and phase-1/phase-2 structure.
@@ -5359,7 +5537,7 @@ function buildOptionalPointRows(projId) {
    ─────────────────────────────────────────────────────────────────────────── */
 function _pricingFullScopeRowsAll(projId) {
   var catRows = buildCatalogRows(projId);
-  if (!catRows.length) return buildSetpointReprogramRows(projId).concat(buildTerminalStandardRows(projId)); // no device or sequence gap: only the Appendix A and terminal upgrade lines can remain
+  if (!catRows.length) return _pricingProgramRows(projId); // no device or sequence gap: only the programming lines of the findings can remain
 
   var catalog = sget('en_pricing_catalog', null);
   var cfg = _pricingGetConfig();
@@ -5377,8 +5555,8 @@ function _pricingFullScopeRowsAll(projId) {
   });
 
   // Appendix A setpoint and schedule reprogramming: recommended work in every option.
-  buildSetpointReprogramRows(projId).concat(buildTerminalStandardRows(projId)).forEach(function (row) {
-    fsRows.push(row); // + the terminal unit program upgrade (Recommended and Full Scope, Matt 2026-11-18)
+  _pricingProgramRows(projId).forEach(function (row) {
+    fsRows.push(row); // + the terminal unit upgrade and the priced override, schedule, lighting and power meter opportunities (Recommended and Full Scope, Matt 2026-11-18)
   });
 
   // c82cc354 REV 2 (Step 4): optional (beyond-compliance) point rows

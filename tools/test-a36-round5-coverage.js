@@ -61,7 +61,7 @@ check(Object.values(SZ).every((s) => /^5\.18(\.\d+)?( to 5\.18\.\d+)?$/.test(s))
 check(em.emSingleZoneSection('ahu_min_oa') === '5.18.6' && em.emSingleZoneSection('ahu_sat_reset') === '5.18.4' && em.emSingleZoneSection('ahu_economizer') === '5.18.5 to 5.18.7' && em.emSingleZoneSection('ahu_freeze_prot') === '5.18.11', 'C6. sequence sections: min outdoor air 5.18.6, supply air temperature reset 5.18.4, economizer 5.18.5 to 5.18.7, freeze 5.18.11');
 check(em.emSingleZoneSection('ahu_dsp_reset') === '', 'C6. duct static pressure reset has no 5.18 counterpart (empty, the caller keeps 5.16.1)');
 const RE = read('app/report-engine.js');
-check(/szGroup && emSingleZoneSection\(k\)/.test(RE) && /szGroup && emSingleZoneSection\(key\)/.test(RE), 'C6. the Detailed audit takes the section of a single-zone group from emSingleZoneSection (sequence and point findings)');
+check((RE.match(/szGroup && emSingleZoneSection\(key\)/g) || []).length >= 2, 'C6. the Detailed audit takes the section of a single-zone group from emSingleZoneSection (sequence and point findings)');
 
 check(/function _a36DetIsSingleZoneUnit\(eq, row\) \{\s+return typeof emIsSingleZoneAirUnit === 'function' && emIsSingleZoneAirUnit\(/.test(RE) && /singleZone: _a36DetIsSingleZoneUnit\(eq, row\)/.test(RE) && /var szGroup = !!\(g && g\.singleZone\)/.test(RE), 'C6. a group is single-zone from the one rule emIsSingleZoneAirUnit (the equipment result has no subtype; the matrix row has)');
 
