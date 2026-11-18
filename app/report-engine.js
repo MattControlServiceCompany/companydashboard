@@ -29708,7 +29708,8 @@ function _a36DetOverviewText(libraryName, groups) {
 function _a36DetFigureSentence(figureNum, unit, page) {
   var what = String(page || 'Graphic').toLowerCase();
   if (!/graphic|page|screen$/.test(what)) what += ' page';
-  return 'Figure ' + figureNum + ' shows the building automation system ' + what + ' of ' + (/\d/.test(unit) ? '' : 'the ') + unit + '.'; // "of the Hot Water System", "of AHU-1"
+  var name = /\bwater$/i.test(String(unit)) ? unit + ' System' : unit; // a plant named "Hot Water" reads "of the Hot Water System"
+  return 'Figure ' + figureNum + ' shows the building automation system ' + what + ' of ' + (/\d/.test(name) ? '' : 'the ') + name + '.'; // "of the Hot Water System", "of AHU-1"
 }
 // Sentences in a row that start with the same share of the units ("On 8 of the 17 units, ...") are one sentence, the parts joined by semicolons,
 // and a share of one unit whose sentence repeats the unit noun reads "One of the 3 exhaust fans runs ..." (Audit Report review, 2026-11-17).
