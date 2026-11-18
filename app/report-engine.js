@@ -30607,6 +30607,109 @@ function _a36FirstSentence(t) {
   return m ? m[0] : String(t || '');
 }
 
+// Utility use of the audit buildings (Matt 2026-11-18: "annual utility usage and square footage ... should be part of audit reports when we have the data").
+// The one reader is buildingAnnualUse (app/utility-data.js); this only finds the building by name and prints the result.
+var A36_AUDIT_TD = 'padding:5px 8px;font-size:13.34px;vertical-align:top;color:var(--rpt-page-text);border:none;border-bottom:1px solid var(--rpt-border)';
+var A36_AUDIT_TH = 'padding:6px 8px;font-size:12px;font-weight:700;text-transform:uppercase;letter-spacing:0.04em;color:#ffffff;background:var(--rpt-blue);border:none';
+var A36_FT2 = 'ft\u00b2';
+// The 12-month utility use of an audit building, or null (no utility data for it, fewer than 12 bill months, no project). Cached on the report data.
+function _a36BuildingUse(d, b) {
+  if (!d || !d.project || typeof buildingAnnualUse !== 'function' || typeof getUDBldgs !== 'function' || typeof _emNormBldgNameForJoin !== 'function') return null;
+  d._a36Use = d._a36Use || {};
+  if (Object.prototype.hasOwnProperty.call(d._a36Use, b.name)) return d._a36Use[b.name];
+  var key = _emNormBldgNameForJoin(b.name);
+  var ud = getUDBldgs(d.project.id).filter(function (x) {
+    return _emNormBldgNameForJoin(x.name) === key;
+  })[0];
+  var use = ud ? buildingAnnualUse(d.project.id, ud.id) : null;
+  d._a36Use[b.name] = use;
+  return use;
+}
+// The line under the photo of a building page: "2025 utility use: 317,201 kWh and 10,835 therms, $47,623. Floor area 25,073 ft². Energy Use
+// Intensity (EUI) 86.4 kBtu/ft²." Plain text (every part is a number or a fixed word).
+function _a36UseLine(u) {
+  var gas = u.hasGas ? ' and ' + rptCount(u.therms) + ' therms' : ' (no gas meter on file)';
+  var t = u.label + ' utility use: ' + rptCount(u.kwh) + ' kWh' + gas + ', ' + _fmtUSD(u.cost, '$0') + '.';
+  if (u.sqft > 0) t += ' Floor area ' + rptCount(u.sqft) + ' ' + A36_FT2 + '. Energy Use Intensity (EUI) ' + u.eui.toFixed(1) + ' kBtu/' + A36_FT2 + '.';
+  return t;
+}
+// The page after the per-building pages: one table of the 12-month use of every building that has it, highest Energy Use Intensity first, with a
+// total row. Only with at least 2 buildings that have use and floor area for the same months. Returns the pages ([] when there is none).
+function _a36UtilityUsePages(pageNum, d) {
+  var rows = [];
+  d.buildings.forEach(function (b) {
+    var u = _a36BuildingUse(d, b);
+    if (u && u.sqft > 0) rows.push({ name: _a36DisplayName(b), u: u });
+  });
+  // one period for the whole table: the one most buildings have (the others are left out)
+  var count = {};
+  rows.forEach(function (r) {
+    count[r.u.label] = (count[r.u.label] || 0) + 1;
+  });
+  var label = Object.keys(count).sort(function (a, c) {
+    return count[c] - count[a] || (a < c ? 1 : -1);
+  })[0];
+  rows = rows.filter(function (r) {
+    return r.u.label === label;
+  });
+  if (rows.length < 2) return [];
+  rows.sort(function (a, c) {
+    return c.u.eui - a.u.eui;
+  });
+  var tot = { kwh: 0, therms: 0, gal: 0, cost: 0, sqft: 0 };
+  var anyNoGas = false;
+  rows.forEach(function (r) {
+    tot.kwh += r.u.kwh;
+    tot.therms += r.u.therms || 0;
+    tot.gal += r.u.propaneGal || 0;
+    tot.cost += r.u.cost;
+    tot.sqft += r.u.sqft;
+    if (!r.u.hasGas) anyNoGas = true;
+  });
+  var totEui = computePeriodEUI(computeKBtu(tot.kwh, tot.therms, tot.gal), 12, tot.sqft);
+  var nn = _a36BuildingNouns(d);
+  var oneCap = nn.one.charAt(0).toUpperCase() + nn.one.slice(1);
+  var lo = rows[rows.length - 1];
+  var hi = rows[0];
+  var intro =
+    (/^\d{4}$/.test(label) ? 'In ' + label : 'From ' + label) + ' the ' + rptCount(rows.length) + ' ' + nn.many + ' used ' + rptCount(tot.kwh) + ' kWh of electricity and ' + rptCount(tot.therms) +
+    ' therms of gas, at a cost of ' + _fmtUSD(tot.cost, '$0') + '. Energy Use Intensity (EUI) ranges from ' + lo.u.eui.toFixed(1) + ' kBtu/' + A36_FT2 + ' at ' + _escHtml(lo.name) + ' to ' +
+    hi.u.eui.toFixed(1) + ' at ' + _escHtml(hi.name) + '.';
+  var tokens = [_a36DetTok('<h1 style="' + A36_DET_TITLE_STYLE + '">' + _escHtml('Utility Use by ' + oneCap) + '</h1><p style="' + A36_DET_P + '">' + intro + '</p>', true)];
+  var money2 = function (v) {
+    return '$' + v.toFixed(2);
+  };
+  var cell = function (v, extra) {
+    return '<td style="' + A36_AUDIT_TD + ';text-align:right' + (extra || '') + '">' + v + '</td>';
+  };
+  var body = rows.map(function (r, k) {
+    var bg = k % 2 ? ';background:#f8f8f8' : '';
+    return (
+      '<tr><td style="' + A36_AUDIT_TD + bg + ';font-weight:600">' + _escHtml(r.name) + '</td>' +
+      cell(rptCount(r.u.sqft), bg) + cell(rptCount(r.u.kwh), bg) + cell(r.u.hasGas ? rptCount(r.u.therms) : '\u2014', bg) +
+      cell(_fmtUSD(r.u.cost, '$0'), bg) + cell(money2(r.u.costPerSqft), bg) + cell(r.u.eui.toFixed(1), bg) + '</tr>'
+    );
+  });
+  var totX = ';font-weight:700;border-top:2px solid var(--rpt-blue);border-bottom:2px solid var(--rpt-blue)';
+  body.push(
+    '<tr><td style="' + A36_AUDIT_TD + totX + '">Total</td>' +
+      cell(rptCount(tot.sqft), totX) + cell(rptCount(tot.kwh), totX) + cell(rptCount(tot.therms), totX) + cell(_fmtUSD(tot.cost, '$0'), totX) +
+      cell(money2(tot.cost / tot.sqft), totX) + cell(totEui.toFixed(1), totX) + '</tr>',
+  );
+  var th = function (t, left) {
+    return '<th style="' + A36_AUDIT_TH + ';text-align:' + (left ? 'left' : 'right') + '">' + t + '</th>';
+  };
+  var open =
+    '<table style="width:100%;border-collapse:collapse;table-layout:fixed;margin:0 0 10px 0"><colgroup><col style="width:25%"><col style="width:11%"><col style="width:14%"><col style="width:12%"><col style="width:13%"><col style="width:11%"><col style="width:14%"></colgroup><thead><tr>' +
+    th(oneCap, true) + th('Floor area (' + A36_FT2 + ')') + th('Electric (kWh)') + th('Gas (therms)') + th('Cost ($)') + th('Cost per ' + A36_FT2 + ' ($)') + th('EUI (kBtu/' + A36_FT2 + ')') +
+    '</tr></thead>';
+  _a36DetTableToks(open, body, null).forEach(function (t) {
+    tokens.push(t);
+  });
+  if (anyNoGas) tokens.push(_a36DetTok('<p style="' + A36_DET_P + ';margin-top:2px">\u2014 No gas meter on file.</p>'));
+  return _a36DetPages(pageNum, d, tokens, 'Utility Use');
+}
+
 function _a36AuditBuildingTokens(d, b, ctx, showBuildingInfra) {
   var name = _a36DisplayName(b);
   var lib = ctx.model.libs.filter(function (l) {
@@ -30666,14 +30769,16 @@ function _a36AuditBuildingTokens(d, b, ctx, showBuildingInfra) {
       : '') +
     '</table>';
   var photo = d._a36LibraryPhotos && d._a36LibraryPhotos[name];
+  var use = _a36BuildingUse(d, b);
+  var useP = use ? '<p style="' + A36_DET_P + ';margin-top:4px">' + _a36UseLine(use) + '</p>' : '';
   var photoTok = function (scale) {
     return _a36DetTok(
-      photo
+      (photo
         ? '<table style="width:100%;border-collapse:collapse;table-layout:fixed;margin:0 0 4px 0"><colgroup><col style="width:' +
             Math.round(A36_DET_PHOTO_W * scale + 8) + 'px"><col></colgroup><tr>' +
             '<td style="vertical-align:top;padding:0;border:none">' + _a36DetPhotoHtml(photo, name, scale).replace('margin:0 0 12px 0', 'margin:0') + '</td>' +
             '<td style="vertical-align:top;padding:0;border:none">' + cards + '</td></tr></table>'
-        : cards,
+        : cards) + useP,
       true,
     );
   };
@@ -30704,8 +30809,8 @@ function _a36AuditBuildingTokens(d, b, ctx, showBuildingInfra) {
           .join('')
       : '<span style="color:var(--rpt-green-dark);font-weight:700">&#10003;</span>&nbsp; ' + _a36NoFindingText(cat, n);
   };
-  var TD = 'padding:5px 8px;font-size:13.34px;vertical-align:top;color:var(--rpt-page-text);border:none;border-bottom:1px solid var(--rpt-border)';
-  var TH = 'padding:6px 8px;font-size:12px;font-weight:700;text-transform:uppercase;letter-spacing:0.04em;color:#ffffff;background:var(--rpt-blue);border:none';
+  var TD = A36_AUDIT_TD;
+  var TH = A36_AUDIT_TH;
   var row = function (cells, k) {
     var bg = k % 2 ? ';background:#f8f8f8' : '';
     return (
@@ -30974,6 +31079,11 @@ function generateASHRAE36AuditHTML(data, selectedSections) {
         pages.push(_tagA36Section(pg, 'building'));
         pageNum++;
       });
+    });
+    // One page after the per-building pages that compares the utility use of the buildings (only with data for at least 2 of them).
+    _a36UtilityUsePages(pageNum, data).forEach(function (pg) {
+      pages.push(_tagA36Section(pg, 'building'));
+      pageNum++;
     });
   }
 

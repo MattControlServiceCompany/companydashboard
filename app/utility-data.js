@@ -1053,6 +1053,68 @@ function getUDMeter(pid, bid, mid) {
   return b ? b.meters.find((m) => m.id === mid) : null;
 }
 
+// buildingAnnualUse(pid, bid) - THE one answer to "how much energy did this building use in its newest 12 complete bill months".
+// For REPORTING use (Audit Report building pages and the utility comparison page): it reads every Electric, Gas and Propane meter of the
+// building directly and ignores project.scope.meterExcludeIds (that exclusion is for the savings baseline, not for what the building used).
+// Month of a bill = billMonth (the one month rule). The window ends at the newest bill month of the building and holds 12 months in a row; every
+// commodity the building has must have a bill in each of the 12 months, else null (no partial-year figure). Returns null with no data.
+// Returns { months: 12, startMonth, endMonth ('YYYY-MM'), label ('2025' for Jan to Dec of one year, else 'Jun 2024 to May 2025'), kwh, therms (null
+// when the building has no gas meter), propaneGal, cost ($ of the bill totals), sqft, kBtu (computeKBtu), eui (computePeriodEUI; null with no sqft),
+// costPerSqft (null with no sqft), hasGas, estimatedMonthly (true when every bill of the window is an estimate: only the annual total is valid) }.
+function buildingAnnualUse(pid, bid) {
+  const b = getUDBldg(pid, bid);
+  if (!b) return null;
+  const meters = (b.meters || []).filter((m) => m.commodity === 'Electric' || m.commodity === 'Gas' || m.commodity === 'Propane');
+  const byYM = {}; // ym -> { kwh, therms, gal, cost, n: {commodity: bill count}, est: count of estimated bills, bills: count }
+  meters.forEach((m) => {
+    const mBills = m.bills || [];
+    mBills.forEach((bill) => {
+      const ym = billMonth(bill, mBills);
+      if (!ym) return;
+      const u = (byYM[ym] = byYM[ym] || { kwh: 0, therms: 0, gal: 0, cost: 0, n: {}, est: 0, bills: 0 });
+      if (m.commodity === 'Gas') u.therms += resolveGasUsageTherms(bill);
+      else if (m.commodity === 'Propane') u.gal += parseBillNumberOrZero(bill.gallonsDelivered) || parseBillNumberOrZero(bill.kwh) || parseBillNumberOrZero(bill.usage);
+      else u.kwh += parseBillNumberOrZero(bill.kwh) || parseBillNumberOrZero(bill.usage);
+      u.cost += parseBillNumberOrZero(bill.totalCost) || parseBillNumberOrZero(bill.TotalCurrentCharges) || parseBillNumberOrZero(bill.TotalAmountDue);
+      u.n[m.commodity] = (u.n[m.commodity] || 0) + 1;
+      u.bills++;
+      if (bill.estimated) u.est++;
+    });
+  });
+  const yms = Object.keys(byYM).sort();
+  if (!yms.length) return null;
+  const endMonth = yms[yms.length - 1];
+  const win = presentedMonthRange(addMonth(endMonth, -11), endMonth);
+  const commodities = [...new Set(meters.filter((m) => (m.bills || []).length).map((m) => m.commodity))];
+  if (!win.every((ym) => byYM[ym] && commodities.every((c) => byYM[ym].n[c]))) return null;
+  const sum = win.reduce(
+    (a, ym) => ({ kwh: a.kwh + byYM[ym].kwh, therms: a.therms + byYM[ym].therms, gal: a.gal + byYM[ym].gal, cost: a.cost + byYM[ym].cost, est: a.est + byYM[ym].est, bills: a.bills + byYM[ym].bills }),
+    { kwh: 0, therms: 0, gal: 0, cost: 0, est: 0, bills: 0 },
+  );
+  const hasGas = commodities.includes('Gas');
+  const sqft = parseBillNumberOrZero(b.sqft);
+  const kBtu = computeKBtu(sum.kwh, hasGas ? sum.therms : 0, sum.gal);
+  const startMonth = win[0];
+  const MON = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+  const ymLong = (ym) => MON[Number(ym.slice(5, 7)) - 1] + ' ' + ym.slice(0, 4);
+  return {
+    months: 12,
+    startMonth: startMonth,
+    endMonth: endMonth,
+    label: startMonth.slice(5) === '01' ? startMonth.slice(0, 4) : ymLong(startMonth) + ' to ' + ymLong(endMonth),
+    kwh: sum.kwh,
+    therms: hasGas ? sum.therms : null,
+    propaneGal: sum.gal,
+    cost: sum.cost,
+    sqft: sqft,
+    kBtu: kBtu,
+    eui: sqft > 0 ? computePeriodEUI(kBtu, 12, sqft) : null,
+    costPerSqft: sqft > 0 ? sum.cost / sqft : null,
+    hasGas: hasGas,
+    estimatedMonthly: sum.bills > 0 && sum.est === sum.bills,
+  };
+}
+
 // BLOCKER 1 fix: one helper, zero raw meter.baselineInclude reads left in the codebase
 // (the field itself no longer exists post-migration -- see _selfHealCustomersAndScope).
 // Successor is per-PROJECT, stored in project.scope.meterExcludeIds -- the same meter can
