@@ -18427,7 +18427,7 @@ function _a36ExecDeviceGroups(d) {
   var by = {};
   var list = [];
   ctx.model.findings.forEach(function (f) {
-    if (f.kind === 'seq' || f.kind === 'setpoint' || f.kind === 'schedule' || f.key === 'powerMeter' || A36_DET_DCV_KEYS.indexOf(f.key) > -1 || /\bCO2\b|carbon dioxide/i.test(f.label || '')) return;
+    if (f.kind === 'seq' || f.kind === 'setpoint' || f.kind === 'schedule' || f.key === 'powerMeter' || f.key === 'hwOverride' || A36_DET_DCV_KEYS.indexOf(f.key) > -1 || /\bCO2\b|carbon dioxide/i.test(f.label || '')) return;
     var k = f.label;
     if (!by[k]) list.push((by[k] = { label: f.label, libSet: {}, units: 0, typeSet: {} }));
     by[k].libSet[f.lib] = true;
@@ -28247,6 +28247,44 @@ function _a36DetModel(d, rowsById, picMap, loaded) {
         schedUnits,
       );
     }
+    // A hot water plant whose supply setpoint is held by a manual override that is active on the WebCTRL screen (row.value of the sequence
+    // water_fixed_override): the outdoor air reset does not run. One building-wide opportunity (the same pattern as powerMeter).
+    var hwHeld = [];
+    groups.forEach(function (g) {
+      if (g.category !== 'hwp') return;
+      g.units.forEach(function (eq) {
+        _a36DetSequenceIds(eq && eq.name, _a36DisplayName(b), d.project && d.project.id).forEach(function (r) {
+          if (r.id === 'water_fixed_override' && r.status === 'enabled' && r.value !== undefined && r.value !== null && r.value !== '' && isFinite(Number(r.value))) hwHeld.push(Number(r.value));
+        });
+      });
+    });
+    if (hwHeld.length) {
+      var held = hwHeld.filter(function (v, i) { return hwHeld.indexOf(v) === i; }).map(function (v) { return v + '°F'; });
+      var ho = {
+        lib: _a36DisplayName(b),
+        groupLabel: 'Building-wide',
+        kind: 'building',
+        key: 'hwOverride',
+        label: 'Hot water reset overridden',
+        units: 0,
+        total: 0,
+        affected: [],
+        missing: [],
+        pic: null,
+        picCands: [],
+        section: '',
+        impact:
+          'The hot water plant resets its supply setpoint on outdoor air temperature and on heating requests, so the plant supplies cooler water as the building needs less heat. A manual override that is active holds the setpoint at a fixed value and the reset does not run.',
+        effect: 'Energy use',
+        observed: (hwHeld.length === 1 ? 'The hot water supply setpoint is held at ' + held[0] : 'The hot water supply setpoints are held at ' + _a36DetJoin(held)) + ' by a manual override, so the outdoor air reset does not run.',
+        issueShort: 'Hot water reset overridden',
+      };
+      ho.headline = ho.observed;
+      ho.category = null;
+      lib.findings.push(ho);
+      all.push(ho);
+      ho.n = all.length;
+    }
     // Facility Audit deficiencies of this library (a deficiency with no library goes to the first library)
     var mine = [];
     defsLeft = defsLeft.filter(function (df) {
@@ -28733,7 +28771,8 @@ function _a36DetGroupParams(g, rowsById) {
 // (written by the tool 2026-11-17-import-audit-sequences.py from the control program pages of the audit): [{ id, status }] with status
 // 'enabled' or 'available_not_enabled'; [] when the project has no record or the unit has no row. This is the ONE input of the sequence
 // sentences (A36_DET_SEQ). The ids are the canonical ids of the import tool. value (degrees F, optional): the lockout or freeze protection
-// setpoint read from the WebCTRL screen of the row (2026-11-17-set-auditseq-values.py; Matt 2026-11-17: print the lockout value).
+// setpoint read from the WebCTRL screen of the row (2026-11-17-set-auditseq-values.py; Matt 2026-11-17: print the lockout value). reset (optional):
+// the reset limits read from the WebCTRL screen of the row { oaFrom, oaTo, spFrom, spTo, min, max, unit } (2026-11-18-set-auditseq-reset.py).
 function _a36DetSequenceIds(equipName, libName, projId) {
   var rec = projId && typeof sget === 'function' ? sget('en_auditseq_' + projId, null) : null;
   if (!rec || !Array.isArray(rec.rows)) return [];
@@ -28744,7 +28783,7 @@ function _a36DetSequenceIds(equipName, libName, projId) {
       return r && _a36DetNorm(r.equipName) === unit && _a36DetNorm(r.library) === lib;
     })
     .map(function (r) {
-      return { id: r.id, status: r.status, value: r.value };
+      return { id: r.id, status: r.status, value: r.value, reset: r.reset };
     });
 }
 
@@ -28761,7 +28800,8 @@ function _a36DetSeqClasses(category) {
 // The sentence of each canonical sequence id. Each entry lists the variants by group class (c = classes separated by a space), the paragraph
 // of the description the sentence joins (fn), the sentence when the sequence is enabled (on), when it is available but not enabled (off), the
 // wording for a group of several units that ALL have it (all), and the wording for a dual-duct unit (dual). The sentences hold no setpoint,
-// range, limit, time or reading: the sequence is described, the values are settings of a day. The order of this table is the print order
+// range, limit, time or reading: the sequence is described. The values read from the control program print apart: the lockout and freeze
+// protection setpoints in the sentence (withSetpointValue), the reset limits in their own sentence (A36_DET_RESET). The order of this table is the print order
 // inside a paragraph. A term a client may not know is explained once, in the sentence that first uses it.
 var A36_DET_SEQ = {
   // plant: temperature of the water (the reset and its outdoor air limit are one sentence, see A36_DET_SEQ_MERGE)
@@ -28871,6 +28911,56 @@ var A36_DET_SEQ_MERGE = [
   { ids: ['boiler_rotation', 'pump_rotation'], c: 'hwp', fn: 'sequence', text: 'The lead boiler and lead pump rotate on a schedule.' },
 ];
 
+// The reset limits of a setpoint, read from the WebCTRL screens (row.reset of en_auditseq_<projectId>, written by 2026-11-18-set-auditseq-reset.py; Matt
+// 2026-11-18: print the high and low limits of the reset). One family = the sequence ids whose rows hold the values of one setpoint: oaFrom and oaTo
+// (outdoor air, degrees F) with spFrom and spTo (the setpoint at oaFrom and at oaTo) from the outdoor air reset, min and max from the request limits,
+// unit of the setpoint values. noun: the setpoint in the sentence, by class for a plant.
+var A36_DET_RESET = {
+  water: { ids: ['water_request_reset', 'water_oa_limit'], noun: { hwp: 'hot water supply setpoint', chwp: 'chilled water supply setpoint' } },
+  sat: { ids: ['sat_request_reset', 'sat_oa_limit'], noun: 'supply air setpoint' },
+  colddeck: { ids: ['colddeck_request_reset', 'colddeck_oa_limit'], noun: 'cold deck setpoint' },
+  hotdeck: { ids: ['hotdeck_request_reset', 'hotdeck_oa_limit'], noun: 'hot deck setpoint' },
+  sp: { ids: ['sp_reset_requests'], noun: 'duct static pressure setpoint' },
+  pdp: { ids: ['pump_dp_reset'], noun: 'differential pressure setpoint' },
+  fan: { ids: ['fan_speed_request_reset'], noun: 'supply fan speed setpoint' },
+};
+var A36_DET_RESET_FIELDS = ['oaFrom', 'oaTo', 'spFrom', 'spTo', 'min', 'max'];
+
+// The family of a sequence id of A36_DET_RESET, '' when the id holds no reset limits.
+function _a36DetResetFamily(id) {
+  var k = Object.keys(A36_DET_RESET).filter(function (key) {
+    return A36_DET_RESET[key].ids.indexOf(id) > -1;
+  })[0];
+  return k || '';
+}
+
+// The sentence of the reset limits of a setpoint. sets = the limits of each unit that has the reset ({} when the unit has none recorded). The
+// sentence prints only when every unit has the same limits; else ''. Every value is a setting of the control program, so it is adjustable.
+function _a36DetResetText(sets, noun) {
+  if (!sets.length || !noun) return '';
+  var key = function (r) {
+    return JSON.stringify(A36_DET_RESET_FIELDS.map(function (f) { return r[f]; }).concat([r.unit]));
+  };
+  var r = sets[0];
+  if (!sets.every(function (x) { return key(x) === key(r); })) return '';
+  var has = function (fields) {
+    return fields.every(function (f) { return typeof r[f] === 'number' && isFinite(r[f]); });
+  };
+  var oa = has(['oaFrom', 'oaTo', 'spFrom', 'spTo']);
+  var lim = has(['min', 'max']);
+  if ((!oa && !lim) || !r.unit) return '';
+  var V = function (v) {
+    return r.unit === 'F' ? v + '°F' : r.unit === '%' ? v + '%' : v + ' ' + r.unit;
+  };
+  if (oa) {
+    return (
+      'The ' + noun + ' resets from ' + V(r.spFrom) + ' at ' + r.oaFrom + '°F outdoor air to ' + V(r.spTo) + ' at ' + r.oaTo + '°F outdoor air (adjustable)' +
+      (lim ? ', with trim and respond requests holding it between ' + V(r.min) + ' and ' + V(r.max) + ' (adjustable)' : '') + '.'
+    );
+  }
+  return 'Trim and respond requests hold the ' + noun + ' between ' + V(r.min) + ' and ' + V(r.max) + ' (adjustable).';
+}
+
 // The introduction of the economizer, printed before the first economizer sentence of a unit that has no points-based economizer sentence.
 // The explanation of enthalpy, printed once in a chapter, in the first sentence that uses the word.
 
@@ -28949,6 +29039,7 @@ function _a36DetControlSentences(g, f, params, proof) {
   var ref = proof.appendixRef || '';
   var lib = proof.lib || {};
   var seqIds = proof.seq || {};
+  var resetSets = proof.reset || {};
   var vfd = proof.vfd || { done: false };
   function cnt(k) {
     return f.covered.by[k] ? f.covered.by[k].names.length : 0;
@@ -29032,6 +29123,21 @@ function _a36DetControlSentences(g, f, params, proof) {
     });
     return text;
   }
+  // The reset limits (A36_DET_RESET) of the setpoints of ids, after the sentence of the reset: once for each setpoint of the group.
+  var resetDone = {};
+  function resetAdd(ids, fn) {
+    Object.keys(A36_DET_RESET).forEach(function (k) {
+      var fam = A36_DET_RESET[k];
+      if (resetDone[k] || !ids.some(function (id) { return fam.ids.indexOf(id) > -1; })) return;
+      var noun = typeof fam.noun === 'string' ? fam.noun : seqClasses.indexOf('hwp') >= 0 ? fam.noun.hwp : seqClasses.indexOf('chwp') >= 0 ? fam.noun.chwp : '';
+      var sets = resetSets[k] || [];
+      var text = _a36DetResetText(sets, noun);
+      if (!text) return;
+      resetDone[k] = true;
+      if (sets.length < total) text = 'On ' + sets.length + ' of the ' + total + ' ' + seqNoun + 's, ' + text.charAt(0).toLowerCase() + text.slice(1);
+      add(text, fn);
+    });
+  }
   function seqAdd(fn, skip) {
     skip = skip || {};
     var order = Object.keys(A36_DET_SEQ);
@@ -29056,8 +29162,10 @@ function _a36DetControlSentences(g, f, params, proof) {
         var mt = withSetpointValue(mergedFirst[id].m.own && ownAll ? mergedFirst[id].m.own : mergedFirst[id].m.text, mergedFirst[id].m.ids);
         if (mergedFirst[id].n < total) mt = 'On ' + mergedFirst[id].n + ' of the ' + total + ' ' + seqNoun + 's, ' + mt.charAt(0).toLowerCase() + mt.slice(1);
         add(mt, fn);
+        resetAdd(mergedFirst[id].m.ids, fn);
         return;
       }
+      if (skip[id] && seqCount(id, 'on')) resetAdd([id], fn); // the points of the group wrote the sentence of the reset: the limits still print
       if (!seqIds[id] || skip[id]) return;
       A36_DET_SEQ[id].forEach(function (v) {
         if (v.fn !== fn || !v.c.split(' ').some(function (c) { return seqClasses.indexOf(c) >= 0; })) return;
@@ -29071,6 +29179,7 @@ function _a36DetControlSentences(g, f, params, proof) {
           if (state === 'on') text = withSetpointValue(text, [id]);
           if (n < total) text = 'On ' + n + ' of the ' + total + ' ' + seqNoun + 's, ' + text.charAt(0).toLowerCase() + text.slice(1);
           add(text, fn);
+          if (state === 'on') resetAdd([id], fn);
         });
       });
     });
@@ -29602,8 +29711,17 @@ function _a36DetDescriptionParas(g, ctx) {
   var params = _a36DetGroupParams(g, ctx.rowsById);
   // The sequence ids of the units of the group (_a36DetSequenceIds, the one input of the sequence sentences).
   var seq = {};
+  var resets = {}; // family of A36_DET_RESET -> the reset limits of each unit that has an enabled row of the family (the rows of a unit merged)
   g.units.forEach(function (eq) {
+    var unitReset = {};
     _a36DetSequenceIds(eq && eq.name, ctx.libName, ctx.projId).forEach(function (r) {
+      var fam = r.status === 'enabled' ? _a36DetResetFamily(r.id) : '';
+      if (fam) {
+        var u = (unitReset[fam] = unitReset[fam] || {});
+        Object.keys(r.reset || {}).forEach(function (k) {
+          u[k] = r.reset[k];
+        });
+      }
       var c = (seq[r.id] = seq[r.id] || { on: 0, off: 0 });
       if (r.status === 'enabled') {
         c.on++;
@@ -29611,6 +29729,9 @@ function _a36DetDescriptionParas(g, ctx) {
         if (r.value !== undefined && r.value !== null && r.value !== '' && isFinite(Number(r.value))) (c.values = c.values || []).push(Number(r.value));
       }
       else if (r.status === 'available_not_enabled') c.off++;
+    });
+    Object.keys(unitReset).forEach(function (fam) {
+      (resets[fam] = resets[fam] || []).push(unitReset[fam]);
     });
   });
   var vfd = ctx.vfd || (ctx.vfd = { done: false }); // the chapter explains a variable frequency drive once
@@ -29622,6 +29743,7 @@ function _a36DetDescriptionParas(g, ctx) {
     cfg: _a36DetConfig(g, ctx.rowsById),
     lib: _a36DetLibraryFacts(ctx),
     seq: seq,
+    reset: resets,
     vfd: vfd,
   });
   if (!body.length) body.push({ fn: '', text: f.covered.keys.length ? 'This equipment has monitoring points only.' : 'The building automation system shows no sensors or control points for this equipment.' });
