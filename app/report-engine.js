@@ -18765,14 +18765,20 @@ function _a36ExecTerminalStandardParagraph(d) {
   });
   var one = list.length === 1;
   var where = one && nTotal === 1 ? 'the ' + nn.one : _a36DetJoin(list.map(function (f) { return f.lib; }));
-  var lacks = feats.map(function (f) {
-    var at = list.filter(function (x) { return x.stdKeys.indexOf(f.key) > -1; });
-    return (at.length < list.length ? 'at ' + _a36DetJoin(at.map(function (x) { return x.lib; })) + ', ' : '') + 'no ' + f.noun;
-  });
+  // Features missing at every library in one sentence; a feature missing at only some libraries in its own sentence that names them.
+  var atOf = function (f) {
+    return list.filter(function (x) { return x.stdKeys.indexOf(f.key) > -1; });
+  };
+  var allLack = feats.filter(function (f) { return atOf(f).length === list.length; });
+  var someLack = feats.filter(function (f) { return atOf(f).length < list.length; });
   return (
     'The terminal unit programs at ' + where + ' fall short of the Control Service Company standard terminal unit sequence. ' +
     (boxes ? (one ? 'The ' + nn.one + ' has ' : 'These ' + nn.many + ' have ') + rptCount(boxes) + ' terminal unit' + (boxes === 1 ? '' : 's') + '. ' : '') +
-    'The programs have ' + _a36DetJoin(lacks) + '. ' +
+    (allLack.length ? 'The programs have ' + _a36DetJoin(allLack.map(function (f) { return 'no ' + f.noun; })) + '. ' : '') +
+    someLack.map(function (f) {
+      var at = atOf(f);
+      return _a36DetJoin(at.map(function (x) { return x.lib; })) + (allLack.length ? ' also ' : ' ') + (at.length === 1 ? 'has' : 'have') + ' no ' + f.noun + '. ';
+    }).join('') +
     'These features ' + _a36DetJoin(feats.map(function (f) { return f.gain; })) + '. ' +
     'The audit recommends upgrading the terminal unit programs at ' + (one ? (nTotal === 1 ? 'the ' + nn.one : list[0].lib) : 'these ' + nn.many) + ' to the standard.'
   );
@@ -26363,7 +26369,7 @@ var A36_CAT_COUNT_LABELS = {
 // The text of an equipment row with no findings (Matt 2026-11-18: say what "no findings" means): what the audit checks for the type (its
 // required points, EM_POINT_CATEGORIES, and its control sequences, EM_SEQUENCE_DEFS) and that the units have it all.
 function _a36NoFindingText(cat, n) {
-  if (cat === 'lighting') return 'No opportunities: no schedule, photocell or occupancy point that the audit checks is missing';
+  if (cat === 'lighting') return 'No opportunities: has the schedule, photocell and occupancy points the audit checks';
   var req = typeof EM_POINT_CATEGORIES !== 'undefined' && EM_POINT_CATEGORIES[cat] ? EM_POINT_CATEGORIES[cat].filter(function (c) { return c.required; }).length : 0;
   var seqs = typeof EM_SEQUENCE_DEFS !== 'undefined' ? EM_SEQUENCE_DEFS.filter(function (sd) { return (sd.equipTypes || []).indexOf(cat) > -1; }).length : 0;
   if (req && seqs) return 'No opportunities: ' + (n === 1 ? 'has' : 'have') + ' every sensor, point and control sequence the audit checks';
@@ -30745,7 +30751,8 @@ function _a36AuditBuildingTokens(d, b, ctx, showBuildingInfra) {
   };
   if (cost() > budget) setHead([photoTok(A36_AUDIT_PHOTO_SCALE_SMALL)].concat(ringsTok(56) || []));
   if (cost() > budget) {
-    setHead([photoTok(A36_AUDIT_PHOTO_SCALE)].concat(rt || []));
+    // The small photo and rings stay when the table runs on, so the page holds as many rows as it can.
+    setHead([photoTok(A36_AUDIT_PHOTO_SCALE_SMALL)].concat(ringsTok(56) || rt || []));
     tableToks.forEach(function (t) {
       t.keepNext = false;
     });
