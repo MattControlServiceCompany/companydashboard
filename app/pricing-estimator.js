@@ -402,7 +402,7 @@ const SEQUENCE_SAVINGS_IMPACT = {
       'Zone temperature setpoints enable ASHRAE 36 dual-maximum logic — heating only activates below the heating ' +
       'setpoint, cooling only above the cooling setpoint, with a deadband in between. Eliminating zone ' +
       'over-conditioning directly reduces both heating and cooling energy. ' +
-      'High prevalence in JOCO portfolio: 766 VAV units missing coolSP/htgSP.',
+      'A terminal unit with no cooling or heating setpoint point cannot run this logic.',
     clientSummary:
       'Establishes separate heating and cooling setpoints with a deadband between them, eliminating unnecessary ' +
       'simultaneous heating and cooling at the zone level.',

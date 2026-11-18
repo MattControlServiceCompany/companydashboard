@@ -18600,7 +18600,7 @@ function _a36ExecDeviceGroups(d) {
   var by = {};
   var list = [];
   ctx.model.findings.forEach(function (f) {
-    if (f.kind === 'seq' || f.kind === 'setpoint' || f.kind === 'schedule' || f.key === 'powerMeter' || f.category === 'lighting' || A36_DET_OVERRIDE_KEYS.indexOf(f.key) > -1 || A36_DET_DCV_KEYS.indexOf(f.key) > -1 || /\bCO2\b|carbon dioxide/i.test(f.label || '')) return;
+    if (f.kind === 'seq' || f.kind === 'setpoint' || f.kind === 'schedule' || f.kind === 'terminalStd' || f.key === 'powerMeter' || f.category === 'lighting' || A36_DET_OVERRIDE_KEYS.indexOf(f.key) > -1 || A36_DET_DCV_KEYS.indexOf(f.key) > -1 || /\bCO2\b|carbon dioxide/i.test(f.label || '')) return;
     var k = f.label;
     if (!by[k]) list.push((by[k] = { label: f.label, libSet: {}, units: 0, typeSet: {} }));
     by[k].libSet[f.lib] = true;
@@ -18704,6 +18704,37 @@ function _a36ExecSetpointScheduleSentences(d) {
       'The audit read the occupied schedule of each unit that has one in the building automation system. ' + rptCount(sum(sc)) + ' unit' + (sum(sc) === 1 ? ' runs' : 's run') +
       ' around the clock or ' + (sum(sc) === 1 ? 'has' : 'have') + ' no occupied period, at ' + where(sc) + '. Each ' + nn.one + ' with such schedules counts as one opportunity.';
   return out;
+}
+
+// The terminal unit opportunity of the audit in one paragraph for the Executive Summary: the libraries whose terminal unit control programs lack features of the
+// Control Service Company standard terminal unit sequence, the features and the recommendation. '' when no library has one. From the findings model (the same
+// list as the cover count and the chapters); the text of each feature is A36_TERM_STD.
+function _a36ExecTerminalStandardParagraph(d) {
+  var ctx;
+  try {
+    ctx = d._a36AuditCtx || (d._a36AuditCtx = _a36DetContext(d));
+  } catch (e) {
+    console.error('_a36ExecTerminalStandardParagraph: findings model failed', e);
+    return '';
+  }
+  var list = ctx.model.findings.filter(function (f) { return f.kind === 'terminalStd'; });
+  if (!list.length) return '';
+  var nn = _a36BuildingNouns(d);
+  var nTotal = d.portfolio.totalBuildings;
+  var units = list.reduce(function (a, f) { return a + (f.units || 0); }, 0);
+  var read = list.reduce(function (a, f) { return a + (f.read || 0); }, 0);
+  var feats = A36_TERM_STD.filter(function (f) {
+    return list.some(function (x) { return x.stdKeys.indexOf(f.key) > -1; });
+  });
+  var where = list.length === 1 && nTotal === 1 ? 'the ' + nn.one : list.length === nTotal && nTotal > 1 ? 'every ' + nn.one : list.length <= 3 ? _a36DetJoin(list.map(function (f) { return f.lib; })) : rptCount(list.length) + ' of the ' + rptCount(nTotal) + ' ' + nn.many;
+  return (
+    'The audit compared the terminal unit control programs with the Control Service Company standard terminal unit sequence. ' +
+    'At ' + where + ', the audit read the control program' + (read === 1 ? '' : 's') + ' of ' + rptCount(read) + ' terminal unit' + (read === 1 ? '' : 's') + '. ' +
+    (units >= read ? (read === 1 ? 'It lacks' : 'All ' + rptCount(read) + ' lack') : rptCount(units) + ' of them ' + (units === 1 ? 'lacks' : 'lack')) + ' one or more of the features of that sequence: ' +
+    _a36DetJoin(feats.map(function (f) { return f.noun; })) + '. ' +
+    'These features ' + _a36DetJoin(feats.map(function (f) { return f.gain; })) + '. ' +
+    'The audit recommends upgrading the terminal unit programs at ' + (list.length === 1 && nTotal === 1 ? 'the ' + nn.one : 'these ' + nn.many) + ' to the standard. Each ' + nn.one + ' with such terminal units counts as one opportunity.'
+  );
 }
 
 /**
@@ -19035,7 +19066,7 @@ function rptPageASHRAE36Executive(n, d, detailedTitles, view) {
   var _spSchParas = 0;
   if (!detailed) {
     var _ss = _a36ExecSetpointScheduleSentences(d);
-    [['Zone Setpoints.', _ss.setpoints], ['Schedules.', _ss.schedules]].forEach(function (x) {
+    [['Terminal Unit Sequences.', _a36ExecTerminalStandardParagraph(d)], ['Zone Setpoints.', _ss.setpoints], ['Schedules.', _ss.schedules]].forEach(function (x) {
       if (!x[1]) return;
       _spSchParas++;
       callout +=
@@ -19245,6 +19276,7 @@ function rptPageASHRAE36Executive(n, d, detailedTitles, view) {
       );
     }
     _sec('Principal Opportunities', _princ);
+    _sec('Terminal Unit Sequences', [_a36ExecTerminalStandardParagraph(d)]);
 
     // The setpoint and schedule opportunities come from the findings model (the same list as the cover count and the chapters).
     var _spSch = _a36ExecSetpointScheduleSentences(d);
@@ -28333,6 +28365,50 @@ function _a36DetModel(d, rowsById, picMap, loaded) {
       all.push(pm);
       pm.n = all.length;
     }
+    // Terminal units whose control program page the audit read and that lack features of the Control Service Company standard terminal unit sequence
+    // (A36_TERM_STD): one opportunity per library, on the units that lack them (Matt 2026-11-18). Units with no program page read are unknown, not a gap.
+    var tsu = _a36TerminalStandardUnits(b, groups, rowsById, d.project && d.project.id);
+    if (tsu.items.length) {
+      var tst = _a36TerminalStandardText(tsu);
+      var tsCat = {};
+      tsu.items.forEach(function (it) {
+        tsCat[it.category] = (tsCat[it.category] || 0) + 1;
+      });
+      var tsTop = Object.keys(tsCat).sort(function (x, y) {
+        return tsCat[y] - tsCat[x] || (x < y ? -1 : 1);
+      })[0];
+      var tsf = {
+        lib: _a36DisplayName(b),
+        groupLabel: 'Zone terminal units',
+        kind: 'terminalStd',
+        key: 'terminalStandard',
+        label: 'Terminal unit programs below the standard',
+        units: tsu.items.length,
+        total: tsu.read,
+        affected: tsu.items.map(function (it) { return it.name; }),
+        affectedCategories: tsu.items.map(function (it) { return it.category; }),
+        stdKeys: tst.feats.map(function (f) { return f.key; }),
+        read: tsu.read,
+        missing: [],
+        missingText: [],
+        missingKeys: [],
+        pic: null,
+        picCands: [],
+        section: '',
+        impact: tst.impact,
+        effect: 'Energy use',
+        observed: tst.headline,
+        issueShort: 'Terminal unit programs below the standard',
+        headline: tst.headline,
+        category: tsTop,
+        fracNoun: 'terminal unit',
+        groupTotal: tsu.read,
+        dcvNote: '',
+      };
+      lib.findings.push(tsf);
+      all.push(tsf);
+      tsf.n = all.length;
+    }
     // Zone setpoints that differ from the standard (one opportunity per library: the zones of _a36SetpointBuildingRows, the one rule of Appendix A) and
     // schedules the audit can state as a fact (a unit with a 24-hour occupied block, or an imported schedule with no occupied period; the formatter is
     // emZoneScheduleDisplay, the same as the System Descriptions). Matt 2026-11-18: setpoints, schedules and a worthwhile power meter are opportunities.
@@ -29000,6 +29076,101 @@ function _a36DetSequenceIds(equipName, libName, projId) {
     .map(function (r) {
       return { id: r.id, status: r.status, value: r.value, reset: r.reset };
     });
+}
+
+// The Control Service Company standard terminal unit sequence, as the features the audit can read from the control program pages (en_auditseq rows) and the
+// stored points of a terminal. ONE table: the finding of a library (_a36DetModel), its Impact text and the Executive Summary paragraph all read it.
+// ids: the canonical sequence ids (A36_DET_SEQ) that show the feature on a program page; a unit lacks the feature when none of its rows has one of
+// them with status enabled. applies(u): the feature counts against a unit only when the stored points show the unit can run it (heating device and
+// zone temperature, an occupancy sensor, a CO2 sensor); a unit the points do not show as able is never claimed to lack it. The import tool
+// writes no row for a discharge air temperature control on a terminal program page: the pages read show none (the Set Points, Heat Source,
+// Environmental Index and Alarms sections list no discharge air setpoint, floor or cascade); a program that shows one gets the id and leaves the list.
+var A36_TERM_STD = [
+  {
+    key: 'dat',
+    ids: ['terminal_dat_control'],
+    noun: 'discharge air temperature control with a 50°F floor',
+    gain: 'protect a zone in heating from cold discharge air',
+    why: 'Discharge air temperature control with a 50°F floor holds the air that the terminal delivers above 50°F by raising the heat first and the airflow second, with the zone heating loop setting the discharge setpoint, so a terminal in heating does not deliver cold air to the zone and the reheat follows the measured discharge temperature.',
+    applies: function (u) { return u.heating && !u.dual; },
+  },
+  {
+    key: 'lockout',
+    ids: ['heat_oa_lockout'],
+    noun: 'heating lockout above 50°F outdoor air',
+    gain: 'save reheat energy in mild weather',
+    why: 'A heating lockout above 50°F outdoor air keeps the reheat off when the building needs no heat, so the terminals stop reheating air that the air handler has cooled and the reheat energy of mild days drops.',
+    applies: function (u) { return u.heating && !u.dual; },
+  },
+  {
+    key: 'standby',
+    ids: ['zone_vacant_setback'],
+    noun: 'occupancy standby',
+    gain: 'save heating, cooling and fan energy in vacant zones',
+    why: 'Occupancy standby widens the zone setpoints by 3°F and lowers the airflow to the ventilation minimum when the occupancy sensor shows the zone vacant, so the terminal stops heating, cooling and moving air for an empty room.',
+    applies: function (u) { return u.occ; },
+  },
+  {
+    key: 'co2',
+    ids: ['co2_zone_airflow'],
+    noun: 'CO2 ventilation reset',
+    gain: 'save ventilation energy in lightly used zones',
+    why: 'CO2 ventilation reset raises the zone minimum airflow with the CO2 level of the zone, so the terminal ventilates for the people present and does not hold the fixed minimum airflow when the zone is lightly used.',
+    applies: function (u) { return u.co2; },
+  },
+];
+
+// The terminal units of one library whose control program page the audit read (a unit with at least one en_auditseq row) and that lack features of the
+// standard terminal unit sequence (A36_TERM_STD): { total (terminal units of the library), read (units with a program page read), items: [{ name,
+// category, lacks: [feature keys] }] }. A unit with no row is unread: unknown, never a gap. groups: the equipment groups of the library (_a36DetGroups).
+function _a36TerminalStandardUnits(b, groups, rowsById, projId) {
+  var lib = _a36DisplayName(b);
+  var out = { total: 0, read: 0, items: [] };
+  (groups || []).forEach(function (g) {
+    if (!A36_DET_TERMINALS[g.category]) return;
+    g.units.forEach(function (eq) {
+      out.total++;
+      var rows = _a36DetSequenceIds(eq && eq.name, lib, projId);
+      if (!rows.length) return;
+      out.read++;
+      var row = rowsById[eq.id];
+      var pts = row ? row.pointsRaw || row.points : null;
+      var covered = {};
+      ((eq.compliance && eq.compliance.coveredPoints) || []).forEach(function (cp) { covered[cp.categoryKey] = true; });
+      var cfg = pts && typeof emTerminalConfig === 'function' ? emTerminalConfig(pts) : null;
+      var u = {
+        // dual duct: a dual-duct terminal (stored type, or hot and cold deck points) takes its heat from the hot deck: no reheat features apply
+        dual: eq.category === 'ddvav' || g.category === 'ddvav' || !!(cfg && cfg.dualDuct),
+        heating: !!cfg && cfg.heating === 'device' && !!covered.zoneTemp,
+        occ: !!covered.occSensor,
+        co2: !!covered.co2,
+      };
+      var lacks = A36_TERM_STD.filter(function (f) {
+        return f.applies(u) && !rows.some(function (r) { return r.status === 'enabled' && f.ids.indexOf(r.id) > -1; });
+      }).map(function (f) { return f.key; });
+      if (lacks.length) out.items.push({ name: eq.name || 'Unknown', category: eq.category, lacks: lacks });
+    });
+  });
+  return out;
+}
+
+// The text of the terminal standard opportunity of one library from its units (_a36TerminalStandardUnits): the headline (one sentence, the fact) and the
+// Impact paragraph (the reason of each feature the units lack, the extent of the reading and the recommendation).
+function _a36TerminalStandardText(ts) {
+  var n = {};
+  ts.items.forEach(function (it) { it.lacks.forEach(function (k) { n[k] = (n[k] || 0) + 1; }); });
+  var feats = A36_TERM_STD.filter(function (f) { return n[f.key]; });
+  var a = ts.items.length;
+  var who = a >= ts.read ? (ts.read === 1 ? 'The control program of the one terminal unit the audit read has' : 'The control programs of all ' + rptCount(ts.read) + ' terminal units the audit read have') : 'The control programs of ' + rptCount(a) + ' of the ' + rptCount(ts.read) + ' terminal units the audit read have';
+  var headline =
+    who + ' ' + _a36DetJoin(feats.map(function (f) { return 'no ' + f.noun; })) + '. The Control Service Company standard terminal unit sequence includes ' + (feats.length === 1 ? 'it' : 'each of these') + '.';
+  var rest = ts.total - ts.read;
+  var impact =
+    feats.map(function (f) { return f.why; }).join(' ') + ' ' +
+    'The audit read the control program page of ' + rptCount(ts.read) + ' of the ' + rptCount(ts.total) + ' terminal units of the library' +
+    (rest > 0 ? ' and states nothing about the other ' + rptCount(rest) + '.' : '.') + ' ' +
+    'The audit recommends upgrading the terminal unit programs of the library to the Control Service Company standard terminal unit sequence.';
+  return { headline: headline, impact: impact, feats: feats, counts: n };
 }
 
 // The classes of a group that a sequence sentence names: 'hwp' and 'chwp' (plants, both also 'plant'), 'air' (air handling, rooftop and
