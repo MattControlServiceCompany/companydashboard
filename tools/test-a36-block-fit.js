@@ -136,6 +136,18 @@ ok(r.length === 1 && figOf(r, 'A').fig.h === 320, 'a short tail is pulled back b
 r = pag(group('A', 2, 400).concat([1, 2, 3, 4, 5, 6].map(fnd)), BUDGET);
 ok(r.length === 2 && figOf(r, 'A').fig.h === 400, 'a tail that needs the figure below 60 % stays on its page (' + names(r) + ')');
 
+// 10. Rule 5: chapter A ends on a page filled 360 of 700 (51 %); chapter B (title 30 + a 260 group) starts under A's findings.
+const chap = (name) => ({ type: 'block', html: 'C' + name, estH: 30, keepNext: true, chapterStart: true });
+const chapA = (n) => group('A', 2, 400).concat(Array.from({ length: n }, (_, i) => fnd(i + 1)));
+r = pag(chapA(6).concat([chap('B')], group('B', 1, 100)), BUDGET);
+ok(r.length === 2 && r[1][0].html === 'F1' && r[1].some((t) => t.html === 'CB') && figOf(r, 'A').fig.h === 400, 'a chapter starts under the findings of the chapter before when that page is filled less than 70 % (' + names(r) + ')');
+// 11. Rule 5: chapter A ends on a page filled 540 of 700 (77 %): chapter B starts on a new page.
+r = pag(chapA(9).concat([chap('B')], group('B', 1, 100)), BUDGET);
+ok(r.length === 3 && r[2][0].html === 'CB', 'a chapter starts on a new page when the page before is filled 70 % or more (' + names(r) + ')');
+// 12. Rule 5 keeps the pull-back of each chapter: chapter A's two findings come back to its page (case 8), B starts on a new page.
+r = pag(chapA(2).concat([chap('B')], group('B', 1, 100)), BUDGET);
+ok(r.length === 2 && r[0].length === 6 && r[1][0].html === 'CB' && figOf(r, 'A').fig.h === 320, 'the short tail of a chapter is pulled back before the next chapter starts (' + names(r) + ')');
+
 if (failed) {
   console.log(failed + ' FAILED');
   process.exit(1);

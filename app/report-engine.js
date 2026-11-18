@@ -27023,6 +27023,9 @@ function _a36DetChainEnd(tokens, i, limited) {
 // 4. It does not fit an empty page either (a run taller than a page): the text flows on, and the figure takes the space left on its page
 //    (scaled down to fit), or moves to the next page when it cannot fit there at its minimum scale. The figure never comes before its text.
 // A finding figure (no fig.block) keeps its old rule: scaled to fit when that keeps 85 %, else the run moves.
+// 5. A token with chapterStart (the title of a library chapter after the first) ends the chapter before it: its short last page is pulled back
+//    (_a36DetPullBackTail), and when that last page is still filled less than A36_DET_FLOW_FILL (Matt 2026-11-06: no half-empty pages)
+//    the new chapter starts on it, under the findings. Otherwise it starts on a new page. The title, photo and overview move as one run.
 var A36_DET_FLOW_FILL = 0.7; // rule 3a: a page filled less than this does not send a group to the next page
 function _a36DetPaginate(tokens, budget) {
   var cost = _a36DetCost;
@@ -27030,6 +27033,7 @@ function _a36DetPaginate(tokens, budget) {
   var cur = [];
   var used = 0;
   var splitUntil = -1; // index of a block figure whose run is taller than a page: its text flows token by token
+  var chapterFirst = 0; // index in chunks of the first page of the current chapter (rule 5)
   function runNeed(i, j) {
     var sum = cost(tokens[i], cur[cur.length - 1]);
     for (var k = i; k < j; k++) sum += cost(tokens[k + 1], tokens[k]);
@@ -27048,7 +27052,21 @@ function _a36DetPaginate(tokens, budget) {
     var figCost = cost(ft, j > i ? tokens[j - 1] : cur[cur.length - 1]);
     return _a36DetShrinkFig(ft, budget - used - (need - figCost));
   }
+  function pullBack() {
+    if (chunks.length - chapterFirst >= 2) _a36DetPullBackTail(chunks, budget);
+  }
   tokens.forEach(function (t, i) {
+    if (t.chapterStart && cur.length) {
+      flush();
+      pullBack();
+      var last = chunks[chunks.length - 1];
+      var lastUsed = _a36DetListCost(last);
+      if (lastUsed < budget * A36_DET_FLOW_FILL) {
+        cur = chunks.pop();
+        used = lastUsed;
+      }
+      chapterFirst = chunks.length;
+    }
     var j = _a36DetChainEnd(tokens, i, i < splitUntil);
     var ft = tokens[j];
     if (ft.fig && ft.fig.block) {
@@ -27076,8 +27094,15 @@ function _a36DetPaginate(tokens, budget) {
   });
   if (cur.length) chunks.push(cur);
   _a36DetMoveRowsToLastPart(chunks, budget);
-  _a36DetPullBackTail(chunks, budget);
+  pullBack();
   return chunks;
+}
+
+// The space a list of tokens takes on a page.
+function _a36DetListCost(list) {
+  return list.reduce(function (a, t, i) {
+    return a + _a36DetCost(t, i ? list[i - 1] : null);
+  }, 0);
 }
 
 // The last page of a token list (a library chapter) that holds only a short tail (for example the last finding) is pulled back onto the
@@ -29341,23 +29366,24 @@ function _a36DetLibraryTokens(d, b, ctx, sectionNo) {
 }
 
 /**
- * rptPageA36DetailedLibraries — the sections of the libraries of the Detailed Audit Report. Every library is its own section: it starts
- * on a new page and carries the next section number (firstSectionNo, firstSectionNo + 1, ...). Returns { pages: [page html], nextSectionNo }.
+ * rptPageA36DetailedLibraries — the sections of the libraries of the Detailed Audit Report. Every library is its own section with the next
+ * section number (firstSectionNo, firstSectionNo + 1, ...). The chapters are one flow: a chapter starts under the end of the chapter before
+ * it when that page is not filled (_a36DetPaginate rule 5), else on a new page. Returns { pages: [page html], nextSectionNo }.
  * @param {number} n - first page number
  * @param {object} d - data from collectASHRAE36Data
  * @param {object} ctx - _a36DetContext(d)
  * @param {number} firstSectionNo - the section number of the first library
  */
 function rptPageA36DetailedLibraries(n, d, ctx, firstSectionNo) {
-  var pages = [];
+  var tokens = [];
   var sectionNo = firstSectionNo;
-  d.buildings.forEach(function (b) {
-    _a36DetPages(n + pages.length, d, _a36DetLibraryTokens(d, b, ctx, sectionNo), null).forEach(function (pg) {
-      pages.push(pg);
-    });
+  d.buildings.forEach(function (b, k) {
+    var lib = _a36DetLibraryTokens(d, b, ctx, sectionNo);
+    if (k && lib.length) lib[0].chapterStart = true;
+    tokens = tokens.concat(lib);
     sectionNo++;
   });
-  return { pages: pages, nextSectionNo: sectionNo };
+  return { pages: tokens.length ? _a36DetPages(n, d, tokens, null) : [], nextSectionNo: sectionNo };
 }
 
 // The front photo of a library: a picture already cut to the print size (6.5 x 3.5 in), under the section title.
