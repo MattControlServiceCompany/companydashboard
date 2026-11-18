@@ -27,7 +27,7 @@ const ok = (c, m) => {
     page.on('pageerror', (e) => errs.push(e.message));
     await page.route(/supabase|\.netlify|netlify\.app/, (r) => r.abort());
     await page.goto(pathToFileURL(path.join(ROOT, 'energy-department.html')).href);
-    await page.waitForFunction(() => typeof _a36DetDescriptionParas === 'function' && typeof _a36DetResetText === 'function' && typeof collectASHRAE36Data === 'function', null, { timeout: 30000 });
+    await page.waitForFunction(() => typeof _a36DetDescriptionParas === 'function' && typeof _a36DetResetText === 'function' && typeof collectASHRAE36Data === 'function' && window.DB && DB.isReady(), null, { timeout: 30000 }); // DB ready: the app load replaced the projects list pushed before it (flaky null d)
 
     const r = await page.evaluate(() => {
       const out = {};
