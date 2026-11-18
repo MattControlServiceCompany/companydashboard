@@ -2508,6 +2508,8 @@ async function siteResetAllMeterTableSettings() {
    site-ui.js delegates to this array and should NOT maintain its own copy.
 */
 var RELEASE_NOTES = [
+  { v: 'v2026.11.18.356', date: '2026-11-18', title: 'Service Proposal: override lines',
+    items: [ { type: 'fixed', text: 'Service Proposal: an override line does not repeat its own name under Programming.' } ] },
   { v: 'v2026.11.18.355', date: '2026-11-18', title: 'Service Proposal: clearer cost line names',
     items: [ { type: 'fixed', text: 'Service Proposal: each cost line has a short name of the work (Building Power Meter, Zone Setpoint Reprogramming), and one device reads as one (1 Differential Pressure Sensor).' } ] },
   { v: 'v2026.11.18.354', date: '2026-11-18', title: 'Audit Report utility use; one opportunity = one cost line',
