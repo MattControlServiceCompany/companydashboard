@@ -2507,6 +2507,11 @@ async function siteResetAllMeterTableSettings() {
    site-ui.js delegates to this array and should NOT maintain its own copy.
 */
 var RELEASE_NOTES = [
+  { v: 'v2026.11.18.352', date: '2026-11-18', title: 'Audit Report: lighting, manual overrides, terminal unit sequence standard',
+    items: [ { type: 'improved', text: 'Audit Report: lighting control units are part of the audit. A missing photocell on exterior lighting, lighting with no schedule and interior lighting with no occupancy control are opportunities.' },
+             { type: 'improved', text: 'Audit Report: a manual override that holds a pump pressure, supply air or duct static pressure setpoint is an opportunity, with the value from the WebCTRL screen. It is listed on the row of its equipment type.' },
+             { type: 'improved', text: 'Audit Report: the terminal unit programs are compared with the Control Service Company standard terminal unit sequence, and the report recommends the upgrade where a program is below it.' },
+             { type: 'fixed', text: 'Audit Report: a value with its unit (1 in. w.c.) does not break across two lines.' } ] },
   { v: 'v2026.11.18.351', date: '2026-11-18', title: 'Audit Report: counts by unit, setpoints and schedules as opportunities, reset limits, expert system descriptions',
     items: [ { type: 'improved', text: 'Audit Report: each unit is counted once. The cover says how many opportunities were found on how many equipment units.' },
              { type: 'improved', text: 'Audit Report: zone setpoints that differ from the standard and schedules that run units around the clock are opportunities, one per library.' },
