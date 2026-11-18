@@ -2507,6 +2507,8 @@ async function siteResetAllMeterTableSettings() {
    site-ui.js delegates to this array and should NOT maintain its own copy.
 */
 var RELEASE_NOTES = [
+  { v: 'v2026.11.17.345', date: '2026-11-17', title: 'Audit Report: no half-empty chapter ends',
+    items: [ { type: 'fixed', text: 'Audit Report: a building chapter starts under the findings of the building before it when that page has room, so a chapter end no longer leaves a mostly empty page.' } ] },
   { v: 'v2026.11.17.344', date: '2026-11-17', title: 'Bill reading: RKVA from scanned bills',
     items: [ { type: 'fixed', text: 'Bill reading: a scanned bill with unreadable dates and a mark beside the meter table still reads its meter row, so RKVA Used is filled. A one-digit RKVA misread is corrected from the RkVA charge quantity.' } ] },
   { v: 'v2026.11.17.343', date: '2026-11-17', title: 'Audit Report: facts only in findings; bill RKVA',
