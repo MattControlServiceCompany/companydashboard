@@ -299,8 +299,8 @@ const ok = (c, m) => {
     ok(!/Guideline 36|outside air|set point|§|Cfm/.test(t), 'round 1: no "Guideline 36", "outside air", "set point", section sign or "Cfm" in the Detailed text');
     ok(!/Report date/.test(det.text) && !/Glossary|Share Mapped|Points by Equipment Type/.test(det.text) && !/ASHRAE Coverage|none are discarded|prioritized list/.test(det.text), 'cover has no Report date line; no Glossary page, no Share Mapped column; the old promise and wording are gone');
     ok(!/This system has/.test(t), 'cut 3: no "This system has N units" sentence (the System Overview table lists the units)');
-    ok(/The building automation system of Alpha Library controls [^.]*two air handling units \(AHU‑1, AHU‑2\)/.test(t) && !/is served by/.test(t), 'System Overview (a paragraph): names and counts the 2 air handling units the building automation system of Alpha Library controls (Matt 2026-11-18: the audit sees the system, not the building)');
-    ok(/The building automation system of Beta Library controls one air handling unit \(AHU‑3\)/.test(t) && /three variable air volume terminal units/.test(t) && !/Total\s*6/.test(t), 'System Overview: one unit is named, more than 3 are counted only, no Total line');
+    ok(/The BAS of Alpha Library controls [^.]*two AHUs \(AHU‑1, AHU‑2\)/.test(t) && !/is served by/.test(t), 'System Overview (a paragraph): names and counts the 2 AHUs the BAS of Alpha Library controls (Matt 2026-11-18: the audit sees the system, not the building)');
+    ok(/The BAS of Beta Library controls one AHU \(AHU‑3\)/.test(t) && /three VAV terminal units/.test(t) && !/Total\s*6/.test(t), 'System Overview: one unit is named, more than 3 are counted only, no Total line');
     ok(det.overviewNoTable === true, 'item 1: the System Overview has no <table> (the Opportunities Summary keeps its table)');
     ok(/Building automation controller: Sample Controller \(5 of 6 units\)/.test(t), 'BAS controller line from the rows (5 of 6 units in Alpha Library: the exhaust fan row has none)');
     ok(!/\bmonitors\b|by command|by an enable command|positioned by|set by a speed command|showed:|55\.2°F/.test(t), 'a: System Descriptions: no "monitors" list, no "by command", no reading (55.2°F), no "showed:" list');
@@ -366,7 +366,7 @@ const ok = (c, m) => {
     // the graphic of a unit sits directly under its own description; a finding figure sits directly under its own finding
     ok(det.order.join('|') === 'desc:1|desc:2|find:Economizer|desc:4', 'every figure is directly under its own description or finding: ' + det.order.join('|'));
     ok(/Figure 3: Economizer: Alpha Library, AHU\u20111, Properties(\n|$)/.test(det.figs.join('\n')), 'the finding figure caption names the condition: ' + det.figs.join(' / '));
-    ok(/Figure 1 shows the building automation system graphic of AHU‑1\./.test(t) && !/\(Figure \d+\)/.test(t), 'the text introduces the figure with a sentence that says what it shows (Matt 2026-11-18), no bracket citation');
+    ok(/Figure 1 shows the BAS graphic of AHU‑1\./.test(t) && !/\(Figure \d+\)/.test(t), 'the text introduces the figure with a sentence that says what it shows (Matt 2026-11-18), no bracket citation');
     ok(!/Pictures?: Figure/.test(t), 'no "Pictures: Figure" list under the findings');
     ok(!/\(1 of 1 unit\)/.test(t) && !/\((\d+) of \1 units\)/.test(t.replace(/Building automation controller[^\n]*/g, '')), 'D6: no "(N of N units)" noise in the text');
 
@@ -995,7 +995,7 @@ const ok = (c, m) => {
     }, PID2);
     const pt = plants.text;
     ok(plants.cats === 'ahu,chwp,hwp', 'D4: Detailed audits the air handler and the two plants: ' + plants.cats);
-    ok(/one chilled water plant/.test(pt) && /one hot water plant/.test(pt) && /one air handling unit \(AHU\u20111\)/.test(pt) && !/Water System - Gamma|Water System/.test(pt.slice(0, pt.indexOf('System Descriptions'))), 'D4: System Overview counts one hot water plant and one chilled water plant, without the BAS name of the plant');
+    ok(/one chilled water plant/.test(pt) && /one hot water plant/.test(pt) && /one AHU \(AHU\u20111\)/.test(pt) && !/Water System - Gamma|Water System/.test(pt.slice(0, pt.indexOf('System Descriptions'))), 'D4: System Overview counts one hot water plant and one chilled water plant, without the BAS name of the plant');
     ok(!/ - Gamma/.test(pt) && /Hot Water Plant/.test(pt) && /Chilled Water Plant/.test(pt), 'D4: the plants print with their type name, never with the library tag of the BAS name ("- Gamma")');
     ok(!/Domestic Hot Water/.test(pt) && !/Loop Bypass/.test(pt) && !/Plumbing/.test(pt), 'D4: domestic hot water and the bypass valve do not print');
     const fStart = pt.indexOf('Opportunities');
