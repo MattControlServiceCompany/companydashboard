@@ -18349,30 +18349,28 @@ function _a36AuditRingStats(d, libName) {
   return { units: units, clean: clean, tiers: tiers };
 }
 
-// The ring color: green at 80 % or more, orange at 50 % or more, else red (the report status colors).
-function _a36AuditRingColor(pct) {
-  return pct >= 80 ? 'var(--rpt-green)' : pct >= 50 ? 'var(--rpt-orange)' : 'var(--rpt-red)';
-}
-
-// A row of audit rings: All Equipment, then each tier; each ring prints the percent of units with no findings, its label and the count
-// ("117 of 342 with no findings"). size: the ring diameter in px. A layout table (not flex), so Word keeps the row (the rings become pictures
-// there: _rptSwapGaugeRingForPng).
-function _a36AuditRingsHtml(st, size) {
-  if (!st || !st.units) return '';
-  var items = [{ label: 'All Equipment', n: st.clean, of: st.units, one: 'unit', many: 'units' }].concat(st.tiers);
+// The score rings of the audit (Matt 2026-11-18: "the old scores", not units with no findings): Overall Score, Sensor Coverage and Sequence
+// Readiness, from the one score owner (a36PortfolioScores / a36ScoreBuilding: p.composite, p.pointPct, p.seqPct; b.composite and so on).
+// colors(pct, i) gives the ring color. A score of null (no sequence applies) prints no ring. A layout table (not flex), so Word keeps the row
+// (the rings become pictures there: _rptSwapGaugeRingForPng).
+function _a36ScoreRingsHtml(s, size, colors) {
+  if (!s) return '';
+  var items = [
+    { label: 'Overall Score', pct: s.composite },
+    { label: 'Sensor Coverage', pct: s.pointPct },
+    { label: 'Sequence Readiness', pct: s.seqPct },
+  ].filter(function (it) { return it.pct !== null && it.pct !== undefined && isFinite(it.pct); });
+  if (!items.length) return '';
   var w = Math.floor(100 / items.length);
   return (
-    '<div style="font-size:13.34px;font-weight:700;color:var(--rpt-blue);text-align:center;margin:8px 0 2px 0">Equipment With No Findings</div>' +
-    '<table style="width:100%;border-collapse:collapse;table-layout:fixed;margin:2px 0 10px 0"><tr>' +
+    '<table style="width:100%;border-collapse:collapse;table-layout:fixed;margin:8px 0 10px 0"><tr>' +
     items
-      .map(function (it) {
-        var pct = it.of ? Math.round((100 * it.n) / it.of) : 0;
+      .map(function (it, i) {
+        var pct = Math.round(it.pct);
         return (
           '<td style="width:' + w + '%;text-align:center;vertical-align:top;padding:0 4px;border:none">' +
-          '<div style="display:inline-block">' + _a36GaugeSVG(pct, _a36AuditRingColor(pct), it.label, size, true) + '</div>' +
-          '<div style="font-size:13.34px;font-weight:700;color:var(--rpt-page-text);margin-top:2px">' + it.label + '</div>' +
-          '<div style="font-size:12px;color:var(--rpt-page-text)">' + rptCount(it.n) + ' of ' + rptCount(it.of) + ' ' + (it.of === 1 ? it.one : it.many) + '</div>' +
-          '<div style="font-size:12px;color:var(--rpt-page-text)">with no findings</div>' +
+          '<div style="display:inline-block">' + _a36GaugeSVG(pct, colors(pct, i), it.label, size, true) + '</div>' +
+          '<div style="font-size:13.34px;font-weight:700;color:var(--rpt-page-text);margin-top:2px;text-align:center">' + it.label + '</div>' +
           '</td>'
         );
       })
@@ -18407,11 +18405,20 @@ function _a36ExecDeviceGroups(d) {
   ctx.model.findings.forEach(function (f) {
     if (f.kind === 'seq' || A36_DET_DCV_KEYS.indexOf(f.key) > -1 || /\bCO2\b|carbon dioxide/i.test(f.label || '')) return;
     var k = f.label;
-    if (!by[k]) list.push((by[k] = { label: f.label, libSet: {}, units: 0 }));
+    if (!by[k]) list.push((by[k] = { label: f.label, libSet: {}, units: 0, typeSet: {} }));
     by[k].libSet[f.lib] = true;
     by[k].units += f.units || 0;
+    var tk = f.groupLabel || 'Building-wide';
+    by[k].typeSet[tk] = (by[k].typeSet[tk] || 0) + (f.units || 0);
   });
-  list.forEach(function (g) { g.libs = Object.keys(g.libSet).length; });
+  list.forEach(function (g) {
+    g.libNames = Object.keys(g.libSet).sort(rptBuildingNameSort);
+    g.libs = g.libNames.length;
+    // The equipment the device is missing on, by group label ("Air Handling Units"), largest first; one/many: the label in the singular and plural.
+    g.types = Object.keys(g.typeSet).map(function (t) {
+      return { n: g.typeSet[t], many: t, one: t.replace(/ies$/, 'y').replace(/([^s])s$/, '$1') };
+    }).sort(function (a, c) { return c.n - a.n; });
+  });
   return list.sort(function (a, c) { return c.units - a.units || c.libs - a.libs || String(a.label).localeCompare(String(c.label)); });
 }
 
@@ -18472,7 +18479,7 @@ function rptPageASHRAE36Cover(n, d, perBuildingIncluded, detailed) {
     statCard(rptCount(p.totalEquip), 'Equipment Units Audited') +
     (info ? statCard(rptCount(info.total), 'Findings') : '') +
     '</div>' +
-    _a36AuditRingsHtml(_a36AuditRingStats(d), 120) +
+    _a36ScoreRingsHtml(p, 120, function (pct, i) { return i === 0 ? 'var(--rpt-blue)' : 'var(--rpt-green)'; }) +
     '</div>';
 
   // Rule 2.3: reportDate drives the footer date; label is empty (no period range for audit reports).
@@ -18545,7 +18552,9 @@ function rptPageASHRAE36Scores(n, d, detailedSectionNo) {
   var intro =
     '<div style="font-size:14px;color:var(--rpt-page-text);line-height:1.6;margin-bottom:8px">' +
     'ASHRAE 36, the industry standard for high-performance heating, cooling and ventilation control, lists the sensors and control sequences that a building automation system needs. ' +
-    'This section compares the audited ' + (p.totalBuildings === 1 ? 'system' : 'systems') + ' with that standard. It is one reference. The audit itself covers all of the equipment and all of its control sequences.' +
+    'This section compares the audited ' + (p.totalBuildings === 1 ? 'system' : 'systems') + ' with that standard. It is one reference. The audit itself covers all of the equipment and all of its control sequences. ' +
+    // Matt 2026-11-18: how occupancy-based ventilation meets ASHRAE 36 (section numbers from EM_SEQUENCE_DEFS vav_dcv and demandCtrl).
+    'ASHRAE 36 includes occupancy-based ventilation (demand-controlled ventilation) in its zone sequences (section 5.2.1) and in the minimum outdoor air control of the air handling units (section 5.16.3): each zone with a CO2 sensor resets its outdoor air requirement from the CO2 level, and the air handling unit sets its minimum outdoor air from the sum of those requirements.' +
     '</div>';
   var gauges =
     '<div style="display:flex;justify-content:center;gap:36px;margin:24px 0 8px">' +
@@ -18816,11 +18825,14 @@ function rptPageASHRAE36Executive(n, d, detailedTitles, view) {
     _sec('Scope and Method', [
       'This audit examined how the building automation system' + (p.totalBuildings > 1 ? 's' : '') + ' of ' +
         (p.totalBuildings > 1 ? 'the ' + rptCount(p.totalBuildings) + ' ' + _nounMany : 'the ' + _nounOne) +
-        ' control' + (p.totalBuildings > 1 ? '' : 's') + ' the heating, ventilation and air conditioning equipment. A building automation system is the network of controllers, sensors and programs that starts and stops the equipment, holds the temperature of each space and sets how much outdoor air each space receives. ' +
-        'Control Service Company reviewed ' + _plural(p.totalEquip, 'equipment unit', 'equipment units') +
-        (_inv > 0 ? ' and ' + _plural(_inv, 'control point', 'control points') : '') +
-        (_range.length && _zones ? ', from ' + _a36DetJoin(_range) + ' to ' + _tierPhrase(_zones) + ' that serve individual rooms' : '') + '. ' +
-        'For each unit, the audit compared what the system can measure, what it can command and what it is programmed to do with a defined set of sensors, control points and control sequences for that type of equipment. Each item of that set that the system does not have is recorded as one finding.',
+        ' control' + (p.totalBuildings > 1 ? '' : 's') + ' the heating, ventilation and air conditioning equipment. ' +
+        // Matt 2026-11-18: one clear sentence for what was reviewed, one for what the equipment is.
+        'Control Service Company reviewed ' + _plural(p.totalEquip, 'piece of equipment', 'pieces of equipment') +
+        (_inv > 0 ? ' and the ' + _plural(_inv, 'control point', 'control points') + ' connected to ' + (p.totalEquip === 1 ? 'it' : 'them') : '') + '. ' +
+        (_range.length || _zones
+          ? 'The equipment includes ' + _a36DetJoin(_range.concat(_zones ? [_tierPhrase(_zones, 'zone ') + (_zones.of === 1 ? ', which controls' : ', which control') + ' the airflow to individual rooms'] : [])) + '. '
+          : '') +
+        'For each unit, the audit compared what the system can measure, what it can command and what it is programmed to do with a defined set of sensors, control points and control sequences for that type of equipment. In this report, a finding is one sensor, control point or control sequence from that set that some or all units of one equipment type in one ' + _nounOne + ' do not have.',
     ]);
 
     // Overall result
@@ -18832,23 +18844,27 @@ function rptPageASHRAE36Executive(n, d, detailedTitles, view) {
       var _res = [];
       if (!_fInfo.total) _res.push('The audit recorded no findings: every unit has every sensor, point and control sequence the audit checks.');
       else {
-        var _r1 = 'The audit recorded ' + _a36FindingsCount(_fInfo.total) +
-          (p.totalBuildings > 1 ? ' at ' + rptCount(_fInfo.libs) + ' of the ' + rptCount(p.totalBuildings) + ' ' + _nounMany : '') + '.';
+        // Matt 2026-11-18: one direction only (units WITH findings), and a library with none says what that means.
+        var _cleanLibs = d.buildings.map(_a36DisplayName).filter(function (nm) { return !_fInfo.byLib[nm]; });
+        var _r1 = 'The audit recorded ' + _a36FindingsCount(_fInfo.total) + '.';
+        if (p.totalBuildings > 1)
+          _r1 += _cleanLibs.length
+            ? ' ' + rptCount(_fInfo.libs) + ' of the ' + rptCount(p.totalBuildings) + ' ' + _nounMany + (_fInfo.libs === 1 ? ' has' : ' have') + ' at least one finding. ' +
+              _a36DetJoin(_cleanLibs) + (_cleanLibs.length === 1 ? ' has' : ' have') + ' none: every unit there has each sensor, control point and control sequence the audit checks.'
+            : ' Every ' + _nounOne + ' has at least one finding.';
         if (_st && _st.units) {
-          var _pct = Math.round((100 * _st.clean) / _st.units);
-          _r1 += ' ' + rptCount(_st.clean) + ' of the ' + rptCount(_st.units) + ' units (' + _pct + '%) have every item the audit checks; the other ' + rptCount(_st.units - _st.clean) + ' have at least one finding.';
+          var _with = _st.units - _st.clean;
+          _r1 += ' Counted by unit, ' + rptCount(_with) + ' of the ' + rptCount(_st.units) + ' units (' + Math.round((100 * _with) / _st.units) + '%) have at least one finding.';
           var _tiers = _st.tiers.filter(function (t) { return t.of > 0; });
           if (_tiers.length > 1)
-            _r1 += ' The result differs by type of equipment. ' + _tiers.map(function (t) {
-              return rptCount(t.n) + ' of the ' + rptCount(t.of) + ' ' + t.label.toLowerCase().replace(/^plants$/, 'heating and cooling plants') + ' (' + Math.round((100 * t.n) / t.of) + '%) ' + (t.n === 1 ? 'has' : 'have') + ' no findings.';
-            }).join(' ');
+            _r1 += ' The share differs by type of equipment: ' + _a36DetJoin(_tiers.map(function (t) {
+              var w = t.of - t.n;
+              return rptCount(w) + ' of the ' + rptCount(t.of) + ' ' + t.label.toLowerCase().replace(/^plants$/, 'heating and cooling plants') + ' (' + Math.round((100 * w) / t.of) + '%)';
+            })) + ' have at least one finding.';
         }
         _res.push(_r1);
         if (p.totalBuildings > 2 && _topLibs.length > 1)
           _res.push(
-            (_fInfo.libs * 2 > p.totalBuildings
-              ? 'The findings are not confined to one ' + _nounOne + '. They occur in most of the ' + _nounMany + ', so they describe how the systems are set up across the whole group. '
-              : '') +
             'The most findings are at ' + _a36DetJoin(_topLibs.map(function (t) { return t.name + ' (' + t.n + ')'; })) + '.'
           );
       }
@@ -18871,6 +18887,13 @@ function rptPageASHRAE36Executive(n, d, detailedTitles, view) {
       hwp_pump_dp_reset: 'pump differential pressure reset slows the pumps when fewer valves are open',
       chwp_pump_dp_reset: 'pump differential pressure reset slows the pumps when fewer valves are open',
     };
+    // What is missing without each air handling unit sequence: the setpoint the sequence would reset (no claim about what the unit does).
+    var _seqProblem = {
+      ahu_sat_reset: 'Without supply air temperature reset, the supply air temperature setpoint does not change with the cooling demand of the zones.',
+      ahu_min_oa: 'Without minimum outdoor air control, the outdoor air damper is not set from the outdoor airflow the zones require.',
+      ahu_economizer: 'Without an economizer sequence, the unit does not use outdoor air for cooling when the outdoor air is cool enough.',
+      ahu_dsp_reset: 'Without duct static pressure reset, the duct pressure setpoint does not drop when fewer zones call for air.',
+    };
     var _seqSentence = function (list, who) {
       return who + ' ' + _a36DetJoin(list.map(function (s, i) {
         return (i ? rptCount(s.qty) : rptCount(s.qty) + (s.qty === 1 ? ' unit has' : ' units have')) + ' no ' + ASHRAE36_SEQUENCE_EXEC_PHRASE[s.key];
@@ -18892,9 +18915,10 @@ function rptPageASHRAE36Executive(n, d, detailedTitles, view) {
       var _obvQty = _seqQty('demandCtrl') + _seqQty('vav_dcv');
       _princ.push(
         _ordinal[_nth++] + ' concerns ventilation. ' + _a36DetUpperFirst(_co2Parts.join(' and ')) + (_missingCO2 === 1 ? ' has' : ' have') + ' no carbon dioxide (CO2) sensor. ' +
-        'The CO2 level of a room rises with the number of people in it, so a CO2 sensor is how a control system can tell how occupied a space is. ' +
-        'Without it, the system cannot change the outdoor air with the number of people in the space. ' +
-        'Outdoor air must be heated in winter and cooled in summer before it reaches the room, so outdoor air that does not follow the occupancy is also heated or cooled in the hours when few people are present.' +
+        // Matt 2026-11-18: less basic explaining; say what demand-controlled ventilation is. Where ASHRAE 36 calls for it is in the ASHRAE 36
+        // section (rptPageASHRAE36Scores): the base report names no standard.
+        'Without that sensor, the system cannot run occupancy-based ventilation, also called demand-controlled ventilation, which uses the CO2 level of each zone to match the outdoor air to the number of people present. ' +
+        'Where it is missing, each unit brings in a fixed minimum amount of outdoor air in every occupied hour, and the heating and cooling equipment conditions that air also when few people are present.' +
         (_obvQty > _missingCO2
           ? ' In all, ' + rptCount(_obvQty) + ' units do not have occupancy-based ventilation programmed; this includes units that have a CO2 sensor but lack another point the sequence uses.'
           : '')
@@ -18903,10 +18927,10 @@ function rptPageASHRAE36Executive(n, d, detailedTitles, view) {
     var _ahuSeq = _seqList(/^ahu_/);
     if (_ahuSeq.length)
       _princ.push(
-        (_ordinal[_nth++] || 'A further finding') + ' concerns the air handling units, which condition air at one place and distribute it to many zones. ' +
-        'Several of these units do not have the control sequences that adjust them to the load of the building. ' + _seqSentence(_ahuSeq, 'Of the air handling units,') + ' ' +
-        'Each of these sequences lets a unit work only as hard as the building needs at that moment: ' + _whyOf(_ahuSeq).replace(/^./, function (c) { return c.toLowerCase(); }) + ' ' +
-        'Without these sequences, the units cannot make these adjustments.'
+        // Matt 2026-11-18: start with the findings, then say what the problem is; the readers know HVAC.
+        (_ordinal[_nth++] || 'A further finding') + ' concerns the air handling unit sequences. ' + _seqSentence(_ahuSeq, 'Of the air handling units,') + ' ' +
+        _ahuSeq.map(function (s) { return _seqProblem[s.key]; }).filter(Boolean).join(' ') +
+        ' In each case the setpoint does not follow the load, so the fan, cooling and heating energy of the unit does not drop when the zones need less.'
       );
     var _pzSeq = _seqList(/^(hwp|chwp|vav)_/);
     if (_pzSeq.length)
@@ -18916,14 +18940,14 @@ function rptPageASHRAE36Executive(n, d, detailedTitles, view) {
       );
     var _dev = _a36ExecDeviceGroups(d);
     if (_dev.length) {
-      var _devTop = _dev.slice(0, 3);
+      // Matt 2026-11-18: name every device, the equipment it is missing on and where; no "units" and no "other type".
       _princ.push(
-        'A smaller group of findings concerns the devices themselves. The audit found units without ' +
-        _a36DetJoin(_devTop.map(function (g) {
-          return 'a ' + _a36ExecLabelWords(g.label) + ' (' + rptCount(g.units) + (g.units === 1 ? ' unit' : ' units') + (g.libs > 1 ? ' at ' + rptCount(g.libs) + ' ' + _nounMany : '') + ')';
-        })) +
-        (_dev.length > 3 ? ', and ' + rptCount(_dev.length - 3) + ' other type' + (_dev.length - 3 === 1 ? '' : 's') + ' of device or point' : '') + '. ' +
-        'These are physical gaps, not programming gaps: until the device exists, the system cannot measure or command what a sequence needs, so that sequence cannot run as written.'
+        'The remaining findings concern devices and points that the system does not have: ' +
+        _dev.map(function (g) {
+          return 'no ' + _a36ExecLabelWords(g.label) + ' on ' + _a36DetJoin(g.types.map(function (t) { return rptCount(t.n) + ' ' + _a36ExecLabelWords(t.n === 1 ? t.one : t.many); })) +
+            (g.libs === 1 ? ' at ' + g.libNames[0] : ' at ' + rptCount(g.libs) + ' ' + _nounMany);
+        }).join('; ') + '. ' +
+        'Until such a device is installed, the system cannot measure or command that point, and a sequence that uses it cannot run as written.'
       );
     }
     _sec('Principal Findings', _princ);
@@ -18941,19 +18965,19 @@ function rptPageASHRAE36Executive(n, d, detailedTitles, view) {
     var _haveN = function (k) {
       return k === _nB ? (_nB === 1 ? 'the ' + _nounOne + ' has' : 'all ' + rptCount(_nB) + ' ' + _nounMany + ' have') : k ? rptCount(k) + ' of the ' + rptCount(_nB) + ' ' + _nounMany + (k === 1 ? ' has' : ' have') : 'none of the ' + _nounMany + ' has';
     };
+    // Matt 2026-11-18: not "Context"; each topic gets its own plain heading.
     var _ctx = [];
     if (_spNeed > 0)
       _ctx.push(
         'The audit also compared the zone setpoints with the Control Service Company standard setpoints. ' +
         (_spNeed >= p.totalBuildings ? (p.totalBuildings === 1 ? 'The ' + _nounOne + ' has' : 'All ' + rptCount(p.totalBuildings) + ' ' + _nounMany + ' have') : rptCount(_spNeed) + ' of the ' + rptCount(p.totalBuildings) + ' ' + _nounMany + (_spNeed === 1 ? ' has' : ' have')) + ' zone setpoints that differ from that standard. A setpoint that differs is not a finding; Appendix A lists each one with the standard value beside it.'
       );
+    _sec('Zone Setpoints', _ctx);
     if (_nB)
-      _ctx.push(
-        'Two items of building infrastructure frame these results. ' +
-        _a36DetUpperFirst(_haveN(d.buildings.filter(function (b) { return b.hasPowerMonitoring; }).length)) + ' a dedicated power monitoring meter on the building automation system, which lets the system record the electric power use of the building. ' +
-        _a36DetUpperFirst(_haveN(d.buildings.filter(function (b) { return b.hasOAConditions; }).length)) + ' dedicated outdoor air sensors, which supply the weather readings that the reset, economizer and ventilation sequences use.'
-      );
-    _sec('Context', _ctx);
+      _sec('Power Metering and Outdoor Air Sensors', [
+        _a36DetUpperFirst(_haveN(d.buildings.filter(function (b) { return b.hasPowerMonitoring; }).length)) + ' a power monitoring meter on the building automation system. ' +
+        _a36DetUpperFirst(_haveN(d.buildings.filter(function (b) { return b.hasOAConditions; }).length)) + ' dedicated outdoor air sensors, which the reset, economizer and ventilation sequences use.',
+      ]);
     _sec('Organization of This Report', [
       'The report continues with one page for each ' + _nounOne + ', which lists its equipment and its findings, followed by one chapter for each ' + _nounOne + '. ' +
       'Each chapter first describes how the system controls the equipment today, then explains each finding, the equipment it affects and a graphic of that equipment.',
@@ -29606,8 +29630,9 @@ function _a36AuditBuildingTokens(d, b, ctx, showBuildingInfra) {
   var card = function (value, label, color) {
     return (
       '<td style="width:50%;vertical-align:top;padding:4px 8px 10px 8px;border:none">' +
-      '<div style="font-size:20px;font-weight:700;line-height:1.15;color:' + color + '">' + value + '</div>' +
-      '<div style="font-size:12px;color:var(--rpt-page-text);margin-top:2px">' + label + '</div></td>'
+      // Matt 2026-11-18: the label on top, the value below.
+      '<div style="font-size:12px;color:var(--rpt-page-text);margin-bottom:2px">' + label + '</div>' +
+      '<div style="font-size:20px;font-weight:700;line-height:1.15;color:' + color + '">' + value + '</div></td>'
     );
   };
   var infraVal = function (on) {
@@ -29637,9 +29662,8 @@ function _a36AuditBuildingTokens(d, b, ctx, showBuildingInfra) {
       true,
     );
   };
-  var ringStats = _a36AuditRingStats(d, name);
   var ringsTok = function (size) {
-    var h = _a36AuditRingsHtml(ringStats, size);
+    var h = _a36ScoreRingsHtml(b, size, function (pct) { return a36ReadinessColor(pct); });
     return h ? _a36DetTok(h, true) : null;
   };
   var headAt = tokens.length;

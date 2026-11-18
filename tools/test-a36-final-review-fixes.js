@@ -67,7 +67,7 @@ ok(lits.every((s) => /variable-speed savings/.test(s)), '3. no report string say
   // 3: the setpoint wording
   ok(/zone setpoints that differ from that standard\. A setpoint that differs is not a finding; Appendix A lists each one/.test(RE) && /compared the zone setpoints with the Control Service Company standard setpoints/.test(RE) && !/ASHRAE 36 recommended values/.test(RE), '3. Executive Summary: setpoints "differ from the Control Service Company standard setpoints in Appendix A" (they are the company setpoints, not ASHRAE 36 values)');
   // 4: every Key Findings phrase says only that the full sequence is missing
-  ok(/ahu_economizer: 'economizer',/.test(RE) && /'Without these sequences, the units cannot make these adjustments\.'/.test(RE) && !/do not use outdoor air for free cooling|hold fixed settings/.test(RE), '4. the summary names the missing sequences and makes no claim about what a unit does');
+  ok(/ahu_economizer: 'economizer',/.test(RE) && /In each case the setpoint does not follow the load/.test(RE) && !/do not use outdoor air for free cooling|hold fixed settings/.test(RE), '4. the summary names the missing sequences and makes no claim about what a unit does');
   ok(!/do not use outdoor air for free cooling|hold one supply air temperature at all times|do not control their minimum outdoor air/.test(RE), '4. the three overclaiming phrases are gone');
   // 7: the PDF text layer writes the non-breaking hyphen of a tag as a plain hyphen, so search and copy find "UH-1"
   ok(/'‑': '-'/.test(fs.readFileSync(path.join(ROOT, 'app', 'report-pdf.js'), 'utf8')), '7. PDF text layer: non-breaking hyphen reads as a plain hyphen');

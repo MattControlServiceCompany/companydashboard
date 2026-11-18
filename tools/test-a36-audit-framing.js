@@ -96,12 +96,12 @@ const ok = (c, m) => {
 
     ['simple_off', 'det_off'].forEach((k) => {
       ok(!/ASHRAE|Guideline|A36/.test(all(k)), k + ': the A36 section is off, so the report has no ASHRAE, Guideline or A36 text');
-      ok(!/Overall Score|Sensor Coverage|Sequence Readiness|Devices to Install|Sequences to Program|Building Readiness/.test(all(k)), k + ': no readiness score, gap table or devices to install table prints');
+      ok(/Overall Score/.test(all(k)) && /Sensor Coverage/.test(all(k)) && !/Devices to Install|Sequences to Program|Building Readiness/.test(all(k)), k + ': the score rings print on the cover and building pages (Matt 2026-11-18: the old scores); no gap table or devices to install table');
     });
     ['simple_on', 'det_on'].forEach((k) => {
       ok(/ASHRAE 36/.test(a36(k)) && /Overall Score/.test(a36(k)) && /Sensor Coverage/.test(a36(k)) && /Sequence Readiness/.test(a36(k)), k + ': the A36 section holds the Overall Score, Sensor Coverage and Sequence Readiness');
       ok(/Building Readiness/.test(a36(k)) && /Devices to Install/.test(a36(k)) && /Sequences to Program/.test(a36(k)), k + ': the A36 section holds the Building Readiness table and the per-building devices to install and sequences to program tables');
-      ok(!/ASHRAE|Guideline|Overall Score|Sensor Coverage|Sequence Readiness|Devices to Install/.test(base(k)), k + ': outside the A36 section there is no ASHRAE text and no score');
+      ok(!/ASHRAE|Guideline|Devices to Install/.test(base(k)), k + ': outside the A36 section there is no ASHRAE text (the score rings are allowed: Matt 2026-11-18)');
     });
 
     ['simple_off', 'simple_on', 'det_off', 'det_on'].forEach((k) => {
