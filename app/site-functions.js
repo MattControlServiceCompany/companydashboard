@@ -2507,6 +2507,12 @@ async function siteResetAllMeterTableSettings() {
    site-ui.js delegates to this array and should NOT maintain its own copy.
 */
 var RELEASE_NOTES = [
+  { v: 'v2026.11.18.353', date: '2026-11-18', title: 'Audit Report: clearer wording, building pages, terminal unit upgrade price',
+    items: [ { type: 'improved', text: 'Audit Report: sentences give the library and the unit total first, then the number. The zone setpoints name the recommended values. Lighting says what the lights do.' },
+             { type: 'improved', text: 'Audit Report: industry terms are spelled out once with the abbreviation, then abbreviated (BAS, AHU, VAV, RTU, FCU, DOAS, ERV).' },
+             { type: 'improved', text: 'Audit Report: every library page has its score rings, a one-sentence opportunity per line, and a recommendation under a missing power meter.' },
+             { type: 'improved', text: 'Service Proposal: a Terminal Unit Program Upgrade line, 1 hour per terminal unit, in Recommended and Full Scope.' },
+             { type: 'fixed', text: 'Audit Report: the blue library title band has no line through the middle (PDF and Word).' } ] },
   { v: 'v2026.11.18.352', date: '2026-11-18', title: 'Audit Report: lighting, manual overrides, terminal unit sequence standard',
     items: [ { type: 'improved', text: 'Audit Report: lighting control units are part of the audit. A missing photocell on exterior lighting, lighting with no schedule and interior lighting with no occupancy control are opportunities.' },
              { type: 'improved', text: 'Audit Report: a manual override that holds a pump pressure, supply air or duct static pressure setpoint is an opportunity, with the value from the WebCTRL screen. It is listed on the row of its equipment type.' },
