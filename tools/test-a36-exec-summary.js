@@ -6,7 +6,7 @@
 //   2. Every number in it equals the shared value it comes from (portfolio scores, _a36ConsolidatedCounts, dcv counts, the sequence counts of the
 //      priced scope, the point inventory, _a36SetpointNeedsChangeCount).
 //   3. A zero count drops its sentence or bullet (no "0 of"); the setpoint bullet prints only when Appendix A prints and the count is above 0.
-//   4. The Key Findings are a real <ul>, at most 4 bullets, ordered by equipment count.
+//   4. The Key Findings are paragraphs (Matt 2026-11-18: a full page of text, not bullet points), at most 4, ordered by equipment count.
 //   5. The whole Executive Summary is on one page; the Building Readiness table starts on the next page.
 //   6. The Simple style keeps its old Executive Summary text.
 //   7. Audit modal: the Point Inventory row is hidden (and unchecked) in the Detailed style and visible again in Simple.
@@ -90,7 +90,17 @@ const ok = (c, m) => {
             html,
             pages: exec.map((e) => e.textContent.replace(/\s+/g, ' ').trim()),
             execHtml: exec.map((e) => e.innerHTML).join(''),
-            lis: exec.flatMap((e) => Array.from(e.querySelectorAll('ul > li')).map((l) => l.textContent.replace(/\s+/g, ' ').trim())),
+            lis: exec.flatMap((e) => {
+              const out = [];
+              let on = false;
+              e.querySelectorAll('*').forEach((el) => {
+                const tx = el.textContent.replace(/\s+/g, ' ').trim();
+                if (!el.children.length && tx === 'Key Findings') on = true;
+                else if (!el.children.length && tx === 'Findings in Detail') on = false;
+                else if (on && el.tagName === 'P') out.push(tx);
+              });
+              return out;
+            }),
             counts,
             low: data.buildings.slice().sort((a, c) => a.composite - c.composite).slice(0, 3).map((b) => b.composite),
             nBuildings: data.buildings.length,
@@ -109,8 +119,8 @@ const ok = (c, m) => {
     ok(!/still need this programmed/.test(t) && !/Occupancy-Based Ventilation/.test(t) && !/industry standard for how a building automation/.test(t) && !/The largest gaps are/.test(t), 'Detailed: the old text is gone (no "still need this programmed", no old intro, no old Summary)');
     ok(/Control Service Company audited the building automation system at 13 libraries\. The audit covered 342 pieces of equipment and 16,195 control points: its sensors, setpoints, schedules and control sequences\. The equipment audited is 4 Air Handlers and 4 Variable Air Volume Terminals\./.test(t) && !/ASHRAE/.test(t), 'Detailed: first paragraph carries the building, equipment, equipment types and point counts, and names no standard');
     ok(/Overall ResultThe audit recorded/.test(t) && !/ASHRAE|Sensor coverage is|composite/.test(t), 'Detailed: Overall Result states the findings count of the audit; the readiness scores are not in the base Executive Summary');
-    ok(/Key Findings/.test(t) && a.lis.length >= 2 && a.lis.length <= 4, 'Key Findings: ' + a.lis.length + ' bullets (2 to 4)');
-    ok(/<ul[^>]*>\s*<li/.test(a.execHtml), 'Key Findings: a real <ul> with <li> items');
+    ok(/Key Findings/.test(t) && a.lis.length >= 2 && a.lis.length <= 4, 'Key Findings: ' + a.lis.length + ' paragraphs (2 to 4)');
+    ok(!/<ul/.test(a.execHtml) && /Findings in Detail/.test(t), 'Executive Summary: paragraphs, no bullet list; Findings in Detail follows (a full page of text)');
     ok(a.lis[0] && /^Ventilation does not follow occupancy\. 203 of 232 zones and 5 of 20 air handlers have no carbon dioxide \(CO2\) sensor\. These units bring in a fixed amount of outdoor air whether a space is full or empty\./.test(a.lis[0]), 'Key Findings: ventilation first, with the dcv counts (203 of 232 zones, 5 of 20 air handlers)');
     ok(a.lis[0] && /In all, 240 units need this sequence programmed/.test(a.lis[0]) && /This finding affects the most equipment in the audit\./.test(a.lis[0]), 'Key Findings: ventilation total = demandCtrl 20 + vav_dcv 220 = 240, the largest count, so "affects the most equipment"');
     ok(a.lis[1] && /^Air handler sequences are incomplete\. Air handlers lack these control sequences: supply air temperature reset \(9 units\), minimum outdoor air \(9\), economizer \(7\) and duct static pressure reset \(3\)\. These sequences adjust the equipment to what the building needs, which lowers fan, heating and cooling energy\./.test(a.lis[1]), 'Key Findings: one air handler bullet with the four ahu counts of the priced scope (9, 9, 7, 3)');

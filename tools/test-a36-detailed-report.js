@@ -1117,7 +1117,7 @@ const ok = (c, m) => {
     ok(co2.dcv.totalAHU === 3 && co2.dcv.ahuMissingCO2 === 2, 'item 7: air handlers count air handling units and rooftop units: ' + JSON.stringify(co2.dcv));
     ok(co2.dcv.totalZones === 2 && co2.dcv.zonesMissingCO2 === 1, 'item 7: zones leave out the monitoring-only unit (no cooling and no heating set point): ' + JSON.stringify(co2.dcv));
     ok(/2 of 3 air handlers and 1 of 2 zones have no carbon dioxide sensor/.test(co2.text), 'item 7: the Executive Summary sentence uses those counts');
-    ok(/Dedicated building automation system power monitoring meter:\s*Not installed(?! *\. *Installation)/.test(co2.text) && /Dedicated outdoor air sensors:\s*(Not installed(?!\. Installation)|Installed)/.test(co2.text) && !/None in the reviewed points/.test(co2.text), 'item 6: infrastructure lines read "Not installed. Installation recommended." (no abbreviations)');
+    ok(/(Not installed|Installed)\s*Building automation power monitoring meter/.test(co2.text) && /(Not installed|Installed)\s*Outdoor air sensors/.test(co2.text) && !/Installation recommended/.test(co2.text) && !/None in the reviewed points/.test(co2.text), 'item 6: the building page cards state Installed or Not installed for the meter and the outdoor air sensors (no recommendation)');
 
     // ---- report length (2026-11-11): Min OA + CO2 merged into one finding per unit; Appendix B lists the single-zone-only libraries ----
     const PID4 = await page.evaluate(async () => {
