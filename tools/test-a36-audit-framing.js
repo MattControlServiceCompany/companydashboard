@@ -107,7 +107,7 @@ const ok = (c, m) => {
     ['simple_off', 'simple_on', 'det_off', 'det_on'].forEach((k) => {
       const cover = out[k][0];
       ok(cover && !/Report date/i.test(cover.text) && !/(January|February|March|April|May|June|July|August|September|October|November|December) \d{1,2}, \d{4}/.test(cover.text), k + ': the cover has no Report date and no date line');
-      ok(/Audit Report/.test(cover.text) && /in 2 buildings/.test(cover.text) && /recorded \d+ findings?/.test(cover.text) && /Equipment Units/.test(cover.text) && !/Across /.test(cover.text), k + ': the cover states units, buildings and findings plainly and has the building table; no "Across" sentence; the equipment types and the findings count');
+      ok(/Audit Report/.test(cover.text) && /Across 2 buildings/.test(cover.text) && /recorded \d+ opportunit(y|ies)/.test(cover.text) && /Equipment Units Audited/.test(cover.text) && /Opportunities Found/.test(cover.text) && /Overall Score/.test(cover.text), k + ': the cover is the 11/15 page 1 without ASHRAE 36: rings, the Across paragraph with the counts, the stat row with Opportunities Found (Matt 2026-11-18)');
       const bp = out[k].filter((p) => p.section === 'building');
       ok(bp.length >= 2, k + ': the base Per-Building Detail pages print (' + bp.length + ')');
       ['Alpha Library', 'Beta Library'].forEach((n) => ok(bp.some((p) => p.photos.indexOf('Photo of ' + n) >= 0), k + ': the per-building page of ' + n + ' has the library front photo'));
@@ -115,10 +115,10 @@ const ok = (c, m) => {
       const a0 = bp.findIndex((p) => /Alpha Library/.test(p.text));
       const b0 = bp.findIndex((p) => /Beta Library/.test(p.text));
       const alpha = bp.slice(a0, b0 > a0 ? b0 : bp.length).map((p) => p.text).join(' ');
-      ok(/Exhaust Fan/.test(alpha) && /Air Handlers/.test(alpha) && /Variable Air Volume/.test(alpha) && /\d+ findings/.test(alpha) && !/None needed|No ASHRAE 36 sequence applies/.test(alpha), k + ': the per-building page lists every audited equipment type (exhaust fan too) and the findings count, with no "None needed"');
+      ok(/Exhaust Fan/.test(alpha) && /Air Handlers/.test(alpha) && /Variable Air Volume/.test(alpha) && /\d+ opportunities/.test(alpha) && !/None needed|No ASHRAE 36 sequence applies/.test(alpha), k + ': the per-building page lists every audited equipment type (exhaust fan too) and the findings count, with no "None needed"');
       ok(!/Finding \d+:/.test(all(k)), k + ': no "Finding N:" heading anywhere');
     });
-    ok(/\d+\.3 Findings\s*1\. [A-Z]/.test(all('det_off')) && !/Finding \d+/.test(all('det_off')), 'det_off: the findings of a library chapter are numbered with the section number (N.3.1) and a one-sentence headline');
+    ok(/\d+\.3 Opportunities\s*1\. [A-Z]/.test(all('det_off')) && !/Finding \d+/.test(all('det_off')), 'det_off: the findings of a library chapter are numbered with the section number (N.3.1) and a one-sentence headline');
     ok(!/ASHRAE 36, Section/.test(all('det_off')) && !/ASHRAE 36, Section/.test(base('det_on')), 'no "ASHRAE 36, Section x" citation in the base report');
     ok(errs.length === 0, 'no page errors: ' + errs.join(' | '));
   } finally {

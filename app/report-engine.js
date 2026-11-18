@@ -18291,7 +18291,7 @@ function _a36AuditFindingInfo(d) {
 
 // "1 finding" / "12 findings".
 function _a36FindingsCount(n) {
-  return rptCount(n) + ' finding' + (n === 1 ? '' : 's');
+  return rptCount(n) + (n === 1 ? ' opportunity' : ' opportunities');
 }
 
 // The audit rings (the whole audit, not ASHRAE 36): of the equipment units of the report (or of one library: libName), how many have no
@@ -18428,7 +18428,7 @@ function _a36ExecScopeSentence(d) {
   var info = _a36AuditFindingInfo(d);
   return (
     'The audit covered ' + rptCount(d.portfolio.totalEquip) + ' piece' + (d.portfolio.totalEquip !== 1 ? 's' : '') + ' of equipment' + (types.length ? ': ' + _a36DetJoin(types) : '') + '. ' +
-    (info ? (info.total ? 'The audit recorded ' + _a36FindingsCount(info.total) + ' at ' + rptCount(info.libs) + (d.portfolio.totalBuildings > 1 ? ' of the ' + rptCount(d.portfolio.totalBuildings) + ' ' + _a36BuildingNouns(d).many : ' ' + _a36BuildingNouns(d).one) + '. ' : 'The audit recorded no findings. ') : '')
+    (info ? (info.total ? 'The audit recorded ' + _a36FindingsCount(info.total) + ' at ' + rptCount(info.libs) + (d.portfolio.totalBuildings > 1 ? ' of the ' + rptCount(d.portfolio.totalBuildings) + ' ' + _a36BuildingNouns(d).many : ' ' + _a36BuildingNouns(d).one) + '. ' : 'The audit recorded no opportunities. ') : '')
   );
 }
 
@@ -18440,49 +18440,55 @@ function _a36ExecScopeSentence(d) {
 function rptPageASHRAE36Cover(n, d, perBuildingIncluded, detailed) {
   var p = d.portfolio;
   var info = _a36AuditFindingInfo(d);
-  var types = _a36AuditEquipTypes(d);
+  var nouns = _a36BuildingNouns(d);
+  var pts = d.pointInventory && d.pointInventory.totalAll ? d.pointInventory.totalAll : 0;
   // Every count goes through rptCount, the one thousands-separator formatter (D-22: "1,594", never "1594").
-  // Plain statement of what was audited and what a finding is (Matt 2026-11-17: no "Across N buildings ... has N findings").
-  var finding =
-    'The audit covered ' + rptCount(p.totalEquip) + ' equipment unit' + (p.totalEquip !== 1 ? 's' : '') +
-    (p.totalBuildings > 1 ? ' in ' + rptCount(p.totalBuildings) + ' buildings' : '') +
-    (info ? (info.total ? ' and recorded ' + _a36FindingsCount(info.total) + '. Each finding is a sensor, device, control point or control sequence that the system does not have.' : ' and recorded no findings.') : '.');
-
-  var statCard = function (value, label) {
+  var intro =
+    'This report evaluates the building automation system' + (p.totalBuildings === 1 ? ' of the ' + nouns.one : 's of the ' + rptCount(p.totalBuildings) + ' ' + nouns.many) +
+    ': the equipment, control points, sensors, setpoints, schedules and control sequences. It identifies the sensors, control points and control sequences that ' +
+    (p.totalBuildings === 1 ? 'the system does' : 'the systems do') + ' not have.';
+  // The three score rings of the 11/15 page 1: 110px, side by side, the label under each ring (one score owner: a36PortfolioScores).
+  var ring = function (pct, color, label) {
     return (
-      '<div class="rpt-a36-stat-card" style="flex:1;padding:6px 12px;text-align:center">' +
-      '<div style="font-size:34px;font-weight:700;line-height:1.2;color:var(--rpt-blue);text-align:center">' + value + '</div>' +
-      '<div style="font-size:13.34px;color:var(--rpt-page-text);text-align:center">' + label + '</div>' +
-      '</div>'
+      '<td style="width:140px;text-align:center;vertical-align:top;padding:0 8px;border:none">' +
+      '<div style="display:inline-block">' + _a36GaugeSVG(pct, color, label, 110, true) + '</div>' +
+      '<div style="font-size:13.34px;color:var(--rpt-page-text);margin-top:4px;text-align:center">' + label + '</div></td>'
     );
   };
-
+  var rings =
+    '<table style="border-collapse:collapse;margin:20px auto 6px auto"><tr>' +
+    ring(p.composite, 'var(--rpt-blue)', 'Overall Score') +
+    ring(p.pointPct, 'var(--rpt-green)', 'Sensor Coverage') +
+    (p.seqPct !== null && p.seqPct !== undefined ? ring(p.seqPct, 'var(--rpt-green)', 'Sequence Readiness') : '') +
+    '</tr></table>' +
+    '<div style="font-size:13.34px;color:var(--rpt-page-text);text-align:center;margin:0 0 18px 0">Each percentage shows how much of the sensors and control sequences the audit checks is already in place: 100% means nothing is missing.</div>';
+  var finding =
+    'Across <strong>' + rptCount(p.totalBuildings) + ' ' + (p.totalBuildings === 1 ? 'building' : 'buildings') + '</strong> and <strong>' + rptCount(p.totalEquip) + ' pieces of heating and cooling equipment</strong>' +
+    (pts ? ' with <strong>' + rptCount(pts) + ' control points</strong>' : '') + ', the audit of <strong>' + _escHtml(d.project.name) + '</strong> recorded <strong>' +
+    (info ? _a36FindingsCount(info.total) : 'no opportunities') + '</strong>' +
+    (info && info.total ? ': the sensors, control points and control sequences that the systems do not have. The sections that follow describe each ' + nouns.one + ', how its system controls the equipment today and each opportunity.' : '.');
+  var statCard = function (value, label) {
+    return (
+      '<td style="width:25%;text-align:center;vertical-align:top;padding:0 6px;border:none">' +
+      '<div style="font-size:21px;font-weight:700;color:var(--rpt-blue);text-align:center">' + value + '</div>' +
+      '<div style="font-size:13.34px;color:var(--rpt-page-text);text-align:center">' + label + '</div></td>'
+    );
+  };
   var bodyHTML =
     '<div style="padding:20px 48px 16px">' +
-    '<div style="text-align:center;margin-bottom:0">' +
-    // Word title centering (Matt, 2026-08-03): text-align:center is declared ON THE LEAF DIVS, because the .docx translator reads alignment
-    // from each paragraph-leaf element's own inline style and cannot inherit it.
     '<div style="font-size:' + RPT_DOC_TITLE_PX + 'px;font-weight:700;color:var(--rpt-blue);text-align:center;margin-bottom:4px">' + rptA36AuditTitle() + '</div>' +
-    '<div style="font-size:15px;font-weight:700;color:var(--rpt-page-text);text-align:center;margin-bottom:12px">' + _escHtml(d.project.name) + '</div>' +
-    '</div>' +
-    '<div style="height:8px"></div>' +
-    '<div style="font-size:14px;color:var(--rpt-page-text);line-height:1.6;margin-bottom:8px">' +
-    'This report covers ' +
-    (p.totalBuildings === 1 ? 'the building automation system of the ' + _a36BuildingNouns(d).one : 'the building automation systems of the ' + _a36BuildingNouns(d).many) +
-    (p.totalBuildings === 1 ? ': its' : ': their') +
-    ' equipment, control points, sensors, setpoints, schedules and control sequences. It lists the equipment audited and what the audit found.' +
-    '</div>' +
-    '<div style="height:8px"></div>' +
-    '<div class="rpt-a36-callout" style="font-size:14px;line-height:1.6;color:var(--rpt-page-text)">' + finding + '</div>' +
-    '<div style="display:flex;gap:16px;margin:22px 0 18px 0;border-top:1px solid var(--rpt-border);border-bottom:1px solid var(--rpt-border);padding:8px 0">' +
+    '<div style="font-size:15px;font-weight:700;color:var(--rpt-page-text);text-align:center;margin-bottom:20px">' + _escHtml(d.project.name) + '</div>' +
+    '<div style="font-size:14px;color:var(--rpt-page-text);line-height:1.6">' + intro + '</div>' +
+    rings +
+    '<div style="font-size:14px;color:var(--rpt-page-text);line-height:1.6;margin-bottom:28px">' + finding + '</div>' +
+    '<table style="width:100%;border-collapse:collapse;table-layout:fixed"><tr>' +
     statCard(rptCount(p.totalBuildings), 'Buildings Assessed') +
     statCard(rptCount(p.totalEquip), 'Equipment Units Audited') +
-    (info ? statCard(rptCount(info.total), 'Findings') : '') +
-    '</div>' +
-    _a36ScoreRingsHtml(p, 120, function (pct, i) { return i === 0 ? 'var(--rpt-blue)' : 'var(--rpt-green)'; }) +
+    (pts ? statCard(rptCount(pts), 'Control Points Reviewed') : '') +
+    statCard(info ? rptCount(info.total) : '0', 'Opportunities Found') +
+    '</tr></table>' +
     '</div>';
 
-  // Rule 2.3: reportDate drives the footer date; label is empty (no period range for audit reports).
   var fakeData = { project: { client: d.project.name }, period: { label: '', reportDate: d.rawDate } };
   return rptPage(n, 'Audit Report — Cover', bodyHTML, {
     hero: true,
@@ -18832,7 +18838,7 @@ function rptPageASHRAE36Executive(n, d, detailedTitles, view) {
         (_range.length || _zones
           ? 'The equipment includes ' + _a36DetJoin(_range.concat(_zones ? [_tierPhrase(_zones, 'zone ') + (_zones.of === 1 ? ', which controls' : ', which control') + ' the airflow to individual rooms'] : [])) + '. '
           : '') +
-        'For each unit, the audit compared what the system can measure, what it can command and what it is programmed to do with a defined set of sensors, control points and control sequences for that type of equipment. In this report, a finding is one sensor, control point or control sequence from that set that some or all units of one equipment type in one ' + _nounOne + ' do not have.',
+        'For each unit, the audit compared what the system can measure, what it can command and what it is programmed to do with a defined set of sensors, control points and control sequences for that type of equipment. In this report, an opportunity is one sensor, control point or control sequence from that set that some or all units of one equipment type in one ' + _nounOne + ' do not have.',
     ]);
 
     // Overall result
@@ -18842,30 +18848,30 @@ function rptPageASHRAE36Executive(n, d, detailedTitles, view) {
         .sort(function (a, c) { return c.n - a.n || rptBuildingNameSort(a.name, c.name); })
         .slice(0, 3);
       var _res = [];
-      if (!_fInfo.total) _res.push('The audit recorded no findings: every unit has every sensor, point and control sequence the audit checks.');
+      if (!_fInfo.total) _res.push('The audit recorded no opportunities: every unit has every sensor, point and control sequence the audit checks.');
       else {
         // Matt 2026-11-18: one direction only (units WITH findings), and a library with none says what that means.
         var _cleanLibs = d.buildings.map(_a36DisplayName).filter(function (nm) { return !_fInfo.byLib[nm]; });
         var _r1 = 'The audit recorded ' + _a36FindingsCount(_fInfo.total) + '.';
         if (p.totalBuildings > 1)
           _r1 += _cleanLibs.length
-            ? ' ' + rptCount(_fInfo.libs) + ' of the ' + rptCount(p.totalBuildings) + ' ' + _nounMany + (_fInfo.libs === 1 ? ' has' : ' have') + ' at least one finding. ' +
+            ? ' ' + rptCount(_fInfo.libs) + ' of the ' + rptCount(p.totalBuildings) + ' ' + _nounMany + (_fInfo.libs === 1 ? ' has' : ' have') + ' at least one opportunity. ' +
               _a36DetJoin(_cleanLibs) + (_cleanLibs.length === 1 ? ' has' : ' have') + ' none: every unit there has each sensor, control point and control sequence the audit checks.'
-            : ' Every ' + _nounOne + ' has at least one finding.';
+            : ' Every ' + _nounOne + ' has at least one opportunity.';
         if (_st && _st.units) {
           var _with = _st.units - _st.clean;
-          _r1 += ' Counted by unit, ' + rptCount(_with) + ' of the ' + rptCount(_st.units) + ' units (' + Math.round((100 * _with) / _st.units) + '%) have at least one finding.';
+          _r1 += ' Counted by unit, ' + rptCount(_with) + ' of the ' + rptCount(_st.units) + ' units (' + Math.round((100 * _with) / _st.units) + '%) have at least one opportunity.';
           var _tiers = _st.tiers.filter(function (t) { return t.of > 0; });
           if (_tiers.length > 1)
             _r1 += ' The share differs by type of equipment: ' + _a36DetJoin(_tiers.map(function (t) {
               var w = t.of - t.n;
               return rptCount(w) + ' of the ' + rptCount(t.of) + ' ' + t.label.toLowerCase().replace(/^plants$/, 'heating and cooling plants') + ' (' + Math.round((100 * w) / t.of) + '%)';
-            })) + ' have at least one finding.';
+            })) + ' have at least one opportunity.';
         }
         _res.push(_r1);
         if (p.totalBuildings > 2 && _topLibs.length > 1)
           _res.push(
-            'The most findings are at ' + _a36DetJoin(_topLibs.map(function (t) { return t.name + ' (' + t.n + ')'; })) + '.'
+            'The most opportunities are at ' + _a36DetJoin(_topLibs.map(function (t) { return t.name + ' (' + t.n + ')'; })) + '.'
           );
       }
       _sec('Overall Result', _res);
@@ -18906,7 +18912,7 @@ function rptPageASHRAE36Executive(n, d, detailedTitles, view) {
     };
     var _princ = [];
     var _missingCO2 = _dcvAhuMissing + _dcvZonesMissing;
-    var _ordinal = ['The most widespread finding', 'The second main finding', 'The third main finding'];
+    var _ordinal = ['The most widespread opportunity', 'The second main opportunity', 'The third main opportunity'];
     var _nth = 0;
     if (_missingCO2 > 0) {
       var _co2Parts = [];
@@ -18928,21 +18934,21 @@ function rptPageASHRAE36Executive(n, d, detailedTitles, view) {
     if (_ahuSeq.length)
       _princ.push(
         // Matt 2026-11-18: start with the findings, then say what the problem is; the readers know HVAC.
-        (_ordinal[_nth++] || 'A further finding') + ' concerns the air handling unit sequences. ' + _seqSentence(_ahuSeq, 'Of the air handling units,') + ' ' +
+        (_ordinal[_nth++] || 'A further opportunity') + ' concerns the air handling unit sequences. ' + _seqSentence(_ahuSeq, 'Of the air handling units,') + ' ' +
         _ahuSeq.map(function (s) { return _seqProblem[s.key]; }).filter(Boolean).join(' ') +
         ' In each case the setpoint does not follow the load, so the fan, cooling and heating energy of the unit does not drop when the zones need less.'
       );
     var _pzSeq = _seqList(/^(hwp|chwp|vav)_/);
     if (_pzSeq.length)
       _princ.push(
-        (_ordinal[_nth++] || 'A further finding') + ' concerns the plants and the zone terminals. ' + _seqSentence(_pzSeq, 'Of these,') + ' ' +
+        (_ordinal[_nth++] || 'A further opportunity') + ' concerns the plants and the zone terminals. ' + _seqSentence(_pzSeq, 'Of these,') + ' ' +
         (_whyOf(_pzSeq) ? _whyOf(_pzSeq) + ' ' : '') + 'Where a sequence is not programmed, the equipment cannot make that adjustment.'
       );
     var _dev = _a36ExecDeviceGroups(d);
     if (_dev.length) {
       // Matt 2026-11-18: name every device, the equipment it is missing on and where; no "units" and no "other type".
       _princ.push(
-        'The remaining findings concern devices and points that the system does not have: ' +
+        'The remaining opportunities concern devices and points that the system does not have: ' +
         _dev.map(function (g) {
           return 'no ' + _a36ExecLabelWords(g.label) + ' on ' + _a36DetJoin(g.types.map(function (t) { return rptCount(t.n) + ' ' + _a36ExecLabelWords(t.n === 1 ? t.one : t.many); })) +
             (g.libs === 1 ? ' at ' + g.libNames[0] : ' at ' + rptCount(g.libs) + ' ' + _nounMany);
@@ -18950,7 +18956,7 @@ function rptPageASHRAE36Executive(n, d, detailedTitles, view) {
         'Until such a device is installed, the system cannot measure or command that point, and a sequence that uses it cannot run as written.'
       );
     }
-    _sec('Principal Findings', _princ);
+    _sec('Principal Opportunities', _princ);
 
     // Context: the setpoints of Appendix A and the building infrastructure (neither is a finding)
     var _spNeed = 0;
@@ -18970,7 +18976,7 @@ function rptPageASHRAE36Executive(n, d, detailedTitles, view) {
     if (_spNeed > 0)
       _ctx.push(
         'The audit also compared the zone setpoints with the Control Service Company standard setpoints. ' +
-        (_spNeed >= p.totalBuildings ? (p.totalBuildings === 1 ? 'The ' + _nounOne + ' has' : 'All ' + rptCount(p.totalBuildings) + ' ' + _nounMany + ' have') : rptCount(_spNeed) + ' of the ' + rptCount(p.totalBuildings) + ' ' + _nounMany + (_spNeed === 1 ? ' has' : ' have')) + ' zone setpoints that differ from that standard. A setpoint that differs is not a finding; Appendix A lists each one with the standard value beside it.'
+        (_spNeed >= p.totalBuildings ? (p.totalBuildings === 1 ? 'The ' + _nounOne + ' has' : 'All ' + rptCount(p.totalBuildings) + ' ' + _nounMany + ' have') : rptCount(_spNeed) + ' of the ' + rptCount(p.totalBuildings) + ' ' + _nounMany + (_spNeed === 1 ? ' has' : ' have')) + ' zone setpoints that differ from that standard. Each differing setpoint is also an opportunity; Appendix A lists each one with the standard value beside it.'
       );
     _sec('Zone Setpoints', _ctx);
     if (_nB)
@@ -18979,8 +18985,8 @@ function rptPageASHRAE36Executive(n, d, detailedTitles, view) {
         _a36DetUpperFirst(_haveN(d.buildings.filter(function (b) { return b.hasOAConditions; }).length)) + ' dedicated outdoor air sensors, which the reset, economizer and ventilation sequences use.',
       ]);
     _sec('Organization of This Report', [
-      'The report continues with one page for each ' + _nounOne + ', which lists its equipment and its findings, followed by one chapter for each ' + _nounOne + '. ' +
-      'Each chapter first describes how the system controls the equipment today, then explains each finding, the equipment it affects and a graphic of that equipment.',
+      'The report continues with one page for each ' + _nounOne + ', which lists its equipment and its opportunities, followed by one chapter for each ' + _nounOne + '. ' +
+      'Each chapter first describes how the system controls the equipment today, then explains each opportunity, the equipment it affects and a graphic of that equipment.',
     ]);
     execBlocks = _paras;
     var _sumHtml = execBlocks.join('');
@@ -26012,9 +26018,9 @@ var A36_CAT_COUNT_LABELS = {
 function _a36NoFindingText(cat, n) {
   var req = typeof EM_POINT_CATEGORIES !== 'undefined' && EM_POINT_CATEGORIES[cat] ? EM_POINT_CATEGORIES[cat].filter(function (c) { return c.required; }).length : 0;
   var seqs = typeof EM_SEQUENCE_DEFS !== 'undefined' ? EM_SEQUENCE_DEFS.filter(function (sd) { return (sd.equipTypes || []).indexOf(cat) > -1; }).length : 0;
-  if (req && seqs) return 'No findings: ' + (n === 1 ? 'has' : 'have') + ' every sensor, point and control sequence the audit checks';
-  if (req) return 'No findings: ' + (n === 1 ? 'has' : 'have') + ' every sensor and point the audit checks';
-  return 'No findings: the audit checks no sensor, point or sequence for this type';
+  if (req && seqs) return 'No opportunities: ' + (n === 1 ? 'has' : 'have') + ' every sensor, point and control sequence the audit checks';
+  if (req) return 'No opportunities: ' + (n === 1 ? 'has' : 'have') + ' every sensor and point the audit checks';
+  return 'No opportunities: the audit checks no sensor, point or sequence for this type';
 }
 
 function _a36CatCountLabel(cat, n) {
@@ -29519,12 +29525,12 @@ function _a36DetLibraryTokens(d, b, ctx, sectionNo) {
   });
 
   // N.3 Findings: one block per finding (the same list as the Findings Summary; each finding has its own Recommendation line)
-  tokens.push(_a36DetTok('<h2 style="margin:10px 0 6px 0">' + sectionNo + '.3 Findings</h2>', true));
+  tokens.push(_a36DetTok('<h2 style="margin:10px 0 6px 0">' + sectionNo + '.3 Opportunities</h2>', true));
   if (!model.findings.length) {
     tokens.push(
       _a36DetTok(
         '<p style="' + A36_DET_P + '">' +
-          'The audit recorded no findings at this library.' +
+          'The audit recorded no opportunities at this library.' +
           '</p>',
       ),
     );
@@ -29642,11 +29648,11 @@ function _a36AuditBuildingTokens(d, b, ctx, showBuildingInfra) {
   var cards =
     '<table style="width:100%;border-collapse:collapse;table-layout:fixed"><tr>' +
     card(rptCount(b.equipCount || 0), 'Equipment units audited', 'var(--rpt-blue)') +
-    card(rptCount(nF), nF === 1 ? 'Finding' : 'Findings', nF ? 'var(--rpt-orange)' : 'var(--rpt-green-dark)') +
+    card(rptCount(nF), nF === 1 ? 'Opportunity' : 'Opportunities', nF ? 'var(--rpt-orange)' : 'var(--rpt-green-dark)') +
     '</tr>' +
     (showBuildingInfra
       ? '<tr>' +
-        card(infraVal(b.hasPowerMonitoring), 'Building automation power monitoring meter', b.hasPowerMonitoring ? 'var(--rpt-green-dark)' : 'var(--rpt-orange)') +
+        card(infraVal(b.hasPowerMonitoring), 'Building power meter', b.hasPowerMonitoring ? 'var(--rpt-green-dark)' : 'var(--rpt-orange)') +
         card(infraVal(b.hasOAConditions), 'Outdoor air sensors', b.hasOAConditions ? 'var(--rpt-green-dark)' : 'var(--rpt-orange)') +
         '</tr>'
       : '') +
@@ -29712,7 +29718,7 @@ function _a36AuditBuildingTokens(d, b, ctx, showBuildingInfra) {
   );
   var open =
     '<table style="width:100%;border-collapse:collapse;table-layout:fixed;margin:0 0 10px 0"><colgroup><col style="width:26%"><col style="width:9%"><col style="width:65%"></colgroup><thead><tr>' +
-    '<th style="' + TH + ';text-align:left">Equipment Type</th><th style="' + TH + ';text-align:center">Units</th><th style="' + TH + ';text-align:left">Findings</th>' +
+    '<th style="' + TH + ';text-align:left">Equipment Type</th><th style="' + TH + ';text-align:center">Units</th><th style="' + TH + ';text-align:left">Opportunities</th>' +
     '</tr></thead>';
   var tableToks = _a36DetTableToks(open, rows, null);
   tableToks.forEach(function (t) {
@@ -29788,12 +29794,12 @@ function _a36DetSummaryTokens(ctx, sectionNo) {
   var tokens = [];
   var list = ctx.model.findings;
   if (!list.length) {
-    tokens.push(_a36DetTok(_a36DetSectionTitle(sectionNo, 'Findings Summary', ''), true));
-    tokens.push(_a36DetTok('<p style="' + A36_DET_P + '">The audit recorded no findings.</p>'));
+    tokens.push(_a36DetTok(_a36DetSectionTitle(sectionNo, 'Opportunities Summary', ''), true));
+    tokens.push(_a36DetTok('<p style="' + A36_DET_P + '">The audit recorded no opportunities.</p>'));
   } else {
     var summaryTitle = {
       html: function (pageIndex, pageCount) {
-        return _a36DetSectionTitle(sectionNo, 'Findings Summary', _a36DetPartSuffix(pageIndex, pageCount));
+        return _a36DetSectionTitle(sectionNo, 'Opportunities Summary', _a36DetPartSuffix(pageIndex, pageCount));
       },
       h: A36_DET_TITLE_H,
     };
@@ -29808,7 +29814,7 @@ function _a36DetSummaryTokens(ctx, sectionNo) {
     });
   }
   tokens.forEach(function (t) {
-    t.lib = 'Findings Summary';
+    t.lib = 'Opportunities Summary';
   });
   return tokens;
 }
@@ -29969,7 +29975,7 @@ function generateASHRAE36AuditHTML(data, selectedSections) {
       pageNum++;
     });
     sectionNo = detLibs.nextSectionNo;
-    _a36DetPages(pageNum, data, _a36DetSummaryTokens(detCtx, sectionNo++), 'Findings Summary').forEach(function (pg) {
+    _a36DetPages(pageNum, data, _a36DetSummaryTokens(detCtx, sectionNo++), 'Opportunities Summary').forEach(function (pg) {
       pages.push(_tagA36Section(pg, 'detailedSummary'));
       pageNum++;
     });

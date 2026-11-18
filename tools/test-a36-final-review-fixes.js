@@ -63,9 +63,9 @@ ok(lits.every((s) => /variable-speed savings/.test(s)), '3. no report string say
   ok(!/that need a CO2 sensor/.test(RE) && /f\.dcvNote = dcvNarrow \? _a36DetDcvNote\(g, units\)/.test(RE), '2. a CO2 count is against the whole group with a note on the other units; no "that need a CO2 sensor" (Matt 2026-11-18: no unit needs a CO2 sensor)');
   ok(sandbox.f(3, 25) === '3 of 25 units' && sandbox.f(5, 5) === 'all 5 units' && sandbox.f(2, 2) === 'both units' && sandbox.f(1, 1) === 'the unit', '2. a count with no base text keeps the old words');
   ok(sandbox.f(1, 1, 'plant') === 'the plant' && sandbox.f(2, 2, 'plant') === 'both plants', '9. a plant is a plant, not a unit');
-  ok(/f\.fracNoun = g && \(g\.category === 'hwp' \|\| g\.category === 'chwp'\) \? 'plant'/.test(RE) && /_a36DetFraction\(f\.units, f\.groupTotal && f\.dcvNote \? f\.groupTotal : f\.total, f\.fracNoun, ''\)/.test(RE), '2/9. the finding and the Findings Summary read the same noun and base');
+  ok(/f\.fracNoun = g && \(g\.category === 'hwp' \|\| g\.category === 'chwp'\) \? 'plant'/.test(RE) && /_a36DetFraction\(f\.units, f\.groupTotal && f\.dcvNote \? f\.groupTotal : f\.total, f\.fracNoun, ''\)/.test(RE), '2/9. the finding and the Opportunities Summary read the same noun and base');
   // 3: the setpoint wording
-  ok(/zone setpoints that differ from that standard\. A setpoint that differs is not a finding; Appendix A lists each one/.test(RE) && /compared the zone setpoints with the Control Service Company standard setpoints/.test(RE) && !/ASHRAE 36 recommended values/.test(RE), '3. Executive Summary: setpoints "differ from the Control Service Company standard setpoints in Appendix A" (they are the company setpoints, not ASHRAE 36 values)');
+  ok(/zone setpoints that differ from that standard\. Each differing setpoint is also an opportunity; Appendix A lists each one/.test(RE) && /compared the zone setpoints with the Control Service Company standard setpoints/.test(RE) && !/ASHRAE 36 recommended values/.test(RE), '3. Executive Summary: setpoints "differ from the Control Service Company standard setpoints in Appendix A" (they are the company setpoints, not ASHRAE 36 values)');
   // 4: every Key Findings phrase says only that the full sequence is missing
   ok(/ahu_economizer: 'economizer',/.test(RE) && /In each case the setpoint does not follow the load/.test(RE) && !/do not use outdoor air for free cooling|hold fixed settings/.test(RE), '4. the summary names the missing sequences and makes no claim about what a unit does');
   ok(!/do not use outdoor air for free cooling|hold one supply air temperature at all times|do not control their minimum outdoor air/.test(RE), '4. the three overclaiming phrases are gone');
@@ -104,7 +104,7 @@ ok(lits.every((s) => /variable-speed savings/.test(s)), '3. no report string say
       out.pumps = _a36DetPumpPhrase({ pumps: { primary: 1, secondary: 2, plain: 0 }, pumpSpeed: { primary: 'drive', secondary: 'variable' } }, 'chilled water');
       out.pump1 = _a36DetPumpPhrase({ pumps: { primary: 0, secondary: 0, plain: 1 }, pumpSpeed: { plain: 'variable' } }, 'hot water');
       // 4. part label
-      out.title = _a36DetSectionTitle(16, 'Findings Summary', ' (2 of 7)');
+      out.title = _a36DetSectionTitle(16, 'Opportunities Summary', ' (2 of 7)');
       const sp = document.createElement('span');
       sp.setAttribute('style', 'font-size:70%;font-weight:400;color:var(--rpt-page-text)');
       out.fmt = _docxStyleFmtFromEl(sp, { bold: true, sizeHalfPt: 42, color: '1A5276' }, {});

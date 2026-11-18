@@ -6,7 +6,7 @@
 //   2. The Report Style radio is in the audit modal (not the proposal modal); Detailed shows the picture folder picker.
 //   3. Detailed adds Cover, Executive Summary, Sequences, one chapter per library, Appendix A (Point Inventory) and B (Set Point Review); Per-Building Detail pages are gone.
 //   4. A chapter has System Overview, System Descriptions (prose, graphic under its own description) and numbered Findings
-//      (Observed with the Guideline 36 section / Impact / Recommendation); a Findings Summary precedes the chapters; there is no Issues Log,
+//      (Observed with the Guideline 36 section / Impact / Recommendation); a Opportunities Summary precedes the chapters; there is no Issues Log,
 //      no per-chapter Recommended Work table, no Issue line, no "This system has N units" sentence (round 3).
 //   5. Figures: numbers run 1..N in page order, the pictures are JPEG data: URLs at most 1200 px wide, the caption names the equipment;
 //      _a36DetPaneRect finds the equipment graphic pane of a WebCTRL capture (synthetic layout here).
@@ -285,14 +285,14 @@ const ok = (c, m) => {
     ok(s[0] === 'cover' && s.indexOf('executive') === 1 && firstLib > s.lastIndexOf('executive') && s.indexOf('detailedSummary') > s.lastIndexOf('detailedLibrary') && s.indexOf('costEstimate') > s.lastIndexOf('detailedSummary'), 'item 1 order: cover, executive summary, readiness, library chapters, then the control sequences (' + s.join(',') + ')');
     ok(s.indexOf('building') < 0, 'Detailed has no Per-Building Detail pages');
     ok(s.filter((x) => x === 'detailedLibrary').length >= 2, 'at least one chapter page per library (' + s.filter((x) => x === 'detailedLibrary').length + ' chapter pages)');
-    ok(s.indexOf('detailedSummary') > s.lastIndexOf('detailedLibrary'), 'the Findings Summary comes after the chapters (Matt, 2026-11-11)');
+    ok(s.indexOf('detailedSummary') > s.lastIndexOf('detailedLibrary'), 'the Opportunities Summary comes after the chapters (Matt, 2026-11-11)');
     ok(s.indexOf('pointInventory') < 0 && s.indexOf('detailedAppendixA') < 0 && !/Point Inventory|Points by Equipment Type|Glossary|Appendix B/.test(det.text), 'the Detailed report has no Point Inventory, no Points by Equipment Type, no Glossary and no Appendix B');
     ok(/Fan runs at night/.test(det.text), 'the deficiency of the Facility Audit tab is a finding');
     ok(!/Issues Log|Appendix A: Deficiency List|Appendix B|Appendix C/.test(det.text), 'N2: no Issues Log, no Appendix B, no Appendix C');
     ok(s.indexOf('setpointReview') > s.lastIndexOf('detailedLibrary') && /Appendix A: Setpoint Programming Review/.test(det.text), 'Appendix A (the setpoint review) prints last when zone setpoint data exists (Detailed turns the review on by itself)');
     const t = det.libText;
-    [/\d+\. Alpha Library/.exec(t) && /\d+\. Alpha Library/.exec(t)[0], /\d+\.1 System Overview/.exec(t) && /\d+\.1 System Overview/.exec(t)[0], /\d+\.2 System Descriptions/.exec(t) && /\d+\.2 System Descriptions/.exec(t)[0], /\d+\.3 Findings/.exec(t) && /\d+\.3 Findings/.exec(t)[0]].forEach((x) => ok(t.indexOf(x) >= 0, 'chapters contain "' + x + '"'));
-    ok(/\.3 Findings\s*1\. [A-Z]/.test(t) && !/\d+\.\d+\.\d+ [A-Z]/.test(t) && !/Missing:/.test(t), 'chapter findings are numbered 1. 2. 3. under the N.3 heading, with no repeating Missing line (Matt 2026-11-18)');
+    [/\d+\. Alpha Library/.exec(t) && /\d+\. Alpha Library/.exec(t)[0], /\d+\.1 System Overview/.exec(t) && /\d+\.1 System Overview/.exec(t)[0], /\d+\.2 System Descriptions/.exec(t) && /\d+\.2 System Descriptions/.exec(t)[0], /\d+\.3 Opportunities/.exec(t) && /\d+\.3 Opportunities/.exec(t)[0]].forEach((x) => ok(t.indexOf(x) >= 0, 'chapters contain "' + x + '"'));
+    ok(/\.3 Opportunities\s*1\. [A-Z]/.test(t) && !/\d+\.\d+\.\d+ [A-Z]/.test(t) && !/Missing:/.test(t), 'chapter findings are numbered 1. 2. 3. under the N.3 heading, with no repeating Missing line (Matt 2026-11-18)');
     ok(!/Recommended Work/.test(t), 'cut 1: no per-chapter Recommended Work table');
     ok(!/\bIssue\./.test(t) && !/\bObserved\b|\bRecommendation\b|is not fully in place/.test(t) && !/ASHRAE 36, Section/.test(t), 'cut 2: no Issue line, no Observed or Recommendation label; no ASHRAE 36 section citation in the base report');
     // Round 1 (2026-11-14): wording rules of the Detailed report, on the final text. SYNTHETIC project.
@@ -301,7 +301,7 @@ const ok = (c, m) => {
     ok(!/This system has/.test(t), 'cut 3: no "This system has N units" sentence (the System Overview table lists the units)');
     ok(/The building automation system of Alpha Library controls [^.]*two air handling units \(AHU‑1, AHU‑2\)/.test(t) && !/is served by/.test(t), 'System Overview (a paragraph): names and counts the 2 air handling units the building automation system of Alpha Library controls (Matt 2026-11-18: the audit sees the system, not the building)');
     ok(/The building automation system of Beta Library controls one air handling unit \(AHU‑3\)/.test(t) && /three variable air volume terminal units/.test(t) && !/Total\s*6/.test(t), 'System Overview: one unit is named, more than 3 are counted only, no Total line');
-    ok(det.overviewNoTable === true, 'item 1: the System Overview has no <table> (the Findings Summary keeps its table)');
+    ok(det.overviewNoTable === true, 'item 1: the System Overview has no <table> (the Opportunities Summary keeps its table)');
     ok(/Building automation controller: Sample Controller \(5 of 6 units\)/.test(t), 'BAS controller line from the rows (5 of 6 units in Alpha Library: the exhaust fan row has none)');
     ok(!/\bmonitors\b|by command|by an enable command|positioned by|set by a speed command|showed:|55\.2°F/.test(t), 'a: System Descriptions: no "monitors" list, no "by command", no reading (55.2°F), no "showed:" list');
     // no description holds a reading of the audit time, a time stamp, or a note about the data source
@@ -388,12 +388,12 @@ const ok = (c, m) => {
     ok(fm.sameImpact && fm.noImpactSeq.length === 0, 'a sequence finding has no Impact line (what a sequence does is printed once, in Control Sequences); sequences that still have one: ' + (fm.noImpactSeq.join(',') || 'none'));
     const planText = await page.evaluate(() => Object.keys(ASHRAE36_SEQUENCE_PLAIN).map((k) => ASHRAE36_SEQUENCE_PLAIN[k]));
     const sumText = await page.evaluate(() => Array.from(document.querySelectorAll('#reportPages .rpt-page[data-section="detailedSummary"]')).map((p) => p.textContent).join('\n'));
-    ok(planText.every((x) => sumText.indexOf(x) === -1), 'report length: the Findings Summary holds no sequence description (the text of Control Sequences is not copied into it)');
+    ok(planText.every((x) => sumText.indexOf(x) === -1), 'report length: the Opportunities Summary holds no sequence description (the text of Control Sequences is not copied into it)');
     ok(planText.every((x) => det.libText.indexOf(x) === -1), 'report length: no chapter holds a sequence description either (Impact lines of sequence findings are gone)');
-    ok(!/What each sequence does is described|Control Sequences\./.test(sumText), 'the Findings Summary has no note above the table about where the sequences are described');
+    ok(!/What each sequence does is described|Control Sequences\./.test(sumText), 'the Opportunities Summary has no note above the table about where the sequences are described');
     ok(fm.attrs === 'Energy use,Equipment control', 'item 2: Effect is "Energy use" or "Equipment control" (' + fm.attrs + ')');
     const sum = await page.evaluate(() => Array.from(document.querySelectorAll('#reportPages .rpt-page[data-section="detailedSummary"] table')).map((tb) => Array.from(tb.querySelectorAll('th')).map((x) => x.textContent.trim()).join('|') + '#' + tb.querySelectorAll('tbody tr, tr').length));
-    ok(sum.length >= 1 && /^No\.\|Library\|System\|Issue\|Effect#/.test(sum[0]), 'item 2: Findings Summary table: No. | Library | System | Issue | Effect (' + sum[0] + ')');
+    ok(sum.length >= 1 && /^No\.\|Library\|System\|Issue\|Effect#/.test(sum[0]), 'item 2: Opportunities Summary table: No. | Library | System | Issue | Effect (' + sum[0] + ')');
     ok(!/Next Steps/i.test(det.text), 'chapters carry no Next Steps text');
     const pr = await page.evaluate(() => {
       const w = 1728, h = 874;
@@ -461,12 +461,12 @@ const ok = (c, m) => {
     const libTitles = titles.filter((x) => /^\d+\. (Alpha|Beta) Library$/.test(x));
     ok(libTitles.length === 2 && parseInt(libTitles[0], 10) === 2 && parseInt(libTitles[1], 10) === 3, 'item 1: each library is one numbered section starting at 2 (' + libTitles.join(' / ') + ')');
     const seqIdx = titles.findIndex((x) => /Control Sequences/.test(x));
-    const sumIdx = titles.findIndex((x) => /Findings Summary/.test(x));
-    ok(sumIdx > titles.indexOf(libTitles[1]) && /^4\. Findings Summary/.test(titles[sumIdx]) && seqIdx > sumIdx && /^\d+\. Control Sequences/.test(titles[seqIdx]) && titles.some((x) => /^5\. ASHRAE 36 Readiness/.test(x)), 'item 1: the Findings Summary (4) follows the library sections; the ASHRAE 36 section (5 and up) follows it (' + titles[sumIdx] + ' / ' + titles[seqIdx] + ')');
+    const sumIdx = titles.findIndex((x) => /Opportunities Summary/.test(x));
+    ok(sumIdx > titles.indexOf(libTitles[1]) && /^4\. Opportunities Summary/.test(titles[sumIdx]) && seqIdx > sumIdx && /^\d+\. Control Sequences/.test(titles[seqIdx]) && titles.some((x) => /^5\. ASHRAE 36 Readiness/.test(x)), 'item 1: the Opportunities Summary (4) follows the library sections; the ASHRAE 36 section (5 and up) follows it (' + titles[sumIdx] + ' / ' + titles[seqIdx] + ')');
     ok(titles.some((x) => /^Appendix A: Setpoint Programming Review/.test(x)) && !titles.some((x) => /^Appendix [B-Z]|Glossary|Points by Equipment Type|Point Inventory/.test(x)), 'item 1: the setpoint review is Appendix A with a large title; no Glossary, no other appendix (' + titles.filter((x) => /^Appendix/.test(x)).join(' / ') + ')');
     ok(lay.h1s.every((x) => (x.first || libTitles.slice(1).indexOf(x.text) > -1) && x.size >= 21 && x.size <= 22), 'item 1: every section title is the first element of its page (a library chapter after the first may start under the findings of the one before, rule 5) and 16 pt (21.34 px) (' + lay.h1s.filter((x) => !x.first || x.size < 21 || x.size > 22).map((x) => x.text + ' ' + x.size).join(', ') + ')');
-    ok((t.match(/\d+\.1 System Overview/g) || []).length === 2 && (t.match(/\d+\.2 System Descriptions/g) || []).length === 2 && (t.match(/\d+\.3 Findings/g) || []).length === 2, 'item 1: every library has the same three sub-headings N.1 System Overview, N.2 System Descriptions, N.3 Findings');
-    ok(lay.sumRows.length > 0 && lay.sumRows.every((r) => r.length === 5 && /^\d+\.\d+\.\d+$/.test(r[0]) && /^(Energy use|Equipment control)$/.test(r[4])), 'item 2: every Findings Summary row has No., Library, System, Issue, Effect; Effect is Energy use or Equipment control');
+    ok((t.match(/\d+\.1 System Overview/g) || []).length === 2 && (t.match(/\d+\.2 System Descriptions/g) || []).length === 2 && (t.match(/\d+\.3 Opportunities/g) || []).length === 2, 'item 1: every library has the same three sub-headings N.1 System Overview, N.2 System Descriptions, N.3 Opportunities');
+    ok(lay.sumRows.length > 0 && lay.sumRows.every((r) => r.length === 5 && /^\d+\.\d+\.\d+$/.test(r[0]) && /^(Energy use|Equipment control)$/.test(r[4])), 'item 2: every Opportunities Summary row has No., Library, System, Issue, Effect; Effect is Energy use or Equipment control');
     ok(lay.sumRows.length > 0 && lay.sumRows.every((r) => !/Affects (the unit|both units)/.test(r[3])), 'item 2: affected units are named (never "Affects the unit" or "both units" when 4 or fewer)');
     ok(lay.sumRows.filter((r) => /Missing point/.test(r[3])).length > 0 && lay.sumRows.filter((r) => /Affects (\d+ of \d+|both|all|the building)/.test(r[3]) && !/ASHRAE|Guideline/.test(r[3])).length >= 2, 'item 2: the Issue cell says what is missing, which units it affects and what it prevents, with no standard citation: ' + (lay.sumRows[0] || [])[3]);
     ok(lay.pointHeads.length === 0, 'item 4: no Points by Equipment Type tables (' + lay.pointHeads.length + ' tables)');
@@ -478,7 +478,7 @@ const ok = (c, m) => {
     ok(!/recommend/i.test(lay.spText) && /Control Service Company standard: occupied 70°F heating \/ 74°F cooling; unoccupied 55°F heating \/ 85°F cooling; occupied during each building’s open hours, unoccupied when closed/.test(lay.spText), 'item 5: the standard setpoints and schedule are printed once in a box; no recommendation wording');
     ok(/All 2 zones match the standard defaults/.test(lay.spText), 'item 5: one-line status per building');
     ok(!/no zone-level set ?points/i.test(lay.spText), 'item 5: the wrong "no zone-level setpoints" reason is not printed');
-    ok(['Scope and Method', 'Overall Result', 'Principal Findings'].every((h) => lay.execBold.includes(h)) && lay.execPageFill > 0.35, 'item 6: Executive Summary has the bold subheadings Scope and Method, Overall Result and Principal Findings (' + lay.execBold.length + ' bold lines) and the page is filled (' + Math.round(lay.execPageFill * 100) + '%)');
+    ok(['Scope and Method', 'Overall Result', 'Principal Opportunities'].every((h) => lay.execBold.includes(h)) && lay.execPageFill > 0.35, 'item 6: Executive Summary has the bold subheadings Scope and Method, Overall Result and Principal Opportunities (' + lay.execBold.length + ' bold lines) and the page is filled (' + Math.round(lay.execPageFill * 100) + '%)');
     ok(lay.cite.g === 'Figure 2 shows the building automation system graphic of EF-1.' && lay.cite.p === 'Figure 3 shows the building automation system properties page of AHU-1.', 'item 8a: the figure sentence says what the figure shows: ' + JSON.stringify(lay.cite));
     ok(!/\) \(Figure \d+\)/.test(t), 'item 8a: no "(...) (Figure N)" in the chapters');
     ok(lay.photoNames.map((x) => x || 'none').join('|') === 'Alpha Library - Front.jpg|alpha library - front.JPEG|Alpha Library - front view.png|none|none|none|none|Alpha Library - Front.jpg|none|Alpha Library East - Front.jpg', 'item 7: the photo file name match (' + lay.photoNames.join(' | ') + ')');
@@ -534,7 +534,7 @@ const ok = (c, m) => {
         const m2 = _a36DetModel(d, ctx.rowsById, [], null);
         split = { key: r.seqKey, now: m2.findings.filter((f) => f.kind === 'seq' && f.key === r.seqKey).length, base: all.filter((f) => f.kind === 'seq' && f.key === r.seqKey).length, total: m2.findings.length, baseTotal: all.length };
       } finally { window._a36ScopedCatalogRows = real; }
-      // rendered: Findings Summary numbers, body headings
+      // rendered: Opportunities Summary numbers, body headings
       const sum = [];
       document.querySelectorAll('#reportPages .rpt-page[data-section="detailedSummary"] table tr').forEach((tr) => {
         const c = tr.querySelectorAll('td');
@@ -546,7 +546,7 @@ const ok = (c, m) => {
       let secNo = '';
       document.querySelectorAll('#reportPages .rpt-page[data-section="detailedLibrary"] div, #reportPages .rpt-page[data-section="detailedLibrary"] h2, #reportPages .rpt-page[data-section="detailedLibrary"] tr').forEach((el) => {
         if (el.tagName === 'H2') { const h = /^(\d+\.\d+) (.*)$/.exec(el.textContent.trim()); secNo = h[1]; sec = h[2]; return; }
-        if (el.tagName === 'DIV' && sec === 'Findings') {
+        if (el.tagName === 'DIV' && sec === 'Opportunities') {
           const m = /^(\d+)\. /.exec(el.textContent.trim());
           if (m && el.children.length === 0) body.push(secNo + '.' + m[1]);
         }
@@ -557,7 +557,7 @@ const ok = (c, m) => {
     ok(mdl.total > 0 && mdl.dups === 0, 'e: no two findings share library, group and sequence (' + mdl.total + ' findings)');
     ok(mdl.split && mdl.split.now === mdl.split.base && mdl.split.total === mdl.split.baseTotal, 'e: a sequence that comes from two catalog rows of one group is ONE finding (' + JSON.stringify(mdl.split) + ')');
     ok(mdl.bad.length === 0, 'f: the count of every finding is units: Observed and Recommendation carry the same fraction of the group' + (mdl.bad.length ? ': ' + JSON.stringify(mdl.bad) : ''));
-    ok(mdl.sum.length === mdl.total && sameList(mdl.sum, mdl.body) && mdl.sum.every((x, i) => i === 0 || x !== mdl.sum[i - 1]), 'l: Findings Summary and body list the same finding numbers 1..' + mdl.total + ' (summary ' + mdl.sum.length + ', body ' + mdl.body.length + ')');
+    ok(mdl.sum.length === mdl.total && sameList(mdl.sum, mdl.body) && mdl.sum.every((x, i) => i === 0 || x !== mdl.sum[i - 1]), 'l: Opportunities Summary and body list the same finding numbers 1..' + mdl.total + ' (summary ' + mdl.sum.length + ', body ' + mdl.body.length + ')');
     ok(mdl.pointSeqOverlap.length === 0, 'N1: no stand-alone point finding repeats a point that a sequence finding of the same group already lists (' + mdl.pointSeqOverlap.join(',') + ')');
     ok(mdl.mbad.length === 0, 'm: a recommendation says "sensor" only for a sensor, "point" for a valve or actuator' + (mdl.mbad.length ? ': ' + mdl.mbad.join(',') : ''));
     // n: a sequence finding counts the same units as the priced quantity (monitoring-only zone units are left out), and a point
@@ -777,7 +777,7 @@ const ok = (c, m) => {
       const ahuKeys = ['sfEnable', 'sfStatus', 'sfSpeed', 'dsp', 'htgValve', 'sat', 'oaDampCmd', 'mat', 'oat', 'oaFlow', 'freezeStat'];
       out.fanReading = run('ahu', 'Variable Air Volume Air Handling Unit', ahuKeys, {}, null, 1);
       out.fanCmd = run('ahu', 'Variable Air Volume Air Handling Unit', ahuKeys.concat(['sfSpeedCmd']), { dspSp: '1.1 in. w.c.' }, null, 1);
-      // 3. header fit: every header cell of the Findings Summary holds its text
+      // 3. header fit: every header cell of the Opportunities Summary holds its text
       const th = Array.from(document.querySelectorAll('#reportPages .rpt-page[data-section="detailedSummary"] thead th'));
       out.th = th.map((x) => ({ t: x.textContent.trim(), over: x.scrollWidth - x.clientWidth, inside: x.getBoundingClientRect().right <= x.closest('table').getBoundingClientRect().right + 0.5 }));
       // 4. figure rule
@@ -829,7 +829,7 @@ const ok = (c, m) => {
     const fns = r3.fanReading.map((s) => s.fn);
     const FN_ORDER = ['config', 'start', 'air', 'temp', 'oa', 'zone', 'requests', 'safety', 'sensors'];
     ok(fns.join(',') === fns.slice().sort((a, b) => FN_ORDER.indexOf(a) - FN_ORDER.indexOf(b)).join(',') && new Set(fns).size >= 4, '6: air handler sentences are in operating order (start and stop, temperature, airflow and static pressure, outdoor air, zone, safety): ' + fns.join(','));
-    ok(r3.th.length >= 5 && r3.th.length % 5 === 0 && r3.th.every((x) => x.over <= 1 && x.inside), '3: every Findings Summary header cell holds its text (ATTRIBUTE inside the table): ' + JSON.stringify(r3.th));
+    ok(r3.th.length >= 5 && r3.th.length % 5 === 0 && r3.th.every((x) => x.over <= 1 && x.inside), '3: every Opportunities Summary header cell holds its text (ATTRIBUTE inside the table): ' + JSON.stringify(r3.th));
     ok(r3.heater === 'sparse' && r3.light === 'light page' && r3.busy === '', '4: figure rule: a sparse graphic (a heater tile) and a light property page are not printed, a graphic with many readouts is: ' + [r3.heater, r3.light, r3.busy].join(' / '));
     ok(r3.trimHalf.w < 700 && r3.trimHalf.w > 500 && r3.trimHalf.h === 660 && r3.trimFull.w === 1200 && r3.trimFull.h === 660 && r3.trimLight.w === 300 && r3.trimLight.h === 200, '4: a dark crop with a wide empty black margin is cut to its content; others are not: ' + JSON.stringify([r3.trimHalf, r3.trimFull, r3.trimLight]));
     ok(r3.keep.join('|') === '900|30+120', '5: a heading goes to the next page together with its first paragraph: ' + r3.keep.join('|'));
@@ -937,7 +937,7 @@ const ok = (c, m) => {
     const sparse = bigLib.filter((f, i) => i < bigLib.length - 1 && !bigLib[i + 1].libStart && f.fill < 0.35);
     ok(sparse.length === 0, 'D7: no chapter page except the last of each library is less than 35 percent full: ' + bigLib.map((f) => Math.round(f.fill * 100)).join(','));
     ok(big.spPages === 0 || big.spHead === true, 'Appendix A, when printed, starts with its heading');
-    ok(big.sections.filter((x) => x === 'detailedSummary').length >= 2, 'a long Findings Summary runs over more than one page');
+    ok(big.sections.filter((x) => x === 'detailedSummary').length >= 2, 'a long Opportunities Summary runs over more than one page');
 
     // ---- 10. Simple through the modal ----
     await page.evaluate(() => { document.getElementById('reportOverlay').style.display = 'none'; document.getElementById('reportPages').innerHTML = ''; });
@@ -998,7 +998,7 @@ const ok = (c, m) => {
     ok(/one chilled water plant/.test(pt) && /one hot water plant/.test(pt) && /one air handling unit \(AHU\u20111\)/.test(pt) && !/Water System - Gamma|Water System/.test(pt.slice(0, pt.indexOf('System Descriptions'))), 'D4: System Overview counts one hot water plant and one chilled water plant, without the BAS name of the plant');
     ok(!/ - Gamma/.test(pt) && /Hot Water Plant/.test(pt) && /Chilled Water Plant/.test(pt), 'D4: the plants print with their type name, never with the library tag of the BAS name ("- Gamma")');
     ok(!/Domestic Hot Water/.test(pt) && !/Loop Bypass/.test(pt) && !/Plumbing/.test(pt), 'D4: domestic hot water and the bypass valve do not print');
-    const fStart = pt.indexOf('Findings');
+    const fStart = pt.indexOf('Opportunities');
     const fEnd = pt.length;
     const findAll = pt.slice(fStart, fEnd);
     const findPlants = findAll.slice(0, findAll.search(/The air handling unit/));
@@ -1119,7 +1119,7 @@ const ok = (c, m) => {
     ok(co2.dcv.totalAHU === 3 && co2.dcv.ahuMissingCO2 === 2, 'item 7: air handlers count air handling units and rooftop units: ' + JSON.stringify(co2.dcv));
     ok(co2.dcv.totalZones === 2 && co2.dcv.zonesMissingCO2 === 1, 'item 7: zones leave out the monitoring-only unit (no cooling and no heating set point): ' + JSON.stringify(co2.dcv));
     ok(/2 of 3 air handlers and 1 of 2 zones have no carbon dioxide sensor/.test(co2.text), 'item 7: the Executive Summary sentence uses those counts');
-    ok(/Building automation power monitoring meter\s*(Not installed|Installed)/.test(co2.text) && /Outdoor air sensors\s*(Not installed|Installed)/.test(co2.text) && !/Installation recommended/.test(co2.text) && !/None in the reviewed points/.test(co2.text), 'item 6: the building page cards state Installed or Not installed for the meter and the outdoor air sensors (no recommendation)');
+    ok(/Building power meter\s*(Not installed|Installed)/.test(co2.text) && /Outdoor air sensors\s*(Not installed|Installed)/.test(co2.text) && !/Installation recommended/.test(co2.text) && !/None in the reviewed points/.test(co2.text), 'item 6: the building page cards state Installed or Not installed for the meter and the outdoor air sensors (no recommendation)');
 
     // ---- report length (2026-11-11): Min OA + CO2 merged into one finding per unit; Appendix B lists the single-zone-only libraries ----
     const PID4 = await page.evaluate(async () => {
@@ -1161,8 +1161,8 @@ const ok = (c, m) => {
     }, PID4);
     ok(eps.merged.length === 1 && !eps.keys.includes('demandCtrl') && !eps.keys.includes('ahu_min_oa') && eps.keys.includes('ahu_min_oa+demandCtrl'), 'report length: Minimum Outside Air and Occupancy-Based Ventilation of the same units are ONE finding (' + eps.keys.join(' / ') + ')');
     ok(eps.merged[0] && /Minimum Outdoor Air and Occupancy-Based Ventilation \(Air Handling Units\)/.test(eps.merged[0].label) && !/ASHRAE/.test(eps.merged[0].observed) && /on both units/.test(eps.merged[0].observed) && /Carbon Dioxide Sensor/.test(eps.merged[0].observed) && /Outdoor Air Damper Actuator/.test(eps.merged[0].observed) && eps.merged[0].affected.length === 2, 'report length: the merged finding names no standard, the points of both and the 2 units: ' + (eps.merged[0] && eps.merged[0].observed));
-    ok((eps.summary.match(/Minimum Outdoor Air and Occupancy-Based Ventilation \(Air Handling Units\) sequences not fully in place/g) || []).length === 1 && !/Minimum Outdoor Air sequence not fully in place/.test(eps.summary), 'report length: the Findings Summary has one row for the two sequences');
-    ok(eps.seqNo && !eps.noteNo, 'report length: Control Sequences has its section number and the Findings Summary has no note about it (' + eps.seqNo + ' / ' + eps.noteNo + ')');
+    ok((eps.summary.match(/Minimum Outdoor Air and Occupancy-Based Ventilation \(Air Handling Units\) sequences not fully in place/g) || []).length === 1 && !/Minimum Outdoor Air sequence not fully in place/.test(eps.summary), 'report length: the Opportunities Summary has one row for the two sequences');
+    ok(eps.seqNo && !eps.noteNo, 'report length: Control Sequences has its section number and the Opportunities Summary has no note about it (' + eps.seqNo + ' / ' + eps.noteNo + ')');
     ok(/Epsilon Library\s*AHU-A and AHU-B\s*66\.0°F heating \/ 71\.0°F cooling\s*60\.0°F heating \/ 79\.0°F cooling[\s\S]*Single-zone unit/.test(eps.sp) && !/Single-zone unit:/.test(eps.sp), 'report length: Appendix A lists the single-zone-only library with its current setpoints (AHU-A and AHU-B: 66/71 occupied, 60/79 unoccupied) and the status "Single-zone unit": ' + eps.sp.slice(0, 700));
     ok(/Epsilon Library\s*CUH\u20111\s*60\.0°F heating \/ No cooling\s*60\.0°F heating \/ No cooling\s*(—\s*)?No cooling/.test(eps.sp) && (eps.sp.match(/Single-zone unit/g) || []).length === 2, 'report length: a second set of setpoints in the same library is a second row (CUH-1 60/78, 60/84; a heater prints "No cooling" and Deadband "No cooling")');
     const epsRows = eps.sp.slice(eps.sp.indexOf('Epsilon Library'), eps.sp.indexOf('Carbon Dioxide Setpoints'));
