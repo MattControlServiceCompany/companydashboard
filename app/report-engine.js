@@ -18510,7 +18510,7 @@ function rptPageASHRAE36Cover(n, d, perBuildingIncluded, detailed) {
     (info && info.total ? ': the sensors, control points and control sequences that the systems do not have. The sections that follow describe each ' + nouns.one + ', how its system controls the equipment today and each opportunity.' : '.');
   var statCard = function (value, label) {
     return (
-      '<td style="width:25%;text-align:center;vertical-align:top;padding:0 6px;border:none">' +
+      '<td class="rpt-a36-stat-card" style="width:25%;text-align:center;vertical-align:top;padding:0 6px;border:none">' +
       '<div style="font-size:21px;font-weight:700;color:var(--rpt-blue);text-align:center">' + value + '</div>' +
       '<div style="font-size:13.34px;color:var(--rpt-page-text);text-align:center">' + label + '</div></td>'
     );
