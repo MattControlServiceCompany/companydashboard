@@ -18124,7 +18124,8 @@ function _a36GaugeSVG(pct, color, label, size, suppressBottomLabel) {
   var cy = size / 2;
   var svgH = size * 1.16;
   var circumference = 2 * Math.PI * r;
-  var filled = (Math.min(100, Math.max(0, pct)) / 100) * circumference;
+  var isNA = pct === null || pct === undefined || !isFinite(pct); // no score: an empty ring with "N/A" (Matt 2026-11-19: every building page shows 3 rings)
+  var filled = isNA ? 0 : (Math.min(100, Math.max(0, pct)) / 100) * circumference;
   var empty = circumference - filled;
   return (
     '<svg width="' +
@@ -18171,10 +18172,10 @@ function _a36GaugeSVG(pct, color, label, size, suppressBottomLabel) {
     '" y="' +
     (cy + size * 0.065) +
     '" text-anchor="middle" font-size="' +
-    size * 0.22 +
+    size * (isNA ? 0.19 : 0.22) +
     '" font-weight="700" fill="var(--rpt-page-text)" font-family="Arial,sans-serif">' +
-    pct +
-    '%</text>' +
+    (isNA ? 'N/A' : pct + '%') +
+    '</text>' +
     (suppressBottomLabel
       ? ''
       : '<text x="' +
@@ -18600,17 +18601,19 @@ function _a36ScoreRingsHtml(s, size, colors, tight) {
     { label: 'Overall Score', pct: s.composite },
     { label: 'Sensor Coverage', pct: s.pointPct },
     { label: 'Sequence Readiness', pct: s.seqPct },
-  ].filter(function (it) { return it.pct !== null && it.pct !== undefined && isFinite(it.pct); });
-  if (!items.length) return '';
+  ];
+  // A score that does not exist (no sequences to check) is an empty ring with "N/A"; the ring row always has three rings (Matt 2026-11-19).
+  var has = function (it) { return it.pct !== null && it.pct !== undefined && isFinite(it.pct); };
+  if (!items.some(has)) return '';
   var w = Math.floor(100 / items.length);
   return (
     '<table style="width:100%;border-collapse:collapse;table-layout:fixed;margin:' + (tight ? '2px 0 2px 0' : '6px 0 4px 0') + '"><tr>' +
     items
       .map(function (it, i) {
-        var pct = Math.round(it.pct);
+        var pct = has(it) ? Math.round(it.pct) : null;
         return (
           '<td style="width:' + w + '%;text-align:center;vertical-align:top;padding:0 4px;border:none">' +
-          '<div style="display:inline-block">' + _a36GaugeSVG(pct, colors(pct, i), it.label, size, true) + '</div>' +
+          '<div style="display:inline-block">' + _a36GaugeSVG(pct, pct === null ? 'var(--rpt-rule)' : colors(pct, i), it.label, size, true) + '</div>' +
           '<div style="font-size:13.34px;font-weight:700;color:var(--rpt-page-text);margin-top:' + (4 - Math.round(size * 0.28)) + 'px;text-align:center">' + it.label + '</div>' + // the picture has empty space under the ring: the label sits 4 px under it (Matt 2026-11-19)
           '</td>'
         );
@@ -26974,12 +26977,12 @@ function _a36DetBody(chunk, chunkIndex) {
 }
 
 // Pages for one token list.
-function _a36DetPages(n, d, tokens, label) {
+function _a36DetPages(n, d, tokens, label, budgetOverride) {
   var fakeData = { project: { client: d.project.name }, period: { label: '', reportDate: d.rawDate } };
   var hasStar = tokens.some(function (t) {
     return t.star;
   });
-  var chunks = _a36DetPaginate(tokens, _rptContentBudget('flush') - A36_DET_PAGE_SAFETY_H - (hasStar ? A36_STAR_NOTE_H : 0));
+  var chunks = _a36DetPaginate(tokens, (budgetOverride || _rptContentBudget('flush') - A36_DET_PAGE_SAFETY_H) - (hasStar ? A36_STAR_NOTE_H : 0));
   chunks.forEach(function (chunk, ci) {
     chunk.forEach(function (t) {
       if (t.tbl && t.tbl.pageChunks.indexOf(ci) === -1) t.tbl.pageChunks.push(ci);
@@ -29900,8 +29903,17 @@ function _a36DetPhotoHtml(photo, libraryName, scale) {
 // each type, and the total. A library with no photo prints no picture. No ASHRAE 36 text: the scores and the devices to install and sequences to
 // program of the building are in the ASHRAE 36 Sequences section.
 var A36_AUDIT_PHOTO_SCALE = 0.62;
-var A36_AUDIT_PHOTO_STEP = 0.04; // the photo of a building page that does not fit shrinks by this scale step at a time
-var A36_AUDIT_PHOTO_MIN_FACTOR = 0.5; // ... to half of its size at the most
+// The building pages (and only they) use the page down to the footer wave (Matt 2026-11-19): the top of the wave is A36_AUDIT_WAVE_PEAK_H above the
+// bottom of the page (measured in the real render: 952 px of 1056), and the page keeps A36_AUDIT_WAVE_GAP above it.
+var A36_AUDIT_WAVE_PEAK_H = 104;
+var A36_AUDIT_WAVE_GAP = 6;
+// The summed token heights are higher than the printed height of a building page (measured in the real render: 36 px at the page bottom: the
+// margins of the blocks collapse and every row height is rounded up), so the budget has this much more room.
+var A36_AUDIT_MEASURE_SLACK_H = 36;
+function _a36AuditBuildingBudget() {
+  var g = _rptGeometry();
+  return g.pageH - A36_AUDIT_WAVE_PEAK_H - A36_AUDIT_WAVE_GAP - g.flushTop - g.bodyPadTop + A36_AUDIT_MEASURE_SLACK_H;
+}
 var A36_AUDIT_MIN_LAST_ROWS = 4; // the last part of a building table that runs on holds at least 3 rows and the total
 // The first sentence of a text: the per-building table states each opportunity in one sentence; the chapters explain it
 // (Matt 2026-11-18: "You should not be explaining a bunch in that text").
@@ -30277,8 +30289,8 @@ function _a36AuditBuildingTokens(d, b, ctx, showBuildingInfra) {
     return on ? 'Installed' : 'Not installed';
   };
   var useCard = _a36UseCard(_a36BuildingUse(d, b));
-  var cardsHtml = function (tight, wide) {
-    var h = (
+  var cardsHtml = function (tight) {
+    return (
     '<table style="width:100%;border-collapse:collapse;table-layout:fixed"><tr>' +
     card(rptCount(_a36AuditUnitsOf(b)), 'Equipment units audited', 'var(--rpt-blue)', '', tight) +
     card(rptCount(nF), nF === 1 ? 'Opportunity' : 'Opportunities', nF ? 'var(--rpt-orange)' : 'var(--rpt-green-dark)', '', tight) +
@@ -30296,34 +30308,17 @@ function _a36AuditBuildingTokens(d, b, ctx, showBuildingInfra) {
         : '') +
     '</table>'
     );
-    // wide: the facts in one row of four (the shortest form)
-    var wk = 0;
-    return wide
-      ? h.replace(/<\/tr><tr>/g, '').replace(/width:50%/g, function () {
-          return 'width:' + [18, 16, 28, 38][wk++ % 4] + '%'; // the utility card (the last) needs the most width
-        })
-      : h;
   };
   var photo = d._a36LibraryPhotos && d._a36LibraryPhotos[name];
-  // mode 'beside' (the last resort of the fit rule): the rings sit beside the small photo and the facts are one row of four under both, so the head is shorter.
-  var photoTok = function (scale, tight, beside) {
-    var cards = cardsHtml(tight, beside);
-    var under = beside ? _a36ScoreRingsHtml(b, 56, function (pct) { return a36ReadinessColor(pct); }, true) : '';
-    if (beside && photo) {
-      return _a36DetTok(
-        '<table style="width:100%;border-collapse:collapse;table-layout:fixed;margin:0 0 0 0"><colgroup><col style="width:' + Math.round(A36_DET_PHOTO_W * scale + 8) + 'px"><col></colgroup><tr>' +
-          '<td style="vertical-align:top;padding:0;border:none">' + _a36DetPhotoHtml(photo, name, scale).replace('margin:0 0 12px 0', 'margin:0') + '</td>' +
-          '<td style="vertical-align:middle;padding:0;border:none">' + under + '</td></tr><tr><td colspan="2" style="padding:0;border:none">' + cards + '</td></tr></table>',
-        true,
-      );
-    }
+  var photoTok = function (scale, tight) {
+    var cards = cardsHtml(tight);
     return _a36DetTok(
       (photo
         ? '<table style="width:100%;border-collapse:collapse;table-layout:fixed;margin:0 0 ' + (tight ? '0' : '4px') + ' 0"><colgroup><col style="width:' +
             Math.round(A36_DET_PHOTO_W * scale + 8) + 'px"><col></colgroup><tr>' +
             '<td style="vertical-align:top;padding:0;border:none">' + _a36DetPhotoHtml(photo, name, scale).replace('margin:0 0 12px 0', 'margin:0') + '</td>' +
             '<td style="vertical-align:top;padding:0;border:none">' + cards + '</td></tr></table>'
-        : under + cards),
+        : cards),
       true,
     );
   };
@@ -30401,42 +30396,31 @@ function _a36AuditBuildingTokens(d, b, ctx, showBuildingInfra) {
   tableToks.forEach(function (t) {
     tokens.push(t);
   });
-  // Fit first (Matt 2026-11-19: no page with 1 or 2 table rows). The heading, photo, rings and table stay on one page when they fit. When they
-  // are taller than the page, the head of the page is made smaller step by step until the page fits: the photo shrinks (aspect ratio kept, not
-  // below half of its size, A36_AUDIT_PHOTO_MIN_FACTOR), then the gaps around the photo and the rings shrink, then the rings. Text never gets
-  // smaller and nothing is dropped. When the page still does not fit, the table runs on (header row repeated) with the smallest head, so the
-  // first page holds as many rows as it can, and the last part of the table holds at least 3 rows and the total (minLastRows).
-  var budget = _rptContentBudget('flush') - A36_DET_PAGE_SAFETY_H;
-  var steps = [];
-  for (var sc = A36_AUDIT_PHOTO_SCALE - A36_AUDIT_PHOTO_STEP; sc > A36_AUDIT_PHOTO_SCALE * A36_AUDIT_PHOTO_MIN_FACTOR - 0.001; sc -= A36_AUDIT_PHOTO_STEP) {
-    steps.push(
-      (function (scale) {
-        return function () {
-          return [photoTok(scale)].concat(rt || []);
-        };
-      })(sc),
-    );
-  }
-  var minScale = A36_AUDIT_PHOTO_SCALE * A36_AUDIT_PHOTO_MIN_FACTOR;
-  // then the facts column and the gaps get tighter, the rings smaller, and last the rings go under the photo (nothing is dropped)
-  steps.push(function () {
-    return [photoTok(minScale, true)].concat(ringsTok(72, true) || []);
-  });
-  [56, 48].forEach(function (ringSize) {
-    steps.push(function () {
-      return [photoTok(minScale, true)].concat(ringsTok(ringSize, true) || []);
-    });
-  });
-  steps.push(function () {
-    return [photoTok(minScale, true, true)];
-  });
-  if (!_a36AuditFitHead(tokens, headAt, headEnd - headAt, steps, budget)) {
-    // the last resort: the rows get less padding (same text size), and the whole page is tried again
-    tightRows = true;
-    var tight = buildTable();
-    tokens.splice.apply(tokens, [tokens.length - tableToks.length, tableToks.length].concat(tight));
-    tableToks = tight;
-  }
+  // Fit first (Matt 2026-11-19: no page with 1 or 2 table rows). The page height reaches the footer wave (_a36AuditBuildingBudget). The photo is
+  // always full size and the rings are always a row below it (Matt 2026-11-19). When the page is too tall, these steps follow in this order, and
+  // each one only when the page does not fit yet: (1) less padding in the table rows (same text size), (2) tight facts cards and gaps,
+  // (3) rings one step smaller (64, "not much smaller"). Text never gets smaller and nothing is dropped. When it still does not fit, the table runs
+  // on (header row repeated), and the last part of the table holds at least 3 rows and the total (minLastRows).
+  var budget = _a36AuditBuildingBudget();
+  var headNow = function () {
+    return tokens.slice(headAt, headAt + (tokens.length - headAt - tableToks.length));
+  };
+  var steps = [
+    function () {
+      tightRows = true;
+      var tight = buildTable();
+      tokens.splice.apply(tokens, [tokens.length - tableToks.length, tableToks.length].concat(tight));
+      tableToks = tight;
+      return headNow();
+    },
+    function () {
+      return [photoTok(A36_AUDIT_PHOTO_SCALE, true)].concat(ringsTok(72, true) || []);
+    },
+    function () {
+      return [photoTok(A36_AUDIT_PHOTO_SCALE, true)].concat(ringsTok(64, true) || []);
+    },
+  ];
+  _a36AuditFitHead(tokens, headAt, headEnd - headAt, steps, budget);
   if (_a36DetListCost(tokens) > budget) {
     tableToks.forEach(function (t) {
       t.keepNext = false;
@@ -30694,7 +30678,7 @@ function generateASHRAE36AuditHTML(data, selectedSections) {
   // Per-building pages of the audit: the photo of the library, the equipment audited by type and the findings of the building.
   if (buildingOn) {
     data.buildings.forEach(function (b) {
-      _a36DetPages(pageNum, data, _a36AuditBuildingTokens(data, b, detCtx || data._a36AuditCtx, showBuildingInfra), 'Per-Building Detail').forEach(function (pg) {
+      _a36DetPages(pageNum, data, _a36AuditBuildingTokens(data, b, detCtx || data._a36AuditCtx, showBuildingInfra), 'Per-Building Detail', _a36AuditBuildingBudget()).forEach(function (pg) {
         pages.push(_tagA36Section(pg, 'building'));
         pageNum++;
       });
