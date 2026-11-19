@@ -29998,7 +29998,7 @@ function _a36UtilityAcrossData(d) {
     var cur = r.yrs.filter(function (y) {
       return y.year === year && y.eui > 0;
     })[0];
-    if (cur) rows.push({ name: r.name, yrs: r.yrs, eui: cur.eui, hasGas: cur.hasGas });
+    if (cur) rows.push({ name: r.name, yrs: r.yrs, eui: cur.eui, hasGas: cur.hasGas, cur: cur });
   });
   if (rows.length < 2) return null;
   rows.sort(function (a, c) {
@@ -30017,8 +30017,10 @@ function _a36UtilityAcrossData(d) {
   rows.forEach(function (r) {
     var base = r.yrs[0];
     r.pct = {};
+    r.euiBy = {};
     r.yrs.forEach(function (y) {
       if (base.kBtu > 0) r.pct[y.year] = ((y.kBtu - base.kBtu) / base.kBtu) * 100;
+      if (y.eui > 0) r.euiBy[y.year] = y.eui;
     });
     r.change = r.yrs.length > 1 && base.kBtu > 0 ? r.pct[r.yrs[r.yrs.length - 1].year] : null;
     r.baseYear = base.year;
@@ -30091,13 +30093,9 @@ function _a36UAHeat(p) {
   if (Math.abs(p) < 0.5) return ' fill="none"';
   return ' fill="' + (p < 0 ? 'var(--rpt-green)' : 'var(--rpt-red)') + '" fill-opacity="' + a.toFixed(2) + '"';
 }
-function _a36UAPctText(p) {
-  var v = Math.round(p);
-  return (v > 0 ? '+' : '') + v + '%';
-}
-// The heat map: one row per building in the order of the ranking, one column per calendar year, the percent change of the total energy against the
-// first complete year of the building ("base"). Every cell prints its percent. No separate Change column: the last year column already is the change
-// from the first year (Manager review 2026-11-18: no repeated values).
+// The heat map (Matt 2026-11-19): one row per building in the order of the ranking, one column per calendar year. Every cell prints the Energy Use
+// Intensity of the year (kBtu/ft², one decimal); its color shows the change of the total energy against the first complete year of the building
+// (green less, red more, no color for the first year). A year without a complete intensity stays blank.
 function _a36UAHeatSVG(rows, years) {
   var left = 170,
     padT = 24;
@@ -30121,28 +30119,40 @@ function _a36UAHeatSVG(rows, years) {
     var y = padT + k * A36_UA_ROW_H;
     out += '<text x="' + (left - 6) + '" y="' + (y + 14) + '" text-anchor="end" fill="var(--rpt-page-text)">' + _escHtml(_a36UAName(r.name)) + '</text>';
     years.forEach(function (yr, i) {
-      if (r.pct[yr] === undefined) return;
+      if (r.euiBy[yr] === undefined) return;
       var x = left + cw * i;
-      out += yr === r.baseYear ? cell(x, y, cw, null, 'base', false) : cell(x, y, cw, r.pct[yr], _a36UAPctText(r.pct[yr]), false);
+      var p = yr === r.baseYear || r.pct[yr] === undefined ? null : r.pct[yr];
+      out += cell(x, y, cw, p, r.euiBy[yr].toFixed(1), false);
     });
   });
   return out + '</svg>';
 }
-// The pages of the utility page ([] with fewer than 2 buildings that have an intensity). sectionNo = the section number (Detailed) or null (Simple).
-function _a36UtilityAcrossPages(pageNum, d, sectionNo) {
+// The unnumbered section after the per-building pages, "Utility Use by <noun>" (Matt 2026-11-19): a sentence, the ranking of the Energy Use
+// Intensity of the last complete year, and the heat map of the Energy Use Intensity of every year. [] with fewer than 2 buildings that have an
+// intensity. Annual totals only.
+function _a36UtilityUsePages(pageNum, d) {
   var ua = _a36UtilityAcrossData(d);
   if (!ua) return [];
   var nn = _a36BuildingNouns(d);
-  var many = nn.many.charAt(0).toUpperCase() + nn.many.slice(1);
-  var title = 'Utility Use Across the ' + many;
-  var tokens = [_a36DetTok(sectionNo ? _a36DetSectionTitle(sectionNo, title, '') : '<h1 style="' + A36_DET_TITLE_STYLE + '">' + _escHtml(title) + '</h1>', true)];
+  var oneCap = nn.one.charAt(0).toUpperCase() + nn.one.slice(1);
   var rows = ua.rows;
-  var hi = rows[0].eui;
-  var lo = rows[rows.length - 1].eui;
+  var hi = rows[0];
+  var lo = rows[rows.length - 1];
+  var tot = { kwh: 0, therms: 0, cost: 0 };
+  rows.forEach(function (r) {
+    tot.kwh += r.cur.kwh;
+    tot.therms += r.cur.therms || 0;
+    tot.cost += r.cur.cost;
+  });
+  var intro =
+    'In ' + ua.year + ' the ' + rptCount(rows.length) + ' ' + nn.many + ' used ' + rptCount(tot.kwh) + ' kWh of electricity and ' + rptCount(tot.therms) +
+    ' therms of gas, at a cost of ' + _fmtUSD(tot.cost, '$0') + '. Energy Use Intensity (EUI) ranges from ' + lo.eui.toFixed(1) + ' kBtu/' + A36_FT2 + ' at ' + _escHtml(lo.name) + ' to ' +
+    hi.eui.toFixed(1) + ' at ' + _escHtml(hi.name) + '.';
+  var tokens = [_a36DetTok('<h1 style="' + A36_DET_TITLE_STYLE + '">' + _escHtml('Utility Use by ' + oneCap) + '</h1><p style="' + A36_DET_P + '">' + intro + '</p>', true)];
   var head = function (t, sub) {
     return '<div style="font-size:14px;font-weight:700;color:var(--rpt-blue);margin:4px 0 0 0">' + _escHtml(t) + '</div><div style="font-size:' + A36_UA_FS + 'px;color:var(--rpt-page-text);margin:0 0 2px 0">' + _escHtml(sub) + '</div>';
   };
-  var rankTitle = lo > 0 ? 'The highest-use ' + nn.one + ' uses ' + (hi / lo).toFixed(1) + '× the energy per ' + A36_FT2 + ' of the lowest' : 'Energy use per ' + A36_FT2 + ' of each ' + nn.one;
+  var rankTitle = lo.eui > 0 ? 'The highest-use ' + nn.one + ' uses ' + (hi.eui / lo.eui).toFixed(1) + '× the energy per ' + A36_FT2 + ' of the lowest' : 'Energy use per ' + A36_FT2 + ' of each ' + nn.one;
   tokens.push(_a36DetTok(head(rankTitle, 'Energy Use Intensity in ' + ua.year + ' (kBtu/' + A36_FT2 + '), highest first') + _a36UARankSVG(rows, ua.median), true));
   var multi = rows.filter(function (r) {
     return r.change !== null;
@@ -30152,90 +30162,14 @@ function _a36UtilityAcrossPages(pageNum, d, sectionNo) {
       return Math.round(r.change) < 0;
     }).length;
     var heatTitle = less + ' of ' + multi.length + ' ' + nn.many + ' use less energy than in their first year on file';
-    tokens.push(_a36DetTok(head(heatTitle, 'Change in total energy (electricity and gas) against the first complete year of each ' + nn.one) + _a36UAHeatSVG(rows, ua.years), true));
+    tokens.push(_a36DetTok(head(heatTitle, 'Energy Use Intensity (kBtu/' + A36_FT2 + ') per year; color shows the change against the first complete year') + _a36UAHeatSVG(rows, ua.years), true));
   }
   tokens.push(
     _a36DetTok(
-      '<p style="' + A36_DET_P + ';margin-top:4px">Annual totals only. Energy Use Intensity uses the floor area on file for each ' + nn.one + '. In the change chart, green is less energy than the first year and red is more energy; ' +
-        '"base" is the first complete year. A ' + nn.one + ' marked electric only has no gas meter on file; its intensity counts electricity only.</p>',
+      '<p style="' + A36_DET_P + ';margin-top:4px">Annual totals only. Energy Use Intensity uses the floor area on file for each ' + nn.one + '. In the yearly chart, each cell is the Energy Use Intensity of that year; green is less energy than ' +
+        'the first complete year and red is more energy. A ' + nn.one + ' marked electric only has no gas meter on file; its intensity counts electricity only.</p>',
     ),
   );
-  return _a36DetPages(pageNum, d, tokens, 'Utility Use');
-}
-// The page after the per-building pages: one table of the 12-month use of every building that has it, highest Energy Use Intensity first, with a
-// total row. Only with at least 2 buildings that have use and floor area for the same months. Returns the pages ([] when there is none).
-function _a36UtilityUsePages(pageNum, d) {
-  var rows = [];
-  d.buildings.forEach(function (b) {
-    var u = _a36BuildingUse(d, b);
-    if (u && u.sqft > 0) rows.push({ name: _a36DisplayName(b), u: u });
-  });
-  // one period for the whole table: the one most buildings have (the others are left out)
-  var count = {};
-  rows.forEach(function (r) {
-    count[r.u.label] = (count[r.u.label] || 0) + 1;
-  });
-  var label = Object.keys(count).sort(function (a, c) {
-    return count[c] - count[a] || (a < c ? 1 : -1);
-  })[0];
-  rows = rows.filter(function (r) {
-    return r.u.label === label;
-  });
-  if (rows.length < 2) return [];
-  rows.sort(function (a, c) {
-    return c.u.eui - a.u.eui;
-  });
-  var tot = { kwh: 0, therms: 0, gal: 0, cost: 0, sqft: 0 };
-  var anyNoGas = false;
-  rows.forEach(function (r) {
-    tot.kwh += r.u.kwh;
-    tot.therms += r.u.therms || 0;
-    tot.gal += r.u.propaneGal || 0;
-    tot.cost += r.u.cost;
-    tot.sqft += r.u.sqft;
-    if (!r.u.hasGas) anyNoGas = true;
-  });
-  var totEui = computePeriodEUI(computeKBtu(tot.kwh, tot.therms, tot.gal), 12, tot.sqft);
-  var nn = _a36BuildingNouns(d);
-  var oneCap = nn.one.charAt(0).toUpperCase() + nn.one.slice(1);
-  var lo = rows[rows.length - 1];
-  var hi = rows[0];
-  var intro =
-    (/^\d{4}$/.test(label) ? 'In ' + label : 'From ' + label) + ' the ' + rptCount(rows.length) + ' ' + nn.many + ' used ' + rptCount(tot.kwh) + ' kWh of electricity and ' + rptCount(tot.therms) +
-    ' therms of gas, at a cost of ' + _fmtUSD(tot.cost, '$0') + '. Energy Use Intensity (EUI) ranges from ' + lo.u.eui.toFixed(1) + ' kBtu/' + A36_FT2 + ' at ' + _escHtml(lo.name) + ' to ' +
-    hi.u.eui.toFixed(1) + ' at ' + _escHtml(hi.name) + '.';
-  var tokens = [_a36DetTok('<h1 style="' + A36_DET_TITLE_STYLE + '">' + _escHtml('Utility Use by ' + oneCap) + '</h1><p style="' + A36_DET_P + '">' + intro + '</p>', true)];
-  var money2 = function (v) {
-    return '$' + v.toFixed(2);
-  };
-  var cell = function (v, extra) {
-    return '<td style="' + A36_AUDIT_TD + ';text-align:right' + (extra || '') + '">' + v + '</td>';
-  };
-  var body = rows.map(function (r, k) {
-    var bg = k % 2 ? ';background:#f8f8f8' : '';
-    return (
-      '<tr><td style="' + A36_AUDIT_TD + bg + ';font-weight:600">' + _escHtml(r.name) + '</td>' +
-      cell(rptCount(r.u.sqft), bg) + cell(rptCount(r.u.kwh), bg) + cell(r.u.hasGas ? rptCount(r.u.therms) : '\u2014', bg) +
-      cell(_fmtUSD(r.u.cost, '$0'), bg) + cell(money2(r.u.costPerSqft), bg) + cell(r.u.eui.toFixed(1), bg) + '</tr>'
-    );
-  });
-  var totX = ';font-weight:700;border-top:2px solid var(--rpt-blue);border-bottom:2px solid var(--rpt-blue)';
-  body.push(
-    '<tr><td style="' + A36_AUDIT_TD + totX + '">Total</td>' +
-      cell(rptCount(tot.sqft), totX) + cell(rptCount(tot.kwh), totX) + cell(rptCount(tot.therms), totX) + cell(_fmtUSD(tot.cost, '$0'), totX) +
-      cell(money2(tot.cost / tot.sqft), totX) + cell(totEui.toFixed(1), totX) + '</tr>',
-  );
-  var th = function (t, left) {
-    return '<th style="' + A36_AUDIT_TH + ';text-align:' + (left ? 'left' : 'right') + '">' + t + '</th>';
-  };
-  var open =
-    '<table style="width:100%;border-collapse:collapse;table-layout:fixed;margin:0 0 10px 0"><colgroup><col style="width:25%"><col style="width:11%"><col style="width:14%"><col style="width:12%"><col style="width:13%"><col style="width:11%"><col style="width:14%"></colgroup><thead><tr>' +
-    th(oneCap, true) + th('Floor area (' + A36_FT2 + ')') + th('Electric (kWh)') + th('Gas (therms)') + th('Cost ($)') + th('Cost per ' + A36_FT2 + ' ($)') + th('EUI (kBtu/' + A36_FT2 + ')') +
-    '</tr></thead>';
-  _a36DetTableToks(open, body, null).forEach(function (t) {
-    tokens.push(t);
-  });
-  if (anyNoGas) tokens.push(_a36DetTok('<p style="' + A36_DET_P + ';margin-top:2px">\u2014 Electric only.</p>'));
   return _a36DetPages(pageNum, d, tokens, 'Utility Use');
 }
 
@@ -30764,7 +30698,7 @@ function generateASHRAE36AuditHTML(data, selectedSections) {
         pageNum++;
       });
     });
-    // One page after the per-building pages that compares the utility use of the buildings (only with data for at least 2 of them).
+    // The utility section after the per-building pages: ranking and Energy Use Intensity by year of the buildings (only with data for at least 2 of them).
     _a36UtilityUsePages(pageNum, data).forEach(function (pg) {
       pages.push(_tagA36Section(pg, 'building'));
       pageNum++;
@@ -30792,15 +30726,6 @@ function generateASHRAE36AuditHTML(data, selectedSections) {
     // Phase 5 — Cost Estimate page (spec §10, 2026-06-18): the Control Sequences table. Returns an Array (1 page when it fits; 2+ when paginated).
     rptPageASHRAE36CostEstimate(pageNum, data, detailed ? sectionNo++ : undefined).forEach(function (pg) {
       pages.push(_tagA36Section(pg, 'costEstimate'));
-      pageNum++;
-    });
-  }
-
-  // The last page of the audit before the appendices: the utility use of every building, ranked and over the years (same toggle as the
-  // per-building pages and the Utility Use table). Detailed numbers it as the next section.
-  if (buildingOn) {
-    _a36UtilityAcrossPages(pageNum, data, detailed ? sectionNo : null).forEach(function (pg) {
-      pages.push(_tagA36Section(pg, 'building'));
       pageNum++;
     });
   }

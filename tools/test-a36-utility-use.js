@@ -1,11 +1,11 @@
 // tools/test-a36-utility-use.js: the 12-month utility use in the Audit Report (2026-11-18). SYNTHETIC names and values only; headless bundled
 // Chromium; no network.
 // Rules tested: each per-building page has the Energy Use Intensity card (no gas meter: "electric only"; no utility data: no card; no per-building
-// yearly chart); ONE comparison page "Utility Use by <noun>" follows the last per-building page: a sentence, one table sorted by EUI high to low, a
-// total row whose EUI is computePeriodEUI of the summed kBtu and area, footnote "Electric only."; with fewer than 2 buildings that have data there is
-// no comparison page. (Matt 2026-11-18) ONE page "Utility Use Across the <nouns>" at the end (before the appendices): ranking bars of the EUI of the
-// last complete year (highest first, value labels, median line, axis from zero, electric-only marked), a heat map of the percent change of the total
-// energy against the first complete year (cells with % text), result titles computed from the data, no monthly values; both charts become pictures in Word.
+// yearly chart). (Matt 2026-11-19) ONE unnumbered section "Utility Use by <noun>" follows the last per-building page, before the library chapters, and
+// there is no table and no section at the end: a sentence, ranking bars of the EUI of the last complete year (highest first, value labels, median
+// line, axis from zero, electric-only marked), a heat map whose cells print the EUI of each year (color = change against the first complete year),
+// result titles computed from the data, no monthly values; both charts become pictures in Word. With fewer than 2 buildings that have data there is
+// no section.
 // Run: CH_TMP_ROOT=<scratch> node tools/test-a36-utility-use.js   (exit 0 = all pass)
 'use strict';
 const path = require('path');
@@ -76,9 +76,11 @@ const ok = (c, m) => {
       out.alpha = alpha;
       out.beta = beta;
       // Word: both charts of the utility page become pictures (the shared chart swap)
-      const uaIdx = out.pages.findIndex((t) => /Utility Use Across the Libraries/.test(t));
+      const uaIdx = out.pages.findIndex((t) => /Utility Use by Library/.test(t));
+      out.chartPages = out.htmls.map((h, i) => (/data-audit-chart/.test(h) ? i : -1)).filter((i) => i >= 0);
+      out.uaText = out.chartPages.map((i) => out.pages[i]).join(' ');
       const holder = document.createElement('div');
-      holder.innerHTML = out.htmls[uaIdx];
+      holder.innerHTML = out.chartPages.map((i) => out.htmls[i]).join('');
       document.body.appendChild(holder);
       out.svgBefore = holder.querySelectorAll('svg[data-audit-chart]').length;
       const rankSvg = holder.querySelectorAll('svg[data-audit-chart]')[0];
@@ -95,33 +97,27 @@ const ok = (c, m) => {
       out.uaIdx = uaIdx;
       out.allSecsText = out.pages.join(' ');
       // the ranking value of Alpha is the intensity of buildingAnnualUse (one source)
-      out.expTotEui = computePeriodEUI(computeKBtu(alpha.kwh + beta.kwh, alpha.therms, 0), 12, alpha.sqft + beta.sqft);
-      // Detailed: the page is the next section number
+      // Detailed: the section has no section number and nothing prints at the end (Matt 2026-11-19)
       const det = generateASHRAE36AuditHTML(collectASHRAE36Data(PID, '2026-11-10', null), { detailed: true, cover: true, executive: true, building: true, costEstimate: false });
-      out.detUA = Array.from(new DOMParser().parseFromString(det, 'text/html').querySelectorAll('.rpt-page')).map((p) => p.textContent.replace(/\s+/g, ' ').trim()).filter((t) => /Utility Use Across the Libraries/.test(t));
+      out.detPages = Array.from(new DOMParser().parseFromString(det, 'text/html').querySelectorAll('.rpt-page')).map((p) => p.textContent.replace(/\s+/g, ' ').trim());
       // only one building with data: no comparison page
       ud.splice(1, 1);
       const b = build();
       out.secs1 = b.secs.map((s) => s.sec);
       out.pages1 = b.secs.map((s) => s.text);
-      out.rowsOf = (i) => null;
-      const cmp = out.htmls.findIndex((h, i) => /Utility Use by Library/.test(out.pages[i]));
-      const dd = new DOMParser().parseFromString('<div>' + out.htmls[cmp] + '</div>', 'text/html');
-      out.trs = Array.from(dd.querySelectorAll('tbody tr')).map((tr) => Array.from(tr.children).map((c) => c.textContent.trim()));
-      delete out.rowsOf;
       return out;
     });
 
     const bldPages = r.pages.filter((t, i) => r.secs[i] === 'building');
     const titleIdx = r.pages.findIndex((t) => /Utility Use by Library/.test(t));
-    ok(titleIdx >= 0, 'the comparison page "Utility Use by Library" exists');
-    ok(r.secs[titleIdx] === 'building' && r.secs.lastIndexOf('building') === r.uaIdx && titleIdx === r.uaIdx - 1, 'it follows the last building page and the utility page "Utility Use Across" follows it (Matt 2026-11-18)');
+    ok(titleIdx >= 0, 'the section "Utility Use by Library" exists');
+    ok(r.secs[titleIdx] === 'building' && r.chartPages.every((i) => i >= titleIdx && i <= titleIdx + 1 && r.secs[i] === 'building'), 'the charts are on the section page(s) with the building section key (Matt 2026-11-19)');
+    ok(r.pages.slice(titleIdx + 1).every((t) => !/Utility Use Across/.test(t)) && !r.pages.some((t) => /Utility Use Across/.test(t)), 'no "Utility Use Across" section at the end any more (Matt 2026-11-19)');
+    ok(r.chartPages.length >= 1 && r.pages.slice(0, titleIdx).filter((t, i) => r.secs[i] === 'building').length >= 1, 'the section follows the per-building pages');
     ok(r.pages.slice(0, titleIdx).filter((t) => /Alpha Library/.test(t) && /Energy Use Intensity \(2025\)/.test(t)).length === 1, 'Alpha Library page has the utility card');
     ok(!r.pages.some((t, i) => r.secs[i] === 'building' && /Annual Energy Use/.test(t)), 'no per-building yearly chart (Annual Energy Use) on any building page');
-    ok(r.uaIdx >= 0 && r.secs[r.uaIdx] === 'building', 'the page "Utility Use Across the Libraries" exists, with the section key of the building pages (same toggle)');
-    ok(r.uaIdx > titleIdx, 'it comes after the Utility Use table page');
     ok(r.svgBefore === 2 && r.svgAfter === 0 && r.imgAfter === 2, 'Word: both charts become PNG pictures: ' + JSON.stringify([r.svgBefore, r.svgAfter, r.imgAfter]));
-    const ua = r.pages[r.uaIdx];
+    const ua = r.uaText;
     ok(/The highest-use library uses 3\.5× the energy per ft² of the lowest/.test(ua), 'ranking title computed from the data (70.9 / 20.5): ' + (ua.match(/The highest-use.*?lowest/) || [''])[0]);
     ok(/1 of 2 libraries use less energy than in their first year on file/.test(ua), 'heat map title computed from the data: ' + (ua.match(/\d+ of \d+ libraries use less[^C]*/) || [''])[0]);
     ok(r.rankBars.length >= 2 && r.rankBars[0].x === r.rankBars[1].x && r.rankBars[0].w > r.rankBars[1].w, 'ranking bars start at one zero line and are sorted high to low');
@@ -129,13 +125,16 @@ const ok = (c, m) => {
     ok(r.rankTexts.filter((x) => /electric only/.test(x)).length === 1 && /^20\.5.*electric only/.test(r.rankTexts.find((x) => /electric only/.test(x))), 'only the electric-only building is marked in the ranking');
     ok(r.dash === 1 && r.rankTexts.indexOf('Median 45.7') >= 0, 'one dashed median line, labelled with the median of the intensities (45.7)');
     ok(r.alpha.eui.toFixed(1) === '70.9', 'the ranking value is the buildingAnnualUse intensity (70.9)');
-    ok(r.heatTexts.indexOf('2023') >= 0 && r.heatTexts.indexOf('2025') >= 0 && r.heatTexts.indexOf('Change') < 0, 'heat map has a column per year and no Change column (the last year already is the change)');
-    ok(r.heatTexts.filter((x) => x === 'base').length === 2 && r.heatTexts.indexOf('-12%') >= 0 && r.heatTexts.indexOf('-20%') >= 0 && r.heatTexts.indexOf('+25%') >= 0, 'heat map cells print their percent text: ' + r.heatTexts.join(' | '));
-    ok(r.heatTexts.filter((x) => x === '-20%').length === 1 && r.heatFills.indexOf('var(--rpt-green)') >= 0 && r.heatFills.indexOf('var(--rpt-red)') >= 0, 'less energy is green, more energy is red');
-    ok(!/Annual totals only\.[^]*monthly/i.test(ua) && !/\b(Jan|Feb|Mar|Apr|Jun|Jul|Aug|Sep|Oct|Nov|Dec)[a-z]* \d{4}\b/.test(ua) && !/240,000|60,000|kWh/.test(ua), 'no monthly values and no raw kWh on the page');
+    ok(r.heatTexts.indexOf('2023') >= 0 && r.heatTexts.indexOf('2025') >= 0 && r.heatTexts.indexOf('Change') < 0, 'heat map has a column per year and no Change column');
+    // Alpha 2025 = 70.9 (ranking), 2023 = 1.25 x 70.9 = 88.7 (first year, no color), 2024 = 1.1 x 70.9 = 78.0; Beta 2025 = 20.5, 2024 = 0.8 x 20.5 = 16.4 (+25 percent)
+    ok(r.heatTexts.indexOf('88.7') >= 0 && r.heatTexts.indexOf('78.0') >= 0 && r.heatTexts.indexOf('70.9') >= 0 && r.heatTexts.indexOf('16.4') >= 0 && r.heatTexts.indexOf('20.5') >= 0, 'heat map cells print the EUI of each year (Matt 2026-11-19): ' + r.heatTexts.join(' | '));
+    ok(!r.heatTexts.some((x) => /%|^base$/.test(x)), 'heat map cells have no percent text and no base word');
+    ok(r.heatTexts.filter((x) => /^[\d.]+$/.test(x) && x.indexOf('.') > 0).length === 5, 'five EUI cells (3 years of one building, 2 of the other)');
+    ok(r.heatFills.indexOf('var(--rpt-green)') >= 0 && r.heatFills.indexOf('var(--rpt-red)') >= 0, 'less energy is green, more energy is red; the 2025 cell of the ranking equals the heat map cell (70.9 and 20.5 in both)');
+    ok(!/Annual totals only\.[^]*monthly/i.test(ua) && !/\b(Jan|Feb|Mar|Apr|Jun|Jul|Aug|Sep|Oct|Nov|Dec)[a-z]* \d{4}\b/.test(ua) && !/240,000|60,000/.test(ua), 'no monthly values and no raw yearly kWh of one building on the section');
     ok(/Annual totals only\./.test(ua) && /floor area on file/.test(ua), 'note: annual totals only and the floor area on file');
     ok(!/finding|ASHRAE/i.test(ua), 'the page has no "finding" and no "ASHRAE" text');
-    ok(r.detUA.length === 1 && /\d+\. Utility Use Across the Libraries/.test(r.detUA[0]), 'Detailed: the page title is numbered as a section: ' + (r.detUA[0] || '').slice(0, 80));
+    ok(r.detPages.filter((t) => /Utility Use by Library/.test(t)).length === 1 && !r.detPages.some((t) => /\d+\. Utility Use by Library|Utility Use Across/.test(t)), 'Detailed: the section has no section number and no second utility section');
     const alphaPage = r.pages.find((t, i) => r.secs[i] === 'building' && /Alpha Library/.test(t) && /Energy Use Intensity \(2025\)/.test(t));
     ok(/240,000 kWh, 6,000 therms\s*\$36,000, [\d,]+ ft²/.test(alphaPage) && !/Outdoor air sensors/.test(alphaPage), 'card with gas replaces the outdoor air card: ' + (alphaPage.match(/Energy Use Intensity[\s\S]{0,120}/) || [''])[0]);
     ok(/Energy Use Intensity \(2025\)\s*\d+\.\d kBtu\/ft²/.test(alphaPage) && /20,000 ft²/.test(alphaPage), 'card value is the intensity; the floor area is in the note');
@@ -146,18 +145,10 @@ const ok = (c, m) => {
     const t = r.pages[titleIdx];
     ok(/In 2025 the 2 libraries used 300,000 kWh of electricity and 6,000 therms of gas, at a cost of \$43,200\./.test(t), 'context sentence: ' + (t.match(/In 2025.*?\./) || [''])[0]);
     ok(/Energy Use Intensity \(EUI\) ranges from [\d.]+ kBtu\/ft² at \w+ Library to [\d.]+ at \w+ Library\./.test(t), 'range sentence');
-    const html = r.htmls[titleIdx];
-    const trs = r.trs;
-    ok(trs.length === 3 && trs[2][0] === 'Total', 'two library rows and a total row: ' + JSON.stringify(trs.map((x) => x[0])));
-    const euis = trs.slice(0, 2).map((x) => parseFloat(x[6]));
-    ok(euis[0] >= euis[1], 'sorted by EUI high to low: ' + euis.join(', '));
-    ok(trs[2][6] === r.expTotEui.toFixed(1), 'total EUI = computePeriodEUI of the summed kBtu and area: ' + trs[2][6] + ' vs ' + r.expTotEui.toFixed(1));
-    const noGasRow = trs.find((x) => x[0] === 'Beta Library');
-    ok(noGasRow && noGasRow[3] === '—' && /Electric only\./.test(t) && !/No gas meter on file/.test(t), 'no gas meter: dash in the gas cell and the footnote "Electric only." (Matt 2026-11-18)');
-    ok(/Floor area \(ft²\)/.test(t) && /Electric \(kWh\)/.test(t) && /Gas \(therms\)/.test(t) && /Cost \(\$\)/.test(t) && /Cost per ft² \(\$\)/.test(t) && /EUI \(kBtu\/ft²\)/.test(t), 'column headers with symbols');
-    ok(/background:var\(--rpt-blue\)/.test(html) && /text-align:right/.test(html), 'blue header row and right-aligned numbers');
-    ok(!/finding|ASHRAE/i.test(t), 'the page has no "finding" and no "ASHRAE" text');
-    ok(!r.pages1.some((x) => /Utility Use by Library|Utility Use Across/.test(x)), 'one building with data: no comparison page and no utility page');
+    ok(!/<table/.test(r.htmls[titleIdx]) && !r.chartPages.some((i) => /<table/.test(r.htmls[i])), 'no table on the section (Matt 2026-11-19)');
+    ok(/Energy Use Intensity \(kBtu\/ft²\) per year; color shows the change against the first complete year/.test(ua), 'heat map subtitle');
+    ok(/each cell is the Energy Use Intensity of that year/.test(ua) && /electric only has no gas meter on file/.test(ua), 'note matches the cells');
+    ok(!r.pages1.some((x) => /Utility Use by Library|Utility Use Across/.test(x)), 'one building with data: no utility section');
     ok(r.pages1.some((x, i) => r.secs1[i] === 'building' && /Energy Use Intensity \(2025\)/.test(x)), 'one building with data: its card still prints');
     ok(errs.length === 0, 'no page errors: ' + errs.join(' | '));
     void bldPages;
