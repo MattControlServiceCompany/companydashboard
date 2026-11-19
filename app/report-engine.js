@@ -28026,6 +28026,8 @@ var A36_DET_P_TIGHT = 'margin:0 0 4px 0;font-size:13.34px;line-height:1.4;color:
 // point does, not what is wrong with this unit). No "Missing:" or "Issue:" line: it repeated the headline (Matt 2026-11-18). The audit states
 // facts only: no Solution line (Matt 2026-11-17). impactSeen = { key: true } of the chapter (updated here).
 var A36_DET_OPP_INDENT_PX = 24; // 1/4 in at 96 px per inch
+// Matt 2026-11-19: a line that wraps sits a little further in than the start of its paragraph (a hanging indent of 0.2 in, 19 px; Word 288 twips).
+var A36_DET_OPP_HANG = 'padding-left:19px;text-indent:-19px;';
 function _a36DetFindingTok(f, impactSeen, ctx) {
   var showImpact = f.impact && !(impactSeen && impactSeen[f.key]);
   if (f.impact && impactSeen) impactSeen[f.key] = true;
@@ -28034,7 +28036,7 @@ function _a36DetFindingTok(f, impactSeen, ctx) {
   }
   // Matt 2026-11-19: the opportunities under the system descriptions are indented 1/4 in (24 px; data-word-indent="q" = 360 twips in Word).
   return _a36DetTok(
-    '<div style="margin:0 0 6px ' + A36_DET_OPP_INDENT_PX + 'px"><div data-word-indent="q" style="' +
+    '<div style="margin:0 0 6px ' + A36_DET_OPP_INDENT_PX + 'px"><div data-word-indent="q" style="' + A36_DET_OPP_HANG +
       // Matt 2026-11-18: the numbered finding is body text, not bold.
       A36_DET_P_TIGHT +
       '">' +
@@ -28042,7 +28044,7 @@ function _a36DetFindingTok(f, impactSeen, ctx) {
       _escHtml((f.num ? _a36DetItemNo(f) + '. ' : '') + f.headline) +
       _a36StarHtml(f, ctx) +
       '</div>' +
-      (showImpact ? '<p data-word-indent="q" style="' + A36_DET_P_TIGHT + '">' + part('Impact', f.impact) + '</p>' : '') +
+      (showImpact ? '<p data-word-indent="q" style="' + A36_DET_OPP_HANG + A36_DET_P_TIGHT + '">' + part('Impact', f.impact) + '</p>' : '') +
       '</div>',
   );
 }
