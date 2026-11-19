@@ -51,7 +51,7 @@ const ok = (c, m) => {
         sset('en_pricing_catalog', { 'N1-AQX-C-A': { list: 500, net: 300, contract: 200 } });
         sset('en_pricing_budget_p', { amount: 75000, period: 'year' });
         const d = { project: { id: 'p', name: 'Test Client' }, rawDate: 'November 13, 2026' };
-        const out = rptPageASHRAE36ProposalPricing(3, d, { phaseSplit: true, itemized: true });
+        const out = rptPageASHRAE36ProposalPricing(3, d, { itemized: true });
         const html = Array.isArray(out) ? out.join('') : String(out);
         const host = document.createElement('div');
         host.id = 'reportPages';

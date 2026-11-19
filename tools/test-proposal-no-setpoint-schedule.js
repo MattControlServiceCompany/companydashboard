@@ -74,7 +74,7 @@ const near = (a, b) => Math.abs(a - b) < 0.006;
       const summary = _pricingComputeSummaryData(pid, est);
       const summaryGrand = { compliance: summary.tierTotals.compliance.grand, recommended: summary.tierTotals.recommended.grand, 'full-scope': summary.tierTotals['full-scope'].grand };
       // the rendered Service Proposal (all pages) and the Audit Report text
-      const prop = generateASHRAE36ProposalHTML(d, { costEstimate: true, costEstimatePhaseSplit: true, costEstimateItemized: true });
+      const prop = generateASHRAE36ProposalHTML(d, { costEstimate: true, costEstimateItemized: true });
       const propText = new DOMParser().parseFromString('<div>' + prop + '</div>', 'text/html').body.textContent.replace(/\s+/g, ' ');
       const aud = generateASHRAE36AuditHTML(d, { cover: true, executive: true, costEstimate: true, building: true, setpointReview: true, pointInventory: true });
       const audText = new DOMParser().parseFromString('<div>' + aud + '</div>', 'text/html').body.textContent.replace(/\s+/g, ' ');
