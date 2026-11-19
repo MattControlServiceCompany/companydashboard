@@ -102,7 +102,7 @@ const RE = fs.readFileSync(path.join(ROOT, 'app', 'report-engine.js'), 'utf8');
     ok(cmd && cmd.impact === 'Lets the system change the fan speed. Without a variable frequency drive the fan runs at full speed all the time.', 'F2. single-zone point finding: plain Impact line: ' + (cmd && cmd.impact));
     ok(cmd && cmd.section === '5.18.4' && !/ASHRAE 36, Section/.test(cmd.observed), 'F3. the single-zone supply fan speed command finding keeps section 5.18.4 in the data and cites none in the text: ' + (cmd && cmd.section + ' | ' + cmd.observed));
     const sat = sz.find((f) => f.kind === 'seq' && f.key === 'ahu_sat_reset');
-    ok(sat && /no variable frequency drive on (its|their) supply fans?, so .* cannot run\./.test(sat.head) && /Outdoor Air Temp/.test(sat.observed), 'F2. single-zone sequence finding: the heading names the missing drive, Missing keeps the other points: ' + (sat && sat.head + ' | ' + sat.observed));
+    ok(sat && (/no variable frequency drive on (its|their) supply fans?, so .* cannot run\./.test(sat.head) || /^The missing variable frequency drive also stops supply air temperature reset\.$/.test(sat.head)) && /Outdoor Air Temp/.test(sat.observed), 'F2. single-zone sequence finding: the heading names the missing drive, Missing keeps the other points: ' + (sat && sat.head + ' | ' + sat.observed));
     ok(sz.every((f) => !/Solution/.test(f.head + ' ' + f.observed)), 'F2. no finding text carries a Solution');
     const mzSeq = scen.mixed.findings.find((f) => f.kind === 'seq' && f.key === 'ahu_sat_reset' && f.section === '5.16.2');
     ok(mzSeq && !/variable frequency drive/i.test(mzSeq.head) && /Outdoor Air Temp/.test(mzSeq.observed) && /Supply Fan Speed/.test(mzSeq.observed), 'F2. a multi-zone unit: no drive in the heading, Missing names both points: ' + (mzSeq && mzSeq.head + ' | ' + mzSeq.observed));
@@ -126,7 +126,7 @@ const RE = fs.readFileSync(path.join(ROOT, 'app', 'report-engine.js'), 'utf8');
     ok(/inner\.style\.cssText = 'padding:0 96px'/.test(RE), 'F5. the page-fit probe uses the real content width (96px each side, 624px)');
 
     // ---- F7, F8: wording ----
-    ok(!/zone setpoint control path/.test(RE) && /points on units that do not control a room temperature are not counted/.test(RE), 'F7. the cover sentence uses plain words');
+    ok(!/zone setpoint control path/.test(RE), 'F7. no "zone setpoint control path" wording (the readiness sentence left with the Readiness page, Matt 2026-11-18)');
     ok(!/not program the sensors/.test(RE) && !/_rptA36OptionalZoneCo2HTML/.test(RE), 'F8. (2026-11-18) the Optional row is gone: Full Scope includes the room CO2 sensors and sequences');
 
     ok(errs.length === 0, 'no page errors' + (errs.length ? ': ' + errs[0] : ''));
