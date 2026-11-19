@@ -24291,6 +24291,11 @@ function _rptA36OppDetail(summaryData, estimateState, key, tt) {
       desc: desc.join(' '),
       qty: devQty || progQty || ioQty,
       lineTotal: total,
+      fixedPrice:
+        g.rows.length > 0 &&
+        g.rows.every(function (r) {
+          return !!r.fixedPrice;
+        }), // a fixed-price line (Matt 2026-11-19) keeps its own price when the workbook subtotal is shared
       oppKey: g.opp.key,
       // The scope of work reads these (_rptA36RecommendedScope): the opportunity, its rows, the devices with their quantities and the
       // quantity of the programming rows and of the existing control points.

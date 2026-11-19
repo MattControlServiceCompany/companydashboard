@@ -739,12 +739,17 @@ function auditEstSetWorkbookConfig(field, value) {
 // Workbook mode, itemized lines: each item's shown lineTotal becomes its share of the group's
 // workbook subtotal (whole dollars, largest remainder, weighted by the item's hourly lineTotal),
 // so the lines add up to the subtotal exactly. Returns copies; items without a positive
-// lineTotal are unchanged.
+// lineTotal are unchanged. An item with fixedPrice (Matt 2026-11-19) keeps its own lineTotal; the
+// subtotal includes it, and only the rest of the subtotal is shared over the other items.
 function _auditEstShareLines(items, subtotal) {
+  var fixedSum = 0;
+  items.forEach(function (it) {
+    if (it.fixedPrice && it.lineTotal > 0) fixedSum += Math.round(it.lineTotal);
+  });
   var shares = _auditEstAllocate(
-    Math.round(subtotal || 0),
+    Math.round(subtotal || 0) - fixedSum,
     items.map(function (it) {
-      return it.lineTotal > 0 ? Math.round(it.lineTotal * 100) : 0;
+      return it.lineTotal > 0 && !it.fixedPrice ? Math.round(it.lineTotal * 100) : 0;
     }),
   );
   return items.map(function (it, i) {
@@ -752,7 +757,7 @@ function _auditEstShareLines(items, subtotal) {
     Object.keys(it).forEach(function (k) {
       c[k] = it[k];
     });
-    if (it.lineTotal > 0) c.lineTotal = shares[i];
+    if (it.lineTotal > 0 && !it.fixedPrice) c.lineTotal = shares[i];
     return c;
   });
 }

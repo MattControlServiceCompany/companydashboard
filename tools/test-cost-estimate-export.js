@@ -298,6 +298,68 @@ sb._pricingGetEstimate = () => est;
   assert.ok(!/estExportExcel/.test(sb._pricingEstimateTypeBarHTML('p', 'bas')));
   ok('Hourly: no sets, button disabled with reason; Workbook: enabled; audit types: no button');
 
+  // 4b. Fixed-price rows (the building power meter, Matt 2026-11-19): a "Fixed-price" sheet after the workbook sheets of each tier that has them.
+  {
+    const meter = (id, bld, qty) => ({
+      id,
+      building: bld,
+      item: 'Building power meter',
+      phase: 1,
+      qty,
+      ioOnly: false,
+      noSku: false,
+      engReview: false,
+      unitPrice: 5000,
+      partsUnitPrice: 5000,
+      partsLineTotal: 5000 * qty,
+      installHours: 0,
+      installLaborRate: RATE,
+      installLaborTotal: 0,
+      lineTotal: 5000 * qty,
+      fixedPrice: true,
+    });
+    const fixedRows = [meter('f1', 'Alpha', 1), meter('f2', 'Beta', 1), meter('f3', 'Gamma', 1)];
+    const T2 = { compliance: T.compliance, recommended: T.recommended.concat(fixedRows), 'full-scope': T['full-scope'].concat(fixedRows) };
+    const store2 = JSON.parse(JSON.stringify(store));
+    const sb2 = make(store2, T2);
+    sb2._pricingGetEstimate = () => est;
+    const sets2 = sb2._pricingExportSets('p');
+    assert.strictEqual(sets2.length, 3);
+    const foot2 = {};
+    for (const k of Object.keys(T2)) foot2[k] = sb2._pricingComputeTotals(T2[k], est, 'p').grand;
+    const buf2 = await X.exportWorkbookSets(sets2, meta);
+    const wb2 = new ExcelJS.Workbook();
+    await wb2.xlsx.load(buf2);
+    for (const s of sets2) {
+      const k = keyOf[s.name];
+      const fx = wb2.getWorksheet(s.name + ' Fixed-price');
+      if (k === 'compliance') {
+        assert.ok(!fx, 'Compliance has no Fixed-price sheet');
+        assert.strictEqual(s.grand, EW.compute(s.input).summary.total);
+        assert.strictEqual(wb2.getWorksheet(s.name + ' Dash').getCell('N36').value.result, foot2[k]);
+        continue;
+      }
+      assert.ok(fx, s.name + ' has a Fixed-price sheet');
+      const wbTotal = EW.compute(s.input).summary.total;
+      const noMeters = sb2._pricingComputeTotals(T[k], est, 'p').grand;
+      assert.strictEqual(wbTotal, noMeters, 'the workbook input holds no meter parts or hours ' + s.name);
+      let lines = 0;
+      for (let r = 4; r <= 6; r++) {
+        assert.strictEqual(fx.getCell('C' + r).value, 1);
+        assert.strictEqual(fx.getCell('D' + r).value, 5000);
+        assert.strictEqual(fx.getCell('E' + r).value, 5000);
+        lines++;
+      }
+      assert.strictEqual(lines, 3);
+      assert.strictEqual(fx.getCell('E8').value.result, 15000, 'fixed section total');
+      assert.strictEqual(fx.getCell('E9').value.result, wbTotal, 'workbook total');
+      assert.strictEqual(fx.getCell('E10').value.result, wbTotal + 15000, 'grand total');
+      assert.strictEqual(fx.getCell('E10').value.result, foot2[k], 'sheet grand total == on-screen tier total ' + s.name);
+      assert.ok(/Dash'!N36$/.test(fx.getCell('E9').value.formula));
+    }
+    ok('Fixed-price sheet: 3 lines at 5000, total 15000, grand = workbook + 15000 = on-screen tier total (Recommended, Full Scope); Compliance has none');
+  }
+
   // 5. template untouched
   assert.strictEqual(sha(), before);
   ok('template file unchanged on disk');
