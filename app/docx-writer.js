@@ -78,6 +78,8 @@ var _DOCX_MIN_SIZE_HALFPT = 20;
 function _docxRun(opts) {
   opts = opts || {};
   var font = opts.font || 'Arial';
+  // Arial has no check mark: Word shows a broken glyph. A run that is only check marks takes a font that has them.
+  if (!opts.font && /^[✓✔]+$/.test(String(opts.text != null ? opts.text : '').trim())) font = 'Segoe UI Symbol';
   var sizeHalfPt = opts.sizeHalfPt != null ? opts.sizeHalfPt : 21;
   // 10pt floor (spec baseline, Matt-authorized 2026-07-31: "you do realize the Audit Report has
   // text as small as 7.5pt?" -- client documents are print-designed for 8.5x11 and NOTHING may
@@ -279,7 +281,13 @@ function _docxTableCell(opts) {
 
   var content;
   if (Array.isArray(opts.paragraphs)) {
-    content = opts.paragraphs.join('');
+    var _paras = opts.paragraphs;
+    // A report table cell: the cell padding is the gap under the last paragraph (the PDF has no extra space there).
+    if (opts.trimLastAfter && _paras.length && /^<w:p>/.test(_paras[_paras.length - 1])) {
+      _paras = _paras.slice();
+      _paras[_paras.length - 1] = _paras[_paras.length - 1].replace(/^(<w:p><w:pPr>(?:(?!<\/w:pPr>).)*?<w:spacing[^>]*?) w:after="\d+"/, '$1 w:after="0"');
+    }
+    content = _paras.join('');
   } else {
     content = _docxParagraph({
       text: opts.text,
@@ -2262,7 +2270,9 @@ function _docxTranslateTable(tableEl, ctx) {
   var colCount = colgroupCount || _docxModalColCount(rowSpanSums);
   if (!colCount) return '';
 
-  var colWidths = _docxDeriveColWidths(tableEl, colCount);
+  // A table inside a cell has the width of that cell (ctx._cellInnerTwips), not the page text width.
+  var _nestW = ctx && ctx._cellInnerTwips > 0 ? ctx._cellInnerTwips : 0;
+  var colWidths = _docxDeriveColWidths(tableEl, colCount, _nestW || undefined);
   // Report tables (stamped from the live page): fixed widths that keep every word whole.
   var _isReportTable = !!tableEl.getAttribute('data-dx-border');
   if (_isReportTable) {
@@ -2472,6 +2482,12 @@ function _docxTranslateTable(tableEl, ctx) {
           // today's behavior exactly.
           var _cellExplicitAlign = (cell.style && cell.style.textAlign) || '';
           var _priorCellAlign = ctx ? ctx._flexCellAlign : undefined;
+          var _priorCellInner = ctx ? ctx._cellInnerTwips : undefined;
+          if (ctx) {
+            var _cm = _docxCellMargins(cell);
+            var _cmSide = _cm ? _cm.left + _cm.right : _hasStamp ? 2 * _DOCX_REPORT_CELL_SIDE_TWIPS : 0;
+            ctx._cellInnerTwips = Math.max(600, widthTwips - _cmSide);
+          }
           if (_cellExplicitAlign && ctx) ctx._flexCellAlign = _cellExplicitAlign;
           Array.prototype.forEach.call(cell.childNodes, function (child) {
             if (child.nodeType === 1 && _hasStamp && _DOCX_INLINE_TAGS[child.tagName] && child.tagName !== 'BR') {
@@ -2495,6 +2511,7 @@ function _docxTranslateTable(tableEl, ctx) {
             }
           });
           if (_cellExplicitAlign && ctx) ctx._flexCellAlign = _priorCellAlign;
+          if (ctx) ctx._cellInnerTwips = _priorCellInner;
           if (!cellParagraphs.length) {
             cellParagraphs = [
               _docxParagraph({ runs: [_docxRun({ text: '', bold: isHeaderCell })], align: align, spacingAfter: 0 }),
@@ -2527,6 +2544,7 @@ function _docxTranslateTable(tableEl, ctx) {
             vMerge: rowSpanAttr > 1 ? 'restart' : undefined,
             shade: cellShade || undefined,
             margins: _docxCellMargins(cell) || undefined,
+            trimLastAfter: _hasStamp,
           }),
         );
         if (rowSpanAttr > 1) {
@@ -2859,6 +2877,14 @@ function _docxParagraphSpacingAfter(el, ctx, dflt) {
   // A table cell's picture line (a score bar and its percentage) has no space after it: the cell padding is the gap.
   // 12pt after every such line made each row of the readiness table about 12pt taller in Word than in the PDF.
   if (el.closest && el.querySelector && el.querySelector('img') && el.closest('td,th')) return 0;
+  // A card of a report table that sits inside another table's cell (the building facts beside the photo): the space
+  // the page shows between its lines (margin-bottom, px), not the 4 pt body default.
+  if (el.closest && el.getAttribute && el.getAttribute('data-dx-mb') != null) {
+    var _cardTd = el.closest('td,th');
+    var _cardTbl = _cardTd && _cardTd.closest('table');
+    if (_cardTbl && _cardTbl.getAttribute('data-dx-border') && _cardTbl.parentElement && _cardTbl.parentElement.closest('td,th'))
+      return Math.max(0, Math.round(parseFloat(el.getAttribute('data-dx-mb')) * 15)) || 0;
+  }
   if (!ctx || !ctx._flexStamped) return dflt;
   var mb = parseFloat(el.getAttribute && el.getAttribute('data-dx-mb'));
   return mb >= 0 ? Math.round(mb * 15) : 0;
