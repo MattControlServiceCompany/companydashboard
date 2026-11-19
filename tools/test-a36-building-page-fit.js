@@ -20,7 +20,7 @@ vm.runInContext(slice('function _a36AuditFitHead', 'function _a36AuditBuildingTo
 vm.runInContext(slice('var A36_AUDIT_PHOTO_SCALE =', '// The first sentence of a text'), sb);
 const pag = vm.runInContext('_a36DetPaginate', sb);
 const fit = vm.runInContext('_a36AuditFitHead', sb);
-const C = vm.runInContext('({ scale: A36_AUDIT_PHOTO_SCALE, step: A36_AUDIT_PHOTO_STEP, minF: A36_AUDIT_PHOTO_MIN_FACTOR, last: A36_AUDIT_MIN_LAST_ROWS })', sb);
+const C = vm.runInContext('({ scale: A36_AUDIT_PHOTO_SCALE, last: A36_AUDIT_MIN_LAST_ROWS })', sb);
 
 let failed = 0;
 const ok = (c, m) => {
@@ -28,15 +28,20 @@ const ok = (c, m) => {
   if (!c) failed++;
 };
 
+// (Matt 2026-11-19) The photo is never shrunk; the rings are always a row below it; the fit steps are: tight facts, the rings one step smaller.
+ok(!/A36_AUDIT_PHOTO_STEP|A36_AUDIT_PHOTO_MIN_FACTOR|A36_AUDIT_PHOTO_SCALE_SMALL/.test(src), 'no photo-shrink constants are left');
+ok(/ringsTok\(72, true\)/.test(src) && /ringsTok\(64, true\)/.test(src) && !/ringsTok\((5|4)\d, true\)/.test(src), 'the fit steps use rings 72 and 64 only (no ring below 64); the table rows get tighter first');
+ok(!/photoTok = function \(scale, tight, beside\)|mode 'beside'/.test(src), 'the beside layout (rings next to the photo) is gone');
+
 const BUDGET = 900;
-const PHOTO_H = 336;
-// A building page like the real one: band (50), photo row (the photo, but never under 150 px: the facts beside it), rings (150), table rows (30 each).
+// A building page like the real one: band (50), photo and facts (214, full size), rings (150; 130 at the smaller step), table rows (30 each).
 function build(nRows) {
   const tokens = [{ type: 'block', html: 'band', estH: 50, keepNext: true }];
-  const photoTok = (scale) => ({ type: 'block', html: 'photo', scale, estH: Math.max(150, Math.round(PHOTO_H * scale)) + 4, keepNext: true });
   const headAt = tokens.length;
-  tokens.push(photoTok(C.scale));
-  tokens.push({ type: 'block', html: 'rings', estH: 150, keepNext: true });
+  const photo = { type: 'block', html: 'photo', estH: 214, keepNext: true };
+  const rings = (h) => ({ type: 'block', html: 'rings', estH: h, keepNext: true });
+  tokens.push(photo);
+  tokens.push(rings(150));
   const tbl = { open: '<table>', theadH: 36, title: null, pageChunks: [], first: null };
   const rows = [];
   for (let i = 0; i < nRows; i++) rows.push({ type: 'row', html: i === nRows - 1 ? 'TOTAL' : 'row' + i, estH: 30, tbl });
@@ -45,43 +50,35 @@ function build(nRows) {
     t.keepNext = i < rows.length - 1;
     tokens.push(t);
   });
-  const steps = [];
-  for (let sc = C.scale - C.step; sc > C.scale * C.minF - 0.001; sc -= C.step) {
-    steps.push(((s) => () => [photoTok(s), tokens[headAt + 1]])(sc));
-  }
+  const steps = [() => [photo, rings(140)], () => [photo, rings(130)]];
   const fitted = fit(tokens, headAt, 2, steps, BUDGET);
   if (!fitted) {
     rows.forEach((t) => (t.keepNext = false));
     tbl.minLastRows = C.last;
   }
-  return { tokens, fitted, tbl, rows };
+  return { tokens, fitted, tbl, rows, photo };
 }
-const photoScale = (tokens) => tokens.filter((t) => t.html === 'photo')[0].scale;
+const ringsH = (tokens) => tokens.filter((t) => t.html === 'rings')[0].estH;
 const ownRows = (chunk, tbl) => chunk.filter((t) => t.tbl === tbl);
 
-// Costs: band 50 + photo (336 * 0.62 + 4 = 212) + rings 150 = 412; table = 36 + 10 + 30 * rows. 900 - 412 - 46 = 442 -> 14 rows fit at the full photo.
+// Costs: band 50 + photo 214 + rings 150 = 414; table = 36 + 10 + 30 * rows. 900 - 414 - 46 = 440 -> 14 rows fit.
 let r = build(14);
 let chunks = pag(r.tokens, BUDGET);
-ok(chunks.length === 1 && r.fitted && Math.abs(photoScale(r.tokens) - C.scale) < 1e-9, 'a table that fits keeps its page and the full photo scale (' + photoScale(r.tokens) + ')');
+ok(chunks.length === 1 && r.fitted && ringsH(r.tokens) === 150, 'a table that fits keeps its page and the full rings');
 
-// 2 rows too many (16 rows = 60 px over): the photo gets smaller until it fits, on one page.
-r = build(16);
+// 16 rows (60 px over): the rings get one step smaller (130 = 20 px less) and the photo stays the same: still 40 over, so it runs on. 15 rows (30 over) fits.
+r = build(15);
 chunks = pag(r.tokens, BUDGET);
-const sc2 = photoScale(r.tokens);
-ok(chunks.length === 1 && r.fitted, 'a table 2 rows too long is fitted on one page by a smaller photo (scale ' + sc2.toFixed(2) + ')');
-ok(sc2 < C.scale && sc2 >= C.scale * C.minF - 0.001, 'the photo is smaller than before and not below half of its size (' + sc2.toFixed(2) + ' of ' + C.scale + ')');
-ok(Math.abs(sc2 - C.scale + C.step * Math.round((C.scale - sc2) / C.step)) < 1e-9, 'the photo shrinks in steps (' + sc2.toFixed(2) + ')');
+ok(chunks.length === 1 && r.fitted && ringsH(r.tokens) < 150 && r.photo.estH === 214, 'a table 1 row too long is fitted on one page by the smaller rings; the photo is not shrunk (rings ' + ringsH(r.tokens) + ')');
 
-// A table too long for any photo size (30 rows): it runs on; the last part holds at least 3 rows and the total; the first page has the smallest photo.
+// A table too long for any step (30 rows): it runs on; the last part holds at least 3 rows and the total.
 r = build(30);
 chunks = pag(r.tokens, BUDGET);
 const last = chunks[chunks.length - 1];
 ok(!r.fitted && chunks.length === 2, 'a table far too long runs on to a second page (' + chunks.length + ' pages)');
-ok(Math.abs(photoScale(r.tokens) - C.scale * C.minF) < 0.045 && photoScale(r.tokens) >= C.scale * C.minF - 0.001, 'the first page keeps the smallest photo (' + photoScale(r.tokens).toFixed(2) + ')');
 ok(ownRows(last, r.tbl).length >= 4 && ownRows(last, r.tbl).some((t) => t.html === 'TOTAL'), 'the continuation holds at least 3 rows and the total (' + ownRows(last, r.tbl).length + ' rows)');
-ok(chunks[0].some((t) => t.html === 'photo'), 'the photo stays on the first page');
+ok(chunks[0].some((t) => t.html === 'photo') && r.photo.estH === 214, 'the photo stays on the first page, full size');
 
-// A table that overflows by 1 row more than the smallest photo can take: without the rule the last page holds 1-2 rows; with it, 3 rows and the total.
 let worst = 99;
 let allThree = true;
 for (let n = 20; n <= 40; n++) {
@@ -95,10 +92,19 @@ for (let n = 20; n <= 40; n++) {
 }
 ok(allThree, 'for 20 to 40 rows, every continuation holds at least 3 rows and the total (smallest: ' + worst + ')');
 
-// The real building page uses the rule.
 ok(/_a36AuditFitHead\(tokens, headAt, headEnd - headAt, steps, budget\)/.test(src) && /minLastRows = A36_AUDIT_MIN_LAST_ROWS/.test(src), 'the building page calls the fit rule and sets the minimum rows of the last part');
 ok(/var minRows = tbl\.minLastRows \|\| A36_DET_MIN_LAST_ROWS/.test(src), 'the move of rows to the last part honors the minimum of the table');
+ok(/_a36AuditBuildingBudget\(\)\)/.test(src) && /var A36_DET_PAGE_SAFETY_H = 12;/.test(src), 'only the building pages get the budget down to the footer wave; the safety margin of other pages is unchanged');
 ok(!/RPT_MIN_TEXT_PX\s*=\s*[0-9]/.test(slice('function _a36AuditFitHead', 'function _a36AuditBuildingTokens')), 'the fit rule does not touch the text size');
+
+// (Matt 2026-11-19) every building page shows 3 rings; a score that does not exist is an empty ring with N/A.
+const sb3 = { rptCount: (v) => v };
+vm.createContext(sb3);
+vm.runInContext(slice('function _a36GaugeSVG', '// A finding label in a sentence') .replace(/\/\/ A finding label[\s\S]*$/, ''), sb3);
+const rings3 = vm.runInContext('_a36ScoreRingsHtml', sb3);
+const html3 = rings3({ composite: 100, pointPct: 100, seqPct: null }, 72, () => 'green', false);
+ok((html3.match(/<svg /g) || []).length === 3 && /N\/A/.test(html3) && /Sequence Readiness/.test(html3), 'a missing score is an N/A ring with its label (3 rings)');
+ok(rings3({ composite: null, pointPct: null, seqPct: null }, 72, () => 'green', false) === '', 'no score at all: no ring row');
 
 // (Matt 2026-11-19) One bullet for the missing points of the same units; repeated-cause lines are left out; other opportunities stay.
 const sb2 = { _a36NeedsStar: (f) => !!f.star };
