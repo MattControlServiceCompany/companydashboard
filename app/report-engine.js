@@ -22717,7 +22717,7 @@ function _rptA36MonthSequenceGroups(items) {
       var r0 = (item.rows || [])[0] || {};
       var lbl = _rptA36PlainRowLabel(r0) || 'Improvement';
       if (!otherMap[lbl]) {
-        otherMap[lbl] = { b: {}, seq: 0, sen: 0, chk: 0 };
+        otherMap[lbl] = { b: {}, seq: 0, sen: 0, chk: 0, key: r0.isOfflineCheck ? 'offlineCheck' : r0.isSensorInvestigation ? 'sensorCheck' : _rptA36ScopeRowKey(r0) };
         otherOrder.push(lbl);
       }
       otherMap[lbl].b[bName] = true;
@@ -22738,7 +22738,7 @@ function _rptA36MonthSequenceGroups(items) {
       if (!bySeq[sd.key]) return;
       if (_obvMonthKeys[sd.key]) {
         if (!_obvGroup) {
-          _obvGroup = { label: _rptA36ScopeFirstUpper(A36_SCOPE_PROGRAM.demandCtrl.plain), _bMap: {}, seqCount: 0, sensorCount: 0 };
+          _obvGroup = { key: 'demandCtrl', label: _rptA36ScopeFirstUpper(A36_SCOPE_PROGRAM.demandCtrl.plain), _bMap: {}, seqCount: 0, sensorCount: 0 };
           groups.push(_obvGroup);
         }
         Object.keys(bySeq[sd.key].b).forEach(function (b) {
@@ -22751,6 +22751,7 @@ function _rptA36MonthSequenceGroups(items) {
         return;
       }
       groups.push({
+        key: sd.key,
         label: A36_SCOPE_PROGRAM[sd.key] ? _rptA36ScopeFirstUpper(A36_SCOPE_PROGRAM[sd.key].plain) : _rptA36PlainName(_a36SeqDisplayLabel(sd)),
         buildings: Object.keys(bySeq[sd.key].b),
         seqCount: bySeq[sd.key].seq,
@@ -22764,6 +22765,7 @@ function _rptA36MonthSequenceGroups(items) {
   }
   otherOrder.forEach(function (lbl) {
     groups.push({
+      key: otherMap[lbl].key,
       label: lbl,
       buildings: Object.keys(otherMap[lbl].b),
       seqCount: otherMap[lbl].seq,
@@ -22796,39 +22798,41 @@ function _rptA36PhaseUnits(rows) {
 }
 
 /**
- * _rptA36RecommendedStepPlan(d) - the ONE plan of the Recommended work: Step 1 checks the equipment, then one
- * step per group of timeline phases (_pricingProposalTermAndFuture, at most 4 work steps). EVERY priced
- * Recommended row is in exactly one step, so the step table, the Order of Work table and the quantities in the
- * Install and Programming Detail all add up to the same totals. Each group is a control sequence type (or a
- * sensor check) with its own count; isNew marks the step where the type first appears.
- * Returns null when no priced timeline exists. Cached on d.
+ * _rptA36RecommendedStepPlan(d) - the ONE plan of the Recommended work, in steps by KIND of work (Matt 2026-11-19: "this doesn't make
+ * sense to me ... What even are the 5 steps?"; before, the steps were the payback-ranked timeline cut into 4 equal parts, so one kind of
+ * work started in one step and "finished" in another). The order: 1 check the equipment (with the offline unit and sensor checks);
+ * 2 building power meters (before the control changes, so they measure before and after); 3 remove the manual overrides (quick, no
+ * devices); 4 air handler and plant sequences with their devices; 5 terminal units; 6 lighting. A kind with no work has no step (Step 1
+ * always stays). EVERY priced Recommended row is in exactly one step. Returns null when no priced timeline exists. Cached on d.
  */
-var _RPT_A36_MAX_WORK_STEPS = 4;
+var _RPT_A36_ORDER_KINDS = ['check', 'meter', 'override', 'plant', 'terminal', 'lighting'];
+function _rptA36OrderKind(key) {
+  if (key === 'offlineCheck' || key === 'sensorCheck' || key === 'equipmentCheck') return 'check';
+  if (key === 'powerMeter') return 'meter';
+  if (A36_SCOPE_OVERRIDE_PLAIN[key]) return 'override';
+  if (key === 'terminalStandard' || /^vav_/.test(key || '')) return 'terminal';
+  if (key === 'lightingPhotocell' || key === 'lightingOccupancy') return 'lighting';
+  return 'plant';
+}
 function _rptA36RecommendedStepPlan(d) {
   if (d._a36StepPlan !== undefined) return d._a36StepPlan;
   var plan = null;
   var td = _pricingProposalTermAndFuture(d.project.id);
   var tl = td.tl;
   if (tl && tl.phases && tl.phases.length) {
-    var P = tl.phases.length;
-    var W = Math.min(P, _RPT_A36_MAX_WORK_STEPS);
-    var steps = [{ groups: [], rows: [] }];
-    var seen = {};
     var allRows = [];
-    for (var k = 0; k < W; k++) {
-      var lo = Math.floor((k * P) / W);
-      var hi = Math.floor(((k + 1) * P) / W);
-      var rows = [];
-      for (var i = lo; i < hi; i++) rows = rows.concat(tl.phases[i].rows || []);
-      allRows = allRows.concat(rows);
-      var groups = _rptA36MonthSequenceGroups(_rptA36PhaseUnits(rows));
-      groups.forEach(function (g) {
-        g.isNew = !seen[g.label];
-        seen[g.label] = true;
+    tl.phases.forEach(function (ph) {
+      allRows = allRows.concat(ph.rows || []);
+    });
+    var groups = _rptA36MonthSequenceGroups(_rptA36PhaseUnits(allRows));
+    var steps = [];
+    _RPT_A36_ORDER_KINDS.forEach(function (kind) {
+      var gs = groups.filter(function (g) {
+        return _rptA36OrderKind(g.key) === kind;
       });
-      steps.push({ groups: groups, rows: rows });
-    }
-    plan = { tl: tl, steps: steps, allRows: allRows, stepCount: 1 + W };
+      if (gs.length || kind === 'check') steps.push({ kind: kind, groups: gs });
+    });
+    plan = { tl: tl, steps: steps, allRows: allRows, stepCount: steps.length };
   }
   d._a36StepPlan = plan;
   return plan;
@@ -24435,9 +24439,8 @@ function _rptA36TierDetailPanelHTML(key, tt, summaryData, estimateState, wantIte
  * which is unpaginated and keeps its "Facilities Included" column.
  */
 function _rptA36RecommendedTimelineHTML(d) {
-  // Round 3 (Manager 2026-11-14): this table reads the SAME plan as the steps table on the Recommended Work page
-  // (_rptA36RecommendedStepPlan). Every priced Recommended sequence is in exactly one step, so it is listed here
-  // exactly once, at the step where it first appears. No "Later" row: nothing priced is left out of the steps.
+  // The one reader of _rptA36RecommendedStepPlan: one row per kind of work, each kind listed once (Matt 2026-11-19).
+  // No "Later" row: nothing priced is left out of the steps.
   var plan = _rptA36RecommendedStepPlan(d);
   if (!plan) return '';
 
@@ -24448,31 +24451,29 @@ function _rptA36RecommendedTimelineHTML(d) {
     'padding:3px 8px;font-size:9px;color:var(--rpt-page-text);border:1px solid var(--rpt-border);vertical-align:top';
 
   var rowsHTML = '';
+  // A name in lower case inside a sentence, except a name that starts with a capital abbreviation (CO2).
+  var lower = function (l) {
+    return /^[A-Z][a-z]/.test(l) ? l.charAt(0).toLowerCase() + l.slice(1) : l;
+  };
+  var HEAD = { plant: 'Air handler, hot water and chilled water sequences' };
   plan.steps.forEach(function (st, idx) {
+    var names = st.groups.map(function (g) {
+      return lower(g.label);
+    });
     var text;
-    if (idx === 0) {
-      text = _rptA36Step1Text();
-    } else {
-      // The row names every group of the step, as the step table does: the work it starts, the work that began earlier and
-      // ends here ("finish"), and the work that began earlier and goes on in a later step ("continue").
-      var laterLabels = {};
-      plan.steps.slice(idx + 1).forEach(function (ls) {
-        ls.groups.forEach(function (g) {
-          laterLabels[g.label] = true;
-        });
+    if (st.kind === 'check') {
+      text = _rptA36Step1Text() + (names.length ? ' It also covers: ' + _a36DetJoin(names) + '.' : '');
+    } else if (st.kind === 'meter') {
+      text = 'Building power meters: installed before the control changes, so they measure the energy use before and after.';
+    } else if (st.kind === 'override') {
+      var sp = st.groups.map(function (g) {
+        return A36_SCOPE_OVERRIDE_PLAIN[g.key].replace(/ setpoint$/, '');
       });
-      var lower = function (l) {
-        return l.charAt(0).toLowerCase() + l.slice(1);
-      };
-      var newNames = st.groups.filter(function (g) { return g.isNew; }).map(function (g, gi) { return gi > 0 ? lower(g.label) : g.label; });
-      var finNames = st.groups.filter(function (g) { return !g.isNew && !laterLabels[g.label]; }).map(function (g) { return lower(g.label); });
-      var contNames = st.groups.filter(function (g) { return !g.isNew && laterLabels[g.label]; }).map(function (g) { return lower(g.label); });
-      var parts = [];
-      if (newNames.length) parts.push(_a36DetJoin(newNames));
-      if (finNames.length) parts.push('finish ' + _a36DetJoin(finNames));
-      if (contNames.length) parts.push('continue ' + _a36DetJoin(contNames));
-      text = parts.length ? parts.join('; ') + '.' : 'Finish the work of the earlier steps.';
-      text = text.charAt(0).toUpperCase() + text.slice(1);
+      text = 'Remove the manual overrides on the ' + _a36DetJoin(sp) + (sp.length === 1 ? ' setpoint.' : ' setpoints.');
+    } else {
+      // The terminal unit and lighting names already say what they are (no head word that repeats the name).
+      var list = _a36DetJoin(names) + '.';
+      text = HEAD[st.kind] ? HEAD[st.kind] + ': ' + list : _rptA36ScopeFirstUpper(list);
     }
     rowsHTML +=
       '<tr><td style="' + tdStyle + ';font-weight:700">Step ' + (idx + 1) + '</td>' +

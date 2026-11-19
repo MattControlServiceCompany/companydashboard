@@ -109,6 +109,7 @@ const ok = (c, m) => {
     ok(!/What the names mean/.test(res.all), 'no "What the names mean" block');
     ok(/Equipment check: Control Service Company confirms each unit works/.test(res.all), 'Step 1 of the Order of Work is the equipment check by Control Service Company (Matt 2026-11-19)');
     ok(!/Check the equipment and confirm|Reset zone setpoints/.test(res.all), 'no client-work wording for Step 1');
+    ok(!/; finish |; continue |Finish the work of the earlier steps|cO2/.test(res.all), 'Order of Work: one row per kind of work, no finish/continue rows, CO2 keeps its capitals (Matt 2026-11-19)');
     ok(errs.length === 0, 'no page errors: ' + errs.slice(0, 3).join(' | '));
   } finally {
     await ctx.close();
