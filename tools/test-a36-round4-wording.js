@@ -76,7 +76,7 @@ check(!/bits\[0\] \+ ' for '/.test(RE) && /function some\(keys, noun\)/.test(RE)
 check(!/Alarms and reports that show/.test(RE) && !/'Better comfort and efficiency from '/.test(RE), 'P1. Recommended "What you get" is removed: no alarm or report claim');
 
 // P2
-check(/parts\.push\(_a36DetJoin\(newNames\)\)/.test(RE) && /replace\(\/\^Check \/, 'check '\)/.test(RE), 'P2. Order of Work joins with "and" and lower-cases a later "Check"');
+check(/parts\.push\(_a36DetJoin\(newNames\)\)/.test(RE) && /l\.charAt\(0\)\.toLowerCase\(\) \+ l\.slice\(1\)/.test(RE), 'P2. Order of Work joins with "and" and lower-cases the first letter of a later name (Matt 2026-11-19: the names are the A36_SCOPE_PROGRAM names)');
 const names = ['Duct Static Pressure Reset', 'Check a zone air temperature sensor that reads wrong', 'Check a discharge airflow sensor that reads wrong'].map((l, gi) => (gi > 0 ? l.replace(/^Check /, 'check ') : l));
 check(sb._a36DetJoin(names) === 'Duct Static Pressure Reset, check a zone air temperature sensor that reads wrong and check a discharge airflow sensor that reads wrong', 'P2. joined text reads as one sentence');
 

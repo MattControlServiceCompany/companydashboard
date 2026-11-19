@@ -3,7 +3,7 @@
 //   1. page 1: the Cost Summary table ends at least 24px above the footer zone;
 //   2. no page ends short before the last page (each page except the last is filled to 70 % of the body or more);
 //   3. Full Scope includes the room CO2 work: its total on page 1 and on the Cost Estimate page is the one number
-//      _rptA36TierCostData returns, there is no Optional row and no optional block, and the sentence says what is included;
+//      _rptA36TierCostData returns, it has no optional line (Matt 2026-11-19: Recommended and Compliance have an optional room CO2 line), and the sentence says what is included;
 //   4. (Matt 2026-11-19) the Recommended Scope of Work replaces the step table, "Why This Approach" and "What you get:"; there is no "What the names mean" block; Step 1 is the company's work.
 // Run: CH_TMP_ROOT=<scratch> node tools/test-proposal-layout-2026-11-18.js   (exit 0 = all pass)
 'use strict';
@@ -98,14 +98,16 @@ const ok = (c, m) => {
     ok(res.cost.roomCo2 && res.cost.roomCo2.qty > 0, 'the synthetic project has room CO2 sensors in Full Scope: ' + JSON.stringify(res.cost.roomCo2));
     ok(fs && res.pages[0].text.indexOf(usd(fs.total)) >= 0, 'page 1 prints the Full Scope total from _rptA36TierCostData: ' + (fs && usd(fs.total)));
     ok(fs && res.all.split(usd(fs.total)).length - 1 >= 2, 'the Cost Estimate page prints the same Full Scope total');
-    ok(!/Optional/i.test(res.all), 'no "Optional" row or block in the proposal');
+    // (Matt 2026-11-19) Recommended and Compliance can add the room CO2 sensors as an optional scope (Matt 2026-11-13); Full Scope never has an optional line.
+    const optN = Object.keys(res.cost.optionalCo2 || {}).length;
+    ok(!res.cost.optionalCo2['full-scope'] && (res.all.match(/Optional: \d+ room CO2 sensors?( with occupancy-based ventilation| \(sensors only\))?: \+\$[\d,]+/g) || []).length === 3 * optN, 'the optional room CO2 line is on the Cost Summary and the Cost Estimate for each option that has it (' + optN + ' options), never for Full Scope (Matt 2026-11-19)');
     ok(!/The options below do not include/.test(res.all) && /Full Scope includes [\d,]+ carbon dioxide \(CO2\) sensors? in rooms/.test(res.all.replace(/\s+/g, ' ')), 'one plain sentence says Full Scope includes the room CO2 sensors');
     ok(res.pages[0].text.indexOf('optional, priced separately') < 0, 'no gap line says "(optional, priced separately)"');
     // (Matt 2026-11-19) "Recommended Work" + "Why This Approach" + the step table are one section: "Recommended Scope of Work".
     ok(/Compliance Work/.test(res.all) && /Full Scope Work/.test(res.all) && /Recommended Scope of Work/.test(res.all) && !/Recommended Work/.test(res.all), 'scope headings: Recommended Scope of Work, Compliance Work, Full Scope Work');
     ok(!/Why This Approach|What you get:/.test(res.all), 'no "Why This Approach" and no "What you get:" (Matt 2026-11-19)');
     ok(!/What the names mean/.test(res.all), 'no "What the names mean" block');
-    ok(/Control Service Company checks the equipment/.test(res.all), 'Step 1 says Control Service Company does the work');
+    ok(/Equipment check: Control Service Company confirms each unit works/.test(res.all), 'Step 1 of the Order of Work is the equipment check by Control Service Company (Matt 2026-11-19)');
     ok(!/Check the equipment and confirm|Reset zone setpoints/.test(res.all), 'no client-work wording for Step 1');
     ok(errs.length === 0, 'no page errors: ' + errs.slice(0, 3).join(' | '));
   } finally {

@@ -70,6 +70,9 @@ const reFns = [
   '_rptMonthlyAllowance',
   '_rptMonthlyAllowanceFmt',
   '_rptA36PlainName',
+  '_rptA36ScopeFirstUpper',
+  '_rptA36ScopeKeyName',
+  '_rptA36ScopeRowKey',
   '_rptA36PlainRowLabel',
   '_rptA36TierDetailAggByPhase',
   '_rptA36HardwareCategoryAgg',
@@ -85,7 +88,7 @@ const reFns = [
   'rptPageContractProjection',
 ];
 vm.runInContext(
-  [pre, rd('lib/formatting.js'), rd('computations/csc.js'), rd('app/report-printed.js')]
+  [pre, rd('lib/formatting.js'), rd('computations/csc.js'), rd('app/report-printed.js'), (function(){var t=rd(REP);var a=t.indexOf('var A36_SCOPE_PROGRAM');var b=t.indexOf('/**',t.indexOf('function _rptA36ScopeRowKey'));var c=t.indexOf('var A36_DET_OVERRIDE = [');var d=t.indexOf('var A36_DET_OVERRIDE_KEYS');return t.slice(a,b)+'\n'+t.slice(c,d);})()]
     .concat(['_pricingMonthlyAllowanceAmount', '_pricingRowOpportunity', '_pricingOpportunityLines', '_hwRowKeyMatchesBlocking'].map((f) => loadFn('app/pricing-estimator.js', f)))
     .concat([loadFn('app/audit-estimate.js', '_auditEstShareLines')])
     .concat(reFns.map((f) => loadFn(REP, f)))
