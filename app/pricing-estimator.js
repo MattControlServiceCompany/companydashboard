@@ -4618,7 +4618,7 @@ var PRICING_OPTION_SAVINGS_ESTIMATE = {
     },
     // A released override gives the saving of the sequence it blocks (the same shares as that sequence, or less).
     satOverride: { releases: 'ahu_sat_reset', cover: null, uses: { cool: [0.03, 0.05, 0.08], heat: [0.02, 0.04, 0.06] }, src: ['judgment', 'judgment', 'judgment'] },
-    spOverride: { releases: 'ahu_dsp_reset', cover: null, uses: { fan: [0.15, 0.25, 0.4] }, src: ['judgment', 'OSTI 17429313 field median, duct static pressure reset only 25%', 'judgment'] },
+    spOverride: { releases: 'ahu_dsp_reset', cover: null, needsVav: true, uses: { fan: [0.15, 0.25, 0.4] }, src: ['judgment', 'OSTI 17429313 field median, duct static pressure reset only 25%', 'judgment'] },
     hwOverride: { releases: 'hwp_supply_reset', cover: null, uses: { heat: [0.01, 0.03, 0.06] }, src: ['judgment', 'judgment', 'judgment'] },
     hwDpOverride: { releases: 'hwp_pump_dp_reset', cover: null, uses: { pump: [0.05, 0.1, 0.2] }, src: ['judgment', 'judgment', 'judgment'] },
     chwDpOverride: { releases: 'chwp_pump_dp_reset', cover: null, uses: { pump: [0.05, 0.1, 0.2] }, src: ['judgment', 'judgment', 'judgment'] },
@@ -4657,20 +4657,21 @@ function _pricingOptionItemFractions(key, qty, counts) {
   }
   var def = K.fractions[key];
   if (!def) return null;
+  // Work that needs VAV terminal units in a building where the Equipment Matrix lists none: no estimate (unknown), never a zero saving
+  // (2026-11-19: a zero saving made the payback 'over the limit' and removed the work from Recommended).
+  if (def.needsVav && !counts.vav) return null;
   var cover = 1;
   if (def.cover === 'ahu') cover = Math.min(1, qty / counts.ahu);
   else if (def.cover === 'box') cover = Math.min(1, qty / counts.box);
   var uses = [];
-  if (!(def.needsVav && !counts.vav)) {
-    Object.keys(def.uses).forEach(function (eu) {
-      uses.push({
-        use: eu,
-        f: def.uses[eu].map(function (v) {
-          return v * cover;
-        }),
-      });
+  Object.keys(def.uses).forEach(function (eu) {
+    uses.push({
+      use: eu,
+      f: def.uses[eu].map(function (v) {
+        return v * cover;
+      }),
     });
-  }
+  });
   return { uses: uses, fixed: null };
 }
 // The energy of each end use of one building: kWh and therms a year.

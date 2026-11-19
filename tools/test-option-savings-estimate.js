@@ -105,6 +105,19 @@ const sum = (rs) => rs.reduce((s, r) => s + r.lineTotal, 0);
   assert.strictEqual(sb._pricingOptionEstimateText(e, 'recommended'), '');
   ok('no utility data: no display, no sentence, nothing over the limit');
 }
+// 2b. 2026-11-19: work that needs VAV terminal units in a building with none has no estimate (kept, unknown), never a zero saving that removes it
+{
+  const noVav = { ahu: 2, vav: 0, hwp: 1 };
+  const sb = make({ 'Test Hall': use }, noVav);
+  const rs = [seq('s_dsp', 'ahu_dsp_reset', 2, 1000), opp('o_sp', 'spOverride', 1, 200)];
+  const e = sb._pricingOptionSavingsEstimate('p', rs, est, { grand: 1200 });
+  const by = {};
+  e.items.forEach((i) => (by[i.key] = i));
+  assert.strictEqual(by.ahu_dsp_reset.hasData, false, 'duct static pressure reset without VAV boxes: no estimate');
+  assert.strictEqual(by.ahu_dsp_reset.over, false, 'no estimate is never over the limit');
+  assert.ok(e.items.every((i) => !i.over), 'nothing removed');
+  ok('no VAV terminal units: duct static pressure reset and its override have no estimate and stay');
+}
 // 3. a gas-free building uses electric heating and the electric rate
 {
   const sb = make({ 'Test Hall': { label: '2025', sqft: 50000, kwh: 100000, electricCost: 10000, therms: 0, gasCost: 0, hasGas: false } }, counts);
