@@ -2508,6 +2508,8 @@ async function siteResetAllMeterTableSettings() {
    site-ui.js delegates to this array and should NOT maintain its own copy.
 */
 var RELEASE_NOTES = [
+  { v: 'v2026.11.19.369', date: '2026-11-19', title: 'Service Proposal: room CO2 sensors only where they pay',
+    items: [ { type: 'improved', text: 'Service Proposal: the optional room CO2 sensors cover only meeting and program rooms, with estimated savings and payback. Restrooms, custodial and telecom rooms no longer count as rooms that need a CO2 sensor.' } ] },
   { v: 'v2026.11.19.368', date: '2026-11-19', title: 'Service Proposal: one cost per option',
     items: [ { type: 'improved', text: 'Service Proposal: the Cost Estimate shows one estimated cost per option, with no split into devices and programming.' } ] },
   { v: 'v2026.11.19.367', date: '2026-11-19', title: 'Service Proposal: clear scope of work',
