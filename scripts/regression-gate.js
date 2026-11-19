@@ -450,6 +450,13 @@ async function main() {
   const RUN_DIR = path.join(TMP_BASE, RUN_TAG);
   fs.mkdirSync(RUN_DIR, { recursive: true });
   process.env.CH_TMP_ROOT = RUN_DIR;
+  // CDN cache: ONE disk cache for all jobs (tools/gate-cdn-cache.js). Lives in the tmp root, outside the run folder, so it is kept between runs.
+  const CDN_CACHE_DIR = path.join(TMP_BASE, 'cdn-cache');
+  process.env.CH_CDN_CACHE = CDN_CACHE_DIR;
+  {
+    const pf = await require('../tools/gate-cdn-cache.js').prefetch(path.join(REPO_ROOT, 'energy-department.html'));
+    console.log('cdn cache: ' + pf.ready + ' files ready (' + pf.fetched + ' fetched)');
+  }
   const TMP_DIRS = [RUN_DIR];
   const tmpBefore = TMP_DIRS.map((d) => new Set(fs.readdirSync(d)));
   const work = path.join(RUN_DIR, RUN_TAG + '-work');
@@ -485,6 +492,7 @@ async function main() {
   let probe = {};
   try {
     ctx = await resolvePlaywright().chromium.launchPersistentContext(profile, { headless: true, viewport: { width: 1600, height: 1100 } });
+    await require('../tools/gate-cdn-cache.js').cdnRoute(ctx); // the gate's own browser uses the same disk cache
     const page = await ctx.newPage();
     // Never reach live Supabase/Netlify. (The app is already hard-wired to 'off' on non-netlify hosts.)
     await page.route(/\/\.netlify\/|supabase\.|netlify\.app|weatherdatadepot\./i, (r) => r.abort());
@@ -779,9 +787,9 @@ async function main() {
   console.log('job pool: ' + poolSize + ' child processes at a time');
   const runJob = (j) =>
     new Promise((resolve) => {
-      const cp = require('child_process').spawn(process.execPath, [j.f], {
+      const cp = require('child_process').spawn(process.execPath, ['--require', path.join(REPO_ROOT, 'tools', 'gate-cdn-cache.js'), j.f], {
         cwd: REPO_ROOT,
-        env: Object.assign({}, process.env, { NODE_PATH: PW_MODULES }),
+        env: Object.assign({}, process.env, { NODE_PATH: PW_MODULES, CH_CDN_CACHE: CDN_CACHE_DIR }),
         stdio: ['ignore', 'pipe', 'pipe'],
       });
       let out = '';

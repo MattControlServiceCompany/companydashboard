@@ -1,17 +1,10 @@
 // pdf-test-net.js — test-only helper for the PDF gate tests. No OCR and no repeat CDN downloads:
 //  - the OCR engine (tesseract) is blocked, so a synthetic bill never starts a slow OCR retry;
-//  - other CDN scripts (pdf.js, charts) are fetched once, then served from memory on every page load.
+//  - other CDN scripts (pdf.js, charts) come from the shared cache in tools/gate-cdn-cache.js (once per context).
+const { cdnRoute, CDN_RE } = require('./gate-cdn-cache.js');
 async function fastNet(ctx) {
-  const cache = new Map();
-  await ctx.route(/^https?:\/\/(cdn\.jsdelivr\.net|cdnjs\.cloudflare\.com)\//, async (route) => {
-    const u = route.request().url();
-    if (/tesseract/i.test(u)) return route.abort();
-    try {
-      if (!cache.has(u)) cache.set(u, await route.fetch());
-      return route.fulfill({ response: cache.get(u) });
-    } catch (e) {
-      return route.abort();
-    }
-  });
+  await cdnRoute(ctx);
+  // Registered last, so it runs first: tesseract is aborted, every other CDN file falls through to the cache route.
+  await ctx.route(CDN_RE, (route) => (/tesseract/i.test(route.request().url()) ? route.abort() : route.fallback()));
 }
 module.exports = { fastNet };
