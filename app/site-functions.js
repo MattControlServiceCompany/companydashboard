@@ -2508,6 +2508,8 @@ async function siteResetAllMeterTableSettings() {
    site-ui.js delegates to this array and should NOT maintain its own copy.
 */
 var RELEASE_NOTES = [
+  { v: 'v2026.11.19.361', date: '2026-11-19', title: 'Audit Report: building page photo and rings',
+    items: [ { type: 'improved', text: 'Audit Report: on each building page the photo is full size and the three score rings are below it. A score with no value shows as N/A. The table can use the page down to the footer.' } ] },
   { v: 'v2026.11.19.360', date: '2026-11-19', title: 'Audit Report: building pages on one page; utility charts; numbers in order',
     items: [ { type: 'improved', text: 'Audit Report: each building page fits on one page. Missing points of the same units are one bullet. The ring labels sit under the rings.' },
              { type: 'improved', text: 'Audit Report: Utility Use by Library is charts after the building pages: the 2025 ranking and the Energy Use Intensity of each library for each year. The table page and the separate end page are removed.' },
