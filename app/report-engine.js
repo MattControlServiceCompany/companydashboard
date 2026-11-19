@@ -28025,14 +28025,16 @@ var A36_DET_P_TIGHT = 'margin:0 0 4px 0;font-size:13.34px;line-height:1.4;color:
 // Impact paragraph (only when an approved text exists and only on the first finding of that point in the chapter: the text says what the
 // point does, not what is wrong with this unit). No "Missing:" or "Issue:" line: it repeated the headline (Matt 2026-11-18). The audit states
 // facts only: no Solution line (Matt 2026-11-17). impactSeen = { key: true } of the chapter (updated here).
+var A36_DET_OPP_INDENT_PX = 24; // 1/4 in at 96 px per inch
 function _a36DetFindingTok(f, impactSeen, ctx) {
   var showImpact = f.impact && !(impactSeen && impactSeen[f.key]);
   if (f.impact && impactSeen) impactSeen[f.key] = true;
   function part(lead, text) {
     return '<strong>' + lead + ':</strong> ' + _escHtml(text);
   }
+  // Matt 2026-11-19: the opportunities under the system descriptions are indented 1/4 in (24 px; data-word-indent="q" = 360 twips in Word).
   return _a36DetTok(
-    '<div style="margin:0 0 6px 0"><div style="' +
+    '<div style="margin:0 0 6px ' + A36_DET_OPP_INDENT_PX + 'px"><div data-word-indent="q" style="' +
       // Matt 2026-11-18: the numbered finding is body text, not bold.
       A36_DET_P_TIGHT +
       '">' +
@@ -28040,7 +28042,7 @@ function _a36DetFindingTok(f, impactSeen, ctx) {
       _escHtml((f.num ? _a36DetItemNo(f) + '. ' : '') + f.headline) +
       _a36StarHtml(f, ctx) +
       '</div>' +
-      (showImpact ? '<p style="' + A36_DET_P_TIGHT + '">' + part('Impact', f.impact) + '</p>' : '') +
+      (showImpact ? '<p data-word-indent="q" style="' + A36_DET_P_TIGHT + '">' + part('Impact', f.impact) + '</p>' : '') +
       '</div>',
   );
 }

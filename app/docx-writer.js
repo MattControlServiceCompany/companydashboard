@@ -1403,6 +1403,7 @@ function _docxCssColorToHex(cssColor) {
 /** data-word-indent="1"|"2"|"3" -> {indLeft, indFirstLine}, else {} (no w:ind -- body-paragraph default). */
 function _docxResolveIndentHint(value) {
   if (value == null || value === '') return {};
+  if (value === 'q') return { indLeft: 360 }; // a 1/4 in left indent, no first-line indent (Audit Report opportunities, Matt 2026-11-19)
   var left = _DOCX_INDENT_LEVELS[parseInt(value, 10)];
   if (left == null) return {};
   return { indLeft: left, indFirstLine: _DOCX_INDENT_FIRSTLINE };
