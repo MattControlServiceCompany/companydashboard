@@ -134,6 +134,7 @@ async function runScope(h, projId, selectOnlyNames) {
       buildings: d ? d.buildings.map((b) => b.name) : [],
       coverSequences: stats['Sequences to Program'],
       coverSensors: stats['Devices to Install'],
+      coverUnits: stats['Equipment Units Audited'],
     };
   });
 }
@@ -158,8 +159,10 @@ async function runScope(h, projId, selectOnlyNames) {
   console.log('\n-- Full selection (all buildings) --');
   const full = await runScope(h, projId, null);
   console.log('  ' + JSON.stringify(full));
-  assertEq(full.coverSequences, EXPECTED_FULL_SEQUENCES, 'full-selection cover Sequences to Program unchanged');
-  assertEq(full.coverSensors, EXPECTED_FULL_SENSORS, 'full-selection cover Devices to Install unchanged');
+  // Matt 2026-11-18 (9bbd483f): the cover no longer shows Sequences to Program / Devices to Install (the ASHRAE 36 Readiness
+  // page is removed); the scope guard now reads the cover's Equipment Units Audited.
+  assertEq(full.coverSequences, undefined, 'full-selection cover has no Sequences to Program stat (Matt 2026-11-18)');
+  assertEq(full.coverSensors, undefined, 'full-selection cover has no Devices to Install stat (Matt 2026-11-18)');
 
   oneBuildingName = full.buildings[0];
   if (!oneBuildingName) throw new Error('restored data has no building for the one-building check');
@@ -191,14 +194,8 @@ async function runScope(h, projId, selectOnlyNames) {
   const one = await runScope(h, projId, [oneBuildingName]);
   console.log('  ' + JSON.stringify(one));
   assertEq(one.totalBuildings, 1, 'one-building selection scopes Buildings Assessed to 1');
-  assertEq(
-    one.coverSequences,
-    expected.sequences,
-    'one-building cover Sequences to Program equals sum over that building',
-  );
-  assertEq(one.coverSensors, expected.sensors, 'one-building cover Devices to Install equals sum over that building');
-  // Regression guard: the pre-fix defect showed the exact full-portfolio number here.
-  if (one.coverSequences === EXPECTED_FULL_SEQUENCES || one.coverSensors === EXPECTED_FULL_SENSORS) {
+  // Regression guard: the pre-fix defect showed the full-portfolio number on a one-building cover.
+  if (!(one.coverUnits > 0 && full.coverUnits > one.coverUnits)) {
     failed++;
     console.log('  FAIL: one-building cover still shows a full-portfolio value -- scope bug regressed');
   } else {
