@@ -2508,6 +2508,8 @@ async function siteResetAllMeterTableSettings() {
    site-ui.js delegates to this array and should NOT maintain its own copy.
 */
 var RELEASE_NOTES = [
+  { v: 'v2026.11.19.373', date: '2026-11-19', title: 'Annual energy use and savings estimates',
+    items: [ { type: 'fixed', text: 'A building whose gas bill is one month behind its electric bill, or that buys propane by delivery, now shows its annual energy use and its estimated savings.' } ] },
   { v: 'v2026.11.19.372', date: '2026-11-19', title: 'Service Proposal: page 1 fit',
     items: [ { type: 'fixed', text: 'Service Proposal: shorter Cost Summary sentence so the page 1 table ends above the footer.' } ] },
   { v: 'v2026.11.19.371', date: '2026-11-19', title: 'Service Proposal: page 1 fit',
