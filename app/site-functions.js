@@ -2508,6 +2508,8 @@ async function siteResetAllMeterTableSettings() {
    site-ui.js delegates to this array and should NOT maintain its own copy.
 */
 var RELEASE_NOTES = [
+  { v: 'v2026.11.19.370', date: '2026-11-19', title: 'Service Proposal: estimated savings and payback',
+    items: [ { type: 'improved', text: 'Service Proposal: each option shows its estimated yearly savings and payback. Recommended holds only work with an estimated payback of 10 years or less, plus power meters, ventilation and safety items; the rest is listed as not recommended now.' } ] },
   { v: 'v2026.11.19.369', date: '2026-11-19', title: 'Service Proposal: room CO2 sensors only where they pay',
     items: [ { type: 'improved', text: 'Service Proposal: the optional room CO2 sensors cover only meeting and program rooms, with estimated savings and payback. Restrooms, custodial and telecom rooms no longer count as rooms that need a CO2 sensor.' } ] },
   { v: 'v2026.11.19.368', date: '2026-11-19', title: 'Service Proposal: one cost per option',
