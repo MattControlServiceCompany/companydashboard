@@ -89,6 +89,17 @@ ctx.getProjMatrixSavingsTotal = () => null;
 check('no matrix total -> plain message', /No savings estimate yet/.test(run(ctx, '_pricingSavingsLineHTML(1)')));
 ctx.getProjMatrixSavingsTotal = () => 12345;
 check('matrix total is shown as read', /\$12,345/.test(run(ctx, '_pricingSavingsLineHTML(1)')), run(ctx, '_pricingSavingsLineHTML(1)'));
+// (Matt 2026-11-19) no matrix measures: the line shows the estimate of the option shown; with matrix measures the matrix stays (the measured method)
+const optionArg = "{ est: { display: { low: 900, likely: 1100, high: 1500, years: 7 } }, tier: 'recommended' }";
+ctx.getProjMatrixSavingsTotal = () => null;
+check(
+  'no matrix total + option estimate -> the estimate sentence',
+  /Estimated savings \$1,100 per year \(range \$900 to \$1,500\); estimated payback about 7 years\./.test(run(ctx, '_pricingSavingsLineHTML(1, ' + optionArg + ')')),
+  run(ctx, '_pricingSavingsLineHTML(1, ' + optionArg + ')'),
+);
+check('Compliance estimate = no energy savings claimed', /No energy savings claimed/.test(run(ctx, "_pricingSavingsLineHTML(1, { est: null, tier: 'compliance' })")));
+ctx.getProjMatrixSavingsTotal = () => 12345;
+check('matrix total wins over the estimate', /\$12,345/.test(run(ctx, '_pricingSavingsLineHTML(1, ' + optionArg + ')')) && !/Estimated savings/.test(run(ctx, '_pricingSavingsLineHTML(1, ' + optionArg + ')')));
 
 // 2. Saved config: new save stores only changed fields; stored values always win
 delete store.en_pricing_config;

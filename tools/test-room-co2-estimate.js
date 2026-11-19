@@ -123,7 +123,8 @@ const est = { rowToggles: {} };
     t.savings,
     'Estimated savings ' + usd(e.display.likely) + ' per year (range ' + usd(e.display.low) + ' to ' + usd(e.display.high) + '); estimated payback about ' + e.display.years + (e.display.years === 1 ? ' year.' : ' years.'),
   );
-  assert.strictEqual(t.basis, "Estimates use each building's 2025 energy use and rates and typical Test City weather.");
+  // (Matt 2026-11-19) the one basis sentence also names where the savings shares come from.
+  assert.strictEqual(t.basis, "Estimates use each building's 2025 energy use and rates and typical Test City weather, and the savings shares come from published field studies and national building energy data.");
   assert.strictEqual(sb._pricingZoneCo2EstimateText(e, false).savings, 'The sensors prepare these rooms for occupancy-based ventilation.');
   assert.strictEqual(sb._pricingZoneCo2EstimateText(e, false).basis, '');
   assert.strictEqual(sb._pricingZoneCo2EstimateText(null, true).savings, '');

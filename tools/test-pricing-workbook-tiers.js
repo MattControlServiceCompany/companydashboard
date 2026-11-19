@@ -64,6 +64,7 @@ function make(peSrc, store, tiers) {
   sb.window = sb;
   sb.globalThis = sb;
   vm.createContext(sb);
+  vm.runInContext(read('computations/cost-lines.js'), sb); // simplePayback: the option estimate (Matt 2026-11-19) reads it
   vm.runInContext(peSrc, sb);
   vm.runInContext(read('app/estimate-workbook.js'), sb);
   vm.runInContext(read('app/audit-estimate.js'), sb);
@@ -159,6 +160,8 @@ const plain = (x) => JSON.parse(JSON.stringify(x));
   // `optional` (Optional: Zone CO2 Sensors, 2026-11-13) is new; main has no such key. Compare the rest.
   const newSd = plain(newC._pricingComputeSummaryData('p', est));
   delete newSd.optional;
+  delete newSd.option; // the estimated savings of each option and the items Recommended does not hold are new (Matt 2026-11-19)
+  delete newSd.notNow;
   assert.deepStrictEqual(newSd, plain(oldC._pricingComputeSummaryData('p', est)));
   ok('hourly summary data identical to main');
 }

@@ -21611,7 +21611,7 @@ var _RPT_A36_TIER_PLAIN = {
   'full-scope':
     // Full Scope also prices optional devices that ASHRAE 36 does not require (fan coil units, heaters); the Audit Report lists only the required gaps.
     // Keep it short (about 120 characters): a longer line pushes the page 1 cost table into the footer.
-    'Every ASHRAE 36 device and sequence, plus extra devices beyond the audit findings and fault reports.',
+    'Every ASHRAE 36 device and sequence, plus extra devices beyond the audit opportunities and fault reports.',
 };
 
 /**
@@ -21621,7 +21621,7 @@ var _RPT_A36_TIER_PLAIN = {
  */
 function _rptA36TierPlain(key, hasRoomCo2) {
   if (key === 'full-scope' && hasRoomCo2) {
-    return 'Every ASHRAE 36 device and sequence, including CO2 sensors in rooms, plus extra devices beyond the audit findings and fault reports.';
+    return 'Every ASHRAE 36 device and sequence, including CO2 sensors in rooms, plus extra devices beyond the audit opportunities and fault reports.';
   }
   return _RPT_A36_TIER_PLAIN[key];
 }
@@ -21880,6 +21880,49 @@ function _rptA36OptionalCo2Sentences(o) {
       ' (public floor areas, offices, study rooms, back-of-house rooms). Their estimated energy savings do not repay the cost.';
   }
   return out;
+}
+
+/**
+ * _rptA36NotNowSentence - the one line of the Recommended scope that names the work Recommended does not hold (Matt 2026-11-19): the items whose
+ * estimated payback is over the limit (sd.notNow, from _pricingComputeSummaryData: _pricingApplyEstimateMembership). One kind of work per
+ * clause with its libraries; the names are the one name per idea (_rptA36ScopeKeyName). '' when Recommended holds every item.
+ */
+function _rptA36NotNowSentence(d) {
+  var sd = _rptA36ProposalSummaryData(d);
+  var list = (sd && sd.notNow) || [];
+  var byKey = {};
+  var order = [];
+  list.forEach(function (x) {
+    var name = _rptA36ScopeKeyName(x.key);
+    if (!name) return;
+    if (!byKey[x.key]) {
+      byKey[x.key] = { name: name, libs: [] };
+      order.push(x.key);
+    }
+    var lib = rptBuildingDisplayName(x.building);
+    if (byKey[x.key].libs.indexOf(lib) === -1) byKey[x.key].libs.push(lib);
+  });
+  if (!order.length) return '';
+  var parts = order.map(function (k) {
+    byKey[k].libs.sort();
+    return byKey[k].name + ' at ' + _rptA36JoinList(byKey[k].libs);
+  });
+  return (
+    'Not recommended now (estimated payback over ' + PRICING_OPTION_SAVINGS_ESTIMATE.keepLimitYears + ' years): ' + parts.join('; ') +
+    '. Full Scope includes this work.'
+  );
+}
+
+/**
+ * _rptA36EstimateBasis - the one basis sentence of the estimates of the Cost Estimate page (_pricingEstimateBasisText): the sentence of the
+ * optional room CO2 estimate when there is one (it names the weather city), else the sentence of the option estimate. '' when no option has an estimate.
+ */
+function _rptA36EstimateBasis(sd) {
+  var o = sd && sd.optionalCo2 && sd.optionalCo2.recommended;
+  var fromCo2 = o ? _rptA36OptionalCo2Sentences(o).basis : '';
+  if (fromCo2) return fromCo2;
+  var rec = sd && sd.option && sd.option.recommended;
+  return rec && rec.display && typeof _pricingEstimateBasisText === 'function' ? _pricingEstimateBasisText(rec.year, null) : '';
 }
 
 /**
@@ -22271,7 +22314,7 @@ function rptPageASHRAE36ProposalCover(n, d) {
       '</ul>'
     : '';
   var assessmentFindings =
-    '<div style="' + HEAD + '">Assessment Findings</div>' + '<div style="' + BODY + '">' + findingsPara + '</div>' + gapsHTML;
+    '<div style="' + HEAD + '">Assessment Results</div>' + '<div style="' + BODY + '">' + findingsPara + '</div>' + gapsHTML;
 
   // ── Cost Summary: what it costs, at a high level (always in the proposal) ─────────────
   var costSummary = _rptA36CostSummaryHTML(d, HEAD, BODY);
@@ -23199,6 +23242,9 @@ function _rptA36ScopeTokens(d) {
     var optText = [optS.savings, optS.basis, optS.other].filter(function (x) { return !!x; });
     if (optText.length) push('<div style="' + _RPT_A36_SCOPE_BODY + ';margin-top:5px">' + _escHtml(optText.join(' ')) + '</div>', 3);
   }
+  // Not recommended now (Matt 2026-11-19): the work whose estimated payback is over the limit; Full Scope includes it.
+  var notNow = _rptA36NotNowSentence(d);
+  if (notNow) push('<div style="' + _RPT_A36_SCOPE_BODY + ';margin-top:9px">' + _escHtml(notNow) + '</div>', 3);
   // Not included (Matt 2026-11-19): what a reader may expect and does not get.
   var co2 = _rptA36TierCostData(d).roomCo2;
   var noHtml =
@@ -24506,9 +24552,7 @@ function rptPageASHRAE36ProposalPricing(n, d, opts) {
     '<div style="font-size:10px;color:var(--rpt-page-text);line-height:1.6;margin-bottom:12px">' +
     'The options below are three ways to do the work. Each cost is an estimate for the work. There is no monthly ' +
     'fee. Pick one option.' +
-    (_rptA36OptionalCo2Sentences(summaryData && summaryData.optionalCo2 && summaryData.optionalCo2.recommended).basis
-      ? ' ' + _escHtml(_rptA36OptionalCo2Sentences(summaryData.optionalCo2.recommended).basis)
-      : '') +
+    (_rptA36EstimateBasis(summaryData) ? ' ' + _escHtml(_rptA36EstimateBasis(summaryData)) : '') +
     '</div>';
 
   // Table: 3 fixed columns, total width 684px (3 x 228). table-layout:fixed, black text, no colored
@@ -24595,8 +24639,11 @@ function rptPageASHRAE36ProposalPricing(n, d, opts) {
         var noCat = parts && parts.noCatalog;
         var display = g ? (noCat ? 'Labor: ' + g : g) : '—'; // every tier is priced (covering estimates); never prints a note to staff
         var optLine = _rptA36OptionalCo2Line(summaryData && summaryData.optionalCo2 && summaryData.optionalCo2[c.key]);
+        // The estimated savings and payback of the option (the one owner, _pricingOptionSavingsEstimate; Compliance claims no energy savings).
+        var estLine = _pricingOptionEstimateText(summaryData && summaryData.option && summaryData.option[c.key], c.key);
         return (
           '<td style="' + amtStyle + '">' + display +
+          (estLine ? '<div style="font-size:10px;font-weight:400;margin-top:4px;line-height:1.4">' + _escHtml(estLine) + '</div>' : '') +
           (optLine ? '<div style="font-size:10px;font-weight:400;margin-top:4px;line-height:1.4">' + _escHtml(optLine) + '</div>' : '') +
           (optLine && _rptA36OptionalCo2Sentences(summaryData.optionalCo2[c.key]).savings
             ? '<div style="font-size:10px;font-weight:400;margin-top:2px;line-height:1.4">' + _escHtml(_rptA36OptionalCo2Sentences(summaryData.optionalCo2[c.key]).savings) + '</div>'
