@@ -5017,6 +5017,16 @@ function _pricingApplyEstimateMembership(projId, recRows, estimate) {
 // The items Recommended does not hold because their estimated payback is over the limit: [{ building, key, label, years }], set when
 // the rows of Recommended were built (_pricingRecommendedRowsAll).
 var _pricingNotRecommendedCache = {};
+/* Recommended holds NO work because every savings item is over the payback limit (Matt 2026-11-19): the one predicate every output reads
+   (the Cost Summary and Cost Estimate pages, the Recommended scope and plan, the Cost Estimate tab; summary data field recommendedNone).
+   baseRows = the base rows of Recommended, notNow = the items left out on payback. False for a project with no priced catalog (no notNow). */
+function _pricingRecommendedEmptyByPayback(baseRows, notNow) {
+  return (!baseRows || !baseRows.length) && !!notNow && notNow.length > 0;
+}
+// The one client sentence of an empty Recommended option.
+function _pricingRecommendedNoneText() {
+  return 'No work is recommended now: the estimated payback of each item is over ' + PRICING_OPTION_SAVINGS_ESTIMATE.keepLimitYears + ' years.';
+}
 
 /* Cost Estimate tab: the "Optional: Zone CO2 Sensors" section. Read-only. rawRows = the optional rows of
    the tier the tab shows (from _pricingTierRowsSplit, the same build that gave the base rows).
@@ -11241,7 +11251,11 @@ initCostEstimateTab = function initCostEstimateTab(projId) {
     tableBodyHTML =
       '<tr><td colspan="' +
       visibleColSpan +
-      '" style="text-align:center;padding:40px;color:var(--text3);font-size:13px">No compliance gaps found. Run the Equipment Matrix audit first.</td></tr>';
+      '" style="text-align:center;padding:40px;color:var(--text3);font-size:13px">' +
+      (tier === 'recommended' && _pricingRecommendedEmptyByPayback(baseRows, _pricingNotRecommendedCache[projId])
+        ? 'No work is in Recommended now (see the list above).'
+        : 'No compliance gaps found. Run the Equipment Matrix audit first.') +
+      '</td></tr>';
   } else if (tier === 'recommended' && _rowSortMode === 'equipment') {
     // 979fd1af "Best equipment return first": flat ranked list across ALL buildings by
     // savings-per-cost (same ratio as the 'building' mode / the removed Batch 2c default) —
@@ -11632,7 +11646,29 @@ initCostEstimateTab = function initCostEstimateTab(projId) {
 
     // Empty-state: filter removed all rows (no budget-fit units at all — e.g. a ceiling too
     // small to fit even the cheapest measure, or no HIGH-impact measures exist for this project).
-    if (filteredRows.length === 0) {
+    var _recNotNow = _pricingNotRecommendedCache[projId] || [];
+    if (_pricingRecommendedEmptyByPayback(baseRows, _recNotNow)) {
+      // Every item is over the payback limit (Matt 2026-11-19): one line and the list of the items left out, never an empty table.
+      recNoSubsNotice =
+        '<div style="margin:8px 14px 0;padding:8px 12px;background:var(--s3);border:1px solid var(--border);' +
+        'border-left:3px solid var(--accent);border-radius:4px;font-size:11px;color:var(--text2);line-height:1.5">' +
+        '<strong style="color:var(--text)">' + _escHtml(_pricingRecommendedNoneText()) + '</strong>' +
+        '<table style="margin-top:6px;border-collapse:collapse;font-size:11px"><thead><tr>' +
+        '<th style="text-align:left;padding:3px 10px;border:1px solid var(--border);background:var(--s1)">Item</th>' +
+        '<th style="text-align:left;padding:3px 10px;border:1px solid var(--border);background:var(--s1)">Building</th>' +
+        '<th style="text-align:right;padding:3px 10px;border:1px solid var(--border);background:var(--s1)">Estimated payback (years)</th></tr></thead><tbody>' +
+        _recNotNow
+          .map(function (x) {
+            return (
+              '<tr><td style="padding:3px 10px;border:1px solid var(--border)">' + _escHtml(x.label || x.key) + '</td>' +
+              '<td style="padding:3px 10px;border:1px solid var(--border)">' + _escHtml(x.building || '') + '</td>' +
+              '<td style="padding:3px 10px;border:1px solid var(--border);text-align:right">' +
+              (x.years ? Math.round(x.years) : '') + '</td></tr>'
+            );
+          })
+          .join('') +
+        '</tbody></table></div>';
+    } else if (filteredRows.length === 0) {
       recNoSubsNotice =
         recBudgetPrompt +
         '<div style="margin:8px 14px 0;padding:8px 12px;background:var(--s3);border:1px solid var(--border);' +
@@ -12102,6 +12138,7 @@ function _pricingComputeSummaryData(projId, estimate) {
     optional: optionalByTier,
     option: optionEstimate,
     notNow: _pricingNotRecommendedCache[projId] || [],
+    recommendedNone: _pricingRecommendedEmptyByPayback(perTier.recommended, _pricingNotRecommendedCache[projId]),
   };
 }
 

@@ -359,10 +359,10 @@ function auditBox(store, srcs) {
     return sb;
   }
 
-  // option / notNow (estimated savings per option, work not recommended now) are new in v370 (Matt 2026-11-19); not in live v.63.
+  // option / notNow (estimated savings per option, work not recommended now) are new in v370 (Matt 2026-11-19); not in live v.63. recommendedNone is new (Matt 2026-11-19).
   // The phase split (Phase 2 = programming alone, Phase 1 = rest) deliberately differs from live v.63; compare everything else (per-building hw/lb/total shares follow the split too).
   const nonPhase = (t, shares) =>
-    JSON.parse(JSON.stringify(t, (k, v) => (k === 'phase1' || k === 'phase2' || k === 'rowShares' || k === 'optional' || k === 'option' || k === 'notNow' || (shares && (k === 'hw' || k === 'lb' || k === 'total')) ? undefined : v)));
+    JSON.parse(JSON.stringify(t, (k, v) => (k === 'phase1' || k === 'phase2' || k === 'rowShares' || k === 'optional' || k === 'option' || k === 'notNow' || k === 'recommendedNone' || (shares && (k === 'hw' || k === 'lb' || k === 'total')) ? undefined : v)));
   // C1. nothing stored: totals, summary data, export sets identical to live v.63; nothing written
   {
     const store = { en_pricing_catalog: catalog };

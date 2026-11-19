@@ -21839,10 +21839,21 @@ function _rptA36TierCostData(d) {
   defs.forEach(function (c) {
     var f = _rptA36FootOf(sd.tierTotals[c.key]);
     if (f) out.tiers.push({ key: c.key, label: c.label, total: f.totalR });
+    // Recommended holds no work (Matt 2026-11-19): the option stays in the table with no price (sd.recommendedNone, _pricingRecommendedEmptyByPayback).
+    else if (c.key === 'recommended' && sd.recommendedNone) out.tiers.push({ key: c.key, label: c.label, total: null, none: true });
   });
   out.roomCo2 = sd.roomCo2;
   out.optionalCo2 = sd.optionalCo2 || {};
   return out;
+}
+
+/**
+ * _rptA36RecommendedNone(d) - true when Recommended holds no work because every item is over the payback limit: the one reader of the
+ * predicate _pricingRecommendedEmptyByPayback (through sd.recommendedNone). Every proposal text of an empty Recommended reads this (Matt 2026-11-19).
+ */
+function _rptA36RecommendedNone(d) {
+  var sd = _rptA36ProposalSummaryData(d);
+  return !!(sd && sd.recommendedNone);
 }
 
 /**
@@ -21961,8 +21972,8 @@ function _rptA36CostSummaryHTML(d, HEAD, BODY) {
     .map(function (t) {
       return (
         '<tr><td style="' + td + ';font-weight:700">' + _escHtml(t.label) + '</td>' +
-        '<td style="' + td + '">' + _escHtml(_rptA36TierPlain(t.key, !!cost.roomCo2)) + '</td>' +
-        '<td style="' + td + ';text-align:right;font-weight:700">' + _fmtUSD(t.total) +
+        '<td style="' + td + '">' + _escHtml(t.none ? _pricingRecommendedNoneText() : _rptA36TierPlain(t.key, !!cost.roomCo2)) + '</td>' +
+        '<td style="' + td + ';text-align:right;font-weight:700">' + (t.none ? 'None now' : _fmtUSD(t.total)) +
         (cost.optionalCo2[t.key]
           ? '<div style="font-weight:400;margin-top:2px">' + _escHtml(_rptA36OptionalCo2Line(cost.optionalCo2[t.key])) + '</div>'
             // Page 1 is full: the estimated savings and their basis are on the Cost Estimate page and in the scope block, not here (Matt 2026-11-19).
@@ -21975,7 +21986,7 @@ function _rptA36CostSummaryHTML(d, HEAD, BODY) {
   var recT = null;
   var compT = null;
   cost.tiers.forEach(function (t) {
-    if (t.key === 'recommended') recT = t.total;
+    if (t.key === 'recommended' && !t.none) recT = t.total;
     if (t.key === 'compliance') compT = t.total;
   });
   var whyLess =
@@ -22337,6 +22348,12 @@ function rptPageASHRAE36ProposalCover(n, d) {
 function _rptA36RecommendedServicesInnerHTML(d) {
   var HEAD = 'font-size:' + RPT_SECTION_HEAD_PX + 'px;font-weight:700;color:var(--rpt-page-text);margin:5px 0 2px';
   var scope = _rptA36RecommendedScope(d);
+  if (!scope && _rptA36RecommendedNone(d)) {
+    return (
+      '<div style="' + HEAD + '">Recommended Scope of Work</div>' +
+      '<div style="' + _RPT_A36_SCOPE_BODY + '">' + _escHtml('No work is recommended now. ' + _rptA36NotNowSentence(d)) + '</div>'
+    );
+  }
   if (!scope) {
     return (
       '<div style="' + HEAD + '">Recommended Scope of Work</div>' +
@@ -23280,7 +23297,11 @@ function rptPageASHRAE36ProposalPhaseTable(startN, d, opts) {
 
   var tokens = _rptA36ScopeTokens(d);
   if (!tokens.length) {
-    return [wrapPage(startN, headHTML + ((opts && opts.trailBlocks) || []).join(''), '')];
+    // No library blocks (Recommended holds no work, or nothing is priced): every closing section sits on this page, so the caller must not
+    // print them again after the cost pages (_trailConsumed, Matt 2026-11-19).
+    var _onlyPage = [wrapPage(startN, headHTML + ((opts && opts.trailBlocks) || []).join(''), '')];
+    _onlyPage._trailConsumed = ((opts && opts.trailBlocks) || []).length;
+    return _onlyPage;
   }
 
   var g = _rptContentBudget('flush');
@@ -23402,7 +23423,11 @@ function _rptA36VisionInnerHTML(d, opts) {
       '">Implementation Plan</div>' +
       '<div style="' +
       BODY +
-      '">The steps of the work will be listed here when the pricing for this project is complete.</div>';
+      '">' +
+      (_rptA36RecommendedNone(d)
+        ? 'There is no Recommended work to schedule now.'
+        : 'The steps of the work will be listed here when the pricing for this project is complete.') +
+      '</div>';
   }
 
   // futureWorkFallbackHTML DELETED (Matt, 2026-08-03: no Future Work shown in the Client D Service
@@ -24638,11 +24663,14 @@ function rptPageASHRAE36ProposalPricing(n, d, opts) {
         // is never shown as an unqualified full-scope dollar figure.
         var noCat = parts && parts.noCatalog;
         var display = g ? (noCat ? 'Labor: ' + g : g) : '—'; // every tier is priced (covering estimates); never prints a note to staff
+        var noneNow = !g && c.key === 'recommended' && !!(summaryData && summaryData.recommendedNone);
+        if (noneNow) display = 'None now'; // Recommended holds no work: every item is over the payback limit (Matt 2026-11-19)
         var optLine = _rptA36OptionalCo2Line(summaryData && summaryData.optionalCo2 && summaryData.optionalCo2[c.key]);
         // The estimated savings and payback of the option (the one owner, _pricingOptionSavingsEstimate; Compliance claims no energy savings).
         var estLine = _pricingOptionEstimateText(summaryData && summaryData.option && summaryData.option[c.key], c.key);
         return (
           '<td style="' + amtStyle + '">' + display +
+          (noneNow ? '<div style="font-size:10px;font-weight:400;margin-top:4px;line-height:1.4">' + _escHtml(_pricingRecommendedNoneText()) + '</div>' : '') +
           (estLine ? '<div style="font-size:10px;font-weight:400;margin-top:4px;line-height:1.4">' + _escHtml(estLine) + '</div>' : '') +
           (optLine ? '<div style="font-size:10px;font-weight:400;margin-top:4px;line-height:1.4">' + _escHtml(optLine) + '</div>' : '') +
           (optLine && _rptA36OptionalCo2Sentences(summaryData.optionalCo2[c.key]).savings
