@@ -29,9 +29,10 @@ const buildings = [
       // air handler: CO2 missing -> co2_ahu hardware + air handler DCV sequence. Must stay in BASE.
       eq('a1', 'AHU-1', 'ahu', ['co2'], [], { demandCtrl: BLOCKED }),
       // 3 VAV zones: temp sensor present, CO2 missing -> co2_zone_standalone + vav_dcv 'gap' labor.
-      eq('v1', 'Room 1 - VAV-1', 'vav', ['co2'], ['zoneTemp'], { vav_dcv: BLOCKED }),
-      eq('v2', 'Room 2 - VAV-2', 'vav', ['co2'], ['zoneTemp'], { vav_dcv: BLOCKED }),
-      eq('v3', 'Room 3 - VAV-3', 'vav', ['co2'], ['zoneTemp'], { vav_dcv: PARTIAL }),
+      // (Matt 2026-11-19) Only the DENSE rooms (meeting, conference, ...) are optional scope: v1 and v2 are dense, v3 (an office) is not.
+      eq('v1', 'Meeting Room 1 - VAV-1', 'vav', ['co2'], ['zoneTemp'], { vav_dcv: BLOCKED }),
+      eq('v2', 'Conference Room 2 - VAV-2', 'vav', ['co2'], ['zoneTemp'], { vav_dcv: BLOCKED }),
+      eq('v3', 'Office 3 - VAV-3', 'vav', ['co2'], ['zoneTemp'], { vav_dcv: PARTIAL }),
       // 2 VAV zones that already have CO2: vav_dcv labor is 'ready' (no sensor to buy) -> stays BASE.
       eq('v4', 'Room 4 - VAV-4', 'vav', [], ['zoneTemp', 'co2'], { vav_dcv: PARTIAL }),
       eq('v5', 'Room 5 - VAV-5', 'vav', [], ['zoneTemp', 'co2'], { vav_dcv: PARTIAL }),
@@ -105,6 +106,9 @@ function make(store) {
   sb.globalThis = sb;
   vm.createContext(sb);
   vm.runInContext(read('lib/formatting.js'), sb);
+  // the real room classifier of the Equipment Matrix (dense rooms), loaded as the page has it (Matt 2026-11-19)
+  const em = read('app/equipment-matrix.js');
+  vm.runInContext(em.slice(em.indexOf('var EM_SPACE_TYPE_ZONE_TERMINAL_CATS'), em.indexOf('/* _emSpaceTypeConfigFlagOverrides')), sb);
   vm.runInContext(read('app/pricing-estimator.js'), sb);
   vm.runInContext(read('app/estimate-workbook.js'), sb);
   vm.runInContext(read('app/audit-estimate.js'), sb);
@@ -161,7 +165,7 @@ for (const method of ['hourly', 'workbook']) {
     assert.strictEqual(base.filter((r) => isZoneCo2Hw(r) || isGapDcv(r)).length, 0, t + ': no zone CO2 rows in base');
     const optHw = opt.filter(isZoneCo2Hw);
     const optQty = sum(optHw, (r) => r.qty);
-    const wantQty = 3; // 3 VAV zones
+    const wantQty = 2; // the 2 dense VAV zones (Matt 2026-11-19); the office stays out of both sections
     assert.strictEqual(optQty, wantQty, t + ': optional zone CO2 sensor quantity');
     assert.ok(
       opt.every((r) => isZoneCo2Hw(r) || isGapDcv(r)),
@@ -170,7 +174,7 @@ for (const method of ['hourly', 'workbook']) {
     if (t !== 'compliance') {
       const optDcv = opt.filter(isGapDcv);
       assert.strictEqual(optDcv.length, 1, t + ': zone DCV gap labor is optional');
-      assert.strictEqual(optDcv[0].qty, 3, t + ': zone DCV gap labor covers the 3 zones that need a sensor');
+      assert.strictEqual(optDcv[0].qty, 2, t + ': zone DCV gap labor covers the 2 dense zones that need a sensor (Matt 2026-11-19)');
     }
     // 3. air handler CO2 stays in the base, and so does the 'ready' zone DCV labor
     assert.ok(
@@ -270,10 +274,34 @@ for (const method of ['hourly', 'workbook']) {
 
   // 8. Cost Estimate tab block: label, quantity, cost, and no row outside the section
   const tabHtml = sb._pricingOptionalZoneCo2HTML('p', all['recommended'].opt);
-  assert.ok(tabHtml.indexOf('Optional: Zone CO2 Sensors') >= 0 && tabHtml.indexOf('3 sensors') >= 0);
+  assert.ok(tabHtml.indexOf('Optional: Zone CO2 Sensors') >= 0 && tabHtml.indexOf('2 sensors') >= 0); // (Matt 2026-11-19) the 2 dense rooms
   assert.ok(tabHtml.indexOf('<tfoot>') >= 0);
   assert.strictEqual(sb._pricingOptionalZoneCo2HTML('p', []), '');
   ok(method + ': Cost Estimate tab section shows the label, the sensor quantity and a footer total');
+}
+
+// 8b. (Matt 2026-11-19) tier membership: dense rooms optional in Recommended and Compliance; the other rooms in neither; Full Scope whole
+{
+  const sb = make({ en_pricing_catalog: catalog, en_pricing_workbook_p: { method: 'hourly' } });
+  for (const t of ['recommended', 'compliance']) {
+    const split = sb._pricingTierRowsSplit('p', t);
+    assert.strictEqual(sum(split.optional.filter(isZoneCo2Hw), (r) => r.qty), 2, t + ': 2 dense rooms are optional');
+    assert.strictEqual(sum(split.remainder, (r) => r.qty), 1, t + ': the office sensor is counted as not recommended');
+    assert.strictEqual(sum(split.base.filter(isZoneCo2Hw), (r) => r.qty), 0, t + ': no zone CO2 sensor in base');
+    const rooms = split.optional.filter(isZoneCo2Hw).reduce((a, r) => a.concat(r._denseRooms), []).sort();
+    assert.deepStrictEqual(plain(rooms), ['Conference Room 2', 'Meeting Room 1'], t + ': the dense room labels');
+    // price = the same unit price at the dense quantity
+    const catRow = sb.buildCatalogRows('p').find(isZoneCo2Hw);
+    const optRow = split.optional.find(isZoneCo2Hw);
+    assert.strictEqual(optRow.unitPrice, catRow.unitPrice, t + ': same unit price');
+    assert.strictEqual(optRow.lineTotal, Math.round(catRow.unitPrice * 2 * 100) / 100, t + ': priced at the dense quantity');
+    assert.strictEqual(optRow.equipment, '2 of 5 Variable Air Volume Terminals', t + ': row label at the dense quantity');
+    assert.ok(split.optional.every((r) => !(r.phase === 2) || r.qty === 2), t + ': programming rows at the dense quantity');
+  }
+  const fs = sb._pricingTierRowsSplit('p', 'full-scope');
+  assert.strictEqual(sum(fs.base.filter(isZoneCo2Hw), (r) => r.qty), 5, 'Full Scope keeps all 3 VAV and 2 fan-powered zone sensors');
+  assert.strictEqual(fs.optional.length, 0);
+  ok('tier membership: dense rooms optional (Recommended, Compliance); other rooms in neither; Full Scope unchanged');
 }
 
 // 9. audit report is not touched: buildCatalogRows still lists every zone CO2 gap (the audit reads it)

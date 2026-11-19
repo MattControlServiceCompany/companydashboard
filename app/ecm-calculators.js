@@ -12,6 +12,24 @@
 const THERM_LABEL = BTU_PER_THERM.toLocaleString('en-US');
 const KWH_LABEL = BTU_PER_KWH.toLocaleString('en-US', { maximumFractionDigits: 2 });
 
+/* dcvEnergySaved(p) - the ONE demand controlled ventilation physics (Matt 2026-11-19). The dcv template below and the room CO2
+   estimate of the Service Proposal (_pricingZoneCo2SavingsEstimate, app/pricing-estimator.js) both call it.
+   Only the per-person share of the outdoor air varies with occupancy: cfm_saved = oa_cfm_design x per_person_frac x (1 - avg_occ_frac).
+   heat_degree_hours / cool_degree_hours = the sum of (hours x temperature difference, F) of the year. Returns un-rounded
+   { avgOaReduction, cfm_saved, therms_saved, cool_kwh_saved }. Quantities only: no dollars (see the header). */
+function dcvEnergySaved(p) {
+  const avgOaReduction = p.per_person_frac * (1 - p.avg_occ_frac);
+  const cfm_saved = p.oa_cfm_design * avgOaReduction;
+  const heat_btu = 1.08 * cfm_saved * p.heat_degree_hours;
+  const cool_btu = 1.08 * cfm_saved * p.cool_degree_hours;
+  return {
+    avgOaReduction: avgOaReduction,
+    cfm_saved: cfm_saved,
+    therms_saved: heat_btu / (BTU_PER_THERM * p.afue),
+    cool_kwh_saved: cool_btu / (p.cop * BTU_PER_KWH),
+  };
+}
+
 const ECM_TEMPLATES = {
   /* ── 1. OA DAMPERS ──────────────────────────────────── */
   oa_dampers: {
@@ -1328,18 +1346,20 @@ const ECM_TEMPLATES = {
       },
     ],
     calculate(inp) {
-      const afue = inp.boiler_afue / 100;
-      const avgOaReduction = inp.per_person_frac * (1 - inp.avg_occ_frac);
-      const cfm_saved = inp.oa_cfm_design * avgOaReduction;
-      const heat_btu = 1.08 * cfm_saved * inp.avg_dt_heat * inp.heat_hours;
-      const therms_saved = heat_btu / (BTU_PER_THERM * afue);
-      const cool_btu = 1.08 * cfm_saved * inp.avg_dt_cool * inp.cool_hours;
-      const cool_kwh_saved = cool_btu / (inp.chiller_cop * BTU_PER_KWH);
+      const r = dcvEnergySaved({
+        oa_cfm_design: inp.oa_cfm_design,
+        per_person_frac: inp.per_person_frac,
+        avg_occ_frac: inp.avg_occ_frac,
+        heat_degree_hours: inp.avg_dt_heat * inp.heat_hours,
+        cool_degree_hours: inp.avg_dt_cool * inp.cool_hours,
+        afue: inp.boiler_afue / 100,
+        cop: inp.chiller_cop,
+      });
       return {
-        oa_reduction_pct: Math.round(avgOaReduction * 1000) / 10,
-        cfm_saved: Math.round(cfm_saved),
-        therms_saved: Math.round(therms_saved),
-        cool_kwh_saved: Math.round(cool_kwh_saved),
+        oa_reduction_pct: Math.round(r.avgOaReduction * 1000) / 10,
+        cfm_saved: Math.round(r.cfm_saved),
+        therms_saved: Math.round(r.therms_saved),
+        cool_kwh_saved: Math.round(r.cool_kwh_saved),
       };
     },
   },

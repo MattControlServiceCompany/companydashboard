@@ -21786,9 +21786,10 @@ function _rptA36ProposalSummaryData(d) {
       o.rows.forEach(function (r) {
         if (toggles[r._baseId || r.id] === false) return;
         var b = r.building || '';
-        var L = byLib[b] || (byLib[b] = { name: b, sensors: 0, seqs: 0 });
+        var L = byLib[b] || (byLib[b] = { name: b, sensors: 0, seqs: 0, rooms: [] });
         if (r.phase === 1) {
           L.sensors += r.qty || 0;
+          L.rooms = L.rooms.concat(r._denseRooms || []);
           sensors += r.qty || 0;
         } else if (r.phase === 2 && r.seqKey) {
           L.seqs += r.qty || 0;
@@ -21806,7 +21807,9 @@ function _rptA36ProposalSummaryData(d) {
         .filter(function (L) {
           return L.sensors > 0;
         });
-      sd.optionalCo2[tier] = { qty: sensors, seqQty: seqs, price: foot.totalR, libs: libs };
+      // otherQty = the room CO2 sensors of the other (not dense) rooms, which the proposal does not recommend; estimate = the one estimate of the
+      // savings of these rooms (_pricingZoneCo2SavingsEstimate, read through the section summary, never computed here).
+      sd.optionalCo2[tier] = { qty: sensors, seqQty: seqs, price: foot.totalR, libs: libs, otherQty: o.otherSensorQty || 0, estimate: o.estimate || null };
     });
     // The opportunities of the audit: every cost line of the proposal is one of them (_pricingOpportunityLines).
     sd.opps = typeof _a36OpportunityList === 'function' ? _a36OpportunityList(d) : [];
@@ -21850,7 +21853,33 @@ function _rptA36OptionalCo2Line(o) {
   if (!o) return '';
   // Recommended carries the occupancy-based ventilation programming of the sensors (its optional rows hold it); Compliance carries no savings
   // sequence, so its optional rows are the sensors and their installation only: the two prices differ for that reason (Matt 2026-11-19).
-  return 'Optional: ' + rptCount(o.qty) + ' room CO2 ' + (o.qty === 1 ? 'sensor' : 'sensors') + (o.seqQty > 0 ? ' with occupancy-based ventilation' : ' (sensors only)') + ': +' + _fmtUSD(o.price);
+  // The optional scope holds only the meeting and program rooms (dense rooms, emIsDenseOccupancyRoom): the other rooms are not recommended.
+  return (
+    'Optional: CO2 ' + (o.qty === 1 ? 'sensor' : 'sensors') + (o.seqQty > 0 ? ' with occupancy-based ventilation' : '') +
+    ' in ' + rptCount(o.qty) + (o.qty === 1 ? ' meeting or program room' : ' meeting and program rooms') +
+    (o.seqQty > 0 ? '' : ' (sensors only)') + ': +' + _fmtUSD(o.price)
+  );
+}
+/**
+ * _rptA36OptionalCo2Sentences(o) - the client sentences that follow the optional room CO2 line, all from the one estimate
+ * (_pricingZoneCo2EstimateText): { savings: "Estimated savings $4,400 per year (range $2,100 to $7,000); estimated payback about 6 years." (Compliance:
+ * the sensors prepare the rooms), basis: "Estimates use each building's 2025 energy use and rates and typical Kansas City weather.",
+ * other: "Not recommended: CO2 sensors in the other 171 rooms (...). Their estimated energy savings do not repay the cost." }. '' for a sentence with no data.
+ */
+function _rptA36OptionalCo2Sentences(o) {
+  var out = { savings: '', basis: '', other: '' };
+  if (!o) return out;
+  if (typeof _pricingZoneCo2EstimateText === 'function') {
+    var t = _pricingZoneCo2EstimateText(o.estimate, o.seqQty > 0);
+    out.savings = t.savings;
+    out.basis = t.basis;
+  }
+  if (o.otherQty > 0) {
+    out.other =
+      'Not recommended: CO2 sensors in the other ' + rptCount(o.otherQty) + (o.otherQty === 1 ? ' room' : ' rooms') +
+      ' (public floor areas, offices, study rooms, back-of-house rooms). Their estimated energy savings do not repay the cost.';
+  }
+  return out;
 }
 
 /**
@@ -21893,6 +21922,7 @@ function _rptA36CostSummaryHTML(d, HEAD, BODY) {
         '<td style="' + td + ';text-align:right;font-weight:700">' + _fmtUSD(t.total) +
         (cost.optionalCo2[t.key]
           ? '<div style="font-weight:400;margin-top:2px">' + _escHtml(_rptA36OptionalCo2Line(cost.optionalCo2[t.key])) + '</div>'
+            // Page 1 is full: the estimated savings and their basis are on the Cost Estimate page and in the scope block, not here (Matt 2026-11-19).
           : '') +
         '</td></tr>'
       );
@@ -22221,7 +22251,8 @@ function rptPageASHRAE36ProposalCover(n, d) {
       var _optBits = [];
       if (_optR.recommended) _optBits.push('<strong>' + _fmtUSD(_optR.recommended.price) + '</strong> for Recommended');
       if (_optR.compliance) _optBits.push('<strong>' + _fmtUSD(_optR.compliance.price) + '</strong> for Compliance');
-      findingsPara += ' Recommended and Compliance can add ' + (_co2.qty === 1 ? 'it' : 'them') + ' as an optional scope, priced in the table below.';
+      var _optQty = (_optR.recommended || _optR.compliance).qty;
+      findingsPara += ' Recommended and Compliance can add the sensors for ' + rptCount(_optQty) + (_optQty === 1 ? ' meeting or program room' : ' meeting and program rooms') + ' as an optional scope, priced in the table below.';
     } else {
       findingsPara += ' Recommended and Compliance do not.';
     }
@@ -23143,21 +23174,36 @@ function _rptA36ScopeTokens(d) {
       '<div style="' + HEAD + '">' + _escHtml(_rptA36OptionalCo2Line(opt)) + '</div>' +
       '<div style="' + _RPT_A36_SCOPE_BODY + '">This work is not in the Recommended price. By library:</div>';
     var optLi = opt.libs.map(function (L) {
+      // The rooms by their room label (a label that repeats prints once with its count).
+      var counts = {};
+      var labels = [];
+      (L.rooms || []).forEach(function (n) {
+        if (!counts[n]) labels.push(n);
+        counts[n] = (counts[n] || 0) + 1;
+      });
+      var roomList = labels
+        .map(function (n) {
+          return counts[n] > 1 ? n + ' (' + counts[n] + ')' : n;
+        })
+        .join(', ');
       return (
-        '<li style="margin-bottom:2px"><strong>' + _escHtml(L.name) + ':</strong> ' + rptCount(L.sensors) + ' CO2 ' + (L.sensors === 1 ? 'sensor' : 'sensors') + ' in rooms' +
-        (L.seqs > 0 ? ' and occupancy-based ventilation on ' + rptCount(L.seqs) + ' zone terminal ' + (L.seqs === 1 ? 'unit' : 'units') : '') +
-        '.</li>'
+        '<li style="margin-bottom:2px"><strong>' + _escHtml(L.name) + ':</strong> ' + rptCount(L.sensors) + (L.sensors === 1 ? ' room' : ' rooms') +
+        (roomList ? ' (' + _escHtml(roomList) + ')' : '') + '.</li>'
       );
     });
     // The heading stands with its first two bullets; the rest follow one by one (a bullet list may run over a page).
     push(optHead + ulOf(optLi.slice(0, 2)), 3);
     for (var oi = 2; oi < optLi.length; oi++) push(ulOf([optLi[oi]]), 1, 2);
+    // The estimated savings of these rooms, the basis of the estimate, and the rooms that are not recommended (one estimate, _rptA36OptionalCo2Sentences).
+    var optS = _rptA36OptionalCo2Sentences(opt);
+    var optText = [optS.savings, optS.basis, optS.other].filter(function (x) { return !!x; });
+    if (optText.length) push('<div style="' + _RPT_A36_SCOPE_BODY + ';margin-top:5px">' + _escHtml(optText.join(' ')) + '</div>', 3);
   }
   // Not included (Matt 2026-11-19): what a reader may expect and does not get.
   var co2 = _rptA36TierCostData(d).roomCo2;
   var noHtml =
     '<div style="' + _RPT_A36_SCOPE_BODY + ';margin-top:9px"><strong>Not included in Recommended:</strong> ' +
-    (co2 ? 'the room CO2 sensors, unless the optional add above is chosen; ' : '') +
+    (co2 ? (opt && opt.libs.length ? 'the room CO2 sensors, except the optional add above for the meeting and program rooms; ' : 'the room CO2 sensors; ') : '') +
     'the devices and programming that only the Compliance and Full Scope options add (see the Compliance Work and Full Scope Work sections).</div>';
   push(noHtml, 2);
   return tokens;
@@ -23488,7 +23534,9 @@ function _rptA36ComplianceScopeInnerHTML(d) {
   var optCompliance = _rptA36TierCostData(d).optionalCo2.compliance;
   var co2Line = co2
     ? optCompliance
-      ? ' ' + _rptA36OptionalCo2Line(optCompliance) + '. Full Scope includes ' + (co2.qty === 1 ? 'it' : 'them') + '.'
+      ? ' ' + _rptA36OptionalCo2Line(optCompliance) + '.' +
+        (_rptA36OptionalCo2Sentences(optCompliance).savings ? ' ' + _rptA36OptionalCo2Sentences(optCompliance).savings : '') +
+        ' Full Scope includes ' + (co2.qty === 1 ? 'the room CO2 sensor' : 'all ' + rptCount(co2.qty) + ' room CO2 sensors') + '.'
       : ' Compliance does not include the ' + rptCount(co2.qty) + ' carbon dioxide (CO2) ' + (co2.qty === 1 ? 'sensor' : 'sensors') + ' in rooms. Full Scope includes ' + (co2.qty === 1 ? 'it' : 'them') + '.'
     : '';
   var li = [];
@@ -24458,6 +24506,9 @@ function rptPageASHRAE36ProposalPricing(n, d, opts) {
     '<div style="font-size:10px;color:var(--rpt-page-text);line-height:1.6;margin-bottom:12px">' +
     'The options below are three ways to do the work. Each cost is an estimate for the work. There is no monthly ' +
     'fee. Pick one option.' +
+    (_rptA36OptionalCo2Sentences(summaryData && summaryData.optionalCo2 && summaryData.optionalCo2.recommended).basis
+      ? ' ' + _escHtml(_rptA36OptionalCo2Sentences(summaryData.optionalCo2.recommended).basis)
+      : '') +
     '</div>';
 
   // Table: 3 fixed columns, total width 684px (3 x 228). table-layout:fixed, black text, no colored
@@ -24547,6 +24598,9 @@ function rptPageASHRAE36ProposalPricing(n, d, opts) {
         return (
           '<td style="' + amtStyle + '">' + display +
           (optLine ? '<div style="font-size:10px;font-weight:400;margin-top:4px;line-height:1.4">' + _escHtml(optLine) + '</div>' : '') +
+          (optLine && _rptA36OptionalCo2Sentences(summaryData.optionalCo2[c.key]).savings
+            ? '<div style="font-size:10px;font-weight:400;margin-top:2px;line-height:1.4">' + _escHtml(_rptA36OptionalCo2Sentences(summaryData.optionalCo2[c.key]).savings) + '</div>'
+            : '') +
           '</td>'
         );
       })
