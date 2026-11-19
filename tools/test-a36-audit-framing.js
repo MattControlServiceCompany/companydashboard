@@ -103,7 +103,8 @@ const ok = (c, m) => {
     });
     ['simple_on', 'det_on'].forEach((k) => {
       ok(/ASHRAE 36/.test(a36(k)) && /Overall Score/.test(a36(k)) && /Sensor Coverage/.test(a36(k)) && /Sequence Readiness/.test(a36(k)), k + ': the A36 section holds the Overall Score, Sensor Coverage and Sequence Readiness');
-      ok(/Building Readiness/.test(a36(k)) && /Devices to Install/.test(a36(k)) && /Sequences to Program/.test(a36(k)) && !/Total for /.test(a36(k)), k + ': the A36 section holds the Building Readiness table, the devices to install and the sequences to program; no per-building ASHRAE 36 pages (Matt 2026-11-18)');
+      // (Matt 2026-11-18) the ASHRAE 36 Readiness page with the Devices to Install and Sequences to Program cards is removed.
+      ok(/Building Readiness/.test(a36(k)) && !/ASHRAE 36 Readiness/.test(all(k)) && !/Sequences to Program\s*Devices to Install|Devices to Install\s*Sequences to Program/.test(all(k)) && !/Total for /.test(a36(k)), k + ': the A36 section holds the Building Readiness table; no ASHRAE 36 Readiness page and no per-building ASHRAE 36 pages (Matt 2026-11-18)');
       ok(/\* Not an ASHRAE 36 item\./.test(all(k)), k + ': the A36 section is on, so the asterisk footnote prints');
       ok(!/ASHRAE|Guideline|Devices to Install/.test(base(k)), k + ': outside the A36 section there is no ASHRAE text (the score rings are allowed: Matt 2026-11-18)');
     });
