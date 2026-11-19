@@ -2508,6 +2508,8 @@ async function siteResetAllMeterTableSettings() {
    site-ui.js delegates to this array and should NOT maintain its own copy.
 */
 var RELEASE_NOTES = [
+  { v: 'v2026.11.19.377', date: '2026-11-19', title: 'Building power meter: $5,000',
+    items: [ { type: 'changed', text: 'Cost Estimate and Service Proposal: each building power meter is a fixed price of $5,000 (material and labor). The Excel export has a Fixed-price sheet.' } ] },
   { v: 'v2026.11.19.376', date: '2026-11-19', title: 'Internal checks',
     items: [ { type: 'improved', text: 'Internal: the release checks now protect a Recommended option with no work.' } ] },
   { v: 'v2026.11.19.375', date: '2026-11-19', title: 'Service Proposal: no Recommended work',
