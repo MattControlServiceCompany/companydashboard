@@ -13702,13 +13702,13 @@ async function _rptSwapBoardChartsForPng(pageEls, scale) {
   return { found: charts.length, rasterized: rasterized };
 }
 
-// Word: rasterize the annual use history charts of the Audit Report (svg marked data-use-history) with the shared chart swap.
-async function _rptSwapUseHistoryChartsForPng(pageEls, scale) {
+// Word: rasterize the charts of the Audit Report (svg marked data-audit-chart: the utility use charts) with the shared chart swap.
+async function _rptSwapAuditChartsForPng(pageEls, scale) {
   scale = scale || RPT_DOCX_GAUGE_RASTER_SCALE;
   var charts = [];
   pageEls.forEach(function (pageEl) {
     if (!pageEl.querySelectorAll) return;
-    Array.prototype.forEach.call(pageEl.querySelectorAll('svg[data-use-history]'), function (svg) {
+    Array.prototype.forEach.call(pageEl.querySelectorAll('svg[data-audit-chart]'), function (svg) {
       charts.push(svg);
     });
   });
@@ -13845,8 +13845,8 @@ async function exportReportToDocx() {
     if (!data._agreement && !data._ashrae) {
       await _rptSwapBoardChartsForPng(pageEls);
     }
-    // Audit Report only: the use history charts of the building pages (marked data-use-history) become pictures; gauge rings are not touched.
-    if (data._ashrae) await _rptSwapUseHistoryChartsForPng(pageEls);
+    // Audit Report only: the utility use charts (marked data-audit-chart) become pictures; gauge rings are not touched.
+    if (data._ashrae) await _rptSwapAuditChartsForPng(pageEls);
 
     // The client / period line of the page header (top right in the PDF) goes into the real Word page header,
     // right-aligned, instead of a paragraph in the body of every page.
@@ -29967,14 +29967,20 @@ var A36_AUDIT_TD = 'padding:5px 8px;font-size:13.34px;vertical-align:top;color:v
 var A36_AUDIT_TH = 'padding:6px 8px;font-size:12px;font-weight:700;text-transform:uppercase;letter-spacing:0.04em;color:#ffffff;background:var(--rpt-blue);border:none';
 var A36_FT2 = 'ft\u00b2';
 // The 12-month utility use of an audit building, or null (no utility data for it, fewer than 12 bill months, no project). Cached on the report data.
+function _a36UtilityBuilding(d, b) {
+  if (!d || !d.project || typeof getUDBldgs !== 'function' || typeof _emNormBldgNameForJoin !== 'function') return null;
+  var key = _emNormBldgNameForJoin(b.name);
+  return (
+    getUDBldgs(d.project.id).filter(function (x) {
+      return _emNormBldgNameForJoin(x.name) === key;
+    })[0] || null
+  );
+}
 function _a36BuildingUse(d, b) {
-  if (!d || !d.project || typeof buildingAnnualUse !== 'function' || typeof getUDBldgs !== 'function' || typeof _emNormBldgNameForJoin !== 'function') return null;
+  if (!d || !d.project || typeof buildingAnnualUse !== 'function') return null;
   d._a36Use = d._a36Use || {};
   if (Object.prototype.hasOwnProperty.call(d._a36Use, b.name)) return d._a36Use[b.name];
-  var key = _emNormBldgNameForJoin(b.name);
-  var ud = getUDBldgs(d.project.id).filter(function (x) {
-    return _emNormBldgNameForJoin(x.name) === key;
-  })[0];
+  var ud = _a36UtilityBuilding(d, b);
   var use = ud ? buildingAnnualUse(d.project.id, ud.id) : null;
   d._a36Use[b.name] = use;
   return use;
@@ -29995,68 +30001,217 @@ function _a36UseCard(u) {
       nb(_fmtUSD(u.cost, '$0')) + ', ' + nb(rptCount(u.sqft) + ' ' + A36_FT2),
   };
 }
-// Annual use history of a building (Matt 2026-11-18: show every year of utility data on file). The one reader is buildingUseByYear
-// (app/utility-data.js); this only draws the yearly totals. Energy use, not intensity (the floor area may differ between years). No monthly values.
-// One bar per complete calendar year; the y axis starts at zero; the unit is on the caption and the value is on every bar. Gas gets its own chart.
-function _a36UseHistorySVG(vals, color) {
-  var w = 352,
-    h = 108,
-    padT = 17,
-    padB = 18,
-    padX = 4;
-  var max = Math.max.apply(null, vals.map(function (v) { return v.v; }).concat([1]));
-  var plotH = h - padT - padB;
-  var slot = (w - padX * 2) / vals.length;
-  var bw = Math.min(30, slot * 0.62);
-  var base = h - padB;
-  var big = max >= 1000;
-  var dec = max / 1000 >= 100 ? 0 : 1;
-  var lab = function (v) {
-    return big ? (v / 1000).toFixed(dec) : String(Math.round(v));
-  };
-  var fs = 12;
-  // Years of 4 digits when the slot holds them, else 2 digits after an apostrophe (the heading names the range).
-  var yearText = function (y) {
-    return slot >= 36 ? String(y) : "'" + String(y).slice(2);
-  };
-  var out = '<svg data-use-history="1" width="' + w + '" height="' + h + '" viewBox="0 0 ' + w + ' ' + h + '" xmlns="http://www.w3.org/2000/svg" font-family="Arial,sans-serif">';
-  vals.forEach(function (b, i) {
-    var cx = padX + slot * (i + 0.5);
-    var bh = (b.v / max) * plotH;
-    out += '<rect x="' + (cx - bw / 2).toFixed(1) + '" y="' + (base - bh).toFixed(1) + '" width="' + bw.toFixed(1) + '" height="' + bh.toFixed(1) + '" fill="' + color + '"/>';
-    out += '<text x="' + cx.toFixed(1) + '" y="' + (base - bh - 3).toFixed(1) + '" text-anchor="middle" font-size="' + fs + '" fill="var(--rpt-page-text)">' + lab(b.v) + '</text>';
-    out += '<text x="' + cx.toFixed(1) + '" y="' + (h - 5) + '" text-anchor="middle" font-size="' + fs + '" fill="var(--rpt-page-text)">' + yearText(b.year) + '</text>';
+// The utility page at the end of the audit: every building on one page (Matt 2026-11-18: "1 page at the end with all of the buildings ...
+// how the buildings rank against each other and the changes through the years"). The one reader of the yearly totals is buildingUseByYear
+// (app/utility-data.js: kBtu and eui come from computeKBtu and computePeriodEUI there). This only ranks and draws them. Annual totals only: no
+// monthly value, no raw kWh. Two pictures: the ranking of the Energy Use Intensity of the last complete year (bars, median line) and a heat map
+// of the change of the total energy of each year against the first complete year of the building.
+var A36_UA_W = 720; // px, the width of both pictures (the content width of the page)
+var A36_UA_FS = 13.34; // px, the smallest report text (RPT_MIN_TEXT_PX)
+var A36_UA_ROW_H = 19;
+var A36_UA_SVG_OPEN = '<svg data-audit-chart="1" xmlns="http://www.w3.org/2000/svg" font-family="Arial,sans-serif" font-size="' + A36_UA_FS + '"';
+function _a36UAName(name) {
+  var t = String(name);
+  return t.length > 26 ? t.slice(0, 25) + '…' : t;
+}
+// The rows of the page: one per building that has a complete year, with its floor area for the ranking. year = the last complete calendar year
+// that at least half of the buildings with an intensity have. Returns null with fewer than 2 buildings in the ranking.
+function _a36UtilityAcrossData(d) {
+  if (!d || !d.project || typeof buildingUseByYear !== 'function') return null;
+  var all = [];
+  d.buildings.forEach(function (b) {
+    var ud = _a36UtilityBuilding(d, b);
+    var yrs = ud ? buildingUseByYear(d.project.id, ud.id) : [];
+    if (yrs.length) all.push({ name: _a36DisplayName(b), yrs: yrs });
   });
-  out += '<line x1="' + padX + '" y1="' + base + '" x2="' + (w - padX) + '" y2="' + base + '" stroke="var(--rpt-page-text)" stroke-width="1"/>';
+  var withEui = all.filter(function (r) {
+    return r.yrs.some(function (y) {
+      return y.eui > 0;
+    });
+  });
+  var count = {};
+  withEui.forEach(function (r) {
+    r.yrs.forEach(function (y) {
+      if (y.eui > 0) count[y.year] = (count[y.year] || 0) + 1;
+    });
+  });
+  var year = Object.keys(count)
+    .map(Number)
+    .sort(function (a, c) {
+      return c - a;
+    })
+    .filter(function (y) {
+      return count[y] >= withEui.length / 2;
+    })[0];
+  if (year === undefined) return null;
+  var rows = [];
+  withEui.forEach(function (r) {
+    var cur = r.yrs.filter(function (y) {
+      return y.year === year && y.eui > 0;
+    })[0];
+    if (cur) rows.push({ name: r.name, yrs: r.yrs, eui: cur.eui, hasGas: cur.hasGas });
+  });
+  if (rows.length < 2) return null;
+  rows.sort(function (a, c) {
+    return c.eui - a.eui || (a.name < c.name ? -1 : 1);
+  });
+  var sorted = rows
+    .map(function (r) {
+      return r.eui;
+    })
+    .sort(function (a, c) {
+      return a - c;
+    });
+  var m = sorted.length >> 1;
+  var median = sorted.length % 2 ? sorted[m] : (sorted[m - 1] + sorted[m]) / 2;
+  // change of the total energy (kBtu) of each year against the first complete year of the building, in percent
+  rows.forEach(function (r) {
+    var base = r.yrs[0];
+    r.pct = {};
+    r.yrs.forEach(function (y) {
+      if (base.kBtu > 0) r.pct[y.year] = ((y.kBtu - base.kBtu) / base.kBtu) * 100;
+    });
+    r.change = r.yrs.length > 1 && base.kBtu > 0 ? r.pct[r.yrs[r.yrs.length - 1].year] : null;
+    r.baseYear = base.year;
+  });
+  var years = [];
+  rows.forEach(function (r) {
+    r.yrs.forEach(function (y) {
+      if (years.indexOf(y.year) === -1) years.push(y.year);
+    });
+  });
+  years.sort(function (a, c) {
+    return a - c;
+  });
+  return { year: year, rows: rows, median: median, years: years };
+}
+function _a36UANiceStep(max) {
+  var steps = [5, 10, 20, 25, 50, 100, 200, 500];
+  for (var i = 0; i < steps.length; i++) if (max / steps[i] <= 6) return steps[i];
+  return 1000;
+}
+// The ranking picture: one bar per building, highest first, the value at the end of each bar, a dashed line at the median. The axis starts at zero.
+// A building with no gas meter has a lighter bar with an outline and the words "electric only" after its value (it reads in grayscale).
+function _a36UARankSVG(rows, median) {
+  var left = 190,
+    right = 160,
+    padT = 20,
+    padB = 24;
+  var maxV = Math.max.apply(
+    null,
+    rows.map(function (r) {
+      return r.eui;
+    }),
+  );
+  var step = _a36UANiceStep(maxV);
+  var axisMax = Math.ceil(maxV / step) * step;
+  var plotW = A36_UA_W - left - right;
+  var xOf = function (v) {
+    return left + (v / axisMax) * plotW;
+  };
+  var h = padT + rows.length * A36_UA_ROW_H + padB;
+  var base = padT + rows.length * A36_UA_ROW_H;
+  var out = A36_UA_SVG_OPEN + ' width="' + A36_UA_W + '" height="' + h + '" viewBox="0 0 ' + A36_UA_W + ' ' + h + '"><rect width="' + A36_UA_W + '" height="' + h + '" fill="#ffffff"/>';
+  for (var t = 0; t <= axisMax + 0.001; t += step) {
+    out += '<line x1="' + xOf(t).toFixed(1) + '" y1="' + padT + '" x2="' + xOf(t).toFixed(1) + '" y2="' + base + '" stroke="var(--rpt-border)" stroke-opacity="0.25" stroke-width="1"/>';
+    out += '<text x="' + xOf(t).toFixed(1) + '" y="' + (base + 17) + '" text-anchor="middle" fill="var(--rpt-page-text)">' + t + '</text>';
+  }
+  out += '<line x1="' + xOf(median).toFixed(1) + '" y1="' + (padT - 4) + '" x2="' + xOf(median).toFixed(1) + '" y2="' + base + '" stroke="var(--rpt-page-text)" stroke-width="1.5" stroke-dasharray="5 3"/>';
+  rows.forEach(function (r, i) {
+    var y = padT + i * A36_UA_ROW_H;
+    var bw = xOf(r.eui) - left;
+    var lead = r.hasGas
+      ? '<rect x="' + left + '" y="' + (y + 2) + '" width="' + bw.toFixed(1) + '" height="' + (A36_UA_ROW_H - 4) + '" fill="var(--rpt-blue)"/>'
+      : '<rect x="' + left + '" y="' + (y + 2) + '" width="' + bw.toFixed(1) + '" height="' + (A36_UA_ROW_H - 4) + '" fill="var(--rpt-blue)" fill-opacity="0.3" stroke="var(--rpt-blue)" stroke-width="1.2"/>';
+    out += lead;
+    out += '<text x="' + (left - 6) + '" y="' + (y + 14) + '" text-anchor="end" fill="var(--rpt-page-text)">' + _escHtml(_a36UAName(r.name)) + '</text>';
+    var lbl = r.eui.toFixed(1);
+    var lblW = (lbl.length + (r.hasGas ? 0 : 15)) * A36_UA_FS * 0.58 + 6;
+    out += '<rect x="' + (left + bw + 2).toFixed(1) + '" y="' + (y + 2) + '" width="' + lblW.toFixed(1) + '" height="' + (A36_UA_ROW_H - 4) + '" fill="#ffffff"/>';
+    out +=
+      '<text x="' + (left + bw + 5).toFixed(1) + '" y="' + (y + 14) + '" fill="var(--rpt-page-text)"><tspan font-weight="700">' + lbl + '</tspan>' +
+      (r.hasGas ? '' : '<tspan dx="6">electric only</tspan>') + '</text>';
+  });
+  out += '<line x1="' + left + '" y1="' + padT + '" x2="' + left + '" y2="' + base + '" stroke="var(--rpt-page-text)" stroke-width="1"/>';
+  out += '<text x="' + xOf(median).toFixed(1) + '" y="' + (padT - 7) + '" text-anchor="middle" font-weight="700" fill="var(--rpt-page-text)">Median ' + median.toFixed(1) + '</text>';
   return out + '</svg>';
 }
-// The history block of a building page, or null with fewer than 2 complete years of use.
-function _a36UseHistoryHtml(d, b) {
-  if (!d || !d.project || typeof buildingUseByYear !== 'function' || typeof getUDBldgs !== 'function' || typeof _emNormBldgNameForJoin !== 'function') return null;
-  var key = _emNormBldgNameForJoin(b.name);
-  var ud = getUDBldgs(d.project.id).filter(function (x) {
-    return _emNormBldgNameForJoin(x.name) === key;
-  })[0];
-  var yrs = ud ? buildingUseByYear(d.project.id, ud.id) : [];
-  if (yrs.length < 2) return null;
-  var cap = function (t, svg) {
+// The fill of a heat map cell: green for less energy, red for more, the stronger the larger the change, no fill near zero.
+function _a36UAHeat(p) {
+  var a = Math.min(Math.abs(p) / 40, 1) * 0.65;
+  if (Math.abs(p) < 0.5) return ' fill="none"';
+  return ' fill="' + (p < 0 ? 'var(--rpt-green)' : 'var(--rpt-red)') + '" fill-opacity="' + a.toFixed(2) + '"';
+}
+function _a36UAPctText(p) {
+  var v = Math.round(p);
+  return (v > 0 ? '+' : '') + v + '%';
+}
+// The heat map: one row per building in the order of the ranking, one column per calendar year, the percent change of the total energy against the
+// first complete year of the building ("base"). Every cell prints its percent. No separate Change column: the last year column already is the change
+// from the first year (Manager review 2026-11-18: no repeated values).
+function _a36UAHeatSVG(rows, years) {
+  var left = 170,
+    padT = 24;
+  var cw = (A36_UA_W - left - 6) / years.length;
+  var h = padT + rows.length * A36_UA_ROW_H;
+  var out = A36_UA_SVG_OPEN + ' width="' + A36_UA_W + '" height="' + h + '" viewBox="0 0 ' + A36_UA_W + ' ' + h + '"><rect width="' + A36_UA_W + '" height="' + h + '" fill="#ffffff"/>';
+  var cell = function (x, y, w, p, text, bold) {
     return (
-      '<td style="width:50%;vertical-align:top;padding:0 6px 0 0;border:none"><div style="font-size:12px;font-weight:600;color:var(--rpt-page-text);margin:0 0 2px 0">' + t + '</div>' + svg + '</td>'
+      '<rect x="' + x.toFixed(1) + '" y="' + (y + 1) + '" width="' + (w - 2).toFixed(1) + '" height="' + (A36_UA_ROW_H - 2) + '" fill="#ffffff" stroke="var(--rpt-border)" stroke-opacity="0.25" stroke-width="0.8"/>' +
+      (p === null ? '' : '<rect x="' + x.toFixed(1) + '" y="' + (y + 1) + '" width="' + (w - 2).toFixed(1) + '" height="' + (A36_UA_ROW_H - 2) + '"' + _a36UAHeat(p) + '/>') +
+      '<text x="' + (x + (w - 2) / 2).toFixed(1) + '" y="' + (y + 14) + '" text-anchor="middle"' + (bold ? ' font-weight="700"' : '') + ' fill="var(--rpt-page-text)">' + text + '</text>'
     );
   };
-  var unit = function (list, u) {
-    var m = Math.max.apply(null, list.map(function (x) { return x.v; }).concat([0]));
-    return m >= 1000 ? 'thousand ' + u : u;
+  var yearText = function (y) {
+    return cw >= 36 ? String(y) : "'" + String(y).slice(2);
   };
-  var el = yrs.map(function (y) { return { year: y.year, v: y.kwh }; });
-  var gas = yrs[0].hasGas ? yrs.map(function (y) { return { year: y.year, v: y.therms || 0 }; }) : null;
-  return (
-    '<div style="font-size:13.34px;font-weight:700;color:var(--rpt-blue);margin:2px 0 2px 0">Annual Energy Use, ' + yrs[0].year + '\u2013' + yrs[yrs.length - 1].year + '</div>' +
-    '<table style="width:100%;border-collapse:collapse;table-layout:fixed;margin:0 0 8px 0"><tr>' +
-    cap('Electricity, ' + unit(el, 'kWh'), _a36UseHistorySVG(el, 'var(--rpt-elec-cur)')) +
-    (gas ? cap('Natural gas, ' + unit(gas, 'therms'), _a36UseHistorySVG(gas, 'var(--rpt-gas-cur)')) : '<td style="width:50%;border:none"></td>') +
-    '</tr></table>'
+  years.forEach(function (y, i) {
+    out += '<text x="' + (left + cw * (i + 0.5) - 1).toFixed(1) + '" y="16" text-anchor="middle" font-weight="700" fill="var(--rpt-page-text)">' + yearText(y) + '</text>';
+  });
+  rows.forEach(function (r, k) {
+    var y = padT + k * A36_UA_ROW_H;
+    out += '<text x="' + (left - 6) + '" y="' + (y + 14) + '" text-anchor="end" fill="var(--rpt-page-text)">' + _escHtml(_a36UAName(r.name)) + '</text>';
+    years.forEach(function (yr, i) {
+      if (r.pct[yr] === undefined) return;
+      var x = left + cw * i;
+      out += yr === r.baseYear ? cell(x, y, cw, null, 'base', false) : cell(x, y, cw, r.pct[yr], _a36UAPctText(r.pct[yr]), false);
+    });
+  });
+  return out + '</svg>';
+}
+// The pages of the utility page ([] with fewer than 2 buildings that have an intensity). sectionNo = the section number (Detailed) or null (Simple).
+function _a36UtilityAcrossPages(pageNum, d, sectionNo) {
+  var ua = _a36UtilityAcrossData(d);
+  if (!ua) return [];
+  var nn = _a36BuildingNouns(d);
+  var many = nn.many.charAt(0).toUpperCase() + nn.many.slice(1);
+  var title = 'Utility Use Across the ' + many;
+  var tokens = [_a36DetTok(sectionNo ? _a36DetSectionTitle(sectionNo, title, '') : '<h1 style="' + A36_DET_TITLE_STYLE + '">' + _escHtml(title) + '</h1>', true)];
+  var rows = ua.rows;
+  var hi = rows[0].eui;
+  var lo = rows[rows.length - 1].eui;
+  var head = function (t, sub) {
+    return '<div style="font-size:14px;font-weight:700;color:var(--rpt-blue);margin:4px 0 0 0">' + _escHtml(t) + '</div><div style="font-size:' + A36_UA_FS + 'px;color:var(--rpt-page-text);margin:0 0 2px 0">' + _escHtml(sub) + '</div>';
+  };
+  var rankTitle = lo > 0 ? 'The highest-use ' + nn.one + ' uses ' + (hi / lo).toFixed(1) + '× the energy per ' + A36_FT2 + ' of the lowest' : 'Energy use per ' + A36_FT2 + ' of each ' + nn.one;
+  tokens.push(_a36DetTok(head(rankTitle, 'Energy Use Intensity in ' + ua.year + ' (kBtu/' + A36_FT2 + '), highest first') + _a36UARankSVG(rows, ua.median), true));
+  var multi = rows.filter(function (r) {
+    return r.change !== null;
+  });
+  if (multi.length >= 2) {
+    var less = multi.filter(function (r) {
+      return Math.round(r.change) < 0;
+    }).length;
+    var heatTitle = less + ' of ' + multi.length + ' ' + nn.many + ' use less energy than in their first year on file';
+    tokens.push(_a36DetTok(head(heatTitle, 'Change in total energy (electricity and gas) against the first complete year of each ' + nn.one) + _a36UAHeatSVG(rows, ua.years), true));
+  }
+  tokens.push(
+    _a36DetTok(
+      '<p style="' + A36_DET_P + ';margin-top:4px">Annual totals only. Energy Use Intensity uses the floor area on file for each ' + nn.one + '. In the change chart, green is less energy than the first year and red is more energy; ' +
+        '"base" is the first complete year. A ' + nn.one + ' marked electric only has no gas meter on file; its intensity counts electricity only.</p>',
+    ),
   );
+  return _a36DetPages(pageNum, d, tokens, 'Utility Use');
 }
 // The page after the per-building pages: one table of the 12-month use of every building that has it, highest Energy Use Intensity first, with a
 // total row. Only with at least 2 buildings that have use and floor area for the same months. Returns the pages ([] when there is none).
@@ -30131,7 +30286,7 @@ function _a36UtilityUsePages(pageNum, d) {
   _a36DetTableToks(open, body, null).forEach(function (t) {
     tokens.push(t);
   });
-  if (anyNoGas) tokens.push(_a36DetTok('<p style="' + A36_DET_P + ';margin-top:2px">\u2014 No gas meter on file.</p>'));
+  if (anyNoGas) tokens.push(_a36DetTok('<p style="' + A36_DET_P + ';margin-top:2px">\u2014 Electric only.</p>'));
   return _a36DetPages(pageNum, d, tokens, 'Utility Use');
 }
 
@@ -30220,9 +30375,6 @@ function _a36AuditBuildingTokens(d, b, ctx, showBuildingInfra) {
   var rt = ringsTok(72);
   if (rt) tokens.push(rt);
   var headEnd = tokens.length;
-  var histHtml = _a36UseHistoryHtml(d, b);
-  var histTok = histHtml ? _a36DetTok(histHtml, true) : null;
-  if (histTok) tokens.push(histTok);
   // One row per equipment type; a finding is listed on the row of its type. A finding of no listed type goes on the Building-wide row.
   var byCat = {};
   var wide = [];
@@ -30298,8 +30450,6 @@ function _a36AuditBuildingTokens(d, b, ctx, showBuildingInfra) {
     tableToks.forEach(function (t) {
       t.keepNext = false;
     });
-    // The use history chart no longer chains to the table, else the heading, photo and rings together with the chart are taller than a page.
-    if (histTok) histTok.keepNext = false;
   }
   tokens.forEach(function (t) {
     t.lib = name;
@@ -30586,6 +30736,15 @@ function generateASHRAE36AuditHTML(data, selectedSections) {
     // Phase 5 — Cost Estimate page (spec §10, 2026-06-18): the Control Sequences table. Returns an Array (1 page when it fits; 2+ when paginated).
     rptPageASHRAE36CostEstimate(pageNum, data, detailed ? sectionNo++ : undefined).forEach(function (pg) {
       pages.push(_tagA36Section(pg, 'costEstimate'));
+      pageNum++;
+    });
+  }
+
+  // The last page of the audit before the appendices: the utility use of every building, ranked and over the years (same toggle as the
+  // per-building pages and the Utility Use table). Detailed numbers it as the next section.
+  if (buildingOn) {
+    _a36UtilityAcrossPages(pageNum, data, detailed ? sectionNo : null).forEach(function (pg) {
+      pages.push(_tagA36Section(pg, 'building'));
       pageNum++;
     });
   }

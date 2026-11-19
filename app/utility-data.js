@@ -1078,20 +1078,23 @@ function buildingMonthUse(pid, bid) {
   const commodities = [...new Set(meters.filter((m) => (m.bills || []).length).map((m) => m.commodity))];
   return { b: b, meters: meters, byYM: byYM, commodities: commodities };
 }
-// buildingUseByYear(pid, bid) - the use of every complete calendar year of a building: [{ year, kwh, therms (null with no gas meter), cost, hasGas }],
+// buildingUseByYear(pid, bid) - the use of every complete calendar year of a building: [{ year, kwh, therms (null with no gas meter), gal (propane), cost, hasGas,
+// kBtu (computeKBtu, the same as buildingAnnualUse), eui (computePeriodEUI of the year over the floor area on file; null with no floor area) }],
 // oldest first. A year is complete when each commodity the building has holds a bill in all 12 months (same month rule as buildingAnnualUse).
 // The monthly values may be estimated splits of an annual total: only the yearly sums are meant for display.
 function buildingUseByYear(pid, bid) {
   const mu = buildingMonthUse(pid, bid);
   if (!mu) return [];
   const hasGas = mu.commodities.includes('Gas');
+  const sqft = parseBillNumberOrZero(mu.b.sqft);
   const years = [...new Set(Object.keys(mu.byYM).map((ym) => ym.slice(0, 4)))].sort();
   const out = [];
   years.forEach((y) => {
     const win = presentedMonthRange(y + '-01', y + '-12');
     if (!win.every((ym) => mu.byYM[ym] && mu.commodities.every((c) => mu.byYM[ym].n[c]))) return;
-    const sum = win.reduce((a, ym) => ({ kwh: a.kwh + mu.byYM[ym].kwh, therms: a.therms + mu.byYM[ym].therms, cost: a.cost + mu.byYM[ym].cost }), { kwh: 0, therms: 0, cost: 0 });
-    out.push({ year: Number(y), kwh: sum.kwh, therms: hasGas ? sum.therms : null, cost: sum.cost, hasGas: hasGas });
+    const sum = win.reduce((a, ym) => ({ kwh: a.kwh + mu.byYM[ym].kwh, therms: a.therms + mu.byYM[ym].therms, gal: a.gal + mu.byYM[ym].gal, cost: a.cost + mu.byYM[ym].cost }), { kwh: 0, therms: 0, gal: 0, cost: 0 });
+    const kBtu = computeKBtu(sum.kwh, hasGas ? sum.therms : 0, sum.gal);
+    out.push({ year: Number(y), kwh: sum.kwh, therms: hasGas ? sum.therms : null, gal: sum.gal, cost: sum.cost, hasGas: hasGas, kBtu: kBtu, eui: sqft > 0 ? computePeriodEUI(kBtu, 12, sqft) : null });
   });
   return out;
 }
