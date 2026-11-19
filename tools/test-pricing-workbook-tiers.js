@@ -547,4 +547,72 @@ const plain = (x) => JSON.parse(JSON.stringify(x));
   ok('building filter (workbook): any subset == sum of those buildings in Summary/timeline; Hourly == main (' + subsets + ' subsets)');
 }
 
+// 12. A fixed-price row (the building power meter, Matt 2026-11-19): 5000 x qty in both methods, never in the workbook input, never re-shared.
+{
+  const meter = (id, b, qty) => ({
+    id,
+    building: b,
+    item: 'Building power meter',
+    phase: 1,
+    qty,
+    ioOnly: false,
+    noSku: false,
+    engReview: false,
+    unitPrice: 5000,
+    partsUnitPrice: 5000,
+    partsLineTotal: 5000 * qty,
+    installHours: 0,
+    installLaborRate: RATE,
+    installLaborTotal: 0,
+    lineTotal: 5000 * qty,
+    fixedPrice: true,
+    oppKey: 'powerMeter',
+  });
+  const T0 = tiers();
+  const T = { compliance: T0.compliance, recommended: T0.recommended.concat([meter('m1', 'Alpha', 1), meter('m2', 'Beta', 2)]), 'full-scope': T0['full-scope'] };
+  const wbc = make(read('app/pricing-estimator.js'), { en_pricing_catalog: catalog }, T);
+  const base = wbc._pricingComputeTotals(T0.recommended, est, 'p');
+  const withM = wbc._pricingComputeTotals(T.recommended, est, 'p');
+  assert.strictEqual(withM.method, 'workbook');
+  assert.strictEqual(withM.grand, base.grand + 15000, 'workbook: tier total = other rows + 5000 x 3 meters');
+  assert.strictEqual(withM.phase1, base.phase1 + 15000);
+  assert.strictEqual(withM.phase2, base.phase2);
+  assert.strictEqual(withM.rowShares.m1, 5000);
+  assert.strictEqual(withM.rowShares.m2, 10000);
+  ['h1', 'h2', 's1', 's2'].forEach((k) => assert.strictEqual(withM.rowShares[k], base.rowShares[k], 'other row share unchanged ' + k));
+  assert.deepStrictEqual(plain(withM.workbook.input), plain(base.workbook.input), 'workbook input has no meter parts or hours');
+  const sumRows = Object.keys(withM.rowShares).reduce((a, k) => a + withM.rowShares[k], 0);
+  assert.strictEqual(sumRows, withM.grand, 'row shares foot to the tier total');
+  const ch = withM.workbook.chain;
+  assert.strictEqual(ch[ch.length - 1].amount, withM.grand, 'the steps of "how this total is built" end at the tier total');
+  assert.strictEqual(ch.filter((c) => c.key === 'fixed')[0].amount, 15000);
+  // a typed part price on a fixed row changes nothing
+  const store2 = { en_pricing_catalog: catalog, en_pricing_workbook_p: { partPrices: { m1: 1 } } };
+  const wb2 = make(read('app/pricing-estimator.js'), store2, T);
+  assert.strictEqual(wb2._pricingComputeTotals(T.recommended, est, 'p').grand, withM.grand, 'typed part price ignored for a fixed row');
+  // hourly: the meter is 5000 x qty on top
+  const hrc = make(read('app/pricing-estimator.js'), { en_pricing_catalog: catalog, en_pricing_workbook_p: { method: 'hourly' } }, T);
+  const hb = hrc._pricingComputeTotals(T0.recommended, est, 'p');
+  const hm = hrc._pricingComputeTotals(T.recommended, est, 'p');
+  assert.strictEqual(hm.grand, hb.grand + 15000, 'hourly: tier total = other rows + 5000 x 3 meters');
+  // summary data: tier totals and the per-building amounts
+  const sd = wbc._pricingComputeSummaryData('p', est);
+  assert.strictEqual(sd.tierTotals.recommended.grand, withM.grand);
+  const bsum = sd.buildings.reduce((a, b) => a + b.tiers.recommended.total, 0);
+  assert.strictEqual(Math.round(bsum * 100), Math.round(withM.grand * 100), 'per-building amounts foot to the tier total');
+  // a tier with only meters
+  const only = wbc._pricingComputeTotals([meter('m1', 'Alpha', 1)], est, 'p');
+  assert.strictEqual(only.grand, 5000, 'only meters: 5000');
+  // sharing a subtotal over lines keeps a fixed line
+  const lines = wbc._auditEstShareLines(
+    [{ item: 'a', lineTotal: 300 }, { item: 'b', lineTotal: 100 }, { item: 'm', lineTotal: 5000, fixedPrice: true }],
+    5800,
+  );
+  assert.deepStrictEqual(lines.map((l) => l.lineTotal), [600, 200, 5000], 'shared lines: the fixed line keeps 5000, the rest share 800');
+  // condensed rows carry the flag
+  const cond = wbc._pricingComputeCondensedRows(T.recommended, est);
+  assert.strictEqual(cond.hw.filter((x) => x.fixedPrice).length, 1);
+  ok('fixed-price row (power meter, Matt 2026-11-19): 5000 x qty in both methods, outside the workbook, totals and shares foot');
+}
+
 console.log('\n' + n + ' checks passed');

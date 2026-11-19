@@ -245,6 +245,54 @@
   var SET_SHEETS = ['Info', 'Proposal', 'Dash', 'Mat & Equip', 'Labor Rates', QUOTE, 'NS'];
   var MAX_SHEET = 31;
 
+  /* Fixed-price items (Matt 2026-11-19): rows priced outside the workbook (the building power meters), at their own price with no
+     markup, overhead, tax or bond. They get their own sheet after the workbook sheets: one line per row (building, item, qty,
+     unit price, line total), the section total, the workbook total (a formula on the Dash grand total of the same set) and the
+     sheet grand total = workbook total + fixed total. fixed = [{building, item, qty, unit, total}] from _pricingComputeTotals. */
+  var FIXED_SHEET = 'Fixed-price';
+  function addFixedSheet(target, sheetName, dashSheetName, workbookTotal, fixed) {
+    var ws = target.addWorksheet(sheetName);
+    var money = '$#,##0.00';
+    ws.getCell('A1').value = 'Fixed-price items (no markup, overhead, tax or bond)';
+    ws.getCell('A1').font = { bold: true };
+    ['Building', 'Item', 'Qty', 'Unit price', 'Line total'].forEach(function (h, i) {
+      var c = ws.getCell(3, i + 1);
+      c.value = h;
+      c.font = { bold: true };
+    });
+    var sum = 0;
+    fixed.forEach(function (r, i) {
+      var row = 4 + i;
+      ws.getCell('A' + row).value = r.building;
+      ws.getCell('B' + row).value = r.item;
+      ws.getCell('C' + row).value = r.qty;
+      ws.getCell('D' + row).value = r.unit;
+      ws.getCell('D' + row).numFmt = money;
+      ws.getCell('E' + row).value = r.total;
+      ws.getCell('E' + row).numFmt = money;
+      sum += r.total;
+    });
+    var last = 3 + fixed.length;
+    var tRow = last + 2;
+    ws.getCell('B' + tRow).value = 'Fixed-price items total';
+    ws.getCell('E' + tRow).value = { formula: 'SUM(E4:E' + last + ')', result: sum };
+    ws.getCell('B' + (tRow + 1)).value = 'Workbook total';
+    ws.getCell('E' + (tRow + 1)).value = { formula: "'" + dashSheetName + "'!N36", result: workbookTotal };
+    ws.getCell('B' + (tRow + 2)).value = 'Grand total';
+    ws.getCell('E' + (tRow + 2)).value = { formula: 'E' + tRow + '+E' + (tRow + 1), result: sum + workbookTotal };
+    [tRow, tRow + 1, tRow + 2].forEach(function (r) {
+      ws.getCell('E' + r).numFmt = money;
+      ws.getCell('B' + r).font = { bold: true };
+      ws.getCell('E' + r).font = { bold: true };
+    });
+    ws.getColumn(1).width = 26;
+    ws.getColumn(2).width = 40;
+    ws.getColumn(3).width = 8;
+    ws.getColumn(4).width = 14;
+    ws.getColumn(5).width = 16;
+    return ws;
+  }
+
   // Load the template and fill it for one estimate (inputs, formulas kept, cached results).
   function buildFilled(Lib, bytes, input, meta, date) {
     var wb = new Lib.Workbook();
@@ -269,12 +317,13 @@
        input: same object EstimateWorkbook.compute() takes (parts may also carry partNo, desc, code)
        meta:  {customer, project, title, date ('YYYY-MM-DD' or Date), preparedBy}
        opts:  {ExcelJS, templateBytes, templateUrl} (tests and special hosts only) */
-  function exportWorkbook(input, meta, opts) {
+  function exportWorkbook(input, meta, opts, fixed) {
     var m = meta || {};
     var Lib = getExcelJS(opts);
     var date = parseDate(m.date);
     return loadTemplateBytes(opts).then(function (bytes) {
       return buildFilled(Lib, bytes, input, m, date).then(function (wb) {
+        if (fixed && fixed.length) addFixedSheet(wb, FIXED_SHEET, 'Dash', EW.compute(input).cells['Dash!N36'], fixed);
         return finishWorkbook(wb, m, date);
       });
     });
@@ -367,7 +416,7 @@
   function exportWorkbookSets(sets, meta, opts) {
     var m = meta || {};
     if (!sets || !sets.length) return Promise.reject(new Error('Nothing to export'));
-    if (sets.length === 1) return exportWorkbook(sets[0].input, Object.assign({}, m, sets[0].meta || {}), opts);
+    if (sets.length === 1) return exportWorkbook(sets[0].input, Object.assign({}, m, sets[0].meta || {}), opts, sets[0].fixed);
     var Lib = getExcelJS(opts);
     var date = parseDate(m.date);
     var prefixes = setPrefixes(sets);
@@ -393,6 +442,8 @@
             SET_SHEETS.forEach(function (n) {
               copySheet(out, wb.getWorksheet(n), nameMap[n], nameMap, imageIds);
             });
+            if (st.fixed && st.fixed.length)
+              addFixedSheet(out, prefixes[i] + ' ' + FIXED_SHEET, nameMap.Dash, EW.compute(st.input).cells['Dash!N36'], st.fixed);
           });
         });
       });

@@ -166,8 +166,8 @@ const near = (a, b) => Math.abs(a - b) < 0.006;
       const lab = buildOpportunityLaborRows(PID);
       res.lab = {
         rate,
-        rows: lab.map((r) => ({ id: r.id, b: r.building, phase: r.phase, qty: r.qty, total: r.lineTotal, parts: r.partsLineTotal == null ? null : r.partsLineTotal, instH: r.installHours == null ? null : r.installHours, hrsPerUnit: r.hrsPerUnit == null ? null : r.hrsPerUnit, oppKey: r.oppKey })),
-        c: { OVERRIDE_RELEASE_HOURS, PHOTOCELL_MATERIAL_PRICE, PHOTOCELL_HOURS, OCCUPANCY_SENSOR_MATERIAL_PRICE, OCCUPANCY_SENSOR_HOURS, POWER_METER_MATERIAL_PRICE, POWER_METER_HOURS },
+        rows: lab.map((r) => ({ id: r.id, b: r.building, phase: r.phase, qty: r.qty, total: r.lineTotal, parts: r.partsLineTotal == null ? null : r.partsLineTotal, instH: r.installHours == null ? null : r.installHours, hrsPerUnit: r.hrsPerUnit == null ? null : r.hrsPerUnit, oppKey: r.oppKey, fixedPrice: r.fixedPrice })),
+        c: { OVERRIDE_RELEASE_HOURS, PHOTOCELL_MATERIAL_PRICE, PHOTOCELL_HOURS, OCCUPANCY_SENSOR_MATERIAL_PRICE, OCCUPANCY_SENSOR_HOURS, POWER_METER_PRICE },
         inRec: _pricingTierRowsSplit(PID, 'recommended').base.filter((r) => /^opp_/.test(r.id)).map((r) => r.id).sort(),
         inFull: _pricingTierRowsSplit(PID, 'full-scope').base.filter((r) => /^opp_/.test(r.id)).map((r) => r.id).sort(),
         inComp: _pricingTierRowsSplit(PID, 'compliance').base.filter((r) => /^opp_/.test(r.id)).length,
@@ -235,7 +235,7 @@ const near = (a, b) => Math.abs(a - b) < 0.006;
     const R = (id) => out.lab.rows.find((r) => r.id === id) || {};
     const rate = out.lab.rate;
     const c = out.lab.c;
-    ok(c.OVERRIDE_RELEASE_HOURS === 1 && c.PHOTOCELL_MATERIAL_PRICE === 150 && c.PHOTOCELL_HOURS === 3 && c.OCCUPANCY_SENSOR_MATERIAL_PRICE === 120 && c.OCCUPANCY_SENSOR_HOURS === 2 && c.POWER_METER_MATERIAL_PRICE === 1800 && c.POWER_METER_HOURS === 8, '5. the constants are 1 h, 150 + 3 h, 120 + 2 h, 1800 + 8 h');
+    ok(c.OVERRIDE_RELEASE_HOURS === 1 && c.PHOTOCELL_MATERIAL_PRICE === 150 && c.PHOTOCELL_HOURS === 3 && c.OCCUPANCY_SENSOR_MATERIAL_PRICE === 120 && c.OCCUPANCY_SENSOR_HOURS === 2 && c.POWER_METER_PRICE === 5000, '5. the constants are 1 h, 150 + 3 h, 120 + 2 h, 5000 per meter (Matt 2026-11-19)');
     ok(out.lab.rows.length === 5 && !out.lab.rows.some((r) => /schedules|lightingSchedule|zoneSetpoints/i.test(r.id)), '5. one row for each of the 5 priced opportunities (the schedule and setpoint opportunities get none): ' + out.lab.rows.map((r) => r.id).join(', '));
     ok(near(R('opp_hwOverride_Alpha Library').total, 1 * rate) && R('opp_hwOverride_Alpha Library').phase === 2, '5. an override: 1.0 h at the hourly rate, programming: ' + R('opp_hwOverride_Alpha Library').total);
     ok(near(R('opp_chwDpOverride_Alpha Library').total, 1 * rate), '5. a second override opportunity of the same library has its own line of 1.0 h');
@@ -244,7 +244,7 @@ const near = (a, b) => Math.abs(a - b) < 0.006;
     const oc = R('opp_lightingOccupancy_Beta Library');
     ok(oc.phase === 1 && oc.qty === 5 && near(oc.parts, 600) && oc.instH === 2 && near(oc.total, 5 * (120 + 2 * rate)), '5. interior occupancy: $120 + 2 h per affected unit (5 units): ' + JSON.stringify(oc));
     const pm = R('opp_powerMeter_Beta Library');
-    ok(pm.phase === 1 && pm.qty === 1 && near(pm.parts, 1800) && pm.instH === 8 && near(pm.total, 1800 + 8 * rate), '5. power meter: $1,800 + 8 h per library: ' + JSON.stringify(pm));
+    ok(pm.phase === 1 && pm.qty === 1 && pm.fixedPrice === true && near(pm.total, 5000) && !pm.instH, '5. power meter: one fixed price of $5,000 per library (Matt 2026-11-19): ' + JSON.stringify(pm));
     ok(out.lab.rows.every((r) => r.oppKey), '5. every new row carries its opportunity key');
     ok(out.lab.inRec.length === 5 && out.lab.inFull.length === 5, '5. the 5 new lines are in Recommended and in Full Scope: ' + out.lab.inRec.length + ' / ' + out.lab.inFull.length);
     ok(out.lab.inComp === 0, '5. none of them is in Compliance');

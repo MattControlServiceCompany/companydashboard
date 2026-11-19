@@ -64,8 +64,10 @@ const PHOTOCELL_MATERIAL_PRICE = 150; // exterior lighting photocell, per librar
 const PHOTOCELL_HOURS = 3; // install and wire it, per library
 const OCCUPANCY_SENSOR_MATERIAL_PRICE = 120; // interior lighting occupancy sensor, per affected interior lighting unit
 const OCCUPANCY_SENSOR_HOURS = 2; // install and wire it, per unit
-const POWER_METER_MATERIAL_PRICE = 1800; // building power meter, per library
-const POWER_METER_HOURS = 8; // install and commission it, per library
+// Matt 2026-11-19: ONE building power meter costs the client $5,000 in total (material, install, commissioning and markup). It is a FIXED-PRICE
+// row (fixedPrice: true): the price is 5,000 x qty in the hourly method and in the workbook method, and the row never enters the workbook
+// (no parts, no hours, no overhead or profit on top). _pricingWorkbookTotals adds the fixed rows back to the phase 1 total.
+const POWER_METER_PRICE = 5000;
 
 /* ── Physical install labor — Deliverable E (2026-07-19), unified rate (2026-07-28) ─────────
    COST_LABOR_RATE_DEFAULT above + COST_PER_SEQ_HOURS_DEFAULT price BAS sequence PROGRAMMING
@@ -3313,7 +3315,7 @@ function buildOpportunityLaborRows(projId, buildingNames) {
       oppKey: f.key,
     });
   }
-  function device(f, qty, material, hours, equipment, note, deviceLabel) {
+  function device(f, qty, material, hours, equipment, note, deviceLabel, fixedPrice) {
     var install = parseFloat((hours * qty * rate).toFixed(2));
     var parts = parseFloat((material * qty).toFixed(2));
     rows.push({
@@ -3341,6 +3343,7 @@ function buildOpportunityLaborRows(projId, buildingNames) {
       phase: 1,
       oppKey: f.key,
       deviceLabel: deviceLabel, // the plain name of the device in the lines of the Service Proposal
+      fixedPrice: !!fixedPrice, // true = all-in price per unit that no workbook markup or share changes (see _pricingComputeTotals)
     });
   }
   function plural(n, word) {
@@ -3355,7 +3358,7 @@ function buildOpportunityLaborRows(projId, buildingNames) {
       var n = Math.max(f.units || 0, 1);
       device(f, n, OCCUPANCY_SENSOR_MATERIAL_PRICE, OCCUPANCY_SENSOR_HOURS, plural(n, 'interior lighting unit'), 'Occupancy sensor for each interior lighting unit.', 'Occupancy Sensors for Interior Lighting');
     } else if (f.key === 'powerMeter') {
-      device(f, 1, POWER_METER_MATERIAL_PRICE, POWER_METER_HOURS, '1 power meter', 'Building power meter on the building automation system.', 'Building Power Meters');
+      device(f, 1, POWER_METER_PRICE, 0, '1 power meter', 'Building power meter on the building automation system.', 'Building Power Meters', true);
     }
   });
   return rows;
@@ -4034,6 +4037,15 @@ function _pricingWorkbookSettings(projId) {
 function _pricingWorkbookRole(set, taskId) {
   return set.roles[taskId] || EstimateWorkbook.DEFAULTS.taskRoleMap[taskId];
 }
+// The "How this total is built" steps with the fixed-price rows (Matt 2026-11-19) before the Total, so the steps add up to the tier total.
+function _pricingChainWithFixed(chain, fixed) {
+  if (!fixed) return chain;
+  var total = chain[chain.length - 1];
+  return chain.slice(0, -1).concat([
+    { key: 'fixed', label: 'Fixed-price items (building power meters)', amount: fixed },
+    { key: total.key, label: total.label, amount: total.amount + fixed, sub: total.sub },
+  ]);
+}
 // agg: {partsC (cents), hours: {taskId: hours}, hours2: {taskId: hours} (programming only), p1C, p2C}
 function _pricingWorkbookTotals(set, agg, base) {
   var roleC = {};
@@ -4065,6 +4077,8 @@ function _pricingWorkbookTotals(set, agg, base) {
   if (agg.partsC) input.parts = [{ qty: 1, unit: agg.partsC / 100 }];
   var calc = EstimateWorkbook.compute(input);
   var total = calc.summary.total;
+  // Fixed-price rows (Matt 2026-11-19): outside the workbook, added to the hardware total at their own price. THE one place that adds them.
+  var fixed = (agg.fixedC || 0) / 100;
   // Phase split: Phase 2 = the programming labor priced alone through the same workbook (its labor,
   // tools, overhead, profit, tax, bond). Phase 1 = the rest of the total (all materials, install labor
   // and their overhead/profit/tax), so the two add up to the total exactly. One split for every consumer.
@@ -4079,13 +4093,13 @@ function _pricingWorkbookTotals(set, agg, base) {
   p2Input.hours = hours2;
   delete p2Input.parts;
   var p2 = agg.p2C ? Math.min(total, EstimateWorkbook.compute(p2Input).summary.total) : 0;
-  var split = [total - p2, p2];
+  var split = [total - p2 + fixed, p2];
   base.phase1 = split[0];
   base.phase2 = split[1];
   // Per-row display amounts: each included priced row's share of its phase's workbook total.
   base.rowShares = {};
   [
-    [agg.rows1, split[0]],
+    [agg.rows1, split[0] - fixed], // the workbook part of the hardware total; the fixed rows keep their own price (added below)
     [agg.rows2, split[1]],
   ].forEach(function (g) {
     var sh = _auditEstAllocate(
@@ -4098,14 +4112,18 @@ function _pricingWorkbookTotals(set, agg, base) {
       base.rowShares[r.id] = (base.rowShares[r.id] || 0) + sh[i];
     });
   });
-  base.grand = total;
+  (agg.fixedRows || []).forEach(function (r) {
+    base.rowShares[r.id] = (base.rowShares[r.id] || 0) + r.c / 100; // its own price, never a share of the workbook total
+  });
+  if (agg.fixedRows && agg.fixedRows.length) base.fixedRows = agg.fixedRows; // the lines of the Excel "Fixed-price" sheet
+  base.grand = total + fixed;
   base.method = 'workbook';
   base.workbook = {
     input: input,
     summary: calc.summary,
     tasks: tasks,
     settings: set,
-    chain: auditEstWorkbookChain(calc, set.pct),
+    chain: _pricingChainWithFixed(auditEstWorkbookChain(calc, set.pct), fixed),
   };
   return base;
 }
@@ -4113,7 +4131,7 @@ function _pricingWorkbookTotals(set, agg, base) {
 /* ── Compute footer totals ── */
 function _pricingComputeTotals(rows, estimate, projId) {
   var wbSet = _pricingWorkbookSettings(projId);
-  var wbAgg = wbSet ? { partsC: 0, hours: {}, hours2: {}, p1C: 0, p2C: 0, rows1: [], rows2: [] } : null;
+  var wbAgg = wbSet ? { partsC: 0, hours: {}, hours2: {}, p1C: 0, p2C: 0, rows1: [], rows2: [], fixedC: 0, fixedRows: [] } : null;
   var phase1 = 0,
     phase2 = 0;
   var included = 0,
@@ -4153,7 +4171,7 @@ function _pricingComputeTotals(rows, estimate, projId) {
       else price = row.noSku && row.lineTotal != null ? row.lineTotal : null;
     }
     // Workbook mode: a typed unit price for this part line wins over the manual price and the catalog.
-    if (wbSet && row.phase === 1 && wbSet.partPrices[toggleKey] != null) {
+    if (wbSet && row.phase === 1 && !row.fixedPrice && wbSet.partPrices[toggleKey] != null) {
       price = wbSet.partPrices[toggleKey] * row.qty + (row.installLaborTotal || 0);
     }
 
@@ -4166,7 +4184,11 @@ function _pricingComputeTotals(rows, estimate, projId) {
     hasAnyPrice = true;
     if (row.phase === 1) phase1 += price;
     else if (row.phase === 2) phase2 += price;
-    if (wbAgg) {
+    if (wbAgg && row.fixedPrice) {
+      // A fixed-price row (Matt 2026-11-19) is priced outside the workbook: its price is added back in _pricingWorkbookTotals.
+      wbAgg.fixedC += Math.round(price * 100);
+      wbAgg.fixedRows.push({ id: toggleKey, c: Math.round(price * 100), building: row.building, item: row.deviceLabel || row.item, qty: row.qty, unit: row.qty ? price / row.qty : price });
+    } else if (wbAgg) {
       var wbAdd = function (task, hrs) {
         if (hrs > 0) wbAgg.hours[task] = (wbAgg.hours[task] || 0) + hrs;
       };
@@ -8589,7 +8611,7 @@ function _pricingComputeCondensedRows(rows, estimate) {
       if (toggles[toggleKey] === false) return;
       var name = r.item || '(unnamed)';
       if (!byItem[name]) {
-        byItem[name] = { item: name, qty: 0, lineTotal: 0, buildings: {}, hasAnyPrice: false };
+        byItem[name] = { item: name, qty: 0, lineTotal: 0, buildings: {}, hasAnyPrice: false, fixedPrice: !!r.fixedPrice };
         order.push(name);
       }
       byItem[name].qty += r.qty || 0;
@@ -8607,6 +8629,7 @@ function _pricingComputeCondensedRows(rows, estimate) {
         buildingCount: Object.keys(it.buildings).length,
         lineTotal: it.hasAnyPrice ? it.lineTotal : null,
         unitPrice: it.hasAnyPrice && it.qty > 0 ? it.lineTotal / it.qty : null,
+        fixedPrice: it.fixedPrice,
       };
     });
   }
@@ -10583,7 +10606,7 @@ initCostEstimateTab = function initCostEstimateTab(projId) {
         "','" +
         toggleKey +
         '\')">';
-    } else if (totals.rowShares && row.phase === 1) {
+    } else if (totals.rowShares && row.phase === 1 && !row.fixedPrice) {
       // Workbook mode: the part price can be typed over the catalog price (typed marker + reset).
       contractContent = _pricingPartPriceCellHTML(projId, toggleKey, row, workbookPartPrices[toggleKey]);
     } else {
@@ -11928,6 +11951,12 @@ var PRICING_EXPORT_TIERS = [
   { key: 'recommended', label: 'Recommended' },
   { key: 'full-scope', label: 'Full Scope' },
 ];
+// The fixed-price lines of a tier for the Excel export (Matt 2026-11-19): the fixedPrice rows _pricingComputeTotals found, no second price.
+function _pricingExportFixed(tt) {
+  return (tt.fixedRows || []).map(function (r) {
+    return { building: r.building, item: r.item, qty: r.qty, unit: r.unit, total: r.c / 100 };
+  });
+}
 function _pricingExportSets(projId) {
   var data = _pricingComputeSummaryData(projId, _pricingGetEstimate(projId));
   var sets = [];
@@ -11938,7 +11967,9 @@ function _pricingExportSets(projId) {
     (input.parts || []).forEach(function (p) {
       p.desc = 'Materials, ' + t.label + ' tier';
     });
-    sets.push({ name: t.label, input: input, grand: tt.grand, meta: { title: t.label + ' Cost Estimate' } });
+    var set = { name: t.label, input: input, grand: tt.grand, meta: { title: t.label + ' Cost Estimate' } };
+    if (tt.fixedRows && tt.fixedRows.length) set.fixed = _pricingExportFixed(tt);
+    sets.push(set);
   });
   // Optional: Zone CO2 Sensors, one set per tier (priced alone through the same workbook). Not in the
   // tier sets above. The sheet name prefix has room for 19 characters.
