@@ -16578,6 +16578,84 @@ var ASHRAE36_SEQUENCE_EXEC_PHRASE = {
 };
 
 /**
+ * A36_SCOPE_PROGRAM - the ONE plain-words dictionary of the programming of the Service Proposal scope of work (Matt 2026-11-19): for every
+ * sequence type that can be priced, its plain name (lower case), the unit it counts in, and ONE short clause that says what it does for the
+ * building. Keyed by EM_SEQUENCE_DEFS.key, plus the opportunity types that are not a sequence of the matrix: terminalStandard (the terminal
+ * unit program upgrade), override (a manual override released) and the two equipment checks. The Audit Report can read the same entries.
+ * { plain, noun (singular), does }.
+ */
+var A36_SCOPE_PROGRAM = {
+  ahu_sat_reset: { plain: 'supply air temperature reset', noun: 'air handler', does: 'the air handler supplies warmer air when the rooms need less cooling, so it uses less energy' },
+  ahu_dsp_reset: { plain: 'duct static pressure reset', noun: 'air handler', does: 'the supply fan slows down when the zones need less air' },
+  ahu_economizer: { plain: 'economizer', noun: 'air handler', does: 'the air handler cools with outdoor air when the outdoor air is cool enough, so the cooling equipment runs less' },
+  ahu_freeze_prot: { plain: 'freeze protection', noun: 'air handler', does: 'the air handler shuts down before its water coil can freeze' },
+  ahu_min_oa: { plain: 'minimum outdoor air', noun: 'air handler', does: 'the air handler brings in the required fresh air and no more' },
+  ahu_rf_control: { plain: 'return fan control', noun: 'air handler', does: 'the return fan follows the supply fan, so the building pressure stays steady' },
+  vav_zone_temp: { plain: 'zone temperature control', noun: 'zone terminal unit', does: 'each room airflow box holds the room temperature setpoint' },
+  vav_damper_writeback: { plain: 'damper position command', noun: 'zone terminal unit', does: 'the control system sets the damper of each room airflow box and confirms it moved' },
+  vav_reheat: { plain: 'reheat valve control', noun: 'zone terminal unit', does: 'the reheat valve opens only when the room needs heat' },
+  hwp_supply_reset: { plain: 'hot water temperature reset', noun: 'hot water system', does: 'the boilers make cooler water when the building needs less heat, so they use less gas' },
+  hwp_pump_dp_reset: { plain: 'hot water pump pressure reset', noun: 'hot water system', does: 'the pumps slow down when fewer valves are open' },
+  hwp_staging: { plain: 'boiler staging', noun: 'hot water system', does: 'a boiler starts only when the building needs it, so fewer boilers run' },
+  chwp_supply_reset: { plain: 'chilled water temperature reset', noun: 'chilled water system', does: 'the chiller makes warmer water when the building needs less cooling, so it uses less energy' },
+  chwp_pump_dp_reset: { plain: 'chilled water pump pressure reset', noun: 'chilled water system', does: 'the pumps slow down when fewer valves are open' },
+  chwp_staging: { plain: 'chiller staging', noun: 'chilled water system', does: 'a chiller starts only when the building needs it, so fewer chillers run' },
+  demandCtrl: { plain: 'occupancy-based ventilation', noun: 'air handler', does: 'outdoor air follows the CO2 level, so the unit does not heat or cool more outdoor air than the people need' },
+  vav_dcv: { plain: 'occupancy-based ventilation', noun: 'zone terminal unit', does: 'the outdoor air of each room follows its CO2 level, so it matches the people in the room' },
+  terminalStandard: { plain: 'terminal unit program upgrade', noun: 'zone terminal unit', does: 'the room airflow boxes get the standard ASHRAE 36 program' },
+  override: { plain: 'manual overrides removed', noun: 'place', does: 'setpoints that are held by hand are released, so the automatic control runs again' },
+  offlineCheck: { plain: 'offline unit check', noun: 'unit', does: 'we find out why the unit does not report (power and network)' },
+  sensorCheck: { plain: 'sensor check', noun: 'sensor', does: 'we check a sensor whose reading is wrong, so the control program can trust it' },
+  equipmentCheck: { plain: 'equipment check', noun: 'library', does: 'we confirm each unit works and what to program before we start' },
+  // The building-wide items of the cost lines: they carry a name only (no programming clause).
+  powerMeter: { plain: 'building power meter', noun: 'building', does: '' },
+  lightingPhotocell: { plain: 'exterior lighting photocell', noun: 'building', does: '' },
+  lightingOccupancy: { plain: 'occupancy sensors for interior lighting', noun: 'building', does: '' },
+};
+
+// The plain name of the setpoint a manual override holds (the key of A36_DET_OVERRIDE), for "release the manual override on the ...".
+var A36_SCOPE_OVERRIDE_PLAIN = {
+  hwOverride: 'hot water temperature setpoint',
+  hwDpOverride: 'hot water pump pressure setpoint',
+  chwDpOverride: 'chilled water pump pressure setpoint',
+  satOverride: 'supply air temperature setpoint',
+  spOverride: 'duct static pressure setpoint',
+};
+
+// The plain name of a device the scope of work prints, by the device label of the cost lines (_rptA36HardwareLabel). A label that is not here
+// is the label in lower case.
+var A36_SCOPE_DEVICE_PLAIN = {
+  'Carbon Dioxide Sensors in Air Handler Ducts': 'CO2 sensors in the air ducts',
+  'Carbon Dioxide Sensors in Rooms': 'CO2 sensors in rooms',
+};
+
+// ONE NAME PER IDEA (Matt 2026-11-19): the name of a kind of work in the Service Proposal, from A36_SCOPE_PROGRAM. A manual override is named by
+// the setpoint it holds. Lower case; '' when the key has no entry. The Audit Report does not call this.
+function _rptA36ScopeKeyName(key) {
+  if (A36_SCOPE_OVERRIDE_PLAIN[key]) return 'remove the manual override on the ' + A36_SCOPE_OVERRIDE_PLAIN[key];
+  var def = A36_SCOPE_PROGRAM[key];
+  return def ? def.plain : '';
+}
+
+// The key of A36_SCOPE_PROGRAM of one priced row ('' when the row is none of them): its sequence, or the opportunity its item name stands for.
+function _rptA36ScopeRowKey(r) {
+  if (!r) return '';
+  if (r.seqKey && A36_SCOPE_PROGRAM[r.seqKey]) return r.seqKey;
+  var it = String(r.item || '').toLowerCase();
+  var byItem = {
+    'terminal unit program upgrade': 'terminalStandard',
+    'building power meter': 'powerMeter',
+    'exterior lighting photocell': 'lightingPhotocell',
+    'lighting occupancy control': 'lightingOccupancy',
+  };
+  if (byItem[it]) return byItem[it];
+  var hit = A36_DET_OVERRIDE.filter(function (o) {
+    return o.label.toLowerCase() === it;
+  })[0];
+  return hit ? hit.key : '';
+}
+
+/**
  * _a36SeqDisplayLabel(sd) — client-facing display name for one EM_SEQUENCE_DEFS entry.
  *
  * V-11 (visual review 2026-08-02): EM_SEQUENCE_DEFS names vav_damper_writeback
@@ -21572,11 +21650,14 @@ function _rptA36PlainName(label) {
  */
 function _rptA36PlainRowLabel(r) {
   var item = (r && r.item) || '';
-  if (r && r.isOfflineCheck) return 'Check an offline unit (power and network)';
+  if (r && r.isOfflineCheck) return 'Offline unit check';
   if (r && r.isSensorInvestigation) {
     var what = item.replace(/\s+Sensor Investigation$/, '').toLowerCase();
     return 'Check a ' + what + ' sensor that reads wrong';
   }
+  // One name per idea (Matt 2026-11-19): the name of a sequence or a fix is the one of A36_SCOPE_PROGRAM.
+  var scopeKey = typeof _rptA36ScopeRowKey === 'function' ? _rptA36ScopeRowKey(r) : '';
+  if (scopeKey) return _rptA36ScopeFirstUpper(_rptA36ScopeKeyName(scopeKey));
   return _rptA36PlainName(item);
 }
 
@@ -21649,7 +21730,7 @@ function _rptA36TopGaps(d) {
         if (x.key === g.key) sd = x;
       });
     }
-    var name = g.key === 'demandCtrl' ? 'Occupancy-Based Ventilation' : sd ? _rptA36PlainName(_a36SeqDisplayLabel(sd)) : g.key;
+    var name = A36_SCOPE_PROGRAM[g.key] ? _rptA36ScopeFirstUpper(A36_SCOPE_PROGRAM[g.key].plain) : sd ? _rptA36PlainName(_a36SeqDisplayLabel(sd)) : g.key;
     out.push({
       qty: g.qty,
       text: name + ': ' + rptCount(g.qty) + (g.qty === 1 ? ' control sequence' : ' control sequences'),
@@ -21698,6 +21779,42 @@ function _rptA36ProposalSummaryData(d) {
       else if (r.phase === 2 && r.seqKey) seqQty += r.qty || 0;
     });
     sd.roomCo2 = qty > 0 ? { qty: qty, seqQty: seqQty } : null;
+    // The optional room CO2 scope of Recommended and Compliance (Matt 2026-11-13, 2026-11-19): read from the one owner
+    // (_pricingComputeSummaryData -> sd.optional[tier] = _pricingOptionalZoneCo2Summary: its rows, its sensor count and its totals), priced with
+    // the same footing as the base (_rptA36FootOf). Full Scope has no optional scope. { tier: { qty, seqQty, price, libs: [{ name, sensors, seqs }] } }
+    sd.optionalCo2 = {};
+    ['recommended', 'compliance'].forEach(function (tier) {
+      var o = sd.optional && sd.optional[tier];
+      if (!o || !o.rows || !o.rows.length) return;
+      var foot = _rptA36FootOf(o.totals);
+      var sensors = 0;
+      var seqs = 0;
+      var byLib = {};
+      o.rows.forEach(function (r) {
+        if (toggles[r._baseId || r.id] === false) return;
+        var b = r.building || '';
+        var L = byLib[b] || (byLib[b] = { name: b, sensors: 0, seqs: 0 });
+        if (r.phase === 1) {
+          L.sensors += r.qty || 0;
+          sensors += r.qty || 0;
+        } else if (r.phase === 2 && r.seqKey) {
+          L.seqs += r.qty || 0;
+          seqs += r.qty || 0;
+        }
+      });
+      if (!foot || sensors <= 0) return;
+      var libs = Object.keys(byLib)
+        .sort(function (a, b) {
+          return a.toLowerCase() < b.toLowerCase() ? -1 : a.toLowerCase() > b.toLowerCase() ? 1 : 0;
+        })
+        .map(function (k) {
+          return byLib[k];
+        })
+        .filter(function (L) {
+          return L.sensors > 0;
+        });
+      sd.optionalCo2[tier] = { qty: sensors, seqQty: seqs, price: foot.totalR, libs: libs };
+    });
     // The opportunities of the audit: every cost line of the proposal is one of them (_pricingOpportunityLines).
     sd.opps = typeof _a36OpportunityList === 'function' ? _a36OpportunityList(d) : [];
   }
@@ -21709,12 +21826,12 @@ function _rptA36ProposalSummaryData(d) {
  * _rptA36TierCostData - the one-time cost of each option, for the high-level cost table on page 1.
  * Reads the SAME shared chain as the Cost Estimate page (_rptA36ProposalSummaryData -> tier totals ->
  * _rptFootTier), so this table can never differ from that page. Returns { tiers: [{key,label,total}],
- * roomCo2: { qty, seqQty } | null } (roomCo2 = the room carbon dioxide sensors and control sequences that Full Scope
+ * roomCo2: { qty, seqQty } | null, optionalCo2: { recommended, compliance } } (roomCo2 = the room carbon dioxide sensors and control sequences that Full Scope
  * includes); a tier with no total is left out (never a null price).
  */
 function _rptA36TierCostData(d) {
   if (d && d._a36TierCostCache) return d._a36TierCostCache;
-  var out = { tiers: [], roomCo2: null };
+  var out = { tiers: [], roomCo2: null, optionalCo2: {} };
   if (d) d._a36TierCostCache = out;
   var sd = _rptA36ProposalSummaryData(d);
   if (!sd || !sd.tierTotals) return out;
@@ -21728,7 +21845,19 @@ function _rptA36TierCostData(d) {
     if (f) out.tiers.push({ key: c.key, label: c.label, total: f.totalR });
   });
   out.roomCo2 = sd.roomCo2;
+  out.optionalCo2 = sd.optionalCo2 || {};
   return out;
+}
+
+/**
+ * _rptA36OptionalCo2Line - the one line that names the optional room CO2 scope of one option and its price (Cost Summary and Cost Estimate):
+ * "Optional: 203 room CO2 sensors with occupancy-based ventilation: +$173,677" (Compliance: "(sensors only)"). o = _rptA36TierCostData(d).optionalCo2[tier]; '' when the option has none (Full Scope never has).
+ */
+function _rptA36OptionalCo2Line(o) {
+  if (!o) return '';
+  // Recommended carries the occupancy-based ventilation programming of the sensors (its optional rows hold it); Compliance carries no savings
+  // sequence, so its optional rows are the sensors and their installation only: the two prices differ for that reason (Matt 2026-11-19).
+  return 'Optional: ' + rptCount(o.qty) + ' room CO2 ' + (o.qty === 1 ? 'sensor' : 'sensors') + (o.seqQty > 0 ? ' with occupancy-based ventilation' : ' (sensors only)') + ': +' + _fmtUSD(o.price);
 }
 
 /**
@@ -21768,7 +21897,11 @@ function _rptA36CostSummaryHTML(d, HEAD, BODY) {
       return (
         '<tr><td style="' + td + ';font-weight:700">' + _escHtml(t.label) + '</td>' +
         '<td style="' + td + '">' + _escHtml(_rptA36TierPlain(t.key, !!cost.roomCo2)) + '</td>' +
-        '<td style="' + td + ';text-align:right;font-weight:700">' + _fmtUSD(t.total) + '</td></tr>'
+        '<td style="' + td + ';text-align:right;font-weight:700">' + _fmtUSD(t.total) +
+        (cost.optionalCo2[t.key]
+          ? '<div style="font-weight:400;margin-top:2px">' + _escHtml(_rptA36OptionalCo2Line(cost.optionalCo2[t.key])) + '</div>'
+          : '') +
+        '</td></tr>'
       );
     })
     .join('');
@@ -22089,7 +22222,16 @@ function rptPageASHRAE36ProposalCover(n, d) {
       (_co2.seqQty > 0
         ? ' and the <strong>' + rptCount(_co2.seqQty) + ' control ' + (_co2.seqQty === 1 ? 'sequence' : 'sequences') + '</strong> that ' + (_co2.seqQty === 1 ? 'uses' : 'use') + ' ' + (_co2.qty === 1 ? 'it' : 'them')
         : '') +
-      '. Recommended and Compliance do not.';
+      '.';
+    var _optR = _rptA36TierCostData(d).optionalCo2;
+    if (_optR.recommended || _optR.compliance) {
+      var _optBits = [];
+      if (_optR.recommended) _optBits.push('<strong>' + _fmtUSD(_optR.recommended.price) + '</strong> for Recommended');
+      if (_optR.compliance) _optBits.push('<strong>' + _fmtUSD(_optR.compliance.price) + '</strong> for Compliance');
+      findingsPara += ' Recommended and Compliance can add ' + (_co2.qty === 1 ? 'it' : 'them') + ' as an optional scope, priced in the table below.';
+    } else {
+      findingsPara += ' Recommended and Compliance do not.';
+    }
   }
   var gapsHTML = gaps.length
     ? '<div style="' +
@@ -22121,31 +22263,50 @@ function rptPageASHRAE36ProposalCover(n, d) {
 }
 
 /**
- * _rptA36RecommendedServicesInnerHTML -- the head of the "Recommended Scope of Work" section: the heading, one lead
- * sentence (the Recommended option, how many buildings it covers, that the quantities are estimates) and the Step 1 line
- * (Matt 2026-11-19: the old Recommended Work text, "Why This Approach" and the five-column step table are one section now).
- * The library blocks that follow come from _rptA36RecommendedScope (rptPageASHRAE36ProposalPhaseTable). Same HEAD/BODY
+ * _rptA36RecommendedServicesInnerHTML -- the head of the "Recommended Scope of Work" section (Matt 2026-11-19): the heading, one lead paragraph, and
+ * what the Recommended option includes in total, in two short lists: the devices we furnish and install, and the programming we do (the plain
+ * words of A36_SCOPE_PROGRAM). The library blocks that follow come from _rptA36ScopeTokens (rptPageASHRAE36ProposalPhaseTable). Same HEAD/BODY
  * literals used throughout the ASHRAE 36 Proposal page family.
  */
 function _rptA36RecommendedServicesInnerHTML(d) {
   var HEAD = 'font-size:' + RPT_SECTION_HEAD_PX + 'px;font-weight:700;color:var(--rpt-page-text);margin:5px 0 2px';
-  var BODY = 'font-size:14px;color:var(--rpt-page-text);line-height:1.32';
   var scope = _rptA36RecommendedScope(d);
-  var lead;
-  if (scope) {
-    var nb = scope.libs.length;
-    var nAll = (d.portfolio || {}).totalBuildings || 0;
-    lead =
-      'We recommend the Recommended option from the Cost Summary. It covers the work listed below at ' +
-      (nAll > nb ? rptCount(nb) + ' of the ' + rptCount(nAll) + ' buildings' : rptCount(nb) + (nb === 1 ? ' building' : ' buildings')) +
-      '. Control Service Company does the work in steps. The step of each item is shown after it. All quantities are estimates.';
-  } else {
-    lead = 'The work will be listed here when the pricing for this project is complete.';
+  if (!scope) {
+    return (
+      '<div style="' + HEAD + '">Recommended Scope of Work</div>' +
+      '<div style="' + _RPT_A36_SCOPE_BODY + '">The work will be listed here when the pricing for this project is complete.</div>'
+    );
   }
+  var nb = scope.libs.length;
+  var nAll = (d.portfolio || {}).totalBuildings || 0;
+  var allText = scope.libs
+    .map(function (l) {
+      return l.lines
+        .map(function (ln) {
+          return ln.lead;
+        })
+        .join(' ');
+    })
+    .join(' ');
+  var abbr = [];
+  if (/AHU/.test(allText)) abbr.push('AHU means air handling unit');
+  if (/RTU/.test(allText)) abbr.push('RTU means rooftop unit');
+  abbr.push('CO2 means carbon dioxide');
+  abbr.push('BAS means the building automation system');
+  var lead =
+    'The Recommended option installs the devices and does the programming listed below at ' +
+    (nAll > nb ? rptCount(nb) + ' of the ' + rptCount(nAll) + ' buildings' : rptCount(nb) + (nb === 1 ? ' building' : ' buildings')) +
+    ', in the steps of the Recommended: Order of Work table. In the lists, ' + _a36DetJoin(abbr) + '. All quantities are estimates.';
+  var li = function (arr) {
+    return '<ul style="' + _RPT_A36_SCOPE_UL + '">' + arr.map(function (t) { return '<li style="margin-bottom:2px">' + _escHtml(t) + '</li>'; }).join('') + '</ul>';
+  };
   return (
     '<div style="' + HEAD + '">Recommended Scope of Work</div>' +
-    '<div style="' + BODY + '">' + _escHtml(lead) + '</div>' +
-    (scope ? '<div style="' + BODY + ';margin-top:5px"><span style="font-weight:700">Step 1, all buildings:</span> ' + _escHtml(_rptA36Step1Text()) + '</div>' : '')
+    '<div style="' + _RPT_A36_SCOPE_BODY + '">' + _escHtml(lead) + '</div>' +
+    '<div style="' + _RPT_A36_SCOPE_SUB + '">Devices we furnish and install</div>' +
+    (scope.devices.length ? li(scope.devices.map(function (x) { return x.text; })) : '<div style="' + _RPT_A36_SCOPE_BODY + '">None.</div>') +
+    '<div style="' + _RPT_A36_SCOPE_SUB + '">Programming we do</div>' +
+    (scope.programs.length ? li(scope.programs.map(function (x) { return x.text; })) : '<div style="' + _RPT_A36_SCOPE_BODY + '">None.</div>')
   );
 }
 
@@ -22511,7 +22672,7 @@ function _rptA36MonthSequenceGroups(items) {
       if (!bySeq[sd.key]) return;
       if (_obvMonthKeys[sd.key]) {
         if (!_obvGroup) {
-          _obvGroup = { label: 'Occupancy-Based Ventilation', _bMap: {}, seqCount: 0, sensorCount: 0 };
+          _obvGroup = { label: _rptA36ScopeFirstUpper(A36_SCOPE_PROGRAM.demandCtrl.plain), _bMap: {}, seqCount: 0, sensorCount: 0 };
           groups.push(_obvGroup);
         }
         Object.keys(bySeq[sd.key].b).forEach(function (b) {
@@ -22524,7 +22685,7 @@ function _rptA36MonthSequenceGroups(items) {
         return;
       }
       groups.push({
-        label: _rptA36PlainName(_a36SeqDisplayLabel(sd)),
+        label: A36_SCOPE_PROGRAM[sd.key] ? _rptA36ScopeFirstUpper(A36_SCOPE_PROGRAM[sd.key].plain) : _rptA36PlainName(_a36SeqDisplayLabel(sd)),
         buildings: Object.keys(bySeq[sd.key].b),
         seqCount: bySeq[sd.key].seq,
         sensorCount: bySeq[sd.key].sen,
@@ -22643,15 +22804,15 @@ function _rptA36MeasureContentH(html) {
 // a bare "Appendix" did not name the Audit Report).
 // Step 1 is work of Control Service Company: nothing in the proposal is a job of the client (Matt 2026-11-18).
 function _rptA36Step1Text() {
-  return 'Control Service Company checks the equipment and confirms what to program.';
+  // One name per idea (Matt 2026-11-19): the name is the one of A36_SCOPE_PROGRAM.equipmentCheck.
+  return _rptA36ScopeFirstUpper(A36_SCOPE_PROGRAM.equipmentCheck.plain) + ': Control Service Company confirms each unit works and what to program.';
 }
 
 /**
- * The Recommended Scope of Work (Matt 2026-11-19: "I can't tell what is actually included in the scope of work"). One block per building;
- * under it one bullet per cost line of the Recommended option. A cost line is one opportunity of one building, or one "Included" item
- * (_rptA36OppDetail, the same lines as the Install and Programming Detail), so every priced row is in exactly one bullet and the device
- * quantities of the bullets add up to the detail. The step of a bullet is the step of its rows in _rptA36RecommendedStepPlan (the plan
- * the Order of Work table reads). No price is computed here.
+ * The Recommended Scope of Work (Matt 2026-11-19: "I can't tell what is actually included in the scope of work"). The section opens with what the
+ * option includes in total (the devices and the programming), then one block per library with ONE line per piece of equipment: every cost line
+ * of the same equipment (_rptA36OppDetail, the same lines as the Install and Programming Detail) is merged into its line, so every priced row is
+ * in exactly one line, and the totals of the opening lists are sums of the same lines. No price is computed here.
  */
 // A label in lower case, except words that are not plain capitalized words (CO2, AHU-1, VAV).
 function _rptA36LowerWords(s) {
@@ -22664,86 +22825,35 @@ function _rptA36ScopeFirstUpper(s) {
   return s.charAt(0).toUpperCase() + s.slice(1);
 }
 
-// Where the work is: the unit names (up to three), else the number of units of the group, else the group.
-function _rptA36ScopeWhere(opp, lib, hasDevices) {
-  if (opp.kind === 'terminalStd') return '';
-  if (opp.kind === 'building' && hasDevices) return '';
-  var names = (opp.affected || [])
-    .map(function (n) {
-      return _a36DetEquipName(n, lib);
-    })
-    .filter(Boolean);
-  if (names.length && names.length <= 3) return _a36DetJoin(names);
-  var grp = _rptA36LowerWords(opp.groupLabel || '');
-  if (/^(building-wide|lighting)?$/.test(grp)) return '';
-  var cnt = opp.units || names.length;
-  if (cnt > 1) return cnt + ' ' + (/s$/.test(grp) ? grp : grp + 's');
-  return 'The ' + grp;
+// One device, in plain words, with its quantity: "2 duct temperature sensors", "1 building power meter".
+function _rptA36ScopeDeviceText(label, qty) {
+  var plain = A36_SCOPE_DEVICE_PLAIN[label] || _rptA36LowerWords(label);
+  return qty + ' ' + (qty === 1 ? _rptA36OneDevice(plain) : plain);
 }
 
-// What is done: what is installed, and what is programmed.
-function _rptA36ScopeAction(line) {
-  var opp = line.opp;
-  var inst = line.devices.map(function (x) {
-    return x.qty + ' ' + _rptA36LowerWords(x.qty === 1 ? _rptA36OneDevice(x.label) : x.label);
-  });
-  var install = inst.length ? 'install ' + _a36DetJoin(inst) : '';
-  if (opp.key === 'powerMeter') return (install || 'install 1 building power meter') + ' and connect it to the building automation system';
-  if (opp.kind === 'terminalStd')
-    return 'upgrade the programs of ' + line.progQty + ' terminal unit' + (line.progQty === 1 ? '' : 's') + ' to the ASHRAE 36 standard';
-  var ov = /^(.*?)\s+overridden$/i.exec(opp.label || '');
-  if (ov && !install) return 'release the manual override on the ' + _rptA36LowerWords(ov[1]) + ', so it runs again';
-  var prog = '';
-  if (opp.kind === 'seq') {
-    prog = 'program ' + _rptA36LowerWords(String(opp.label || '').replace(/\s*\([^)]*\)/g, ''));
-    if (line.ioQty) prog += ' using ' + line.ioQty + ' existing control point' + (line.ioQty === 1 ? '' : 's');
-  }
-  return [install, prog].filter(Boolean).join(' and ') || 'program ' + _rptA36LowerWords(opp.label || '');
+// The plain kind of equipment of a group ("Multi-Zone Rooftop Unit" -> "rooftop unit", "Single Zone Air Handling Unit" -> "air handler",
+// "Hot Water Plant" -> "hot water system").
+function _rptA36ScopeTypeName(groupLabel) {
+  return _rptA36LowerWords(groupLabel)
+    .replace(/^(single zone|multi-zone|dual-duct|variable air volume|constant volume)\s+/, '')
+    .replace(/air handling unit/, 'air handler')
+    .replace(/\bplant\b/, 'system');
 }
 
-// The text of one cost line (no step, no final period).
-function _rptA36ScopeLineText(line) {
-  var opp = line.opp;
-  var where = _rptA36ScopeWhere(opp, opp.lib, line.devices.length > 0);
-  var action = _rptA36ScopeAction(line);
-  return where ? _rptA36ScopeFirstUpper(where) + ': ' + action : _rptA36ScopeFirstUpper(action);
-}
-
-// The text of one "Included" item of one building: the item and the equipment it is about.
-function _rptA36ScopeIncludedText(item, rows, lib) {
-  var r0 = rows[0];
-  var qty = rows.reduce(function (s, r) {
-    return s + (r.qty || 0);
-  }, 0);
-  if (r0.phase === 1) {
-    if (r0.ioOnly) return 'Program ' + qty + ' existing control point' + (qty === 1 ? '' : 's');
-    return 'Install ' + qty + ' ' + _rptA36LowerWords(qty === 1 ? _rptA36OneDevice(item) : item);
-  }
-  var names = rows
-    .map(function (r) {
-      return r.equipment ? _a36DetEquipName(String(r.equipment).replace(/\s*\(offline\)$/, ''), lib) : '';
-    })
-    .filter(Boolean);
-  return item + (names.length ? ': ' + _a36DetJoin(names) : '');
-}
-
-function _rptA36ScopeStepText(rows, stepOf) {
-  var lo = 0;
-  var hi = 0;
-  rows.forEach(function (r) {
-    var k = stepOf[r.id];
-    if (!k) return;
-    if (!lo || k < lo) lo = k;
-    if (k > hi) hi = k;
-  });
-  if (!lo) return '';
-  return lo === hi ? ' (Step ' + lo + ')' : ' (Steps ' + lo + ' to ' + hi + ')';
+// The equipment name of a row of the "Included" lists, without the status the name carries: "Young Readers | FPB-10 (offline)".
+function _rptA36ScopeRowEquip(r, lib) {
+  return _a36DetEquipName(String(r.equipment || '').replace(/\s*\((offline|failed reading|suspect reading)\)$/, ''), lib);
 }
 
 /**
- * _rptA36RecommendedScope(d) - { libs: [{ name, bullets: [{ text, step, rowIds, devices }] }] } for the Recommended option, or null when
- * nothing is priced. Libraries in alphabetical order; inside a library the order of the cost lines of the Install and Programming Detail,
- * then the "Included" items. Cached on d.
+ * _rptA36RecommendedScope(d) - the Recommended scope of work, or null when nothing is priced:
+ *   { libs: [{ name, lines: [{ lead, parts: [{ label, text }], text, rowIds }] }],
+ *     devices: [{ label, qty, text }],            every device of the option, with its total number
+ *     programs: [{ key, qty, libs, text }],       every kind of programming, with the units and the libraries
+ *     overrideKeys: [] }.
+ * A line is one piece of equipment (or the group of identical units that have the same work: "RTU-1 and RTU-2 (rooftop units)") with up to three
+ * parts: Install, Program and Fix; then the zone terminal units, then the building-wide items (Building, Lighting). Libraries are in alphabetical
+ * order. Cached on d.
  */
 function _rptA36RecommendedScope(d) {
   if (d._a36Scope !== undefined) return d._a36Scope;
@@ -22752,69 +22862,239 @@ function _rptA36RecommendedScope(d) {
   if (sd && sd.perTier && sd.perTier.recommended) {
     var est = typeof _pricingGetEstimate === 'function' ? _pricingGetEstimate(d.project.id) : null;
     var det = _rptA36OppDetail(sd, est, 'recommended', null);
-    var plan = _rptA36RecommendedStepPlan(d);
-    var stepOf = {};
-    if (plan)
-      plan.steps.forEach(function (st, i) {
-        (st.rows || []).forEach(function (r) {
-          stepOf[r.id] = i + 1;
-        });
-      });
-    var byLib = {};
+    var libsBy = {};
+    var devTot = {};
+    var devOrder = [];
+    var progTot = {};
     var libOf = function (name) {
-      return byLib[name] || (byLib[name] = { name: name, bullets: [] });
+      return (
+        libsBy[name] ||
+        (libsBy[name] = { name: name, equip: {}, order: [], terminal: null, meter: null, lighting: null, also: null })
+      );
+    };
+    var addDev = function (target, devices) {
+      devices.forEach(function (x) {
+        if (!target.order) target.order = [];
+        if (!target.qty) target.qty = {};
+        if (target.qty[x.label] === undefined) {
+          target.qty[x.label] = 0;
+          target.order.push(x.label);
+        }
+        target.qty[x.label] += x.qty;
+        if (devTot[x.label] === undefined) {
+          devTot[x.label] = 0;
+          devOrder.push(x.label);
+        }
+        devTot[x.label] += x.qty;
+      });
+    };
+    var progAdd = function (key, qty, lib) {
+      var t = progTot[key] || (progTot[key] = { key: key, qty: 0, libs: {} });
+      t.qty += qty;
+      t.libs[lib] = true;
+    };
+    var equipLine = function (L, names, type) {
+      var key = names.slice().sort().join('|');
+      var ln = L.equip[key];
+      if (!ln) {
+        ln = L.equip[key] = { names: names, type: type, install: {}, program: [], fix: [], overrides: [], rowIds: [] };
+        L.order.push(key);
+      }
+      return ln;
+    };
+    var ovOf = function (key) {
+      return A36_DET_OVERRIDE.filter(function (o) {
+        return o.key === key;
+      })[0];
     };
     det.lines.forEach(function (ln) {
-      libOf(ln.opp.lib).bullets.push({
-        text: _rptA36ScopeLineText(ln),
-        step: _rptA36ScopeStepText(ln.rows, stepOf),
-        rowIds: ln.rows.map(function (r) {
-          return r.id;
-        }),
-        devices: ln.devices,
+      var opp = ln.opp;
+      var L = libOf(opp.lib);
+      var ids = ln.rows.map(function (r) {
+        return r.id;
       });
+      if (opp.kind === 'terminalStd') {
+        var t = L.terminal || (L.terminal = { qty: 0, rowIds: [] });
+        t.qty += ln.progQty;
+        t.rowIds = t.rowIds.concat(ids);
+        progAdd('terminalStandard', ln.progQty, opp.lib);
+        return;
+      }
+      if (opp.key === 'powerMeter') {
+        var m = L.meter || (L.meter = { rowIds: [] });
+        addDev(m, ln.devices);
+        m.rowIds = m.rowIds.concat(ids);
+        return;
+      }
+      if (opp.key === 'lightingPhotocell' || opp.key === 'lightingOccupancy') {
+        var li = L.lighting || (L.lighting = { rowIds: [] });
+        addDev(li, ln.devices);
+        li.rowIds = li.rowIds.concat(ids);
+        return;
+      }
+      var names = (opp.affected || [])
+        .map(function (n) {
+          return _a36DetEquipName(n, opp.lib);
+        })
+        .filter(Boolean);
+      var e = equipLine(L, names, /^(building-wide|lighting)$/i.test(opp.groupLabel || '') ? '' : _rptA36ScopeTypeName(opp.groupLabel || ''));
+      if (!e.type && opp.kind === 'seq') e.type = _rptA36ScopeTypeName(opp.groupLabel || '');
+      if (!e.type && opp.kind === 'sensor') e.type = _rptA36ScopeTypeName(opp.groupLabel || '');
+      e.rowIds = e.rowIds.concat(ids);
+      addDev(e.install, ln.devices);
+      if (opp.kind === 'seq') {
+        if (e.program.indexOf(opp.key) < 0) e.program.push(opp.key);
+        progAdd(opp.key, ln.progQty, opp.lib);
+      } else if (ovOf(opp.key)) {
+        e.overrides.push(opp.key);
+        progAdd('override', opp.units || 1, opp.lib);
+      } else if (!ln.devices.length) {
+        e.program.push(opp.key);
+        progAdd(opp.key, ln.progQty || 1, opp.lib);
+      }
     });
+    // The "Included" items (rows of no opportunity): the offline unit and sensor checks go to the equipment line of the unit; the other rows to "Also".
     det.included.forEach(function (inc) {
-      var perLib = {};
-      var order = [];
       (inc.rows || []).forEach(function (r) {
-        var b = r.building || '';
-        if (!perLib[b]) {
-          perLib[b] = [];
-          order.push(b);
+        var lib = r.building || '';
+        var L = libOf(lib);
+        if (r.isOfflineCheck || r.isSensorInvestigation) {
+          var e = equipLine(L, [_rptA36ScopeRowEquip(r, lib)], '');
+          e.rowIds.push(r.id);
+          if (r.isOfflineCheck) {
+            e.fix.push('check why it is offline (power and network)');
+            progAdd('offlineCheck', r.qty || 1, lib);
+          } else {
+            e.fix.push(_rptA36LowerWords(_rptA36PlainRowLabel(r)).replace(/^check a /, 'check the ').replace(/ sensor that reads wrong$/, ' sensor, which reads wrong'));
+            progAdd('sensorCheck', r.qty || 1, lib);
+          }
+          return;
         }
-        perLib[b].push(r);
-      });
-      order.forEach(function (b) {
-        var rows = perLib[b];
-        libOf(b).bullets.push({
-          text: _rptA36ScopeIncludedText(inc.item, rows, b),
-          step: _rptA36ScopeStepText(rows, stepOf),
-          rowIds: rows.map(function (r) {
-            return r.id;
-          }),
-          devices: [],
-        });
+        var al = L.also || (L.also = { install: {}, bits: [], ioQty: 0, rowIds: [] });
+        al.rowIds.push(r.id);
+        if (r.phase === 1 && r.ioOnly) al.ioQty += r.qty || 0;
+        else if (r.phase === 1) addDev(al.install, [{ label: _rptA36HardwareLabel(r), qty: r.qty || 0 }]);
+        else {
+          var nm = _rptA36LowerWords(_rptA36PlainRowLabel(r));
+          if (al.bits.indexOf(nm) < 0) al.bits.push(nm);
+        }
       });
     });
-    // Inside each library the bullets run in the order of the work: Step 2 before Step 3 (Manager review 2026-11-19).
-    var stepNo = function (bl) {
-      var m = /(\d+)/.exec(bl.step || '');
-      return m ? +m[1] : 99;
+
+    var devText = function (inst) {
+      return _a36DetJoin(
+        (inst.order || []).map(function (l) {
+          return _rptA36ScopeDeviceText(l, inst.qty[l]);
+        }),
+      );
     };
-    Object.keys(byLib).forEach(function (k) {
-      byLib[k].bullets.sort(function (x, y) {
-        return stepNo(x) - stepNo(y);
-      });
-    });
-    var libs = Object.keys(byLib)
-      .sort(function (a, b) {
-        return a.toLowerCase() < b.toLowerCase() ? -1 : a.toLowerCase() > b.toLowerCase() ? 1 : 0;
+    var libs = Object.keys(libsBy)
+      .sort(function (x, y) {
+        return x.toLowerCase() < y.toLowerCase() ? -1 : x.toLowerCase() > y.toLowerCase() ? 1 : 0;
       })
       .map(function (k) {
-        return byLib[k];
+        var L = libsBy[k];
+        var lines = [];
+        var seenType = {};
+        L.order.forEach(function (key) {
+          var e = L.equip[key];
+          var lead = e.names.length ? _a36DetJoin(e.names) : 'Other equipment';
+          if (e.names.length && e.type && !seenType[e.type] && lead.toLowerCase().indexOf(e.type) < 0) {
+            // A name that has its own brackets ("AHU-B (Children's 122E)") gets the kind after a comma, so the brackets do not stack.
+            var kind = e.type + (e.names.length > 1 ? 's' : '');
+            lead += lead.indexOf('(') >= 0 ? ', ' + kind : ' (' + kind + ')';
+            seenType[e.type] = true;
+          }
+          var parts = [];
+          if (e.install.order && e.install.order.length) parts.push({ label: 'Install', text: devText(e.install) });
+          if (e.program.length)
+            parts.push({
+              label: 'Program',
+              text: _a36DetJoin(
+                e.program.map(function (pk) {
+                  return (A36_SCOPE_PROGRAM[pk] || {}).plain || _rptA36LowerWords(pk);
+                }),
+              ),
+            });
+          var fixes = e.fix.slice();
+          if (e.overrides.length) {
+            var nouns = e.overrides.map(function (ok) {
+              return A36_SCOPE_OVERRIDE_PLAIN[ok] || _rptA36LowerWords((ovOf(ok) || {}).noun || ok);
+            });
+            fixes.unshift('remove the manual override' + (nouns.length > 1 ? 's' : '') + ' on the ' + _a36DetJoin(nouns));
+          }
+          if (fixes.length) parts.push({ label: 'Fix', text: _a36DetJoin(fixes) });
+          lines.push({ lead: lead, parts: parts, rowIds: e.rowIds });
+        });
+        if (L.terminal)
+          lines.push({
+            lead: rptCount(L.terminal.qty) + ' zone terminal unit' + (L.terminal.qty === 1 ? '' : 's'),
+            parts: [{ label: 'Program', text: A36_SCOPE_PROGRAM.terminalStandard.plain }],
+            rowIds: L.terminal.rowIds,
+          });
+        if (L.meter)
+          lines.push({
+            lead: 'Building',
+            parts: [],
+            free: 'install ' + devText(L.meter) + ' and connect ' + ((L.meter.qty && L.meter.qty[L.meter.order[0]]) === 1 ? 'it' : 'them') + ' to the BAS',
+            rowIds: L.meter.rowIds,
+          });
+        if (L.lighting) lines.push({ lead: 'Lighting', parts: [], free: 'install ' + devText(L.lighting), rowIds: L.lighting.rowIds });
+        if (L.also) {
+          var bits = [];
+          if (L.also.install.order && L.also.install.order.length) bits.push('install ' + devText(L.also.install));
+          if (L.also.ioQty) bits.push('program ' + L.also.ioQty + ' existing control point' + (L.also.ioQty === 1 ? '' : 's'));
+          L.also.bits.forEach(function (x) {
+            bits.push('program ' + x);
+          });
+          lines.push({ lead: 'Also included', parts: [], free: bits.join('; '), rowIds: L.also.rowIds });
+        }
+        lines.forEach(function (ln) {
+          ln.text =
+            ln.lead + ': ' + (ln.free ? _rptA36ScopeFirstUpper(ln.free) + '.' : ln.parts.map(function (pt) { return pt.label + ': ' + pt.text + '.'; }).join(' '));
+        });
+        return { name: k, lines: lines };
       });
-    if (libs.length) out = { libs: libs };
+
+    var devices = devOrder
+      .map(function (l) {
+        var q = devTot[l];
+        var txt = _rptA36ScopeDeviceText(l, q);
+        if (l === 'Building Power Meters') txt += ', connected to the BAS';
+        return { label: l, qty: q, text: txt };
+      })
+      .sort(function (x, y) {
+        return y.qty - x.qty;
+      });
+    var progKeys = Object.keys(A36_SCOPE_PROGRAM);
+    var programs = Object.keys(progTot)
+      .sort(function (x, y) {
+        var ix = progKeys.indexOf(x);
+        var iy = progKeys.indexOf(y);
+        return (ix < 0 ? 99 : ix) - (iy < 0 ? 99 : iy);
+      })
+      .map(function (k) {
+        var t = progTot[k];
+        var def = A36_SCOPE_PROGRAM[k] || { plain: _rptA36LowerWords(k), noun: 'unit', does: '' };
+        var nl = Object.keys(t.libs).length;
+        return {
+          key: k,
+          qty: t.qty,
+          libs: nl,
+          text:
+            _rptA36ScopeFirstUpper(def.plain) + ' (' + rptCount(t.qty) + ' ' + def.noun + (t.qty === 1 ? '' : 's') +
+            (nl > 1 ? ' in ' + rptCount(nl) + ' libraries' : '') + ')' + (def.does ? ': ' + def.does : '') + '.',
+        };
+      });
+    // The first thing the company does in every library (Matt 2026-11-19): the equipment check (the Step 1 of the Order of Work table).
+    var chk = A36_SCOPE_PROGRAM.equipmentCheck;
+    programs.unshift({
+      key: 'equipmentCheck',
+      qty: libs.length,
+      libs: libs.length,
+      text: _rptA36ScopeFirstUpper(chk.plain) + ' (' + (libs.length > 1 ? 'all ' : '') + rptCount(libs.length) + ' ' + (libs.length === 1 ? chk.noun : 'libraries') + '): ' + chk.does + '.',
+    });
+    if (libs.length) out = { libs: libs, devices: devices, programs: programs };
   }
   d._a36Scope = out;
   return out;
@@ -22822,29 +23102,71 @@ function _rptA36RecommendedScope(d) {
 
 // The list style of the scope bullets.
 var _RPT_A36_SCOPE_UL = 'margin:0;padding-left:18px;font-size:14px;color:var(--rpt-page-text);line-height:1.34';
+var _RPT_A36_SCOPE_BODY = 'font-size:14px;color:var(--rpt-page-text);line-height:1.34';
+var _RPT_A36_SCOPE_SUB = 'font-size:14px;font-weight:700;color:var(--rpt-page-text);margin:7px 0 2px';
 
 /**
- * _rptA36ScopeTokens(d) - the page tokens of the scope: one per building (its name and all its bullets), so a building is never split
- * over two pages and its name always stands with its first bullet. Each token has its measured height.
+ * _rptA36ScopeTokens(d) - the page tokens of the scope after the head: one per library (its name and all its lines), so a library is never split
+ * over two pages and its name always stands with its first line; then the optional room CO2 block and the "Not included" line. Each token has its
+ * measured height.
  */
 function _rptA36ScopeTokens(d) {
   var scope = _rptA36RecommendedScope(d);
   var tokens = [];
   if (!scope) return tokens;
   var HEAD = 'font-size:14px;font-weight:700;color:var(--rpt-page-text);margin:9px 0 2px';
-  scope.libs.forEach(function (lib) {
-    var html =
-      '<div style="' + HEAD + '">' + _escHtml(lib.name) + '</div>' +
-      '<ul style="' + _RPT_A36_SCOPE_UL + '">' +
-      lib.bullets
-        .map(function (b) {
-          return '<li style="margin-bottom:2px">' + _escHtml(b.text) + _escHtml(b.step) + '.</li>';
-        })
-        .join('') +
-      '</ul>';
+  var push = function (html, fallbackLines, pad) {
     var h = _rptA36MeasureContentH(html);
-    tokens.push({ type: 'block', estH: (h > 0 ? h : 40 * lib.bullets.length) + 9, html: html });
+    tokens.push({ type: 'block', estH: (h > 0 ? h : 40 * fallbackLines) + (pad === undefined ? 9 : pad), html: html });
+  };
+  var ulOf = function (items) {
+    return '<ul style="' + _RPT_A36_SCOPE_UL + '">' + items.join('') + '</ul>';
+  };
+  // A library may split between its lines (Matt 2026-11-19: no half-empty pages): its name stands with its first two lines, the other lines
+  // follow one by one; a line is never split.
+  scope.libs.forEach(function (lib, i) {
+    var lis = lib.lines.map(function (ln) {
+      var body = ln.free
+        ? _escHtml(_rptA36ScopeFirstUpper(ln.free)) + '.'
+        : ln.parts
+            .map(function (pt) {
+              return '<strong>' + pt.label + ':</strong> ' + _escHtml(pt.text) + '.';
+            })
+            .join(' ');
+      return '<li style="margin-bottom:2px"><strong>' + _escHtml(ln.lead) + ':</strong> ' + body + '</li>';
+    });
+    push(
+      (i === 0 ? '<div style="' + _RPT_A36_SCOPE_SUB + '">The work, library by library</div>' : '') +
+        '<div style="' + HEAD + '">' + _escHtml(lib.name) + '</div>' +
+        ulOf(lis.slice(0, 2)),
+      Math.min(2, lis.length) + 1,
+    );
+    for (var k = 2; k < lis.length; k++) push(ulOf([lis[k]]), 1, 2);
   });
+  // The optional room CO2 scope of the Recommended option (Matt 2026-11-13, 2026-11-19): the price is the one the Cost Estimate prints for it.
+  var opt = _rptA36TierCostData(d).optionalCo2.recommended;
+  if (opt && opt.libs.length) {
+    var optHead =
+      '<div style="' + HEAD + '">' + _escHtml(_rptA36OptionalCo2Line(opt)) + '</div>' +
+      '<div style="' + _RPT_A36_SCOPE_BODY + '">This work is not in the Recommended price. By library:</div>';
+    var optLi = opt.libs.map(function (L) {
+      return (
+        '<li style="margin-bottom:2px"><strong>' + _escHtml(L.name) + ':</strong> ' + rptCount(L.sensors) + ' CO2 ' + (L.sensors === 1 ? 'sensor' : 'sensors') + ' in rooms' +
+        (L.seqs > 0 ? ' and occupancy-based ventilation on ' + rptCount(L.seqs) + ' zone terminal ' + (L.seqs === 1 ? 'unit' : 'units') : '') +
+        '.</li>'
+      );
+    });
+    // The heading stands with its first two bullets; the rest follow one by one (a bullet list may run over a page).
+    push(optHead + ulOf(optLi.slice(0, 2)), 3);
+    for (var oi = 2; oi < optLi.length; oi++) push(ulOf([optLi[oi]]), 1, 2);
+  }
+  // Not included (Matt 2026-11-19): what a reader may expect and does not get.
+  var co2 = _rptA36TierCostData(d).roomCo2;
+  var noHtml =
+    '<div style="' + _RPT_A36_SCOPE_BODY + ';margin-top:9px"><strong>Not included in Recommended:</strong> ' +
+    (co2 ? 'the room CO2 sensors, unless the optional add above is chosen; ' : '') +
+    'the devices and programming that only the Compliance and Full Scope options add (see the Compliance Work and Full Scope Work sections).</div>';
+  push(noHtml, 2);
   return tokens;
 }
 
@@ -23170,8 +23492,11 @@ function _rptA36ComplianceScopeInnerHTML(d) {
     if (f.sequences > 0) bits.push('programs <strong>' + rptCount(f.sequences) + ' control ' + (f.sequences === 1 ? 'sequence' : 'sequences') + '</strong>');
     countLine = ' Across the ' + rptCount((d.portfolio || {}).totalBuildings) + ' buildings, Compliance ' + bits.join(' and ') + '.';
   }
+  var optCompliance = _rptA36TierCostData(d).optionalCo2.compliance;
   var co2Line = co2
-    ? ' Compliance does not include the ' + rptCount(co2.qty) + ' carbon dioxide (CO2) ' + (co2.qty === 1 ? 'sensor' : 'sensors') + ' in rooms. Full Scope includes ' + (co2.qty === 1 ? 'it' : 'them') + '.'
+    ? optCompliance
+      ? ' ' + _rptA36OptionalCo2Line(optCompliance) + '. Full Scope includes ' + (co2.qty === 1 ? 'it' : 'them') + '.'
+      : ' Compliance does not include the ' + rptCount(co2.qty) + ' carbon dioxide (CO2) ' + (co2.qty === 1 ? 'sensor' : 'sensors') + ' in rooms. Full Scope includes ' + (co2.qty === 1 ? 'it' : 'them') + '.'
     : '';
   var li = [];
   if (f.biggest.length) {
@@ -23263,7 +23588,7 @@ function _rptA36FullScopeInnerHTML(d) {
     '">' +
     co2Li +
     '<li>ASHRAE 36 optimization sequences: supply air temperature reset, duct static pressure ' +
-    'reset, ventilation that adjusts to occupancy, economizer control, and the other sequences applicable ' +
+    'reset, ' + A36_SCOPE_PROGRAM.demandCtrl.plain + ', ' + A36_SCOPE_PROGRAM.ahu_economizer.plain + ', and the other sequences applicable ' +
     'to each piece of equipment</li>' +
     '<li>Portfolio-wide automatic fault detection and diagnostics reporting</li>' +
     '<li>Ongoing verification and tuning as sequences are commissioned</li>' +
@@ -23774,13 +24099,8 @@ function _rptA36HardwareCategoryAgg(rows, toggles) {
  */
 // The name of one cost line: a short title-case name of the work (the Audit Report wording of an opportunity is a sentence).
 function _rptA36OppLineName(opp) {
-  var A36_OPP_LINE_NAME = {
-    terminalStandard: 'Terminal Unit Program Upgrade',
-    powerMeter: 'Building Power Meter',
-    lightingPhotocell: 'Exterior Lighting Photocell',
-    lightingOccupancy: 'Interior Lighting Occupancy Sensors',
-  };
-  if (A36_OPP_LINE_NAME[opp.key]) return A36_OPP_LINE_NAME[opp.key];
+  // One name per idea (Matt 2026-11-19): the name of the work is the one of A36_SCOPE_PROGRAM (a manual override: "Remove the manual override on the ...").
+  if (_rptA36ScopeKeyName(opp.key)) return _rptA36ScopeFirstUpper(_rptA36ScopeKeyName(opp.key));
   var t = _rptA36PlainName(opp.label).replace(/ reset overridden$/i, ' reset override').replace(/ overridden$/i, ' override');
   return t.replace(/(^|[\s(\/-])([a-z])/g, function (m, sp, c) {
     return sp + c.toUpperCase();
@@ -24035,11 +24355,11 @@ function _rptA36RecommendedTimelineHTML(d) {
   var plan = _rptA36RecommendedStepPlan(d);
   if (!plan) return '';
 
-  var colgroup = '<colgroup><col style="width:110px"><col style="width:574px"></colgroup>';
+  var colgroup = '<colgroup><col style="width:70px"><col style="width:614px"></colgroup>';
   var thStyle =
-    'padding:6px 8px;font-size:9px;font-weight:700;color:var(--rpt-page-text);text-align:center;border:1px solid var(--rpt-border)';
+    'padding:3px 8px;font-size:9px;font-weight:700;color:var(--rpt-page-text);text-align:center;border:1px solid var(--rpt-border)';
   var tdStyle =
-    'padding:6px 8px;font-size:9px;color:var(--rpt-page-text);border:1px solid var(--rpt-border);vertical-align:top';
+    'padding:3px 8px;font-size:9px;color:var(--rpt-page-text);border:1px solid var(--rpt-border);vertical-align:top';
 
   var rowsHTML = '';
   plan.steps.forEach(function (st, idx) {
@@ -24056,7 +24376,7 @@ function _rptA36RecommendedTimelineHTML(d) {
         });
       });
       var lower = function (l) {
-        return l.replace(/^Check /, 'check ');
+        return l.charAt(0).toLowerCase() + l.slice(1);
       };
       var newNames = st.groups.filter(function (g) { return g.isNew; }).map(function (g, gi) { return gi > 0 ? lower(g.label) : g.label; });
       var finNames = st.groups.filter(function (g) { return !g.isNew && !laterLabels[g.label]; }).map(function (g) { return lower(g.label); });
@@ -24078,7 +24398,6 @@ function _rptA36RecommendedTimelineHTML(d) {
     '<div style="font-size:' +
     RPT_SECTION_HEAD_PX +
     'px;font-weight:700;color:var(--rpt-page-text);margin-bottom:6px">Recommended: Order of Work</div>' +
-    '<div style="font-size:10px;color:var(--rpt-page-text);line-height:1.6;margin-bottom:6px">Control Service Company does the work in every step.</div>' +
     '<table style="width:684px;max-width:684px;border-collapse:collapse;font-size:9px;table-layout:fixed">' +
     colgroup +
     '<thead><tr>' +
@@ -24233,7 +24552,12 @@ function rptPageASHRAE36ProposalPricing(n, d, opts) {
         // is never shown as an unqualified full-scope dollar figure.
         var noCat = parts && parts.noCatalog;
         var display = g ? (noCat ? 'Labor: ' + g : g) : '—'; // every tier is priced (covering estimates); never prints a note to staff
-        return '<td style="' + amtStyle + '">' + display + '</td>';
+        var optLine = _rptA36OptionalCo2Line(summaryData && summaryData.optionalCo2 && summaryData.optionalCo2[c.key]);
+        return (
+          '<td style="' + amtStyle + '">' + display +
+          (optLine ? '<div style="font-size:10px;font-weight:400;margin-top:4px;line-height:1.4">' + _escHtml(optLine) + '</div>' : '') +
+          '</td>'
+        );
       })
       .join('') +
     '</tr>';
@@ -24432,7 +24756,7 @@ function rptPageASHRAE36ProposalPricing(n, d, opts) {
   // discBlock/svcBlock are the two smallest, least position-dependent blocks (a disclaimer and a
   // one-line budget callout), same "move the most severable block" approach used on
   // rptPageASHRAE36ProposalCover (see that function's comment). Content unchanged, not shrunk.
-  var bodyHTML = titleBlock + intro + table + timelineBlock;
+  var bodyHTML = titleBlock + intro + table;
 
   // PACKING (2026-11-14, round 3; room CO2 block removed 2026-11-18): ONE packer for every block after the cost table, in
   // document order: the install and programming detail (when it does not fit in the table) and the closing sections the
@@ -24455,6 +24779,9 @@ function rptPageASHRAE36ProposalPricing(n, d, opts) {
   // The detail list of each option (Recommended, Compliance, Full Scope), line by line. A heading starts the list; a list
   // that continues on the next page repeats the heading with "(2 of 2)". The part numbers are known after the list is placed,
   // so a marker stands in the heading while the pages are measured (one line either way) and is replaced at the end.
+  // The Recommended order of work (timeline) joins the Cost Estimate page when it fits above the footer; when it does not (the optional room CO2
+  // line under a price makes the table taller), it starts the next page instead of running into the footer (Matt 2026-11-19).
+  if (timelineBlock) _placeBlock(timelineBlock, 'Recommended: Order of Work', '', false);
   var detailTiers = detailFitsInline ? [] : _buildTierDetailPieces();
   detailTiers.forEach(function (tr, tIdx) {
     var parts = 0;

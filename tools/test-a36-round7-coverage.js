@@ -134,7 +134,7 @@ const RE = fs.readFileSync(path.join(ROOT, 'app', 'report-engine.js'), 'utf8');
       if (t === 'compliance') return ok(inv.length === 0, 'R2. compliance carries no investigation rows (unchanged)');
       const offRows = inv.filter((r) => /FPB-6/.test(r.label + r.item) || r.off);
       const wrong = inv.filter((r) => !r.off);
-      ok(inv.filter((r) => r.off).length === 1 && inv.filter((r) => r.off)[0].label === 'Check an offline unit (power and network)', 'R2. ' + t + ': exactly one offline-check line: ' + inv.filter((r) => r.off).map((r) => r.label));
+      ok(inv.filter((r) => r.off).length === 1 && inv.filter((r) => r.off)[0].label === 'Offline unit check', 'R2. ' + t + ': exactly one offline-check line: ' + inv.filter((r) => r.off).map((r) => r.label));
       ok(wrong.length === 1 && /zone air temperature sensor that reads wrong/.test(wrong[0].label), 'R2. ' + t + ': the online unit keeps its "reads wrong" row, the offline unit has none: ' + wrong.map((r) => r.label));
       const line = inv.find((r) => r.off);
       ok(line && line.unit === wrong[0].unit && line.total === line.unit, 'R2. ' + t + ': the offline line is one hour at the existing investigation price ' + (line && line.unit));

@@ -258,8 +258,15 @@ for (const method of ['hourly', 'workbook']) {
   //    The price merge is _rptA36ProposalSummaryData (covered by tools/test-proposal-page-fit.js on real pages).
   const src = read('app/report-engine.js');
   assert.ok(!/_rptA36OptionalZoneCo2HTML|_rptA36OptionalCo2Qty/.test(src), 'the proposal optional block is gone');
-  assert.ok(!/\.optional\[/.test(src), 'the proposal reads no optional section: it reads the owner Full Scope rows');
-  ok(method + ': proposal has no separate optional block; Full Scope total is the owner total');
+  // (Matt 2026-11-19) Recommended and Compliance can add the room CO2 sensors as an optional scope: the proposal reads the owner optional section
+  // (sd.optional[tier]) in ONE place, _rptA36ProposalSummaryData, and prices it with the same totals as the Cost Estimate.
+  const optReads = src.split(/\r?\n/).filter((l) => /\.optional\[/.test(l) && !/^\s*\/\//.test(l));
+  assert.strictEqual(optReads.length, 1, 'one reader of the owner optional section: ' + optReads.length);
+  const fnStart = src.indexOf('function _rptA36ProposalSummaryData');
+  const fnEnd = src.indexOf('function _rptA36TierCostData');
+  const at = src.indexOf(optReads[0]);
+  assert.ok(at > fnStart && at < fnEnd, 'the one reader is _rptA36ProposalSummaryData');
+  ok(method + ': proposal has no separate optional block of its own; the optional add reads the owner section in one place; Full Scope total is the owner total');
 
   // 8. Cost Estimate tab block: label, quantity, cost, and no row outside the section
   const tabHtml = sb._pricingOptionalZoneCo2HTML('p', all['recommended'].opt);

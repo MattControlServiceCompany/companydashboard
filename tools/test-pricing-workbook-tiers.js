@@ -261,6 +261,7 @@ const plain = (x) => JSON.parse(JSON.stringify(x));
     [
       'function _escHtml(s){ return String(s == null ? "" : s); }',
       'var _RPT_A36_POINT_CATEGORY_LABEL = {};',
+      (function(){var t=REP;var a=t.indexOf('var A36_SCOPE_PROGRAM');var b=t.indexOf('/**',t.indexOf('function _rptA36ScopeRowKey'));var c=t.indexOf('var A36_DET_OVERRIDE = [');var d=t.indexOf('var A36_DET_OVERRIDE_KEYS');return t.slice(a,b)+'\n'+t.slice(c,d);})(),
       'var SEQUENCE_BLOCKING_SENSORS = {};',
       ...['_pricingRowOpportunity', '_pricingOpportunityLines', '_hwRowKeyMatchesBlocking'].map((f) => fnSrc(read('app/pricing-estimator.js'), f)),
       fnSrc(read('app/audit-estimate.js'), '_auditEstAllocate'),
@@ -275,6 +276,9 @@ const plain = (x) => JSON.parse(JSON.stringify(x));
           '_rptItemizedLineText',
           '_rptRoundingDelta',
           '_rptA36PlainName',
+          '_rptA36ScopeFirstUpper',
+          '_rptA36ScopeKeyName',
+          '_rptA36ScopeRowKey',
           '_rptA36PlainRowLabel',
           '_rptA36TierDetailAggByPhase',
           '_rptA36HardwareCategoryAgg',

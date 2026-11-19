@@ -38,10 +38,10 @@ const RE = fs.readFileSync(path.join(ROOT, 'app', 'report-engine.js'), 'utf8');
       window._rptA36RecommendedStepPlan = () => ({
         steps: [
           { groups: [], rows: [] },
-          { groups: [g('Supply Air Temperature Reset', true), g('Minimum Outdoor Air', true)], rows: [] },
-          { groups: [g('Supply Air Temperature Reset', false), g('Economizer', true)], rows: [] },
-          { groups: [g('Minimum Outdoor Air', false)], rows: [] },
-          { groups: [g('Economizer', false), g('Minimum Outdoor Air', false)], rows: [] },
+          { groups: [g('Supply air temperature reset', true), g('Minimum outdoor air', true)], rows: [] },
+          { groups: [g('Supply air temperature reset', false), g('Economizer', true)], rows: [] },
+          { groups: [g('Minimum outdoor air', false)], rows: [] },
+          { groups: [g('Economizer', false), g('Minimum outdoor air', false)], rows: [] },
         ],
         stepCount: 5,
       });
@@ -57,9 +57,9 @@ const RE = fs.readFileSync(path.join(ROOT, 'app', 'report-engine.js'), 'utf8');
     ok(f1.length === 5 && f1.every((r, i) => r[0] === 'Step ' + (i + 1)), 'F1. five steps in the plan give five rows with the same step numbers: ' + JSON.stringify(f1.map((r) => r[0])));
     // Review fix 2026-11-14: the row names every group of its step (the proposal step table names them all); "finish" = the
     // group's last step, "continue" = the group is also in a later step.
-    ok(f1[2] && f1[2][1] === 'Economizer; finish Supply Air Temperature Reset.', 'F1. a step with new and ending groups names the new group, then "finish" the earlier one: ' + (f1[2] && f1[2][1]));
-    ok(f1[3] && f1[3][1] === 'Continue Minimum Outdoor Air.', 'F1. a group that is also in a later step reads "Continue <name>.": ' + (f1[3] && f1[3][1]));
-    ok(f1[4] && f1[4][1] === 'Finish Economizer and Minimum Outdoor Air.', 'F1. two continued groups: "Finish X and Y.": ' + (f1[4] && f1[4][1]));
+    ok(f1[2] && f1[2][1] === 'Economizer; finish supply air temperature reset.', 'F1. a step with new and ending groups names the new group, then "finish" the earlier one: ' + (f1[2] && f1[2][1]));
+    ok(f1[3] && f1[3][1] === 'Continue minimum outdoor air.', 'F1. a group that is also in a later step reads "Continue <name>.": ' + (f1[3] && f1[3][1]));
+    ok(f1[4] && f1[4][1] === 'Finish economizer and minimum outdoor air.', 'F1. two continued groups: "Finish X and Y.": ' + (f1[4] && f1[4][1]));
 
     // ---- synthetic projects: single-zone only, mixed, multi-zone only ----
     const scen = await page.evaluate(async () => {
