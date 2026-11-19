@@ -282,7 +282,9 @@ const ok = (c, m) => {
     ok(det.shown, 'choosing Detailed shows the picture folder picker');
     const s = det.sections;
     const firstLib = s.indexOf('detailedLibrary');
-    ok(s[0] === 'cover' && s.indexOf('executive') === 1 && firstLib > s.lastIndexOf('executive') && s.indexOf('detailedSummary') > s.lastIndexOf('detailedLibrary') && s.indexOf('costEstimate') > s.lastIndexOf('detailedSummary'), 'item 1 order: cover, executive summary, readiness, library chapters, then the control sequences (' + s.join(',') + ')');
+    // Matt 2026-11-18: the Building Readiness table (section key costEstimate) is the first page after the Executive Summary, before the library chapters; the scores and the Control Sequences stay at the back
+    const lastExec = s.lastIndexOf('executive');
+    ok(s[0] === 'cover' && s.indexOf('executive') === 1 && s[lastExec + 1] === 'costEstimate' && firstLib > lastExec + 1 && s.indexOf('detailedSummary') > s.lastIndexOf('detailedLibrary') && s.indexOf('costEstimate', s.lastIndexOf('detailedSummary')) > s.lastIndexOf('detailedSummary'), 'item 1 order: cover, executive summary, readiness, library chapters, then the control sequences (' + s.join(',') + ')');
     ok(s.indexOf('building') < 0, 'Detailed has no Per-Building Detail pages');
     ok(s.filter((x) => x === 'detailedLibrary').length >= 2, 'at least one chapter page per library (' + s.filter((x) => x === 'detailedLibrary').length + ' chapter pages)');
     ok(s.indexOf('detailedSummary') > s.lastIndexOf('detailedLibrary'), 'the Opportunities Summary comes after the chapters (Matt, 2026-11-11)');
@@ -457,12 +459,13 @@ const ok = (c, m) => {
     const numbered = lay.h1s.filter((x) => /^\d+\. /.test(x.text));
     const numbers = numbered.map((x) => parseInt(x.text, 10));
     ok(numbers[0] === 1 && numbers.every((v, i) => i === 0 || v >= numbers[i - 1]), 'item 1: top-level sections are numbered 1.. in order (' + titles.join(' / ') + ')');
-    ok(/^1\. Executive Summary/.test(titles[0]) && /^2\. Alpha Library/.test(titles[1]), 'item 1: "1. Executive Summary" comes first, then the library chapters (' + titles.slice(0, 2).join(' / ') + ')');
+    ok(/^1\. Executive Summary/.test(titles[0]) && /^2\. Building Readiness/.test(titles[1]) && /^3\. Alpha Library/.test(titles[2]), 'item 1: "1. Executive Summary" comes first, then "2. Building Readiness", then the library chapters (' + titles.slice(0, 3).join(' / ') + ')');
+    ok(titles.filter((x) => /Building Readiness/.test(x)).length === 1, 'item 1: the Building Readiness table prints once, at the front (' + titles.filter((x) => /Building Readiness/.test(x)).join(' / ') + ')');
     const libTitles = titles.filter((x) => /^\d+\. (Alpha|Beta) Library$/.test(x));
-    ok(libTitles.length === 2 && parseInt(libTitles[0], 10) === 2 && parseInt(libTitles[1], 10) === 3, 'item 1: each library is one numbered section starting at 2 (' + libTitles.join(' / ') + ')');
+    ok(libTitles.length === 2 && parseInt(libTitles[0], 10) === 3 && parseInt(libTitles[1], 10) === 4, 'item 1: each library is one numbered section starting at 3, after the Building Readiness (' + libTitles.join(' / ') + ')');
     const seqIdx = titles.findIndex((x) => /Control Sequences/.test(x));
     const sumIdx = titles.findIndex((x) => /Opportunities Summary/.test(x));
-    ok(sumIdx > titles.indexOf(libTitles[1]) && /^4\. Opportunities Summary/.test(titles[sumIdx]) && seqIdx > sumIdx && /^\d+\. Control Sequences/.test(titles[seqIdx]) && titles.some((x) => /^5\. ASHRAE 36 Readiness/.test(x)), 'item 1: the Opportunities Summary (4) follows the library sections; the ASHRAE 36 section (5 and up) follows it (' + titles[sumIdx] + ' / ' + titles[seqIdx] + ')');
+    ok(sumIdx > titles.indexOf(libTitles[1]) && /^5\. Opportunities Summary/.test(titles[sumIdx]) && seqIdx > sumIdx && /^7\. Control Sequences/.test(titles[seqIdx]) && titles.some((x) => /^6\. ASHRAE 36 Readiness/.test(x)), 'item 1: the Opportunities Summary (5) follows the library sections; the ASHRAE 36 section (6 and up) follows it (' + titles[sumIdx] + ' / ' + titles[seqIdx] + ')');
     ok(titles.some((x) => /^Appendix A: Setpoint Programming Review/.test(x)) && !titles.some((x) => /^Appendix [B-Z]|Glossary|Points by Equipment Type|Point Inventory/.test(x)), 'item 1: the setpoint review is Appendix A with a large title; no Glossary, no other appendix (' + titles.filter((x) => /^Appendix/.test(x)).join(' / ') + ')');
     ok(lay.h1s.every((x) => (x.first || libTitles.slice(1).indexOf(x.text) > -1) && x.size >= 21 && x.size <= 22), 'item 1: every section title is the first element of its page (a library chapter after the first may start under the findings of the one before, rule 5) and 16 pt (21.34 px) (' + lay.h1s.filter((x) => !x.first || x.size < 21 || x.size > 22).map((x) => x.text + ' ' + x.size).join(', ') + ')');
     ok((t.match(/\d+\.1 System Overview/g) || []).length === 2 && (t.match(/\d+\.2 System Descriptions/g) || []).length === 2 && (t.match(/\d+\.3 Opportunities/g) || []).length === 2, 'item 1: every library has the same three sub-headings N.1 System Overview, N.2 System Descriptions, N.3 Opportunities');
@@ -473,7 +476,7 @@ const ok = (c, m) => {
     const ptText = '';
     ok(!/Alpha Library: Air Handling Unit \(2 units\)/.test(det.text), 'item 4: no per-library equipment-type point tables');
     ok(/\d+\.\d°F heating \/ \d+\.\d°F cooling/.test(lay.spText) && !/°F \/ \d/.test(lay.spText), 'item 5: every temperature pair of Appendix A reads "70.0°F heating / 74.0°F cooling"');
-    ok(/Industry default: occupied 70°F heating \/ 75°F cooling/.test(lay.spText), 'item 5: Appendix A has the standard default reference line');
+    ok(/ASHRAE 36 default: occupied 70°F heating \/ 75°F cooling/.test(lay.spText) && !/Industry/i.test(lay.spText), 'item 5: Appendix A has the ASHRAE 36 default reference line (Matt 2026-11-18: not "Industry default")');
     ok(!/Occupied setpoints are the temperatures held|Unoccupied setpoints are the temperatures held|The deadband is the gap|building averages across|no weekend times|did not report any readings|Share Mapped/.test(lay.spText), 'item 5: Appendix A has no definitions, no data caveats and no method notes');
     ok(!/recommend/i.test(lay.spText) && /Control Service Company standard: occupied 70°F heating \/ 74°F cooling; unoccupied 55°F heating \/ 85°F cooling; occupied during each building’s open hours, unoccupied when closed/.test(lay.spText), 'item 5: the standard setpoints and schedule are printed once in a box; no recommendation wording');
     ok(/All 2 zones match the standard defaults/.test(lay.spText), 'item 5: one-line status per building');
