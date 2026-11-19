@@ -2508,6 +2508,8 @@ async function siteResetAllMeterTableSettings() {
    site-ui.js delegates to this array and should NOT maintain its own copy.
 */
 var RELEASE_NOTES = [
+  { v: 'v2026.11.19.365', date: '2026-11-19', title: 'Audit Report Word file: building page tables',
+    items: [ { type: 'fix', text: 'Audit Report Word file: the building page tables have the row lines and Total lines of the PDF, text at the top of each row, wrapped bullet lines under the text, AHU-1 hyphens and a small gap under each score ring.' } ] },
   { v: 'v2026.11.19.364', date: '2026-11-19', title: 'Audit Report Word file: building pages',
     items: [ { type: 'fix', text: 'Audit Report Word file: each building page shows both columns of facts beside the photo, the green check marks show, and the table rows are as tight as in the PDF.' } ] },
   { v: 'v2026.11.19.363', date: '2026-11-19', title: 'Audit Report: wrapped opportunity lines',
