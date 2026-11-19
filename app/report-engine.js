@@ -13702,6 +13702,23 @@ async function _rptSwapBoardChartsForPng(pageEls, scale) {
   return { found: charts.length, rasterized: rasterized };
 }
 
+// Word: rasterize the annual use history charts of the Audit Report (svg marked data-use-history) with the shared chart swap.
+async function _rptSwapUseHistoryChartsForPng(pageEls, scale) {
+  scale = scale || RPT_DOCX_GAUGE_RASTER_SCALE;
+  var charts = [];
+  pageEls.forEach(function (pageEl) {
+    if (!pageEl.querySelectorAll) return;
+    Array.prototype.forEach.call(pageEl.querySelectorAll('svg[data-use-history]'), function (svg) {
+      charts.push(svg);
+    });
+  });
+  for (var i = 0; i < charts.length; i++) {
+    try {
+      await _rptSwapChartSvgForPng(charts[i], scale);
+    } catch (e) {}
+  }
+}
+
 /**
  * exportReportToDocx — Word Export Rebuild plan Step 6 (first shipped document), wired for the
  * EMS Agreement (data._agreement). AI/_context/plans/word-export-rebuild-2026-07-30.md Part D
@@ -13828,6 +13845,8 @@ async function exportReportToDocx() {
     if (!data._agreement && !data._ashrae) {
       await _rptSwapBoardChartsForPng(pageEls);
     }
+    // Audit Report only: the use history charts of the building pages (marked data-use-history) become pictures; gauge rings are not touched.
+    if (data._ashrae) await _rptSwapUseHistoryChartsForPng(pageEls);
 
     // The client / period line of the page header (top right in the PDF) goes into the real Word page header,
     // right-aligned, instead of a paragraph in the body of every page.
@@ -30582,13 +30601,84 @@ function _a36BuildingUse(d, b) {
   d._a36Use[b.name] = use;
   return use;
 }
-// The line under the photo of a building page: "2025 utility use: 317,201 kWh and 10,835 therms, $47,623. Floor area 25,073 ft². Energy Use
-// Intensity (EUI) 86.4 kBtu/ft²." Plain text (every part is a number or a fixed word).
-function _a36UseLine(u) {
-  var gas = u.hasGas ? ' and ' + rptCount(u.therms) + ' therms' : ' (no gas meter on file)';
-  var t = u.label + ' utility use: ' + rptCount(u.kwh) + ' kWh' + gas + ', ' + _fmtUSD(u.cost, '$0') + '.';
-  if (u.sqft > 0) t += ' Floor area ' + rptCount(u.sqft) + ' ' + A36_FT2 + '. Energy Use Intensity (EUI) ' + u.eui.toFixed(1) + ' kBtu/' + A36_FT2 + '.';
-  return t;
+// The utility card of a building page (Matt 2026-11-18: the utility use goes in the facts square of the outdoor air sensors, not on its own line):
+// label "Energy Use Intensity (2025)", value "86.4 kBtu/ft²", note "317,201 kWh, 10,835 therms" / "$47,623, 25,073 ft²" (no gas meter:
+// "48,404 kWh, electric only"). A number and its unit never break apart. Returns null with no floor area (no intensity to show).
+function _a36UseCard(u) {
+  if (!(u && u.sqft > 0)) return null;
+  var nb = function (v) {
+    return '<span style="white-space:nowrap">' + v + '</span>';
+  };
+  return {
+    label: 'Energy Use Intensity (' + u.label + ')',
+    value: nb(u.eui.toFixed(1) + ' kBtu/' + A36_FT2),
+    note:
+      nb(rptCount(u.kwh) + ' kWh') + ', ' + (u.hasGas ? nb(rptCount(u.therms) + ' therms') : 'electric only') + '<br>' +
+      nb(_fmtUSD(u.cost, '$0')) + ', ' + nb(rptCount(u.sqft) + ' ' + A36_FT2),
+  };
+}
+// Annual use history of a building (Matt 2026-11-18: show every year of utility data on file). The one reader is buildingUseByYear
+// (app/utility-data.js); this only draws the yearly totals. Energy use, not intensity (the floor area may differ between years). No monthly values.
+// One bar per complete calendar year; the y axis starts at zero; the unit is on the caption and the value is on every bar. Gas gets its own chart.
+function _a36UseHistorySVG(vals, color) {
+  var w = 352,
+    h = 108,
+    padT = 17,
+    padB = 18,
+    padX = 4;
+  var max = Math.max.apply(null, vals.map(function (v) { return v.v; }).concat([1]));
+  var plotH = h - padT - padB;
+  var slot = (w - padX * 2) / vals.length;
+  var bw = Math.min(30, slot * 0.62);
+  var base = h - padB;
+  var big = max >= 1000;
+  var dec = max / 1000 >= 100 ? 0 : 1;
+  var lab = function (v) {
+    return big ? (v / 1000).toFixed(dec) : String(Math.round(v));
+  };
+  var fs = 12;
+  // Years of 4 digits when the slot holds them, else 2 digits after an apostrophe (the heading names the range).
+  var yearText = function (y) {
+    return slot >= 36 ? String(y) : "'" + String(y).slice(2);
+  };
+  var out = '<svg data-use-history="1" width="' + w + '" height="' + h + '" viewBox="0 0 ' + w + ' ' + h + '" xmlns="http://www.w3.org/2000/svg" font-family="Arial,sans-serif">';
+  vals.forEach(function (b, i) {
+    var cx = padX + slot * (i + 0.5);
+    var bh = (b.v / max) * plotH;
+    out += '<rect x="' + (cx - bw / 2).toFixed(1) + '" y="' + (base - bh).toFixed(1) + '" width="' + bw.toFixed(1) + '" height="' + bh.toFixed(1) + '" fill="' + color + '"/>';
+    out += '<text x="' + cx.toFixed(1) + '" y="' + (base - bh - 3).toFixed(1) + '" text-anchor="middle" font-size="' + fs + '" fill="var(--rpt-page-text)">' + lab(b.v) + '</text>';
+    out += '<text x="' + cx.toFixed(1) + '" y="' + (h - 5) + '" text-anchor="middle" font-size="' + fs + '" fill="var(--rpt-page-text)">' + yearText(b.year) + '</text>';
+  });
+  out += '<line x1="' + padX + '" y1="' + base + '" x2="' + (w - padX) + '" y2="' + base + '" stroke="var(--rpt-page-text)" stroke-width="1"/>';
+  return out + '</svg>';
+}
+// The history block of a building page, or null with fewer than 2 complete years of use.
+function _a36UseHistoryHtml(d, b) {
+  if (!d || !d.project || typeof buildingUseByYear !== 'function' || typeof getUDBldgs !== 'function' || typeof _emNormBldgNameForJoin !== 'function') return null;
+  var key = _emNormBldgNameForJoin(b.name);
+  var ud = getUDBldgs(d.project.id).filter(function (x) {
+    return _emNormBldgNameForJoin(x.name) === key;
+  })[0];
+  var yrs = ud ? buildingUseByYear(d.project.id, ud.id) : [];
+  if (yrs.length < 2) return null;
+  var cap = function (t, svg) {
+    return (
+      '<td style="width:50%;vertical-align:top;padding:0 6px 0 0;border:none"><div style="font-size:12px;font-weight:600;color:var(--rpt-page-text);margin:0 0 2px 0">' + t + '</div>' + svg + '</td>'
+    );
+  };
+  var unit = function (list, u) {
+    var m = Math.max.apply(null, list.map(function (x) { return x.v; }).concat([0]));
+    return m >= 1000 ? 'thousand ' + u : u;
+  };
+  var el = yrs.map(function (y) { return { year: y.year, v: y.kwh }; });
+  var gas = yrs[0].hasGas ? yrs.map(function (y) { return { year: y.year, v: y.therms || 0 }; }) : null;
+  return (
+    '<div style="font-size:13.34px;font-weight:700;color:var(--rpt-blue);margin:2px 0 2px 0">Annual Energy Use, ' + yrs[0].year + '\u2013' + yrs[yrs.length - 1].year + '</div>' +
+    '<table style="width:100%;border-collapse:collapse;table-layout:fixed;margin:0 0 8px 0"><tr>' +
+    cap('Electricity, ' + unit(el, 'kWh'), _a36UseHistorySVG(el, 'var(--rpt-elec-cur)')) +
+    (gas ? cap('Natural gas, ' + unit(gas, 'therms'), _a36UseHistorySVG(gas, 'var(--rpt-gas-cur)')) : '<td style="width:50%;border:none"></td>') +
+    '</tr></table>'
+  );
 }
 // The page after the per-building pages: one table of the 12-month use of every building that has it, highest Energy Use Intensity first, with a
 // total row. Only with at least 2 buildings that have use and floor area for the same months. Returns the pages ([] when there is none).
@@ -30713,21 +30803,25 @@ function _a36AuditBuildingTokens(d, b, ctx, showBuildingInfra) {
   var infraVal = function (on) {
     return on ? 'Installed' : 'Not installed';
   };
+  var useCard = _a36UseCard(_a36BuildingUse(d, b));
   var cards =
     '<table style="width:100%;border-collapse:collapse;table-layout:fixed"><tr>' +
     card(rptCount(_a36AuditUnitsOf(b)), 'Equipment units audited', 'var(--rpt-blue)') +
     card(rptCount(nF), nF === 1 ? 'Opportunity' : 'Opportunities', nF ? 'var(--rpt-orange)' : 'var(--rpt-green-dark)') +
     '</tr>' +
+    // The utility card prints with or without the building infrastructure cards (it is the building's own data, not an infrastructure check).
     (showBuildingInfra
       ? '<tr>' +
         card(infraVal(b.hasPowerMonitoring), 'Building power meter', b.hasPowerMonitoring ? 'var(--rpt-green-dark)' : pmRec ? 'var(--rpt-orange)' : 'var(--rpt-page-text)', pmNote) +
-        card(infraVal(b.hasOAConditions), 'Outdoor air sensors', b.hasOAConditions ? 'var(--rpt-green-dark)' : 'var(--rpt-orange)') +
+        (useCard
+          ? card(useCard.value, useCard.label, 'var(--rpt-blue)', useCard.note)
+          : card(infraVal(b.hasOAConditions), 'Outdoor air sensors', b.hasOAConditions ? 'var(--rpt-green-dark)' : 'var(--rpt-orange)')) +
         '</tr>'
-      : '') +
+      : useCard
+        ? '<tr>' + card(useCard.value, useCard.label, 'var(--rpt-blue)', useCard.note) + '<td style="width:50%;border:none"></td></tr>'
+        : '') +
     '</table>';
   var photo = d._a36LibraryPhotos && d._a36LibraryPhotos[name];
-  var use = _a36BuildingUse(d, b);
-  var useP = use ? '<p style="' + A36_DET_P + ';margin-top:4px">' + _a36UseLine(use) + '</p>' : '';
   var photoTok = function (scale) {
     return _a36DetTok(
       (photo
@@ -30735,7 +30829,7 @@ function _a36AuditBuildingTokens(d, b, ctx, showBuildingInfra) {
             Math.round(A36_DET_PHOTO_W * scale + 8) + 'px"><col></colgroup><tr>' +
             '<td style="vertical-align:top;padding:0;border:none">' + _a36DetPhotoHtml(photo, name, scale).replace('margin:0 0 12px 0', 'margin:0') + '</td>' +
             '<td style="vertical-align:top;padding:0;border:none">' + cards + '</td></tr></table>'
-        : cards) + useP,
+        : cards),
       true,
     );
   };
@@ -30748,6 +30842,9 @@ function _a36AuditBuildingTokens(d, b, ctx, showBuildingInfra) {
   var rt = ringsTok(72);
   if (rt) tokens.push(rt);
   var headEnd = tokens.length;
+  var histHtml = _a36UseHistoryHtml(d, b);
+  var histTok = histHtml ? _a36DetTok(histHtml, true) : null;
+  if (histTok) tokens.push(histTok);
   // One row per equipment type; a finding is listed on the row of its type. A finding of no listed type goes on the Building-wide row.
   var byCat = {};
   var wide = [];
@@ -30818,6 +30915,8 @@ function _a36AuditBuildingTokens(d, b, ctx, showBuildingInfra) {
     tableToks.forEach(function (t) {
       t.keepNext = false;
     });
+    // The use history chart no longer chains to the table, else the heading, photo and rings together with the chart are taller than a page.
+    if (histTok) histTok.keepNext = false;
   }
   tokens.forEach(function (t) {
     t.lib = name;
@@ -30826,33 +30925,13 @@ function _a36AuditBuildingTokens(d, b, ctx, showBuildingInfra) {
 }
 
 /**
- * _a36DetSummaryIssueHtml - the Issue cell of the Findings Summary: the issue (bold), which units it affects (names when 4 or fewer,
- * else "N of M units") and the points the BAS lacks, then the Guideline 36 section. What a sequence does is not repeated here: it is
- * printed once, in Control Sequences (the note above the table says so).
+ * _a36DetSummaryIssue - the Issue cell of the Opportunities Summary: the short name of the issue only (Matt 2026-11-18: one line per row;
+ * the summary does not explain the scope: the units affected and the missing points are in the library sections).
  */
-function _a36DetSummaryIssueHtml(f) {
-  var lines = ['<strong>' + _escHtml(f.issueShort) + '</strong>'];
-  if (f.kind !== 'deficiency') {
-    var affects;
-    if (!f.total) affects = 'the building';
-    else {
-      // Up to 4 affected units are named ("Affects AHU-1."; "Affects 2 of 3 units (RTU-1, RTU-2)."), never "the unit" (Matt, 2026-11-11).
-      var affectedNames = f.affected.length && f.affected.length <= 4 ? f.affected.map(_a36DetEquipNameIn(f.lib)).join(', ') : '';
-      if (affectedNames && f.units >= f.total) affects = affectedNames;
-      else {
-        affects = _a36DetFraction(f.units, f.groupTotal && f.dcvNote ? f.groupTotal : f.total, f.fracNoun, '');
-        if (affectedNames) affects += ': ' + affectedNames;
-      }
-    }
-    var secondLine = 'Affects ' + affects + '.';
-    if (f.kind === 'seq' && f.missing.length) secondLine += ' Missing point' + (f.missing.length > 1 ? 's' : '') + ': ' + _a36DetJoin(f.missingText) + '.';
-    lines.push(_escHtml(secondLine));
-  }
-  return lines
-    .map(function (line) {
-      return '<div>' + line + '</div>';
-    })
-    .join('');
+function _a36DetSummaryIssue(f) {
+  return String(f.issueShort)
+    .replace(/ sequence not fully in place$/, '')
+    .replace(/^Zone setpoints differ from the recommended setpoints$/, 'Zone setpoints differ from recommended');
 }
 
 /**
@@ -30877,9 +30956,10 @@ function _a36DetSummaryTokens(ctx, sectionNo) {
       h: A36_DET_TITLE_H,
     };
     _a36DetTableToks(
-      _a36DetTableOpen([9, 14, 17, 48, 12], ['No.', 'Library', 'System', 'Issue', 'Effect']),
+      _a36DetTableOpen([8, 20, 21, 37, 14], ['No.', 'Library', 'System', 'Issue', 'Effect']),
       list.map(function (f) {
-        return _a36DetRow([{ html: String(f.num || f.n), center: true }, _escHtml(f.lib), _escHtml(f.groupLabel), _a36DetSummaryIssueHtml(f), _escHtml(f.effect)]);
+        // One line per row (Matt 2026-11-18): the library without the word "Library" (the column says it), the short issue name.
+        return _a36DetRow([{ html: String(f.num || f.n), center: true }, _escHtml(String(f.lib).replace(/ Library$/, '')), _escHtml(f.groupLabel), _escHtml(_a36DetSummaryIssue(f)), _escHtml(f.effect)]);
       }),
       summaryTitle,
     ).forEach(function (t) {

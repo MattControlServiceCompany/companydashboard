@@ -1,7 +1,7 @@
 // tools/test-a36-utility-use.js: the 12-month utility use in the Audit Report (2026-11-18). SYNTHETIC names and values only; headless bundled
 // Chromium; no network.
 // Rules tested: each per-building page has one prose line "<period> utility use: N kWh and N therms, $N. Floor area N ft2. Energy Use Intensity
-// (EUI) N kBtu/ft2." (no gas meter: "(no gas meter on file)"; no utility data: no line); ONE comparison page "Utility Use by <noun>" follows the last
+// (EUI) N kBtu/ft2." (no gas meter: "(electric only)"; no utility data: no line); ONE comparison page "Utility Use by <noun>" follows the last
 // per-building page: a sentence, one table sorted by EUI high to low, a total row whose EUI is computePeriodEUI of the summed kBtu and area;
 // with fewer than 2 buildings that have data there is no comparison page.
 // Run: CH_TMP_ROOT=<scratch> node tools/test-a36-utility-use.js   (exit 0 = all pass)
@@ -50,7 +50,7 @@ const ok = (c, m) => {
         ),
       });
       // Alpha: gas; Beta: no gas meter; Gamma: 11 months only (no use shown); Delta: no meters at all
-      const ud = [mk('Alpha Library', 20000, 240000, 6000, 36000, ['2025-01', '2025-12']), mk('Beta Library', 10000, 60000, null, 9000, ['2025-01', '2025-12']), mk('Gamma Library', 5000, 30000, 1200, 5000, ['2025-02', '2025-12']), { id: 'bDelta', name: 'Delta Library', sqft: 8000, meters: [] }];
+      const ud = [mk('Alpha Library', 20000, 240000, 6000, 36000, ['2023-01', '2025-12']), mk('Beta Library', 10000, 60000, null, 9000, ['2025-01', '2025-12']), mk('Gamma Library', 5000, 30000, 1200, 5000, ['2025-02', '2025-12']), { id: 'bDelta', name: 'Delta Library', sqft: 8000, meters: [] }];
       const realGet = getUDBldgs;
       window.getUDBldgs = (pid) => (pid === PID ? ud : realGet(pid));
       window.getUDBldg = (pid, bid) => getUDBldgs(pid).find((b) => b.id === bid);
@@ -70,6 +70,17 @@ const ok = (c, m) => {
       const beta = buildingAnnualUse(PID, 'bBeta Library');
       out.alpha = alpha;
       out.beta = beta;
+      // Word: the history charts of a building page become pictures (the shared chart swap), gauge rings untouched
+      const alphaHtml = out.htmls.find((h, i) => out.secs[i] === 'building' && /Alpha Library/.test(out.pages[i]) && /Annual Energy Use/.test(out.pages[i]));
+      const holder = document.createElement('div');
+      holder.innerHTML = alphaHtml;
+      document.body.appendChild(holder);
+      out.bars = Array.from(holder.querySelectorAll('svg[data-use-history]')).map((s) => s.querySelectorAll('rect').length);
+      out.svgBefore = holder.querySelectorAll('svg[data-use-history]').length;
+      await _rptSwapUseHistoryChartsForPng([holder]);
+      out.svgAfter = holder.querySelectorAll('svg[data-use-history]').length;
+      out.imgAfter = holder.querySelectorAll('img[src^="data:image/png"]').length;
+      holder.remove();
       out.expTotEui = computePeriodEUI(computeKBtu(alpha.kwh + beta.kwh, alpha.therms, 0), 12, alpha.sqft + beta.sqft);
       // only one building with data: no comparison page
       ud.splice(1, 1);
@@ -88,14 +99,23 @@ const ok = (c, m) => {
     const titleIdx = r.pages.findIndex((t) => /Utility Use by Library/.test(t));
     ok(titleIdx >= 0, 'the comparison page "Utility Use by Library" exists');
     ok(r.secs[titleIdx] === 'building' && r.secs.lastIndexOf('building') === titleIdx, 'it is the last page of the per-building group (after every building page)');
-    ok(r.pages.slice(0, titleIdx).filter((t) => /Alpha Library/.test(t) && /utility use:/.test(t)).length === 1, 'Alpha Library page has the use line');
-    const alphaPage = r.pages.find((t, i) => r.secs[i] === 'building' && /Alpha Library/.test(t) && /utility use:/.test(t));
-    ok(/2025 utility use: 240,000 kWh and 6,000 therms, \$36,000\./.test(alphaPage), 'line with gas: ' + (alphaPage.match(/2025 utility use:.*?kBtu\/ft²\./) || [''])[0]);
-    ok(/Floor area 20,000 ft²\. Energy Use Intensity \(EUI\) \d+\.\d kBtu\/ft²\./.test(alphaPage), 'floor area and EUI sentences');
-    const betaPage = r.pages.find((t, i) => r.secs[i] === 'building' && /Beta Library/.test(t) && /utility use:/.test(t));
-    ok(/2025 utility use: 60,000 kWh \(no gas meter on file\), \$7,200\./.test(betaPage), 'line with no gas meter');
-    ok(!r.pages.some((t, i) => r.secs[i] === 'building' && /Gamma Library/.test(t) && /utility use:/.test(t)), 'an 11-month building has no line');
-    ok(!r.pages.some((t, i) => r.secs[i] === 'building' && /Delta Library/.test(t) && /utility use:/.test(t)), 'a building with no meters has no line');
+    ok(r.pages.slice(0, titleIdx).filter((t) => /Alpha Library/.test(t) && /Energy Use Intensity \(2025\)/.test(t)).length === 1, 'Alpha Library page has the utility card');
+    const histPages = r.htmls.filter((h, i) => r.secs[i] === 'building');
+    const alphaHist = r.htmls.find((h, i) => r.secs[i] === 'building' && /Alpha Library/.test(r.pages[i]) && /Annual Energy Use/.test(r.pages[i]));
+    const bars = r.bars;
+    ok(/Annual Energy Use, 2023–2025/.test(r.pages.find((t, i) => r.secs[i] === 'building' && /Annual Energy Use/.test(t))), 'building with 3 years: heading "Annual Energy Use, 2023-2025"');
+    ok(bars.length === 2 && bars[0] === 3 && bars[1] === 3, 'building with 3 years and gas: two charts of 3 bars each: ' + JSON.stringify(bars));
+    ok(r.pages.filter((t, i) => r.secs[i] === 'building' && /Annual Energy Use/.test(t)).length === 1, 'only the building with 2 or more complete years has the chart (1 year, 11 months, no meters: none)');
+    ok(r.svgBefore === 2 && r.svgAfter === 0 && r.imgAfter === 2, 'Word: both history charts become PNG pictures: ' + JSON.stringify([r.svgBefore, r.svgAfter, r.imgAfter]));
+    ok(!/finding/i.test(r.pages.find((t, i) => r.secs[i] === 'building' && /Annual Energy Use/.test(t)) || ''), 'the chart page has no "finding" text');
+    void histPages;
+    const alphaPage = r.pages.find((t, i) => r.secs[i] === 'building' && /Alpha Library/.test(t) && /Energy Use Intensity \(2025\)/.test(t));
+    ok(/240,000 kWh, 6,000 therms\s*\$36,000, [\d,]+ ft²/.test(alphaPage) && !/Outdoor air sensors/.test(alphaPage), 'card with gas replaces the outdoor air card: ' + (alphaPage.match(/Energy Use Intensity[\s\S]{0,120}/) || [''])[0]);
+    ok(/Energy Use Intensity \(2025\)\s*\d+\.\d kBtu\/ft²/.test(alphaPage) && /20,000 ft²/.test(alphaPage), 'card value is the intensity; the floor area is in the note');
+    const betaPage = r.pages.find((t, i) => r.secs[i] === 'building' && /Beta Library/.test(t) && /Energy Use Intensity \(2025\)/.test(t));
+    ok(/60,000 kWh, electric only\s*\$7,200, [\d,]+ ft²/.test(betaPage) && !/Outdoor air sensors/.test(betaPage), 'card with no gas meter replaces the outdoor air card');
+    ok(!r.pages.some((t, i) => r.secs[i] === 'building' && /Gamma Library/.test(t) && /Energy Use Intensity \(/.test(t)), 'an 11-month building has no utility card');
+    ok(!r.pages.some((t, i) => r.secs[i] === 'building' && /Delta Library/.test(t) && /Energy Use Intensity \(/.test(t)), 'a building with no meters has no utility card');
     const t = r.pages[titleIdx];
     ok(/In 2025 the 2 libraries used 300,000 kWh of electricity and 6,000 therms of gas, at a cost of \$43,200\./.test(t), 'context sentence: ' + (t.match(/In 2025.*?\./) || [''])[0]);
     ok(/Energy Use Intensity \(EUI\) ranges from [\d.]+ kBtu\/ft² at \w+ Library to [\d.]+ at \w+ Library\./.test(t), 'range sentence');
@@ -111,7 +131,7 @@ const ok = (c, m) => {
     ok(/background:var\(--rpt-blue\)/.test(html) && /text-align:right/.test(html), 'blue header row and right-aligned numbers');
     ok(!/finding|ASHRAE/i.test(t), 'the page has no "finding" and no "ASHRAE" text');
     ok(!r.pages1.some((x) => /Utility Use by Library/.test(x)), 'one building with data: no comparison page');
-    ok(r.pages1.some((x, i) => r.secs1[i] === 'building' && /utility use:/.test(x)), 'one building with data: its line still prints');
+    ok(r.pages1.some((x, i) => r.secs1[i] === 'building' && /Energy Use Intensity \(2025\)/.test(x)), 'one building with data: its card still prints');
     ok(errs.length === 0, 'no page errors: ' + errs.join(' | '));
     void bldPages;
   } finally {

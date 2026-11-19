@@ -1053,19 +1053,13 @@ function getUDMeter(pid, bid, mid) {
   return b ? b.meters.find((m) => m.id === mid) : null;
 }
 
-// buildingAnnualUse(pid, bid) - THE one answer to "how much energy did this building use in its newest 12 complete bill months".
-// For REPORTING use (Audit Report building pages and the utility comparison page): it reads every Electric, Gas and Propane meter of the
-// building directly and ignores project.scope.meterExcludeIds (that exclusion is for the savings baseline, not for what the building used).
-// Month of a bill = billMonth (the one month rule). The window ends at the newest bill month of the building and holds 12 months in a row; every
-// commodity the building has must have a bill in each of the 12 months, else null (no partial-year figure). Returns null with no data.
-// Returns { months: 12, startMonth, endMonth ('YYYY-MM'), label ('2025' for Jan to Dec of one year, else 'Jun 2024 to May 2025'), kwh, therms (null
-// when the building has no gas meter), propaneGal, cost ($ of the bill totals), sqft, kBtu (computeKBtu), eui (computePeriodEUI; null with no sqft),
-// costPerSqft (null with no sqft), hasGas, estimatedMonthly (true when every bill of the window is an estimate: only the annual total is valid) }.
-function buildingAnnualUse(pid, bid) {
+// buildingMonthUse(pid, bid) - THE one month rule of the building use readers: every Electric, Gas and Propane meter of the building summed by billMonth.
+// Returns null (no building) or { b, meters, byYM, commodities } where byYM is ym -> { kwh, therms, gal, cost, n: {commodity: bill count}, est, bills }.
+function buildingMonthUse(pid, bid) {
   const b = getUDBldg(pid, bid);
   if (!b) return null;
   const meters = (b.meters || []).filter((m) => m.commodity === 'Electric' || m.commodity === 'Gas' || m.commodity === 'Propane');
-  const byYM = {}; // ym -> { kwh, therms, gal, cost, n: {commodity: bill count}, est: count of estimated bills, bills: count }
+  const byYM = {};
   meters.forEach((m) => {
     const mBills = m.bills || [];
     mBills.forEach((bill) => {
@@ -1081,11 +1075,44 @@ function buildingAnnualUse(pid, bid) {
       if (bill.estimated) u.est++;
     });
   });
+  const commodities = [...new Set(meters.filter((m) => (m.bills || []).length).map((m) => m.commodity))];
+  return { b: b, meters: meters, byYM: byYM, commodities: commodities };
+}
+// buildingUseByYear(pid, bid) - the use of every complete calendar year of a building: [{ year, kwh, therms (null with no gas meter), cost, hasGas }],
+// oldest first. A year is complete when each commodity the building has holds a bill in all 12 months (same month rule as buildingAnnualUse).
+// The monthly values may be estimated splits of an annual total: only the yearly sums are meant for display.
+function buildingUseByYear(pid, bid) {
+  const mu = buildingMonthUse(pid, bid);
+  if (!mu) return [];
+  const hasGas = mu.commodities.includes('Gas');
+  const years = [...new Set(Object.keys(mu.byYM).map((ym) => ym.slice(0, 4)))].sort();
+  const out = [];
+  years.forEach((y) => {
+    const win = presentedMonthRange(y + '-01', y + '-12');
+    if (!win.every((ym) => mu.byYM[ym] && mu.commodities.every((c) => mu.byYM[ym].n[c]))) return;
+    const sum = win.reduce((a, ym) => ({ kwh: a.kwh + mu.byYM[ym].kwh, therms: a.therms + mu.byYM[ym].therms, cost: a.cost + mu.byYM[ym].cost }), { kwh: 0, therms: 0, cost: 0 });
+    out.push({ year: Number(y), kwh: sum.kwh, therms: hasGas ? sum.therms : null, cost: sum.cost, hasGas: hasGas });
+  });
+  return out;
+}
+// buildingAnnualUse(pid, bid) - THE one answer to "how much energy did this building use in its newest 12 complete bill months".
+// For REPORTING use (Audit Report building pages and the utility comparison page): it reads every Electric, Gas and Propane meter of the
+// building directly and ignores project.scope.meterExcludeIds (that exclusion is for the savings baseline, not for what the building used).
+// Month of a bill = billMonth (the one month rule). The window ends at the newest bill month of the building and holds 12 months in a row; every
+// commodity the building has must have a bill in each of the 12 months, else null (no partial-year figure). Returns null with no data.
+// Returns { months: 12, startMonth, endMonth ('YYYY-MM'), label ('2025' for Jan to Dec of one year, else 'Jun 2024 to May 2025'), kwh, therms (null
+// when the building has no gas meter), propaneGal, cost ($ of the bill totals), sqft, kBtu (computeKBtu), eui (computePeriodEUI; null with no sqft),
+// costPerSqft (null with no sqft), hasGas, estimatedMonthly (true when every bill of the window is an estimate: only the annual total is valid) }.
+function buildingAnnualUse(pid, bid) {
+  const mu = buildingMonthUse(pid, bid);
+  if (!mu) return null;
+  const b = mu.b;
+  const byYM = mu.byYM;
   const yms = Object.keys(byYM).sort();
   if (!yms.length) return null;
   const endMonth = yms[yms.length - 1];
   const win = presentedMonthRange(addMonth(endMonth, -11), endMonth);
-  const commodities = [...new Set(meters.filter((m) => (m.bills || []).length).map((m) => m.commodity))];
+  const commodities = mu.commodities;
   if (!win.every((ym) => byYM[ym] && commodities.every((c) => byYM[ym].n[c]))) return null;
   const sum = win.reduce(
     (a, ym) => ({ kwh: a.kwh + byYM[ym].kwh, therms: a.therms + byYM[ym].therms, gal: a.gal + byYM[ym].gal, cost: a.cost + byYM[ym].cost, est: a.est + byYM[ym].est, bills: a.bills + byYM[ym].bills }),

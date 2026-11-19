@@ -38,7 +38,7 @@ vm.runInContext(
     fnSrc(RE, '_a36DetEquipName'),
     fnSrc(RE, '_a36DetFraction'),
     'function _escHtml(s){ return String(s); }',
-    fnSrc(RE, '_a36DetSummaryIssueHtml'),
+    fnSrc(RE, '_a36DetSummaryIssue'),
   ].join('\n'),
   sb,
 );
@@ -53,8 +53,8 @@ check(RE.includes("noun + (/ sensor$/i.test(noun) ? '' : ' sensor')"), 'A3. the 
 
 // A4
 const f = { kind: 'seq', issueShort: 'Reheat Valve Control sequence not fully in place', total: 35, units: 1, affected: ['Electrical | FPB-101'], missing: ['x'], missingText: ['Reheat Valve'], section: '5.6.5' };
-const html = sb._a36DetSummaryIssueHtml(f);
-check(/Affects 1 of 35 units: FPB-101 \(Electrical\)\./.test(html), 'A4. "Affects N of M units: names" (' + (/Affects[^<]*/.exec(html) || [''])[0] + ')');
+const html = sb._a36DetSummaryIssue(f);
+check(html === 'Reheat Valve Control', 'A4. the Opportunities Summary Issue cell is the short name only, one line (Matt 2026-11-18): ' + html);
 
 // A5
 const coilText = 'Controls the heat output of the heating coil; required for morning warm-up, freeze protection and supply air control.';
