@@ -30531,9 +30531,10 @@ function _a36IsA36Item(f) {
 var A36_STAR_NOTE = '<p style="margin:0 0 6px 0;font-size:' + RPT_MIN_TEXT_PX + 'px;line-height:1.3;color:var(--rpt-page-text)">* Not an ASHRAE 36 item.</p>';
 var A36_STAR_NOTE_H = 24; // px reserved under a table part that has an asterisk (the note line and its margin)
 // The building power meter gets no asterisk (Matt 2026-11-18: it needs no mark).
-// The No. of an opportunity: the number its library section prints in front of it (1, 2, 3), never the chapter path 3.3.1 (Matt 2026-11-18).
+// The No. of an opportunity: its place in the whole report, 1 to N in order (Matt 2026-11-19: "why are the numbers not just in order? Like why
+// does it keep resetting per building?"). The library section prints the same number in front of it. Never the chapter path 3.3.1.
 function _a36DetItemNo(f) {
-  return String(f.num || f.n).split('.').pop();
+  return String(f.n);
 }
 function _a36NeedsStar(f, ctx) {
   return !!ctx && ctx.a36On !== false && !_a36IsA36Item(f) && f.key !== 'powerMeter';

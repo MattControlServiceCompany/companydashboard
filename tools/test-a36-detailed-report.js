@@ -560,7 +560,7 @@ const ok = (c, m) => {
     ok(mdl.total > 0 && mdl.dups === 0, 'e: no two findings share library, group and sequence (' + mdl.total + ' findings)');
     ok(mdl.split && mdl.split.now === mdl.split.base && mdl.split.total === mdl.split.baseTotal, 'e: a sequence that comes from two catalog rows of one group is ONE finding (' + JSON.stringify(mdl.split) + ')');
     ok(mdl.bad.length === 0, 'f: the count of every finding is units: Observed and Recommendation carry the same fraction of the group' + (mdl.bad.length ? ': ' + JSON.stringify(mdl.bad) : ''));
-    ok(mdl.sum.length === mdl.total && sameList(mdl.sum, mdl.body) && mdl.sum.every((x, i) => x === '1' ? true : i > 0 && +x === +mdl.sum[i - 1] + 1), 'l: Opportunities Summary and body list the same item numbers, 1, 2, 3 in each library: ' + mdl.total + ' (summary ' + mdl.sum.length + ', body ' + mdl.body.length + ')');
+    ok(mdl.sum.length === mdl.total && sameList(mdl.sum, mdl.body) && mdl.sum.every((x, i) => +x === i + 1), 'l: Opportunities Summary and body list the same item numbers, 1 to N in order through the report (Matt 2026-11-19): ' + mdl.total + ' (summary ' + mdl.sum.length + ', body ' + mdl.body.length + ')');
     ok(mdl.pointSeqOverlap.length === 0, 'N1: no stand-alone point finding repeats a point that a sequence finding of the same group already lists (' + mdl.pointSeqOverlap.join(',') + ')');
     ok(mdl.mbad.length === 0, 'm: a recommendation says "sensor" only for a sensor, "point" for a valve or actuator' + (mdl.mbad.length ? ': ' + mdl.mbad.join(',') : ''));
     // n: a sequence finding counts the same units as the priced quantity (monitoring-only zone units are left out), and a point
