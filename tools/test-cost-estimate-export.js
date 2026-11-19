@@ -72,6 +72,7 @@ function make(store, tiers) {
   sb.globalThis = sb;
   vm.createContext(sb);
   vm.runInContext(read('lib/formatting.js'), sb);
+  vm.runInContext(read('computations/cost-lines.js'), sb); // simplePayback for the option savings estimate (the page loads it too)
   vm.runInContext(read('app/pricing-estimator.js'), sb);
   vm.runInContext(read('app/estimate-workbook.js'), sb);
   vm.runInContext(read('computations/fan-savings.js'), sb); // the drive rule and emRowFeatures the Audit Estimate groups call
