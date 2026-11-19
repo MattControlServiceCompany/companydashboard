@@ -45,9 +45,10 @@ const ok = (c, m) => {
       const rows = [
         mk('a1', 'Alpha Library', 'ahu', 'AHU-A', Object.assign({ 'Supply Air Temp': '55.2 F' }, sp(66, 71, 60, 79))),
         mk('a2', 'Alpha Library', 'ahu', 'AHU-B', Object.assign({ 'Supply Air Temp': '55.2 F' }, sp(66, 71, 60, 79))),
-        mk('v1', 'Alpha Library', 'vav', 'Room 1 - VAV-1', zone(72, 74)),
-        mk('v2', 'Alpha Library', 'vav', 'Room 2 - VAV-2', zone(73, 74)),
-        mk('f1', 'Alpha Library', 'fpb', 'Room 4 - FPB-1', zone(72, 74)),
+        // (Matt 2026-11-19) the optional room CO2 scope holds only the dense rooms: Alpha has three, Beta has none (its two rooms are not recommended)
+        mk('v1', 'Alpha Library', 'vav', 'Meeting Room 1 - VAV-1', zone(72, 74)),
+        mk('v2', 'Alpha Library', 'vav', 'Conference Room 2 - VAV-2', zone(73, 74)),
+        mk('f1', 'Alpha Library', 'fpb', 'Program Room 4 - FPB-1', zone(72, 74)),
         mk('b1', 'Beta Library', 'vav', 'Room 6 - VAV-4', zone(70, 75)),
         mk('b2', 'Beta Library', 'vav', 'Room 7 - VAV-5', zone(70, 75)),
       ];
@@ -148,7 +149,7 @@ const ok = (c, m) => {
         });
       });
       const allText = host.textContent.replace(/\s+/g, ' ');
-      const optLineCount = (allText.match(/Optional: \d+ room CO2 sensors?( with occupancy-based ventilation| \(sensors only\))?: \+\$[\d,]+/g) || []).length;
+      const optLineCount = (allText.match(/Optional: CO2 sensors? (with occupancy-based ventilation )?in \d+ meeting (and program rooms|or program room)( \(sensors only\))?: \+\$[\d,]+/g) || []).length;
       const tablesInScope = scopePages.filter((pg) => pg.querySelector('table')).length;
       const res = {
         nRows: rowsRec.length,
@@ -168,7 +169,8 @@ const ok = (c, m) => {
         orderTable: /Recommended: Order of Work/.test(allText),
         notIncluded: /Not included in Recommended:/.test(scopeText),
         optRows, optSum, baseSame, baseGrand, fullOpt, optLineCount,
-        optText: /Optional: \d+ room CO2 sensors/.test(scopeText),
+        optText: /Optional: CO2 sensors with occupancy-based ventilation in \d+ meeting and program rooms/.test(scopeText),
+        notRecText: /Not recommended: CO2 sensors in the other \d+ rooms?/.test(scopeText),
         oldCo2Wording: /Recommended and Compliance do not\.|Compliance does not include the/.test(allText),
       };
       window._a36OpportunityList = real;
@@ -203,10 +205,12 @@ const ok = (c, m) => {
     // The synthetic Compliance sensors have no price: an unpriced optional scope is left out, never printed with a null price.
     ok(out.optRows.compliance.qty > 0 && (out.optRows.compliance.price === null ? out.optSum.compliance === null : out.optSum.compliance && out.optSum.compliance.qty === out.optRows.compliance.qty && out.optSum.compliance.price === out.optRows.compliance.price), '6. the same for Compliance (' + out.optRows.compliance.qty + ' sensors, price ' + out.optRows.compliance.price + '; an unpriced scope is left out)');
     ok(out.fullOpt === null, '6. Full Scope has no optional scope');
-    ok(out.optSum.recommended && /^Optional: \d+ room CO2 sensors with occupancy-based ventilation: \+\$[\d,]+$/.test(out.optSum.recommended.line), '6. the line reads "Optional: N room CO2 sensors with occupancy-based ventilation: +$X": ' + (out.optSum.recommended && out.optSum.recommended.line));
+    ok(out.optSum.recommended && /^Optional: CO2 sensors with occupancy-based ventilation in \d+ meeting and program rooms: \+\$[\d,]+$/.test(out.optSum.recommended.line), '6. the line reads "Optional: CO2 sensors with occupancy-based ventilation in N meeting and program rooms: +$X" (Matt 2026-11-19): ' + (out.optSum.recommended && out.optSum.recommended.line));
     const expLines = (out.optRows.recommended.price !== null ? 3 : 0) + (out.optRows.compliance.price !== null ? 3 : 0);
     ok(out.optLineCount === expLines && expLines >= 2, '6. the line is on the Cost Summary, the Cost Estimate and the scope (Compliance: its Work sentence) for each priced option that has it (' + out.optLineCount + ' of ' + expLines + ')');
     ok(out.baseSame, '6. the base totals do not change: the tier totals are the totals of the base rows only ' + JSON.stringify(out.baseGrand));
+    ok(out.notRecText, '6. the scope says how many rooms are not recommended (Matt 2026-11-19)');
+    ok(out.optRows.recommended.qty === 3, '6. only the 3 dense rooms are optional (Matt 2026-11-19): ' + out.optRows.recommended.qty);
     ok(out.optText && !out.oldCo2Wording, '6. the optional block is in the scope and the old "do not include" wording is gone');
     ok(out.hasHeading && !out.oldHeading, '7. the proposal prints "Recommended Scope of Work" and no "Recommended Work", "Why This Approach" or "What you get:"');
     ok(out.headOrphans.length === 0, '7. every library name is followed by its first line: ' + JSON.stringify(out.headOrphans));

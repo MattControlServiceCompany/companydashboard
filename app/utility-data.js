@@ -1065,11 +1065,14 @@ function buildingMonthUse(pid, bid) {
     mBills.forEach((bill) => {
       const ym = billMonth(bill, mBills);
       if (!ym) return;
-      const u = (byYM[ym] = byYM[ym] || { kwh: 0, therms: 0, gal: 0, cost: 0, n: {}, est: 0, bills: 0 });
+      const u = (byYM[ym] = byYM[ym] || { kwh: 0, therms: 0, gal: 0, cost: 0, elecCost: 0, gasCost: 0, n: {}, est: 0, bills: 0 });
       if (m.commodity === 'Gas') u.therms += resolveGasUsageTherms(bill);
       else if (m.commodity === 'Propane') u.gal += parseBillNumberOrZero(bill.gallonsDelivered) || parseBillNumberOrZero(bill.kwh) || parseBillNumberOrZero(bill.usage);
       else u.kwh += parseBillNumberOrZero(bill.kwh) || parseBillNumberOrZero(bill.usage);
-      u.cost += parseBillNumberOrZero(bill.totalCost) || parseBillNumberOrZero(bill.TotalCurrentCharges) || parseBillNumberOrZero(bill.TotalAmountDue);
+      const billCost = parseBillNumberOrZero(bill.totalCost) || parseBillNumberOrZero(bill.TotalCurrentCharges) || parseBillNumberOrZero(bill.TotalAmountDue);
+      u.cost += billCost;
+      if (m.commodity === 'Electric') u.elecCost += billCost; // the electric and the gas dollars apart (the blended rate of a fuel = its cost / its use)
+      else if (m.commodity === 'Gas') u.gasCost += billCost;
       u.n[m.commodity] = (u.n[m.commodity] || 0) + 1;
       u.bills++;
       if (bill.estimated) u.est++;
@@ -1104,7 +1107,8 @@ function buildingUseByYear(pid, bid) {
 // Month of a bill = billMonth (the one month rule). The window ends at the newest bill month of the building and holds 12 months in a row; every
 // commodity the building has must have a bill in each of the 12 months, else null (no partial-year figure). Returns null with no data.
 // Returns { months: 12, startMonth, endMonth ('YYYY-MM'), label ('2025' for Jan to Dec of one year, else 'Jun 2024 to May 2025'), kwh, therms (null
-// when the building has no gas meter), propaneGal, cost ($ of the bill totals), sqft, kBtu (computeKBtu), eui (computePeriodEUI; null with no sqft),
+// when the building has no gas meter), propaneGal, cost ($ of the bill totals), electricCost and gasCost (the $ of the electric and of the gas bills; gasCost null
+// with no gas meter; the blended rate of a fuel = its cost / its use), sqft, kBtu (computeKBtu), eui (computePeriodEUI; null with no sqft),
 // costPerSqft (null with no sqft), hasGas, estimatedMonthly (true when every bill of the window is an estimate: only the annual total is valid) }.
 function buildingAnnualUse(pid, bid) {
   const mu = buildingMonthUse(pid, bid);
@@ -1118,8 +1122,8 @@ function buildingAnnualUse(pid, bid) {
   const commodities = mu.commodities;
   if (!win.every((ym) => byYM[ym] && commodities.every((c) => byYM[ym].n[c]))) return null;
   const sum = win.reduce(
-    (a, ym) => ({ kwh: a.kwh + byYM[ym].kwh, therms: a.therms + byYM[ym].therms, gal: a.gal + byYM[ym].gal, cost: a.cost + byYM[ym].cost, est: a.est + byYM[ym].est, bills: a.bills + byYM[ym].bills }),
-    { kwh: 0, therms: 0, gal: 0, cost: 0, est: 0, bills: 0 },
+    (a, ym) => ({ kwh: a.kwh + byYM[ym].kwh, therms: a.therms + byYM[ym].therms, gal: a.gal + byYM[ym].gal, cost: a.cost + byYM[ym].cost, elecCost: a.elecCost + byYM[ym].elecCost, gasCost: a.gasCost + byYM[ym].gasCost, est: a.est + byYM[ym].est, bills: a.bills + byYM[ym].bills }),
+    { kwh: 0, therms: 0, gal: 0, cost: 0, elecCost: 0, gasCost: 0, est: 0, bills: 0 },
   );
   const hasGas = commodities.includes('Gas');
   const sqft = parseBillNumberOrZero(b.sqft);
@@ -1136,6 +1140,8 @@ function buildingAnnualUse(pid, bid) {
     therms: hasGas ? sum.therms : null,
     propaneGal: sum.gal,
     cost: sum.cost,
+    electricCost: sum.elecCost,
+    gasCost: hasGas ? sum.gasCost : null,
     sqft: sqft,
     kBtu: kBtu,
     eui: sqft > 0 ? computePeriodEUI(kBtu, 12, sqft) : null,

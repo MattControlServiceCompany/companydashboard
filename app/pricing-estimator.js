@@ -2573,6 +2573,18 @@ function _pricingSelectZoneSensorSku(needCO2, features) {
      note, phase (1=hardware|2=labor)
    }
    ─────────────────────────────────────────────────────────────────────────── */
+// A zone terminal that is a dense room (emIsDenseOccupancyRoom, app/equipment-matrix.js): meeting, conference, program rooms and the like.
+// The room CO2 option of Recommended and Compliance holds only these rooms (Matt 2026-11-19). The zone gap groups and sequence counts of
+// buildCatalogRows carry how many of their zones are dense, so a priced row can be cut down to its dense share (_pricingDenseOptionalRows).
+var PRICING_DENSE_ROOM_CATS = { vav: true, fpb: true, ddvav: true, zone: true };
+function _pricingIsDenseZone(eq) {
+  return !!(eq && PRICING_DENSE_ROOM_CATS[eq.category] && typeof emIsDenseOccupancyRoom === 'function' && emIsDenseOccupancyRoom(eq.name));
+}
+function _pricingNoteDenseRoom(holder, eq) {
+  if (!_pricingIsDenseZone(eq)) return;
+  (holder.denseRooms = holder.denseRooms || []).push(_emSpaceTypeExtractLabel(eq.name) || eq.name);
+}
+
 /* ── buildCatalogRows(projId, buildingNames) ────────────────────────────────
    Single row-generation engine (c82cc354 REV 2, Step 1). Produces EVERY
    ASHRAE-36 hardware gap (phase 1) and EVERY applicable sequence-programming
@@ -2806,6 +2818,7 @@ function buildCatalogRows(projId, buildingNames) {
               };
             }
             hardwareGaps[comboKey].count++;
+            _pricingNoteDenseRoom(hardwareGaps[comboKey], eq);
             // Mark zoneTemp as "covered by combo" so we skip it in zoneTemp pass
             if (!hardwareGaps['zoneTemp__' + cat + '__comboed'])
               hardwareGaps['zoneTemp__' + cat + '__comboed'] = { count: 0 };
@@ -2832,6 +2845,7 @@ function buildCatalogRows(projId, buildingNames) {
                 mapEntry: PRICE_POINT_MAP['co2_zone_standalone'],
               };
             hardwareGaps[standaloneKey].count++;
+            _pricingNoteDenseRoom(hardwareGaps[standaloneKey], eq);
             return;
           }
           if (effectiveKey === 'zoneTemp') {
@@ -3009,6 +3023,9 @@ function buildCatalogRows(projId, buildingNames) {
           (mapEntry.g36SectionByCategory && mapEntry.g36SectionByCategory[gap.equipType]) || mapEntry.g36Section || '',
         phase: 1,
         _pointKey: gap.pointKey, // Fix 2: store resolved point key for reliable optimizer skip/class lookup
+        // Zone CO2 gap rows: which of the rooms of this row are dense rooms (see _pricingNoteDenseRoom). Absent on every other row.
+        _denseQty: gap.denseRooms ? gap.denseRooms.length : undefined,
+        _denseRooms: gap.denseRooms ? gap.denseRooms.slice() : undefined,
       });
     });
 
@@ -3036,6 +3053,7 @@ function buildCatalogRows(projId, buildingNames) {
     var seqBlocked = {}; // seqKey → { ready: n, gap: n } — count of blocked-only instances
     var seqPartial = {}; // seqKey → { ready: n, gap: n } — count of partial-only instances
     var seqApplicable = {}; // seqKey → count of non-'na' instances (denominator, both groups combined)
+    var seqDense = {}; // seqKey → { ready: n, gap: n } — how many of those instances are dense rooms (_pricingIsDenseZone)
 
     function _bumpSeqGroupCount(map, seqKey, group) {
       if (!map[seqKey]) map[seqKey] = { ready: 0, gap: 0 };
@@ -3092,6 +3110,7 @@ function buildCatalogRows(projId, buildingNames) {
         var group = needsHw ? 'gap' : 'ready';
 
         _bumpSeqGroupCount(seqCounts, seqKey, group);
+        if (_pricingIsDenseZone(eq)) _bumpSeqGroupCount(seqDense, seqKey, group);
         if (entry.status === 'blocked') _bumpSeqGroupCount(seqBlocked, seqKey, group);
         else _bumpSeqGroupCount(seqPartial, seqKey, group);
         _bumpSeqCatCount(seqKey, group, eq.category);
@@ -3178,6 +3197,7 @@ function buildCatalogRows(projId, buildingNames) {
           seqKey: seqKey,
           hrsPerUnit: hrs,
           _hwGroup: group,
+          _denseQty: seqDense[seqKey] && seqDense[seqKey][group] ? seqDense[seqKey][group] : undefined, // zones of this row that are dense rooms
         });
       });
     });
@@ -3576,8 +3596,37 @@ function _pricingTierRowsSplit(projId, tier) {
   // Full Scope includes the room CO2 sensors and the control sequences that use them (Matt 2026-11-18): its room CO2 rows stay in
   // the base rows, so every reader (Cost Estimate tab, Service Proposal, Excel export) gets one Full Scope total and no optional
   // section for Full Scope. Recommended and Compliance keep the split.
-  if (tier === 'full-scope') return { base: all, optional: [] };
-  return _pricingSplitOptionalZoneCo2(all);
+  if (tier === 'full-scope') return { base: all, optional: [], remainder: [] };
+  // Recommended and Compliance: the optional room CO2 section holds only the dense rooms (Matt 2026-11-19). The room CO2 sensors of all other
+  // rooms are in neither section (remainder = their sensor rows, kept only to say how many rooms the proposal does not recommend).
+  var split = _pricingSplitOptionalZoneCo2(all);
+  var dense = _pricingDenseOptionalRows(split.optional);
+  return { base: split.base, optional: dense.optional, remainder: dense.remainder };
+}
+// The label of a row cut down to qty zones: "2 of 19 Dual-Duct Terminals" / "5 of 18 Occupancy-Based Ventilation (Zone Terminals)s".
+function _pricingRowLabelAtQty(label, qty) {
+  var m = /^(\d+)(?: of (\d+))? (.+?)(?: \(\d+ (?:blocked|partial)(?:, \d+ partial)?\))?$/.exec(String(label || ''));
+  if (!m) return label;
+  var of = m[2] ? Number(m[2]) : Number(m[1]);
+  return qty + (qty < of ? ' of ' + of : '') + ' ' + m[3];
+}
+// Cuts the optional room CO2 rows down to their dense rooms. A row stamped by buildCatalogRows (_denseQty = how many of its zones are dense
+// rooms) is priced again at that quantity with the same unit price (_pricingScaleRowQty). optional = the dense rows; remainder = the
+// sensor rows of the other rooms (phase 1), priced at their quantity.
+function _pricingDenseOptionalRows(rows) {
+  var optional = [];
+  var remainder = [];
+  (rows || []).forEach(function (r) {
+    var total = r.qty || 0;
+    var dense = Math.min(total, r._denseQty || 0);
+    if (dense > 0) {
+      var d = _pricingScaleRowQty(r, dense);
+      d.equipment = _pricingRowLabelAtQty(r.equipment, dense);
+      optional.push(d);
+    }
+    if (r.phase === 1 && total - dense > 0) remainder.push(_pricingScaleRowQty(r, total - dense));
+  });
+  return { optional: optional, remainder: remainder };
 }
 function buildComplianceRows(projId) {
   return _pricingTierRowsSplit(projId, 'compliance').base;
@@ -4225,11 +4274,16 @@ function _pricingBothRecAmount(recRow, recTotals) {
                  (hourly or workbook) as the tier total. Base + optional can differ from the old
                  single total only by workbook rounding and fixed workbook lines.
    ─────────────────────────────────────────────────────────────────────────── */
-function _pricingOptionalZoneCo2Summary(projId, estimate, rows) {
+function _pricingOptionalZoneCo2Summary(projId, estimate, rows, remainderRows) {
   var toggles = (estimate && estimate.rowToggles) || {};
   var sensorQty = 0;
   rows.forEach(function (r) {
     if (r.phase === 1 && toggles[r._baseId || r.id] !== false) sensorQty += r.qty || 0;
+  });
+  // The sensors of the other rooms (not dense): in neither section; counted so the proposal can say how many rooms it does not recommend.
+  var otherSensorQty = 0;
+  (remainderRows || []).forEach(function (r) {
+    if (toggles[r._baseId || r.id] !== false) otherSensorQty += r.qty || 0;
   });
   var totals = rows.length ? _pricingComputeTotals(rows, estimate, projId) : null;
   // The same sensors must show the same hardware figure in every tier. The workbook split is
@@ -4250,15 +4304,262 @@ function _pricingOptionalZoneCo2Summary(projId, estimate, rows) {
     label: PRICING_OPTIONAL_ZONE_CO2_LABEL,
     rows: rows,
     sensorQty: sensorQty,
+    otherSensorQty: otherSensorQty,
     totals: totals,
+    estimate: rows.length ? _pricingZoneCo2SavingsEstimate(projId, rows, estimate, totals) : null,
   };
+}
+
+/* ── Room CO2 savings estimate (Matt 2026-11-19) ─────────────────────────────────────────────────────────────
+   ONE owner of the estimated energy savings and the simple payback of the optional room CO2 sensors with occupancy-based ventilation
+   (the dense rooms of Recommended and Compliance). The Cost Estimate tab, the Service Proposal and any export read the object this returns.
+   Everything here is an ESTIMATE: the site holds no floor area, design airflow or occupancy per room. Inputs and where each comes from:
+     rooms           the dense rooms of the optional rows (phase 1 rows, _denseRooms)
+     floor area      the building floor area (buildingAnnualUse .sqft) split over ALL zone units of the building by room use class
+                     (emRoomUseClass) with the area weights below
+     outdoor air     ASHRAE 62.1 style: area x (Ra + Rp x people per 1,000 ft2 / 1,000); only the per-person share can follow occupancy
+     occupied window the mean BAS schedule of the building zones (existingSchedule), whole hours
+     weather         typical year of the weather city (app/data/bas-weather-bins.js): heating below the balance point to the heating target,
+                     cooling above the cooling target, in the occupied window only
+     physics         dcvEnergySaved (app/ecm-calculators.js): the same physics as the demand controlled ventilation template
+     rates           the building's own blended rate of its newest 12 complete bill months: fuel cost / fuel use (buildingAnnualUse). A building with
+                     no gas meter takes the mean gas rate of the buildings of the project that have one. No utility data = no estimate.
+     savings         energy x rate per fuel (never a dollar delta); annual values only
+     years           simplePayback (computations/cost-lines.js), no incentive
+   Returns { complete, year, weatherCity, buildings: [{ building, rooms, roomNames, price, kwh, therms, usd, years } or { building, rooms, roomNames, price, years: null }],
+             total: { rooms, price, kwh, therms, usd: { low, likely, high }, years: { low, likely, high } },
+             display: { low, likely, high, years } } with low / likely / high = the low / likely / high SAVINGS case; display = the values rounded for
+   a client text ($ to the nearest 100, years to a whole number; years = the likely case). complete = every building with dense rooms has an estimate.
+   Null when the section has no rooms.                                                                                                       */
+var PRICING_ZONE_CO2_ESTIMATE = {
+  // ESTIMATING ASSUMPTIONS, not measured values (see the header). Change a value here and every output follows.
+  weatherCity: 4, // city id of app/data/bas-weather-bins.js (the default city of the BAS Savings Calc)
+  areaWeight: { dense: 0.7, public: 1.0, staff: 0.5, study: 0.25, exempt: 0.15 }, // share of the floor area per zone unit, by emRoomUseClass
+  denseRoom: { ra: 0.06, rp: 5, peoplePer1000ft2: 50 }, // cfm per ft2, cfm per person, people per 1,000 ft2 (62.1 style default of a meeting room)
+  heatBalanceF: 55, // heating counts below this outdoor temperature
+  heatTargetF: 70, // ... to this indoor temperature
+  coolTargetF: 72, // cooling counts above this outdoor temperature
+  afue: 0.82, // heating plant efficiency
+  cop: 3.5, // cooling plant efficiency
+  // low / likely / high SAVINGS case: average occupancy (share of design) during the occupied hours, and the incremental share of the
+  // saving (an air handler CO2 reset already takes the building-average part)
+  cases: {
+    low: { occupancy: 0.25, incremental: 0.3 },
+    likely: { occupancy: 0.15, incremental: 0.55 },
+    high: { occupancy: 0.08, incremental: 0.8 },
+  },
+};
+// Hours x degrees of the typical year inside the occupied window [startHour, stopHour): { heat, cool } in F hours.
+function _pricingTypicalYearDegreeHours(cityId, startHour, stopHour) {
+  var c = typeof BAS_WEATHER_BINS !== 'undefined' && BAS_WEATHER_BINS.cities ? BAS_WEATHER_BINS.cities[cityId] : null;
+  if (!c) return null;
+  var K = PRICING_ZONE_CO2_ESTIMATE;
+  var heat = 0;
+  var cool = 0;
+  for (var m = 0; m < c.temp.length; m++) {
+    for (var b = 0; b < BAS_WEATHER_BINS.bins.length; b++) {
+      var t = BAS_WEATHER_BINS.bins[b];
+      for (var h = startHour; h < stopHour; h++) {
+        var n = c.temp[m][b][h] || 0;
+        if (!n) continue;
+        if (t < K.heatBalanceF) heat += n * (K.heatTargetF - t);
+        else if (t > K.coolTargetF) cool += n * (t - K.coolTargetF);
+      }
+    }
+  }
+  return { heat: heat, cool: cool };
+}
+// The occupied window of a building: the mean start and stop of the BAS schedules of its zones (all-day schedules left out), whole hours.
+function _pricingBuildingOccupiedWindow(equipResults) {
+  var starts = [];
+  var stops = [];
+  (equipResults || []).forEach(function (eq) {
+    var s = eq.existingSchedule;
+    if (!s || s.startMin === undefined || s.stopMin === undefined || s.startMin === s.stopMin) return;
+    starts.push(s.startMin);
+    stops.push(s.stopMin);
+  });
+  if (!starts.length) return null;
+  var mean = function (a) {
+    return a.reduce(function (x, y) { return x + y; }, 0) / a.length;
+  };
+  var start = Math.round(mean(starts) / 60);
+  var stop = Math.round(mean(stops) / 60);
+  return stop > start ? { start: start, stop: Math.min(24, stop) } : null;
+}
+function _pricingZoneCo2SavingsEstimate(projId, optionalRows, estimate, totals) {
+  var K = PRICING_ZONE_CO2_ESTIMATE;
+  var toggles = (estimate && estimate.rowToggles) || {};
+  var shares = totals && totals.rowShares ? totals.rowShares : null;
+  var byBuilding = {};
+  var order = [];
+  (optionalRows || []).forEach(function (r) {
+    if (toggles[r._baseId || r.id] === false) return;
+    var name = r.building || '';
+    var B = byBuilding[name];
+    if (!B) {
+      B = byBuilding[name] = { building: name, roomNames: [], price: 0 };
+      order.push(name);
+    }
+    if (r.phase === 1 && r._denseRooms) B.roomNames = B.roomNames.concat(r._denseRooms);
+    var amt = shares && shares[r._baseId || r.id] != null ? shares[r._baseId || r.id] : r.lineTotal;
+    B.price += amt || 0;
+  });
+  order = order.filter(function (n) {
+    return byBuilding[n].roomNames.length > 0;
+  });
+  if (!order.length) return null;
+  var ash = typeof collectASHRAE36Data === 'function' ? collectASHRAE36Data(projId) : null;
+  var ashByName = {};
+  ((ash && ash.buildings) || []).forEach(function (b) {
+    ashByName[b.name] = b;
+  });
+  var useOf = function (name) {
+    var ud =
+      typeof _a36UtilityBuilding === 'function' && typeof buildingAnnualUse === 'function'
+        ? _a36UtilityBuilding({ project: { id: projId } }, { name: name })
+        : null;
+    return ud ? buildingAnnualUse(projId, ud.id) : null;
+  };
+  var rateOf = function (cost, use) {
+    return cost > 0 && use > 0 ? cost / use : null;
+  };
+  // The mean gas rate of the project's buildings that have a gas meter: the gas rate of a building with none.
+  var meanGasRate = null;
+  var gasRateOfProject = function () {
+    if (meanGasRate !== null) return meanGasRate;
+    var rates = [];
+    ((typeof getUDBldgs === 'function' && getUDBldgs(projId)) || []).forEach(function (ub) {
+      var u = typeof buildingAnnualUse === 'function' ? buildingAnnualUse(projId, ub.id) : null;
+      var g = u && u.hasGas ? rateOf(u.gasCost, u.therms) : null;
+      if (g) rates.push(g);
+    });
+    meanGasRate = rates.length
+      ? rates.reduce(function (x, y) { return x + y; }, 0) / rates.length
+      : 0;
+    return meanGasRate;
+  };
+  var scen = ['low', 'likely', 'high'];
+  var buildings = order.map(function (name) {
+    var B = byBuilding[name];
+    var out = { building: name, rooms: B.roomNames.length, roomNames: B.roomNames, price: B.price, years: null };
+    var ab = ashByName[name];
+    var use = useOf(name);
+    var zones = ab
+      ? ab.equipResults.filter(function (eq) {
+          return typeof EM_SPACE_TYPE_ZONE_TERMINAL_CATS !== 'undefined' && EM_SPACE_TYPE_ZONE_TERMINAL_CATS[eq.category];
+        })
+      : [];
+    var win = ab ? _pricingBuildingOccupiedWindow(zones) : null;
+    var dh = win ? _pricingTypicalYearDegreeHours(K.weatherCity, win.start, win.stop) : null;
+    var elecRate = use ? rateOf(use.electricCost, use.kwh) : null;
+    var gasRate = use ? (use.hasGas ? rateOf(use.gasCost, use.therms) : gasRateOfProject() || null) : null;
+    var wsum = zones.reduce(function (s, eq) {
+      return s + (K.areaWeight[emRoomUseClass(eq.name)] || 0);
+    }, 0);
+    if (!use || !(use.sqft > 0) || !dh || !elecRate || !gasRate || !(wsum > 0)) return out; // no data, no estimate
+    var d = K.denseRoom;
+    var oaPerCfmDesign = d.ra + (d.rp * d.peoplePer1000ft2) / 1000; // cfm per ft2 at design occupancy
+    var area = (use.sqft * K.areaWeight.dense) / wsum; // ft2 of one dense room
+    out.kwh = {};
+    out.therms = {};
+    out.usd = {};
+    scen.forEach(function (k) {
+      var c = K.cases[k];
+      var r = dcvEnergySaved({
+        oa_cfm_design: area * oaPerCfmDesign,
+        per_person_frac: ((d.rp * d.peoplePer1000ft2) / 1000) / oaPerCfmDesign,
+        avg_occ_frac: c.occupancy,
+        heat_degree_hours: dh.heat,
+        cool_degree_hours: dh.cool,
+        afue: K.afue,
+        cop: K.cop,
+      });
+      out.therms[k] = r.therms_saved * c.incremental * out.rooms;
+      out.kwh[k] = r.cool_kwh_saved * c.incremental * out.rooms;
+      out.usd[k] = out.therms[k] * gasRate + out.kwh[k] * elecRate;
+    });
+    out.year = use.label;
+    return out;
+  });
+  var est = buildings.filter(function (b) {
+    return !!b.usd;
+  });
+  var sum = function (list, f) {
+    return list.reduce(function (s, b) { return s + f(b); }, 0);
+  };
+  var total = {
+    rooms: sum(buildings, function (b) { return b.rooms; }),
+    price: totals && totals.grand != null ? totals.grand : sum(buildings, function (b) { return b.price; }),
+    kwh: {},
+    therms: {},
+    usd: {},
+    years: {},
+  };
+  var complete = est.length === buildings.length;
+  scen.forEach(function (k) {
+    total.kwh[k] = sum(est, function (b) { return b.kwh[k]; });
+    total.therms[k] = sum(est, function (b) { return b.therms[k]; });
+    total.usd[k] = sum(est, function (b) { return b.usd[k]; });
+    total.years[k] = complete ? simplePayback(total.price, 0, total.usd[k]).years : null;
+  });
+  buildings.forEach(function (b) {
+    if (b.usd) b.years = simplePayback(b.price, 0, b.usd.likely).years;
+  });
+  var r100 = function (v) {
+    return Math.round(v / 100) * 100;
+  };
+  var labels = est
+    .map(function (b) { return b.year; })
+    .filter(function (y, i, a) { return y && a.indexOf(y) === i; });
+  var wc = typeof BAS_WEATHER_BINS !== 'undefined' && BAS_WEATHER_BINS.cities[K.weatherCity] ? BAS_WEATHER_BINS.cities[K.weatherCity].name : null;
+  return {
+    complete: complete,
+    year: labels.length === 1 ? labels[0] : null,
+    weatherCity: wc ? wc.split(',')[0] : null,
+    buildings: buildings,
+    total: total,
+    display: complete
+      ? {
+          low: r100(total.usd.low),
+          likely: r100(total.usd.likely),
+          high: r100(total.usd.high),
+          years: total.years.likely === null ? null : Math.max(1, Math.round(total.years.likely)),
+        }
+      : null,
+  };
+}
+
+// The client sentences of the estimate (the Cost Estimate tab and the Service Proposal print these, none words them again).
+// est = the _pricingZoneCo2SavingsEstimate result; hasProgramming = the section holds the occupancy-based ventilation programming (Recommended);
+// without it (Compliance) the sensors only prepare the rooms. Returns { savings, basis }; '' for a sentence that has no data. Every number is an estimate.
+function _pricingZoneCo2EstimateText(est, hasProgramming) {
+  var out = { savings: '', basis: '' };
+  if (!est) return out;
+  if (!hasProgramming) {
+    out.savings = 'The sensors prepare these rooms for occupancy-based ventilation.';
+    return out;
+  }
+  var d = est.display;
+  if (!d || !(d.likely > 0)) return out;
+  var usd = function (v) {
+    return '$' + Math.round(v).toLocaleString('en-US');
+  };
+  out.savings =
+    'Estimated savings ' + usd(d.likely) + ' per year (range ' + usd(d.low) + ' to ' + usd(d.high) + ')' +
+    (d.years ? '; estimated payback about ' + d.years + (d.years === 1 ? ' year' : ' years') : '') +
+    '.';
+  out.basis =
+    'Estimates use each building\'s ' + (est.year ? est.year + ' ' : '') + 'energy use and rates' +
+    (est.weatherCity ? ' and typical ' + est.weatherCity + ' weather' : '') + '.';
+  return out;
 }
 
 /* Cost Estimate tab: the "Optional: Zone CO2 Sensors" section. Read-only. rawRows = the optional rows of
    the tier the tab shows (from _pricingTierRowsSplit, the same build that gave the base rows).
    Quantity and cost come from _pricingOptionalZoneCo2Summary / _pricingComputeFilteredTotals, the same
    functions the proposal and the Excel export read. Returns '' when the tier has no optional rows. */
-function _pricingOptionalZoneCo2HTML(projId, rawRows) {
+function _pricingOptionalZoneCo2HTML(projId, rawRows, remainderRows) {
   if (!rawRows || !rawRows.length) return '';
   var estimate = _pricingGetEstimate(projId);
   var all = _pricingApplyQtyOverrides(projId, _pricingApplyLaborOverrides(projId, rawRows));
@@ -4278,6 +4579,16 @@ function _pricingOptionalZoneCo2HTML(projId, rawRows) {
   var sensorQty = included.reduce(function (n, r) {
     return r.phase === 1 ? n + (r.qty || 0) : n;
   }, 0);
+  // The other rooms (not dense): not recommended. And the estimated savings of the dense rooms shown (same owner as the proposal).
+  var otherQty = (remainderRows || []).reduce(function (n, r) {
+    return (!filterBldg || r.building === filterBldg) && toggles[r._baseId || r.id] !== false ? n + (r.qty || 0) : n;
+  }, 0);
+  var estText = _pricingZoneCo2EstimateText(
+    _pricingZoneCo2SavingsEstimate(projId, shown, estimate, totals),
+    shown.some(function (r) {
+      return r.phase === 2;
+    }),
+  );
   var th =
     'background:var(--s1);color:var(--text2);font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:0.5px;' +
     'padding:8px 10px;white-space:nowrap;border-right:1px solid var(--border);border-bottom:1px solid var(--border2);';
@@ -4314,8 +4625,16 @@ function _pricingOptionalZoneCo2HTML(projId, rawRows) {
     '<div id="pricing-optional-zone-co2-' + projId + '" style="flex-shrink:0;margin:10px 14px 14px">' +
     '<div style="font-weight:700;color:var(--text2);margin-bottom:4px;font-size:11px;text-transform:uppercase;letter-spacing:0.5px">' +
     _escHtml(PRICING_OPTIONAL_ZONE_CO2_LABEL) + '</div>' +
-    '<div style="font-size:10px;color:var(--text3);margin-bottom:6px">Zones with no carbon dioxide sensor. The audit report lists them. ' +
-    'This work is not in the tier total. The client can add it.</div>' +
+    '<div style="font-size:10px;color:var(--text3);margin-bottom:6px">Meeting, conference, program and other crowded rooms with no carbon dioxide sensor. The audit report lists every room without one. ' +
+    'This work is not in the tier total. The client can add it.' +
+    (otherQty > 0
+      ? ' Not recommended: carbon dioxide sensors in the other ' + otherQty + (otherQty === 1 ? ' room' : ' rooms') + '. Their estimated energy savings do not repay the cost.'
+      : '') +
+    '</div>' +
+    (estText.savings
+      ? '<div id="pricing-optional-zone-co2-estimate-' + projId + '" style="font-size:11px;color:var(--text2);margin-bottom:6px">' +
+        _escHtml(estText.savings + (estText.basis ? ' ' + estText.basis : '')) + '</div>'
+      : '') +
     '<div class="ch-tbl-outer" style="border:1px solid var(--border);border-radius:6px;overflow:hidden"><div class="ch-tbl-scroll" style="overflow-x:auto">' +
     '<table class="ch-tbl" style="border-collapse:separate;border-spacing:0;width:100%;font-size:12px;color:var(--text)">' +
     '<thead><tr><th style="' + th + 'text-align:left">Building</th><th style="' + th + 'text-align:left">Item</th>' +
@@ -5828,28 +6147,32 @@ function _pricingApplyQtyOverrides(projId, rows) {
     if (overrideQty == null) return row;
     var qty = parseFloat(overrideQty);
     if (isNaN(qty) || qty <= 0) return row;
-    var cloned = Object.assign({}, row);
-    cloned.qty = qty;
-    // Recompute lineTotal with overridden qty (unitPrice is already set by labor/catalog logic)
-    if (cloned.unitPrice != null) {
-      cloned.lineTotal = parseFloat((cloned.unitPrice * qty).toFixed(2));
-    }
-    // Deliverable E: installLaborTotal/partsLineTotal scale with qty too — otherwise a qty
-    // override on a noSku row (unitPrice stays null until a manual price is typed in) would leave
-    // installLaborTotal computed against the OLD qty when _pricingComputeTotals's manual-price
-    // branch later reads it.
-    if (cloned.phase === 1 && !cloned.ioOnly && cloned.installHours != null) {
-      var _qtyOvInstRate =
-        cloned.installLaborRate != null
-          ? cloned.installLaborRate
-          : _pricingGetConfig().hourlyRate || COST_LABOR_RATE_DEFAULT;
-      cloned.installLaborTotal = parseFloat((cloned.installHours * qty * _qtyOvInstRate).toFixed(2));
-      if (cloned.partsUnitPrice != null) {
-        cloned.partsLineTotal = parseFloat((cloned.partsUnitPrice * qty).toFixed(2));
-      }
-    }
-    return cloned;
+    return _pricingScaleRowQty(row, qty);
   });
+}
+// The ONE way to price a row at another quantity (a typed quantity override, and the dense-room share of a room CO2 row).
+function _pricingScaleRowQty(row, qty) {
+  var cloned = Object.assign({}, row);
+  cloned.qty = qty;
+  // Recompute lineTotal with overridden qty (unitPrice is already set by labor/catalog logic)
+  if (cloned.unitPrice != null) {
+    cloned.lineTotal = parseFloat((cloned.unitPrice * qty).toFixed(2));
+  }
+  // Deliverable E: installLaborTotal/partsLineTotal scale with qty too — otherwise a qty
+  // override on a noSku row (unitPrice stays null until a manual price is typed in) would leave
+  // installLaborTotal computed against the OLD qty when _pricingComputeTotals's manual-price
+  // branch later reads it.
+  if (cloned.phase === 1 && !cloned.ioOnly && cloned.installHours != null) {
+    var _qtyOvInstRate =
+      cloned.installLaborRate != null
+        ? cloned.installLaborRate
+        : _pricingGetConfig().hourlyRate || COST_LABOR_RATE_DEFAULT;
+    cloned.installLaborTotal = parseFloat((cloned.installHours * qty * _qtyOvInstRate).toFixed(2));
+    if (cloned.partsUnitPrice != null) {
+      cloned.partsLineTotal = parseFloat((cloned.partsUnitPrice * qty).toFixed(2));
+    }
+  }
+  return cloned;
 }
 
 /* ── Typed part price (workbook mode, WP5) ────────────────────────────────────────────────
@@ -8062,7 +8385,7 @@ function _pricingRenderCondensedTab(projId, el, estimate, tier) {
         ? '<div style="margin:0 14px 10px;font-size:11px;color:var(--text2)">Hardware and installation (' + _pricingFmt(condWb.phase1) + ') is hidden. Use the Hardware &amp; Install button to show it.</div>'
         : '',
     section('Programming', agg.lb),
-    _pricingOptionalZoneCo2HTML(projId, _tierSplit.optional),
+    _pricingOptionalZoneCo2HTML(projId, _tierSplit.optional, _tierSplit.remainder),
     emptyState,
     '</div>',
     '<div class="ch-panel-footer" style="display:flex;flex-wrap:wrap;gap:10px 20px;align-items:center;padding:10px 14px;background:var(--s1);border-top:2px solid var(--border2);flex-shrink:0">',
@@ -10981,7 +11304,7 @@ initCostEstimateTab = function initCostEstimateTab(projId) {
   // that wins first) — means this combined "extra info" region absorbs whatever slack is left and
   // scrolls internally if it doesn't fit, instead of anything above it being invisibly cut off.
   // Each table's own bounded max-height/scroll (240px / 220px) is unchanged.
-  var optionalZoneCo2HTML = _pricingOptionalZoneCo2HTML(projId, optionalZoneCo2Rows);
+  var optionalZoneCo2HTML = _pricingOptionalZoneCo2HTML(projId, optionalZoneCo2Rows, _tierSplit.remainder);
   var extraInfoHTML =
     optionalZoneCo2HTML || laborBreakdownHTML || timelineHTML
       ? '<div style="flex:1;min-height:0;overflow:auto;display:flex;flex-direction:column">' +
@@ -11334,6 +11657,7 @@ function _pricingComputeSummaryData(projId, estimate) {
       projId,
       estimate,
       _pricingApplyQtyOverrides(projId, _pricingApplyLaborOverrides(projId, split.optional)),
+      split.remainder,
     );
     rows.forEach(function (r) {
       if (r.building && !bldgSeen[r.building]) {

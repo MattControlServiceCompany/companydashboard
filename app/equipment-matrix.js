@@ -14515,6 +14515,8 @@ var EM_EQUIP_CONFIG_FLAGS = {
         'stairwell',
         'elevator_lobby',
         'secure_cell',
+        'custodial',
+        'penthouse',
       ],
       default: 'vav',
     },
@@ -14549,6 +14551,8 @@ var EM_EQUIP_CONFIG_FLAGS = {
         'stairwell',
         'elevator_lobby',
         'secure_cell',
+        'custodial',
+        'penthouse',
       ],
       default: 'vav',
     },
@@ -14582,6 +14586,8 @@ var EM_EQUIP_CONFIG_FLAGS = {
         'stairwell',
         'elevator_lobby',
         'secure_cell',
+        'custodial',
+        'penthouse',
       ],
       default: 'vav',
     },
@@ -14629,6 +14635,8 @@ var EM_EQUIP_CONFIG_FLAGS = {
         'stairwell',
         'elevator_lobby',
         'secure_cell',
+        'custodial',
+        'penthouse',
       ],
       default: 'vav',
     },
@@ -14658,6 +14666,8 @@ var EM_EQUIP_CONFIG_FLAGS = {
         'stairwell',
         'elevator_lobby',
         'secure_cell',
+        'custodial',
+        'penthouse',
       ],
       default: 'vav',
     },
@@ -14698,13 +14708,31 @@ var EM_EQUIP_CONFIG_FLAGS = {
    (AI/_context/temp/space-type-phase0/space-type-phase0-b.js, itself hand-
    verified against all 104 real matches, zero occupied-space false positives)
    — do not retune without a new prediction table (campaign doctrine: §3 wrong
-   paths / over-broad substring matching is the named failure mode).          */
+   paths / over-broad substring matching is the named failure mode).
+
+   Round 2 (Matt 2026-11-19): rooms that never need a room CO2 sensor are exempt by name:
+   restroom also by "RR" + digits or the word RR ("Men RR1Q", "Women RR") and by a bare Men/Women
+   room name with a number ("Women 120"); custodial/janitor/laundry (new type custodial, also the
+   pair "Cust/Laundry"); telecom (networking); penthouse (new type penthouse); vestibule
+   (corridor); and the typo "Corrdior" (corridor). NOT exempt, on purpose: Pallets, Ship/Rec,
+   Courier, Central Supply, Mothers Room, Spine, Vending.
+   PREDICTION TABLE (live pull 2026-11-19, every Equipment Matrix zone terminal name of every project;
+   full table: _context/temp/2026-11-19-co2-dense/2026-11-19-prediction-table.md):
+     unclassified -> restroom   "Men RR1Q02", "Women RR1Q01", "Women 120 / Men 119", "Women 159" (and same-pattern rows)
+     unclassified -> custodial  "Custodial 113", "Cust/Laundry"
+     unclassified -> networking "Telecom"
+     unclassified -> penthouse  "Penthouse"
+     unclassified -> corridor   "Vestibule", "Corrdior 104A"
+     occupied-space false positives: 0 (the table lists every changed name).                */
 var EM_SPACE_TYPE_ZONE_TERMINAL_CATS = { vav: true, fpb: true, ddvav: true, zone: true, fcu: true };
 var EM_SPACE_TYPE_NEVER_CLASSIFY_CATS = { ahu: true, rtu: true };
 
 var EM_SPACE_TYPE_PATTERNS = [
-  { spaceType: 'restroom', re: /restroom|rest room|\blocker\b(?!.*hall)/i },
-  { spaceType: 'corridor', re: /corridor|hallway/i }, // NOT \bhall\b — "Bunk Hall" is an occupied bunkroom
+  // RR = restroom ("Men RR1Q", "Women RR"); a bare Men/Women room name with a number ("Women 120") (Matt 2026-11-19)
+  { spaceType: 'restroom', re: /restroom|rest room|\blocker\b(?!.*hall)|\brr\s*\d|\brr\b|^(?:men|women)\s*\d+[a-z]?$/i },
+  { spaceType: 'corridor', re: /corridor|corrdior|hallway/i }, // NOT \bhall\b — "Bunk Hall" is an occupied bunkroom; corrdior = a typo seen in real names
+  { spaceType: 'custodial', re: /\bcustodial\b|\bjanitor|\blaundry\b/i },
+  { spaceType: 'penthouse', re: /\bpenthouse\b/i },
   {
     spaceType: 'mech_elec',
     re: /mech(anical)?\s*(room|rm)\b|\bele[ck]\w*ical\b(?!\s*(heat|coil))|electric\s*(room|rm)\b/i,
@@ -14712,9 +14740,16 @@ var EM_SPACE_TYPE_PATTERNS = [
   { spaceType: 'storage', re: /\bstorage\b/i },
   { spaceType: 'stairwell', re: /\bstair/i },
   { spaceType: 'elevator_lobby', re: /elevator\s*(lobby|vestibule|machine)?/i },
-  { spaceType: 'networking', re: /server|\bidf\b|\bmdf\b|data (room|center)/i },
+  { spaceType: 'corridor', re: /\bvestibule\b/i }, // after elevator_lobby: "Elevator Vestibule" stays an elevator lobby
+  { spaceType: 'networking', re: /server|\bidf\b|\bmdf\b|data (room|center)|\btelecom\b/i },
   { spaceType: 'secure_cell', re: /\bcell\b|inmate|\bpod\b(?!ium)|housing/i },
 ];
+
+// "Cust/Laundry" names ONE room (custodial and laundry), so it passes the multi-room guard like the utility pair below.
+var EM_SPACE_TYPE_CUSTODIAL_PAIR_RE = /\bcust(odial)?\s*\/\s*laundry\b|\blaundry\s*\/\s*cust(odial)?\b/i;
+
+// "Women 120 / Men 119" names one pair of restrooms (Matt 2026-11-19): it passes the multi-room guard like the pairs here.
+var EM_SPACE_TYPE_RESTROOM_PAIR_RE = /^\s*(?:men|women)\s*\d+[a-z]?\s*\/\s*(?:men|women)\s*\d+[a-z]?\s*$/i;
 
 var EM_SPACE_TYPE_UTILITY_PAIR_RE =
   /\belec(tric(al)?)?\s*\/\s*(water|mech(anical)?|plumbing|utility|telecom|data)\b|\b(water|mech(anical)?|plumbing|utility)\s*\/\s*elec(tric(al)?)?\b/i;
@@ -14729,6 +14764,8 @@ var EM_SPACE_TYPE_LABELS = {
   stairwell: 'Stairwell',
   elevator_lobby: 'Elevator Lobby',
   secure_cell: 'Secure Cell/Housing',
+  custodial: 'Custodial/Laundry',
+  penthouse: 'Penthouse',
 };
 
 /* v1 exemption matrix (§2.3): per (space type × point category), NOT an on/off switch.
@@ -14746,6 +14783,8 @@ var EM_SPACE_TYPE_EXEMPT_CATS = {
   stairwell: { co2: true },
   elevator_lobby: { co2: true },
   networking: { co2: true },
+  custodial: { co2: true },
+  penthouse: { co2: true },
   secure_cell: {},
 };
 
@@ -14782,6 +14821,12 @@ function emClassifySpaceType(equipRow, flags) {
   if (EM_SPACE_TYPE_UTILITY_PAIR_RE.test(label)) {
     return { spaceType: 'mech_elec', source: 'name', matchedLabel: label };
   }
+  if (EM_SPACE_TYPE_RESTROOM_PAIR_RE.test(label)) {
+    return { spaceType: 'restroom', source: 'name', matchedLabel: label };
+  }
+  if (EM_SPACE_TYPE_CUSTODIAL_PAIR_RE.test(label)) {
+    return { spaceType: 'custodial', source: 'name', matchedLabel: label };
+  }
   if (label.indexOf(',') !== -1 || label.indexOf('/') !== -1) return null; // multi-room-label guard
   for (var i = 0; i < EM_SPACE_TYPE_PATTERNS.length; i++) {
     var p = EM_SPACE_TYPE_PATTERNS[i];
@@ -14790,6 +14835,35 @@ function emClassifySpaceType(equipRow, flags) {
     }
   }
   return null;
+}
+
+/* ── Room use class (Matt 2026-11-19) ────────────────────────────────────────
+   ONE place that names the use of a room from its label (_emSpaceTypeExtractLabel). Used by
+   - the room CO2 option of the Service Proposal: only DENSE rooms are recommended as optional room CO2 sensors
+     (emIsDenseOccupancyRoom), and
+   - the floor area split of a building in the room CO2 savings estimate (_pricingZoneCo2SavingsEstimate).
+   'dense' is the room-name proxy of the ASHRAE 90.1 dense-space test for demand controlled ventilation (a space over
+   500 ft2 with 25 or more people per 1,000 ft2): meeting, conference, training, program, story time, computer lab,
+   classroom, community room, multipurpose, auditorium, commons, stage, maker space. Study rooms are NOT dense.
+   Classes: 'exempt' (a space type that never needs a room CO2 sensor, see EM_SPACE_TYPE_EXEMPT_CATS), 'dense', 'study',
+   'staff', 'public'. A name with no room label (equipment tag only) is 'public'.                               */
+var EM_ROOM_DENSE_RE =
+  /\b(meeting|conference|training|classroom|auditorium|multi-?purpose|commons|maker|makerspace|program|stage)\b|computer\s*lab|story\s*time|community\s*room|maker\s*space/i;
+var EM_ROOM_STUDY_RE = /\bstudy\b/i;
+var EM_ROOM_STAFF_RE =
+  /office|manager|\bhr\b|finance|admin|support off|branch|librarian|work ?area|work ?room|staff|break|lounge|\bfac\b|\blam\b|cx & it|media control|assisstant|project finish|service desk|holds|info desk|returns/i;
+function emRoomUseClass(equipName) {
+  var label = _emSpaceTypeExtractLabel(equipName);
+  if (label === null) return 'public';
+  var cls = emClassifySpaceType({ category: 'vav', equipName: equipName });
+  if (cls && EM_SPACE_TYPE_EXEMPT_CATS[cls.spaceType] && EM_SPACE_TYPE_EXEMPT_CATS[cls.spaceType].co2) return 'exempt';
+  if (EM_ROOM_DENSE_RE.test(label)) return 'dense';
+  if (EM_ROOM_STUDY_RE.test(label)) return 'study';
+  if (EM_ROOM_STAFF_RE.test(label)) return 'staff';
+  return 'public';
+}
+function emIsDenseOccupancyRoom(equipName) {
+  return emRoomUseClass(equipName) === 'dense';
 }
 
 /* _emSpaceTypeConfigFlagOverrides(row, flags) — for a classified+exempt row, returns
