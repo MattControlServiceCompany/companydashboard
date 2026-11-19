@@ -2508,6 +2508,8 @@ async function siteResetAllMeterTableSettings() {
    site-ui.js delegates to this array and should NOT maintain its own copy.
 */
 var RELEASE_NOTES = [
+  { v: 'v2026.11.19.362', date: '2026-11-19', title: 'Audit Report: opportunities indented',
+    items: [ { type: 'improved', text: 'Audit Report: the opportunities under the system descriptions of each library are indented 1/4 in, in the PDF and in Word.' } ] },
   { v: 'v2026.11.19.361', date: '2026-11-19', title: 'Audit Report: building page photo and rings',
     items: [ { type: 'improved', text: 'Audit Report: on each building page the photo is full size and the three score rings are below it. A score with no value shows as N/A. The table can use the page down to the footer.' } ] },
   { v: 'v2026.11.19.360', date: '2026-11-19', title: 'Audit Report: building pages on one page; utility charts; numbers in order',
