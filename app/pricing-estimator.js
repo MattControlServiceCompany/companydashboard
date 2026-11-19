@@ -5020,7 +5020,7 @@ var _pricingNotRecommendedCache = {};
 /* Recommended holds NO work because every savings item is over the payback limit (Matt 2026-11-19): the one predicate every output reads
    (the Cost Summary and Cost Estimate pages, the Recommended scope and plan, the Cost Estimate tab; summary data field recommendedNone).
    baseRows = the base rows of Recommended, notNow = the items left out on payback. False for a project with no priced catalog (no notNow). */
-function _pricingRecommendedEmptyByPayback(baseRows, notNow) {
+function _pricingRecommendedNoneNow(baseRows, notNow) {
   return (!baseRows || !baseRows.length) && !!notNow && notNow.length > 0;
 }
 // The one client sentence of an empty Recommended option.
@@ -11252,7 +11252,7 @@ initCostEstimateTab = function initCostEstimateTab(projId) {
       '<tr><td colspan="' +
       visibleColSpan +
       '" style="text-align:center;padding:40px;color:var(--text3);font-size:13px">' +
-      (tier === 'recommended' && _pricingRecommendedEmptyByPayback(baseRows, _pricingNotRecommendedCache[projId])
+      (tier === 'recommended' && _pricingRecommendedNoneNow(baseRows, _pricingNotRecommendedCache[projId])
         ? 'No work is in Recommended now (see the list above).'
         : 'No compliance gaps found. Run the Equipment Matrix audit first.') +
       '</td></tr>';
@@ -11647,7 +11647,7 @@ initCostEstimateTab = function initCostEstimateTab(projId) {
     // Empty-state: filter removed all rows (no budget-fit units at all — e.g. a ceiling too
     // small to fit even the cheapest measure, or no HIGH-impact measures exist for this project).
     var _recNotNow = _pricingNotRecommendedCache[projId] || [];
-    if (_pricingRecommendedEmptyByPayback(baseRows, _recNotNow)) {
+    if (_pricingRecommendedNoneNow(baseRows, _recNotNow)) {
       // Every item is over the payback limit (Matt 2026-11-19): one line and the list of the items left out, never an empty table.
       recNoSubsNotice =
         '<div style="margin:8px 14px 0;padding:8px 12px;background:var(--s3);border:1px solid var(--border);' +
@@ -12138,7 +12138,7 @@ function _pricingComputeSummaryData(projId, estimate) {
     optional: optionalByTier,
     option: optionEstimate,
     notNow: _pricingNotRecommendedCache[projId] || [],
-    recommendedNone: _pricingRecommendedEmptyByPayback(perTier.recommended, _pricingNotRecommendedCache[projId]),
+    recommendedNone: _pricingRecommendedNoneNow(perTier.recommended, _pricingNotRecommendedCache[projId]),
   };
 }
 

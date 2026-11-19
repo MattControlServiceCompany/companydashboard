@@ -258,11 +258,13 @@ function probeInPage() {
       const d = _pricingComputeSummaryData(p.id, _pricingGetEstimate(p.id));
       Object.keys(d.tierTotals).forEach((k) => {
         const t = d.tierTotals[k];
-        if (!t || !t.total) return;
+        if (!t) return;
+        // The item count is protected even when the tier has no price (2026-11-19: a Recommended option with no work = 0 items).
+        put(ps + '.estimate.' + k + '.itemsIncluded', t.included);
+        if (!t.total) return;
         put(ps + '.estimate.' + k + '.phase1', t.phase1);
         put(ps + '.estimate.' + k + '.phase2', t.phase2);
         put(ps + '.estimate.' + k + '.grand', t.grand);
-        put(ps + '.estimate.' + k + '.itemsIncluded', t.included);
       });
     } catch (e) {
       errs.push('cost estimate: ' + e.message);

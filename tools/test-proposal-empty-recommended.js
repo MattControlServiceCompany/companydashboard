@@ -2,7 +2,7 @@
 // SYNTHETIC values only; headless bundled Chromium; no network. The price data of the proposal (_rptA36ProposalSummaryData, cached on d) is
 // set by hand to two cases: (A) every Recommended item over the limit (Recommended has no rows, notNow lists the items); (B) no priced catalog.
 // Rules tested:
-//   1. The predicate _pricingRecommendedEmptyByPayback: true only when there are no base rows AND notNow is not empty.
+//   1. The predicate _pricingRecommendedNoneNow: true only when there are no base rows AND notNow is not empty.
 //   2. Case A: page 1 row "Recommended | No work is recommended now: ... | None now" (no dollar figure); no "Recommended costs less" sentence.
 //   3. Case A: the Cost Estimate page cell reads "None now" and the sentence; no "$null", "NaN" or "$0".
 //   4. Case A: the Recommended scope reads "No work is recommended now." and the "Not recommended now" sentence; the Implementation Plan says
@@ -55,13 +55,13 @@ const ok = (c, m) => {
           tierTotals: { recommended: rec, compliance: tot(10000, 6000, 4000), 'full-scope': tot(20000, 12000, 8000) },
         });
       const res = {};
-      const dA = mkD(base(none, { notNow: notNow, recommendedNone: _pricingRecommendedEmptyByPayback([], notNow) }));
-      const dB = mkD(base(none, { notNow: [], recommendedNone: _pricingRecommendedEmptyByPayback([], []) }));
+      const dA = mkD(base(none, { notNow: notNow, recommendedNone: _pricingRecommendedNoneNow([], notNow) }));
+      const dB = mkD(base(none, { notNow: [], recommendedNone: _pricingRecommendedNoneNow([], []) }));
       res.pred = [
-        _pricingRecommendedEmptyByPayback([], notNow),
-        _pricingRecommendedEmptyByPayback([{ id: 'x' }], notNow),
-        _pricingRecommendedEmptyByPayback([], []),
-        _pricingRecommendedEmptyByPayback(null, undefined),
+        _pricingRecommendedNoneNow([], notNow),
+        _pricingRecommendedNoneNow([{ id: 'x' }], notNow),
+        _pricingRecommendedNoneNow([], []),
+        _pricingRecommendedNoneNow(null, undefined),
       ];
       // The synthetic project has real rows in the pricing estimator; a Recommended with no rows has no timeline and no step plan (as the real case).
       window._pricingProposalTermAndFuture = () => ({ tl: null, termPhases: [], futurePhases: [] });
