@@ -20667,644 +20667,6 @@ function rptPageASHRAE36CostEstimate(n, d, detailedSectionNo) {
   return resultPages;
 }
 
-// ─── rptPageASHRAE36Building ──────────────────────────────────────────────
-/**
- * Per-building detail page: structured equipment-by-row table showing sensors
- * present, sensors needed (with human-readable names), and sequences not ready.
- * Replaces the prose "What Is Working" + gap-box list from the original design.
- * @param {number} n - Page number
- * @param {object} d - Data from collectASHRAE36Data
- * @param {object} building - Single building entry from d.buildings
- */
-/**
- * _a36BuildingContent — shared per-building content builder, extracted from
- * rptPageASHRAE36Building (feat/audit-report-reframe-density, 2026-07-09) so the SAME
- * gauges/table/summary HTML can be consumed two ways:
- *   1. rptPageASHRAE36Building — a building whose content is too tall for one shared page
- *      gets its own dedicated page(s), exactly as before this refactor (byte-identical
- *      output for that path — only the setup code moved, none of the logic changed).
- *   2. _a36BuildingBlockToken — a building whose content fits comfortably on a page gets
- *      packed alongside other small buildings on a SHARED page (density Finding 4: 26 of 39
- *      pages were "Per-Building Detail," one building = one forced full 1056px page even for
- *      a building with 1 piece of equipment — see
- *      stages/joco-audit-density-2026-07-09/investigation.md).
- * Returns { b, fakeData, gauges, intro, tableHead, tokens, summaryRowHtml, infraCallout }.
- */
-function _a36BuildingContent(d, building, showBuildingInfra) {
-  var b = building;
-  // Rule 2.3: reportDate drives footer date; label empty (no period range for ASHRAE reports).
-  var fakeData = { project: { client: d.project.name }, period: { label: '', reportDate: d.rawDate } };
-
-  // Priced-scope reconciliation (fix/per-building-sensor-reconcile, 2026-07-29) — the raw
-  // eq.compliance.missingPoints / eq.seqReadiness accumulators below used to be this table's
-  // ONLY source, the same defect class commit 2cd25a7 fixed on the cover page: buildCatalogRows
-  // applies monitoring-only-zone-unit exclusion (_pricingIsMonitoringOnlyZoneUnit — equipment
-  // rows missing BOTH coolSP and htgSP are dropped entirely, before any row is generated),
-  // ioOnly exclusion ($0/no-install existing-controller-I/O points), and oat/oaWetBulb/damper/
-  // co2+zoneTemp combo dedup that the raw per-equipment accumulators never see. Measured
-  // 2026-07-29 on real Client D data: NC Adult Detention Center's VAV Terminals row alone was
-  // printing 255 raw sensor gaps — 60 of its 62 VAV units are monitoring-only detention cells
-  // wired for temperature monitoring only, by design (feedback_absence_is_not_always_a_
-  // deficiency.md) — while only 4 were ever priced. Cached on `d` (memoized once per report
-  // render) rather than recomputed here, since buildCatalogRows walks the WHOLE project on every
-  // call and this function runs once PER BUILDING (up to 27 times per report).
-  var _a36CatRows = _a36ScopedCatalogRows(d);
-
-  // Helper: resolve human-readable name for a missing point category key
-  function _missingPointName(mp) {
-    return _a36GapName(mp.categoryKey, mp.categoryLabel);
-  }
-
-  // Helper: resolve human-readable label for a sequence key
-  function _seqLabel(seqKey, seqEntry) {
-    return _a36SeqEntryLabel(seqKey, seqEntry);
-  }
-
-  // Coverage gauges (first page only)
-  // The plural type names (the Equipment Type column of the summary table) come from the one list A36_CAT_COUNT_LABELS.
-  var CAT_LABELS_PLURAL = {};
-  Object.keys(A36_CAT_COUNT_LABELS).forEach(function (k) {
-    CAT_LABELS_PLURAL[k] = A36_CAT_COUNT_LABELS[k][1];
-  });
-  // "1 Air Handler, 21 Variable Air Volume Terminals": the type count line of the building summary (singular for one unit, items separated by commas)
-  var equipBreakdown =
-    '<span style="font-size:10px;color:var(--rpt-page-text)">' +
-    Object.keys(b.equipCounts)
-      .map(function (cat) {
-        return '<span style="white-space:nowrap">' + b.equipCounts[cat] + ' ' + _a36CatCountLabel(cat, b.equipCounts[cat]) + '</span>';
-      })
-      .join(', ') +
-    '</span>';
-
-  // Per-building gauge colors — R2 (2026-08-03), V-01. These were part of the SAME 2026-07-29
-  // brand-color pass that broke the cover (Overall -> CSC blue, Sensors/Sequences -> CSC green),
-  // so they carried the identical contradiction: a ring painted "High Readiness" green sitting
-  // inches above an _a36StatusChip reading "Partial Readiness" for the same building. Fixed the
-  // same way and from the same single rule — a36ReadinessColor() — so cover, per-building page
-  // and readiness table now all speak one color language.
-  var gauges =
-    '<div style="display:flex;gap:14px;margin-bottom:12px;align-items:center">' +
-    '<div style="text-align:center">' +
-    _a36GaugeSVG(b.composite, a36ReadinessColor(b.composite), 'Overall Score', 70) +
-    '</div>' +
-    '<div style="text-align:center">' +
-    _a36GaugeSVG(b.pointPct, a36ReadinessColor(b.pointPct), 'Sensors', 70) +
-    '</div>' +
-    '<div style="text-align:center">' +
-    (b.seqPct !== null
-      ? _a36GaugeSVG(b.seqPct, a36ReadinessColor(b.seqPct), 'Sequences', 70)
-      : '<svg width="70" height="77.7" viewBox="0 0 70 77.7" style="display:block">' +
-        '<circle cx="35" cy="35" r="26.6" fill="none" stroke="var(--rpt-rule)" stroke-width="6.3"/>' +
-        // Grey text on a client deliverable is banned (same rule already applied to the
-        // "Not found in this export" text below) — full black, matching --rpt-page-text.
-        '<text x="35" y="39" text-anchor="middle" font-size="13" font-weight="700" fill="var(--rpt-page-text)" font-family="Arial,sans-serif">None</text>' +
-        '<text x="35" y="68.95" text-anchor="middle" font-size="8.05" fill="var(--rpt-page-text)" font-family="Arial,sans-serif">Sequences</text>' +
-        '</svg>') +
-    '</div>' +
-    '<div style="flex:1">' +
-    // Building name is the top-level heading for the whole block (gauges + table +
-    // total) — reuse the report's own .rpt-body h2 "Section Headings" treatment
-    // (16px, var(--rpt-blue), trailing rule) instead of a smaller inline style so
-    // each building's section reads as a real header at a glance (2026-07-10 fix,
-    // was 12px/600 — smaller than the 13px body text).
-    '<h2 style="margin:0 0 4px 0">' +
-    // R5 (2026-08-03): client-visible name, never the raw Equipment Matrix key.
-    _a36DisplayName(b) +
-    '</h2>' +
-    '<div style="font-size:11px;color:var(--rpt-page-text);margin-bottom:6px">' +
-    rptCount(b.equipCount) +
-    ' equipment units audited</div>' +
-    '<div style="margin-bottom:4px">' +
-    equipBreakdown +
-    '</div>' +
-    _a36StatusChip(
-      b.status,
-      b.totalSensorsInPlace,
-      b.totalSensorsRequired,
-      b.seqPct === null,
-      b.totalSeqMatched,
-      b.totalSeqRequired,
-    ) +
-    '</div>' +
-    '</div>';
-
-  // Tier/category grouping setup
-  // Plan sec 6 / sec 10 item 2: Tier 1 = Plant & Central, Tier 2 = Primary Air, Tier 3 = Zone.
-  // FCU = Tier 3 (locked decision). EF = Tier 3 auxiliary (locked decision).
-  var TIER_GROUPS = [
-    { label: 'Tier 1 — Plant & Central Equipment', cats: ['chwp', 'hwp', 'ct'] },
-    { label: 'Tier 2 — Primary Air Systems', cats: ['ahu', 'doas', 'furnace'] },
-    { label: 'Tier 3 — Zone Terminals', cats: ['vav', 'fpb', 'ddvav', 'zone', 'fcu', 'heater', 'ef'] },
-  ];
-
-  var _flatCatOrder = [];
-  TIER_GROUPS.forEach(function (tg) {
-    tg.cats.forEach(function (c) {
-      _flatCatOrder.push(c);
-    });
-  });
-
-  var sortedEquip = b.equipResults.slice().sort(function (a, b2) {
-    var ai = _flatCatOrder.indexOf(a.category);
-    var bi2 = _flatCatOrder.indexOf(b2.category);
-    if (ai === -1) ai = 99;
-    if (bi2 === -1) bi2 = 99;
-    if (ai !== bi2) return ai - bi2;
-    return (a.name || '').localeCompare(b2.name || '');
-  });
-
-  // Compute building-level totals for summary line (last chunk only) — priced-scope
-  // (fix/per-building-sensor-reconcile, 2026-07-29), same _a36CatRows source as
-  // _pushCatSummaryRow below. Summed across EVERY category for this building, INCLUDING the
-  // building-wide oat/oaWetBulb dedup rows (category==='building'), so this total reconciles
-  // exactly to (sum of every per-category row below) + (the Building-Wide row, when present) —
-  // never an invisible number.
-  var totalSensorsNeeded = 0;
-  var totalSeqsNotReady = 0;
-  _a36CatRows.forEach(function (r) {
-    if (r.building !== b.name) return;
-    if (r.phase === 1 && !r.ioOnly) totalSensorsNeeded += r.qty || 0;
-    else if (r.phase === 2 && r.seqKey) totalSeqsNotReady += r.qty || 0;
-  });
-
-  // Table header HTML (reused on every chunk)
-  // Change 2 (2026-06-16): 4-column summary table — one row per equipment type.
-  // 2026-07-12 fix (item ac1d9bac): Sensors to Install / Sequences to Program cells were
-  // wrapping 3-5 lines at the old 27%/27% widths. Equipment Type (short category labels,
-  // longest is "Fan-Powered Terminals") and Units (a bare integer) both had large unused
-  // width margins, so that slack was moved to the two content columns instead (36/10/27/27
-  // -> 24/6/34/36). Text itself is NOT truncated/nowrap-ellipsis'd — _topBreakdown already
-  // caps each cell at top-3 items + "+N more" (see _pushCatSummaryRow) so no data is hidden
-  // by this change, it just gives the existing text more room per line. colgroup +
-  // table-layout:fixed added so these percentages are deterministic instead of
-  // browser auto-layout (which could otherwise let content push columns around).
-  // U2 (2026-08-02, fix/u2-print-page-budget). Same defect as the Building ASHRAE 36 Readiness
-  // table's header, same cause: the 2026-07-12 split above was fitted against a 10px (7.5pt
-  // printed) header, and the 10pt printed-text floor raises every th to 13.34px. "UNITS" is a
-  // single unbreakable word and its 6% column was sized for "a bare integer", so at the floor the
-  // header word overflowed its cell — 31 checkOverflow hits in an all-sections-on Audit render.
-  // (This section is opt-in and OFF in the client Audit, which is why it did not appear in the
-  // shipped PDFs; it would have appeared the first time anyone enabled Per-Building Detail.)
-  // Measured in a print-media DOM probe at 13.34px: table 720px, th horizontal padding 16px.
-  //   Units       inner 27.1 vs "Units" 41.7      -> FAILED by 14.6px; 9% gives inner 48.8, +7.1
-  //   Equipment   inner 156.5 vs "Equipment" 84.5 -> ample, untouched
-  //   Sensors     inner 228.5 vs "Sensors" 64.5   -> untouched
-  //   Sequences   inner 242.9 vs "Sequences" 85.2 -> gives up the 3%, still 221.6 inner. Its
-  //               content is a wrapping list already capped at top-3 + "+N more", so it wraps
-  //               slightly more rather than losing anything.
-  var colWidths = { equip: 24, units: 9, sensors: 34, seqs: 33 };
-  var colgroup =
-    '<colgroup>' +
-    '<col style="width:' +
-    colWidths.equip +
-    '%">' +
-    '<col style="width:' +
-    colWidths.units +
-    '%">' +
-    '<col style="width:' +
-    colWidths.sensors +
-    '%">' +
-    '<col style="width:' +
-    colWidths.seqs +
-    '%">' +
-    '</colgroup>';
-  // Destyle pass (fix/65ce578b, 2026-07-27): dropped the filled dark-blue header, matching the
-  // Proposal's plain/thin-bordered convention. Styling only.
-  var thStyle =
-    'padding:5px 8px;font-size:10px;font-weight:700;text-transform:uppercase;' +
-    'letter-spacing:0.04em;color:var(--rpt-page-text);text-align:center;' +
-    'border:1px solid var(--rpt-border)';
-  var tableHead =
-    colgroup +
-    '<thead><tr>' +
-    '<th style="' +
-    thStyle +
-    '">Equipment Type</th>' +
-    '<th style="' +
-    thStyle +
-    ';text-align:center">Units</th>' +
-    '<th style="' +
-    thStyle +
-    ';text-align:center">Devices to Install</th>' +
-    '<th style="' +
-    thStyle +
-    ';text-align:center">Sequences to Program</th>' +
-    '</tr></thead>';
-
-  // Build flat token list.
-  // Each token: { type: 'tier'|'cat'|'row', html: string }
-  // Every token (header or data row) counts as 1 slot against the page budget.
-  var _catsWithRows = {};
-  sortedEquip.forEach(function (eq) {
-    _catsWithRows[eq.category] = true;
-  });
-
-  var _coveredCats = {};
-  TIER_GROUPS.forEach(function (tg) {
-    tg.cats.forEach(function (c) {
-      _coveredCats[c] = true;
-    });
-  });
-
-  var tokens = [];
-
-  function _pushEquipRow(eq) {
-    var mp = eq.compliance.missingPoints || [];
-    var sr = eq.seqReadiness || {};
-    var presentCount = (eq.compliance.coveredPoints || []).length;
-    var missingNames = mp.map(_missingPointName);
-    var sensorsNeededCell =
-      mp.length === 0
-        ? '<span style="color:var(--rpt-green)">None</span>'
-        : '<strong>' + mp.length + '</strong> &mdash; ' + missingNames.join(', ');
-    var notReadySeqs = [];
-    for (var sk in sr) {
-      if (sr.hasOwnProperty(sk) && (sr[sk].status === 'blocked' || sr[sk].status === 'partial')) {
-        notReadySeqs.push(_seqLabel(sk, sr[sk]));
-      }
-    }
-    // Display-label rename (item ed465b3c, 2026-07-09): "Ready" -> "Fully Covered" -> (rename
-    // #2, Matt's decision, supersedes v647) "Fully Compliant".
-    var seqsCell =
-      notReadySeqs.length === 0
-        ? '<span style="color:var(--rpt-green)">Fully Compliant</span>'
-        : notReadySeqs.join(', ');
-    // 2026-07-10 fix: --rpt-rule (#d9dde3) is barely visible on a client deliverable —
-    // use the near-black --rpt-border token for row separators instead. Scoped to this
-    // Per-Building Detail table only (not a global --rpt-rule change, which also backs
-    // several stat-card fills elsewhere in the report).
-    var rowBorder = 'border:1px solid var(--rpt-border)';
-    var tdBase = 'padding:4px 8px;font-size:10px;vertical-align:top;' + rowBorder;
-
-    // Pixel-height estimate for this row (used by chunk pagination below).
-    // "Sensors Needed" column is ~200px wide, "Sequences" ~180px wide.
-    // U2 / RC-A (2026-08-02): the chars-per-line figures were 30 and 28, derived when this cell
-    // text rendered at 10px. The 10pt printed-text floor puts it at 13.34px in the same-width
-    // columns, so BOTH the characters that fit on a line and the height of each line change:
-    // chars scale by 10/13.34 (30 -> 22, 28 -> 21) and the line box goes 15px -> _rptTextLineH().
-    // Leaving the old numbers made every multi-line row under-count by roughly a third, which
-    // pushed the Per-Building Detail pages past the footer band once the floor was applied.
-    var PBD_SENSOR_CPL = 22; // was 30 at 10px; same 200px column at the 13.34px floor
-    var PBD_SEQ_CPL = 21; // was 28 at 10px; same 180px column at the 13.34px floor
-    var PBD_ROW_PAD_H = 12; // measured: a 1-line row is 31px = one 20px line box + 11px of padding/borders
-    var sensorsText = mp.length === 0 ? '' : missingNames.join(', ');
-    var seqsText = notReadySeqs.join(', ');
-    var sensorLines = mp.length === 0 ? 1 : Math.max(1, Math.ceil(sensorsText.length / PBD_SENSOR_CPL));
-    var seqLines = notReadySeqs.length === 0 ? 1 : Math.max(1, Math.ceil(seqsText.length / PBD_SEQ_CPL));
-    var rowEstH = PBD_ROW_PAD_H + Math.max(sensorLines, seqLines) * _rptTextLineH(1.5);
-
-    tokens.push({
-      type: 'row',
-      estH: rowEstH,
-      html:
-        '<tr>' +
-        '<td style="' +
-        tdBase +
-        ';font-weight:600;color:var(--rpt-page-text)">' +
-        (eq.name || '—') +
-        '</td>' +
-        '<td style="' +
-        tdBase +
-        ';color:var(--rpt-page-text)">' +
-        (eq.categoryLabel || eq.category) +
-        '</td>' +
-        '<td style="' +
-        tdBase +
-        ';text-align:right;color:var(--rpt-page-text)">' +
-        presentCount +
-        '</td>' +
-        '<td style="' +
-        tdBase +
-        ';color:var(--rpt-page-text);line-height:1.5">' +
-        sensorsNeededCell +
-        '</td>' +
-        '<td style="' +
-        tdBase +
-        ';color:var(--rpt-page-text);line-height:1.5">' +
-        seqsCell +
-        '</td>' +
-        '</tr>',
-    });
-  }
-
-  // Change 2 (2026-06-16): helper — push ONE summary row per category (replaces per-unit rows).
-  // fix/per-building-sensor-reconcile (2026-07-29): sensorsSum/seqsSum/mpFreq/sqFreq now come
-  // from the PRICED catalog (_a36CatRows, see this function's header comment above) instead of
-  // the raw eq.compliance.missingPoints/eq.seqReadiness accumulators — see that comment for the
-  // full rationale and the 255-raw-vs-4-priced NC ADC VAV measurement. hasApplicableSeq stays
-  // RAW on purpose: it answers "was G36 ever checked against this category" (an audit fact,
-  // not a cost).
-  function _pushCatSummaryRow(cat, catRows) {
-    var unitCount = catRows.length;
-    var hasApplicableSeq = false;
-    catRows.forEach(function (eq) {
-      var sr = eq.seqReadiness || {};
-      for (var sk in sr) {
-        if (sr.hasOwnProperty(sk) && sr[sk].status !== 'na') hasApplicableSeq = true;
-      }
-    });
-
-    // Priced sums for THIS building + THIS category. Sensors = phase-1, non-ioOnly rows (same
-    // buildCatalogRows-derived definition 2cd25a7 uses on the cover page). Sequences = phase-2
-    // rows carrying a seqKey (excludes buildSensorInvestigationRows' phase-2 labor rows, which
-    // are a service-scope finding, not a G36 sequence — see that function's own "must not reach
-    // the audit report" guardrail comment, pricing-estimator.js), with qty attributed to this
-    // category via categoryQty (a seqKey can span multiple zone categories at once, e.g. vav_dcv
-    // applies to vav/fpb/ddvav — categoryQty is the per-category split of that row's qty, added
-    // specifically for this reconciliation).
-    var sensorsSum = 0;
-    var seqsSum = 0;
-    var mpFreq = {};
-    var sqFreq = {};
-    _a36CatRows.forEach(function (r) {
-      if (r.building !== b.name) return;
-      if (r.phase === 1 && !r.ioOnly && r.category === cat) {
-        sensorsSum += r.qty || 0;
-        mpFreq[r.item] = (mpFreq[r.item] || 0) + (r.qty || 0);
-      } else if (r.phase === 2 && r.seqKey) {
-        var _catQty = (r.categoryQty && r.categoryQty[cat]) || 0;
-        if (_catQty > 0) {
-          seqsSum += _catQty;
-          sqFreq[r.item] = (sqFreq[r.item] || 0) + _catQty;
-        }
-      }
-    });
-
-    // Build top-3 breakdown string for a frequency map
-    function _topBreakdown(freq, total) {
-      if (total === 0) return '';
-      var pairs = Object.keys(freq).map(function (k) {
-        return { label: k, count: freq[k] };
-      });
-      pairs.sort(function (a, b2) {
-        return b2.count - a.count;
-      });
-      // 2026-09-30: plain list, one item per line, "Name (count)" -- the old "N: n - Name" form
-      // repeated the count and read as a code. Every item is listed (none hidden behind "+N more").
-      return pairs
-        .map(function (p) {
-          return p.label + ' (' + p.count + ')';
-        })
-        .join('<br>');
-    }
-
-    var sensorsBreakdown = _topBreakdown(mpFreq, sensorsSum);
-    var seqsBreakdown = _topBreakdown(sqFreq, seqsSum);
-
-    // 2026-07-29 fix (per-building-sensor-reconcile): a category can have raw gaps (points the
-    // audit found missing) that are ALL monitoring-only-zone/ioOnly and so never enter the
-    // priced scope. The column lists devices to install, so that case and a category with no gap
-    // both read "None needed" (Matt, 2026-11-16 review: the old "None" read as a failure).
-    var sensorsCell =
-      sensorsSum === 0
-        ? 'None needed'
-        : sensorsBreakdown
-          ? sensorsBreakdown
-          : String(sensorsSum);
-    // Display-label rename (item ed465b3c, 2026-07-09): "Ready" -> "Fully Covered" -> (rename
-    // #2, Matt's decision, supersedes v647) "Fully Compliant".
-    // 2026-07-10 fix (audit-report-na-rationale, wording-decision.md item 2): a category with
-    // ZERO applicable sequences (hasApplicableSeq false -- e.g. furnaces, heaters, zone
-    // terminals, which Guideline 36 has no published sequence for) was showing the identical
-    // "0 — Fully Compliant" text as a category that was genuinely assessed and found ready.
-    // That falsely implies a verified pass. Neutral wording per Matt's decision; does not
-    // touch seqsSum or the assessed-category branches below (byte-identical for real gaps and
-    // genuine passes).
-    var seqsCell = !hasApplicableSeq
-      ? 'No ASHRAE 36 sequence applies'
-      : seqsSum === 0
-        ? 'None needed'
-        : seqsBreakdown
-          ? seqsBreakdown
-          : String(seqsSum);
-
-    // 2026-07-10 fix: near-black --rpt-border, same reasoning as _pushEquipRow's rowBorder above.
-    var tdBase = 'padding:5px 8px;font-size:10px;vertical-align:middle;border:1px solid var(--rpt-border)';
-    tokens.push({
-      type: 'row',
-      // U2 (2026-08-02): 34/26 -> 48/36. These were single/double-line estimates for 10px cell
-      // text; at the 10pt printed-text floor the same cells render at 13.34px and their
-      // breakdown strings ("12 - Zone Temperature Sensor, 3 - ...") wrap further. Scaled by the
-      // floor ratio and re-verified by headless print render of the Per-Building Detail section
-      // with every optional Audit section switched on.
-      estH: sensorsSum > 0 || seqsSum > 0 ? 48 : 36,
-      html:
-        '<tr>' +
-        '<td style="' +
-        tdBase +
-        ';font-weight:600;color:var(--rpt-page-text)">' +
-        (CAT_LABELS_PLURAL[cat] || cat) +
-        '</td>' +
-        '<td style="' +
-        tdBase +
-        ';text-align:center;color:var(--rpt-page-text)">' +
-        unitCount +
-        '</td>' +
-        '<td style="' +
-        tdBase +
-        ';color:var(--rpt-page-text);font-weight:400">' +
-        sensorsCell +
-        '</td>' +
-        '<td style="' +
-        tdBase +
-        ';color:var(--rpt-page-text);font-weight:400">' +
-        seqsCell +
-        '</td>' +
-        '</tr>',
-    });
-  }
-
-  // Flat table: iterate tier order for stable sort, push summary rows without tier headers.
-  // Tier labels are intentionally omitted — the user wants a plain flat list sorted
-  // plant-first then zone-terminals last, with no Tier 1/2/3 section banners.
-  TIER_GROUPS.forEach(function (tg) {
-    tg.cats.forEach(function (cat) {
-      var catRows = sortedEquip.filter(function (eq) {
-        return eq.category === cat;
-      });
-      if (!catRows.length) return;
-      _pushCatSummaryRow(cat, catRows);
-    });
-  });
-
-  // Catch-through: uncovered categories (no tier header — flat list continues)
-  var uncoveredRows = sortedEquip.filter(function (eq) {
-    return !_coveredCats[eq.category];
-  });
-  if (uncoveredRows.length) {
-    var _lastUncovCat = null;
-    uncoveredRows.forEach(function (eq) {
-      if (eq.category !== _lastUncovCat) {
-        _lastUncovCat = eq.category;
-        // Push a summary row for this uncovered category
-        var _uncovCatRows = uncoveredRows.filter(function (u) {
-          return u.category === eq.category;
-        });
-        _pushCatSummaryRow(eq.category, _uncovCatRows);
-      }
-    });
-  }
-
-  // Building-Wide priced row (fix/per-building-sensor-reconcile, 2026-07-29): oat/oaWetBulb
-  // dedup to ONE sensor per building regardless of how many pieces of equipment are missing it
-  // (buildCatalogRows, pricing-estimator.js ~line 2683/2699) — these attribute to
-  // category==='building', not any single equipment category, so they never match a per-category
-  // row above and would otherwise be an invisible number (priced but never shown). Surfaced here
-  // explicitly so (sum of every category row above) + (this row, when present) reconciles exactly
-  // to the "Total for <building>" row below. Rare — 8 of these exist portfolio-wide across 27
-  // buildings (2026-07-29 measurement), so this stays a single compact row, not its own table.
-  var _bldgWideRows = _a36CatRows.filter(function (r) {
-    return r.building === b.name && r.phase === 1 && !r.ioOnly && r.category === 'building';
-  });
-  if (_bldgWideRows.length) {
-    var _bwFreq = {};
-    _bldgWideRows.forEach(function (r) {
-      _bwFreq[r.item] = (_bwFreq[r.item] || 0) + (r.qty || 0);
-    });
-    var _bwBreakdown = Object.keys(_bwFreq)
-      .map(function (k) {
-        return k + ' (' + _bwFreq[k] + ')';
-      })
-      .join('<br>');
-    var _bwTdBase = 'padding:5px 8px;font-size:10px;vertical-align:middle;border:1px solid var(--rpt-border)';
-    tokens.push({
-      type: 'row',
-      // U2 (2026-08-02): 34 -> 48, same reasoning as the category summary row above.
-      estH: 48,
-      html:
-        '<tr>' +
-        '<td style="' +
-        _bwTdBase +
-        ';font-weight:600;color:var(--rpt-page-text)">Building-Wide (Outdoor Air)</td>' +
-        '<td style="' +
-        _bwTdBase +
-        ';text-align:center;color:var(--rpt-page-text)">1</td>' +
-        '<td style="' +
-        _bwTdBase +
-        ';color:var(--rpt-page-text);font-weight:400">' +
-        _bwBreakdown +
-        '</td>' +
-        '<td style="' +
-        _bwTdBase +
-        ';color:var(--rpt-page-text);font-weight:400">No ASHRAE 36 sequence applies</td>' +
-        '</tr>',
-    });
-  }
-
-  // Empty state
-  if (!tokens.length) {
-    tokens.push({
-      type: 'row',
-      html: '<tr><td colspan="4" style="padding:8px;font-size:10px;color:var(--rpt-page-text)">No auditable equipment found for this building.</td></tr>',
-    });
-  }
-
-  // Total row (last chunk only) — a real <tfoot> row inside the equipment table
-  // (2026-07-10 fix), not a free-standing div with its own border-top. Matt's rule:
-  // rules only as part of a table's structure, never free-floating. Mirrors the
-  // canonical totals-row treatment (.rpt-table tr.rpt-tot td: border-top 2px solid
-  // --rpt-table-tot-bdr, background --rpt-table-tot-bg) inlined here since this
-  // table doesn't carry the .rpt-table class.
-  // Destyle pass (fix/65ce578b, 2026-07-27): dropped the shaded total-row fill
-  // (background:var(--rpt-table-tot-bg)), matching the Proposal's convention of no shaded rows
-  // -- the bold text + top rule alone already signal "this is the total." Styling only.
-  var summaryRowHtml =
-    '<tfoot><tr>' +
-    '<td colspan="4" style="padding:6px 8px;font-size:11px;color:var(--rpt-page-text);' +
-    'border-top:2px solid var(--rpt-table-tot-bdr)">' +
-    '<strong>Total for ' +
-    _a36DisplayName(b) +
-    ':</strong> install ' +
-    rptCount(totalSensorsNeeded) +
-    ' device' +
-    (totalSensorsNeeded !== 1 ? 's' : '') +
-    ', program ' +
-    rptCount(totalSeqsNotReady) +
-    ' sequence' +
-    (totalSeqsNotReady !== 1 ? 's' : '') +
-    ' across ' +
-    b.equipCount +
-    ' equipment unit' +
-    (b.equipCount !== 1 ? 's' : '') +
-    '.' +
-    '</td>' +
-    '</tr></tfoot>';
-
-  // Plan sec 6 item 4 / sec 10 item 3: Infrastructure callout
-  // 2026-07 design-language pass (Batch 3 item 3c): removed the rgba(0,0,0,0.02) background
-  // tint (transparent, border-only per the same rule already applied to .rpt-a36-callout
-  // elsewhere) and the opacity:0.6 grey "Not found in this export" text (grey text on a
-  // client deliverable is banned — full black, same weight as "Installed").
-  // 2026-07-06 (a0c2152): the v617 pass above still left an inline border/border-radius
-  // that contradicts .rpt-a36-callout's own CSS rule (energy-department.html ~2799: "NO
-  // background. NO border-left. NO border. Just spacing."). Removed — plain spacing only.
-  var infraCallout =
-    '<div class="rpt-a36-callout" style="margin-bottom:0;padding:8px 10px">' +
-    // D-12 (2026-08-03): 10px (7.5pt printed, 10.005pt after the floor) -> the 13pt section tier.
-    // Title case (Matt, 2026-08-03, item 8): uppercase transform removed from section headings.
-    '<div style="font-size:' +
-    RPT_SECTION_HEAD_PX +
-    'px;font-weight:700;' +
-    'color:var(--rpt-blue);margin-bottom:6px">Building Infrastructure</div>' +
-    // 2026-09-30: one item per line (stacked), not two side-by-side columns.
-    '<div style="display:flex;flex-direction:column;gap:4px">' +
-    '<div style="font-size:10px;color:var(--rpt-page-text)">' +
-    '<span style="font-weight:600">Dedicated building automation system power monitoring meter:</span> ' +
-    (b.hasPowerMonitoring
-      ? '<span style="color:var(--rpt-page-text)">Installed</span>'
-      : '<span style="color:var(--rpt-page-text)">Not installed</span>') +
-    '</div>' +
-    '<div style="font-size:10px;color:var(--rpt-page-text)">' +
-    '<span style="font-weight:600">Dedicated outdoor air sensors:</span> ' +
-    (b.hasOAConditions
-      ? '<span style="color:var(--rpt-page-text)">Installed</span>'
-      : '<span style="color:var(--rpt-page-text)">Not installed</span>') +
-    '</div>' +
-    '</div>' +
-    '</div>';
-
-  var intro = d._a36Detailed
-    ? ''
-    : '<div style="font-size:11px;color:var(--rpt-page-text);margin-bottom:10px;line-height:1.6">' +
-      'The table below summarizes each equipment type: the number of units audited, devices that must be added, ' +
-      'and sequences that cannot run until those devices are installed.' +
-      '</div>';
-
-  return {
-    b: b,
-    fakeData: fakeData,
-    gauges: gauges,
-    intro: intro,
-    tableHead: tableHead,
-    tokens: tokens,
-    summaryRowHtml: summaryRowHtml,
-    infraCallout: infraCallout,
-  };
-}
-
-// ─── _a36BuildingFlowTokens ────────────────────────────────────────────────
-// The flow tokens of one building on the ASHRAE 36 Sequences by Building pages: its heading block (gauges + intro) and its equipment
-// table, which continues on the next page with its header repeated (Matt 2026-11-06 / 2026-11-17: no half-empty pages). The heading
-// keeps the first two rows; the last part keeps two rows and the Total row.
-function _a36BuildingFlowTokens(d, building) {
-  var c = _a36BuildingContent(d, building, false);
-  var head = _a36DetTok('<div style="margin-top:12px">' + c.gauges + c.intro + '</div>', true);
-  var open = '<table style="width:100%;border-collapse:collapse;table-layout:fixed;margin:0 0 10px 0">' + c.tableHead;
-  var rows = _a36DetTableToks(
-    open,
-    c.tokens
-      .map(function (t) {
-        return t.html;
-      })
-      .concat([c.summaryRowHtml.replace(/<\/?tfoot>/g, '')])
-  );
-  rows.forEach(function (t, i) {
-    t.keepNext = i === 0 || i >= rows.length - 3;
-  });
-  rows[rows.length - 1].keepNext = false;
-  return [head].concat(rows);
-}
-
 // ─── rptPageASHRAE36Recommendations ──────────────────────────────────────
 /**
  * Recommendations page: ranked gaps by impact, plain descriptions, next step.
@@ -21966,7 +21328,7 @@ function rptPageASHRAE36SetpointReview(n, d, detailedTitle) {
     { w: 13, th: 'Building', td: tdBase, cell: function (r) { return '<span style="font-weight:600;color:var(--rpt-page-text)">' + _escHtml(_a36DisplayName(r)) + '</span>' + (r.unitNote ? '<div style="margin-top:3px;color:var(--rpt-page-text)">' + _escHtml(r.unitNote) + '</div>' : ''); } },
     { w: _detailedReview ? 15 : 17, th: 'Occupied' + thSub + 'Existing average</span>', td: tdCenter, cell: function (r) { return _pairText(r.avgHeat, r.avgCool, _fmtAvg, r.heatOnly); } },
     { w: _detailedReview ? 15 : 17, th: 'Unoccupied' + thSub + 'Existing average</span>', td: tdCenter, cell: function (r) { return _pairText(r.avgUnoccHeat, r.avgUnoccCool, _fmtAvg, r.heatOnly); } },
-    { w: 17, th: 'Industry<br>Default', td: tdCenter, zoneOnly: true, cell: function (r) { return r.singleZone ? '—' : _refCellFor(r); }, uniformNote: function (h) { var p = h.split('<br>'); return '<strong>Industry default:</strong> ' + p[0].replace(/^Occupied/, 'occupied') + '; ' + p[1].replace(/^Unoccupied/, 'unoccupied'); } },
+    { w: 17, th: 'ASHRAE 36<br>Default', td: tdCenter, zoneOnly: true, cell: function (r) { return r.singleZone ? '—' : _refCellFor(r); }, uniformNote: function (h) { var p = h.split('<br>'); return '<strong>ASHRAE 36 default:</strong> ' + p[0].replace(/^Occupied/, 'occupied') + '; ' + p[1].replace(/^Unoccupied/, 'unoccupied'); } },
     { w: _detailedReview ? 12 : 10, th: 'Deadband' + thSub + 'Existing average</span>', td: tdCenter, cell: function (r) { return r.heatOnly ? (_detailedReview ? 'No cooling' : '—') : _fmtDeadband(r); } },
     { w: _detailedReview ? 17 : 14, th: 'Existing<br>Schedule' + thSub + (_detailedReview ? 'Mon–Fri' : 'Mon–Fri, Sat &amp; Sun') + '</span>', td: tdCenter, cell: _eschCellFor, uniformNote: function (h) { return h === 'Not part of this review' ? '' : '<strong>Existing schedule for every building:</strong> ' + h.replace(/<br>/g, '; '); }, dropIf: function (h) { return h === 'Not part of this review'; } },
     { w: _detailedReview ? 26 : 25, th: 'Status', td: tdBase, keep: true, cell: function (r) { return _statusLine(r) + _recDifferenceFor(r); } },
@@ -27501,7 +26863,7 @@ var A36_DET_TABLE_GAP_H = 10; // px, the bottom margin of every printed table pa
 var A36_DET_MIN_LAST_ROWS = 3; // the last page of a table that runs over several pages holds at least this many rows (no row alone on a page)
 function _a36DetCost(t, prev) {
   var titleH = t.tbl && t.tbl.title ? t.tbl.title.h : 0;
-  return (t.estH || 20) + (t.tbl && !(prev && prev.tbl === t.tbl) ? t.tbl.theadH + A36_DET_TABLE_GAP_H + titleH : 0);
+  return (t.estH || 20) + (t.tbl && !(prev && prev.tbl === t.tbl) ? t.tbl.theadH + A36_DET_TABLE_GAP_H + titleH + (t.tbl.noteH || 0) : 0);
 }
 
 // Space of a keepNext run that starts at token i: the tokens i..j (j = the last token of the run; a run of System Descriptions text and
@@ -27670,6 +27032,8 @@ function _a36DetBody(chunk, chunkIndex) {
       var pageCount = t.tbl.pageChunks.length;
       var pageIndex = t.tbl.pageChunks.indexOf(chunkIndex);
       h += (t.tbl.title ? t.tbl.title.html(pageIndex, pageCount) : '') + t.tbl.open + '<tbody>' + rows + '</tbody></table>';
+      // the footnote of a table whose rows carry an asterisk, once under each part that shows one
+      if (t.tbl.note && rows.indexOf('class="a36-star"') > -1) h += t.tbl.note;
       i = j;
     } else {
       h += t.html;
@@ -27682,7 +27046,10 @@ function _a36DetBody(chunk, chunkIndex) {
 // Pages for one token list.
 function _a36DetPages(n, d, tokens, label) {
   var fakeData = { project: { client: d.project.name }, period: { label: '', reportDate: d.rawDate } };
-  var chunks = _a36DetPaginate(tokens, _rptContentBudget('flush') - A36_DET_PAGE_SAFETY_H);
+  var hasStar = tokens.some(function (t) {
+    return t.star;
+  });
+  var chunks = _a36DetPaginate(tokens, _rptContentBudget('flush') - A36_DET_PAGE_SAFETY_H - (hasStar ? A36_STAR_NOTE_H : 0));
   chunks.forEach(function (chunk, ci) {
     chunk.forEach(function (t) {
       if (t.tbl && t.tbl.pageChunks.indexOf(ci) === -1) t.tbl.pageChunks.push(ci);
@@ -27690,7 +27057,13 @@ function _a36DetPages(n, d, tokens, label) {
   });
   return chunks.map(function (chunk, i) {
     var pageLabel = label || chunk[0].lib; // a flow of several libraries labels each page with its first library
-    return rptPage(n + i, 'Audit Report: ' + pageLabel, _a36DetBody(chunk, i), {
+    // one footnote line at the end of a page that shows an asterisk of a chapter opportunity (the tables print their own)
+    var starNote = chunk.some(function (t) {
+      return t.star;
+    })
+      ? A36_STAR_NOTE
+      : '';
+    return rptPage(n + i, 'Audit Report: ' + pageLabel, _a36DetBody(chunk, i) + starNote, {
       hideIntHdr: true,
       data: fakeData,
       label: 'Page ' + (n + i) + ' — ' + pageLabel,
@@ -27705,9 +27078,13 @@ var A36_DET_TH =
 var A36_DET_TD = 'padding:4px 8px;font-size:13.34px;vertical-align:top;color:var(--rpt-page-text);border:1px solid var(--rpt-border)';
 
 // <table> opening + colgroup + header row. widths = percents; heads = header words.
-function _a36DetTableOpen(widths, heads) {
+// opts (optional): { cls } the class of the table (rpt-mp-dense: the 12 px text floor of a dense table); { th } the header cell style.
+function _a36DetTableOpen(widths, heads, opts) {
+  opts = opts || {};
   return (
-    '<table style="width:100%;border-collapse:collapse;table-layout:fixed;margin:0 0 10px 0"><colgroup>' +
+    '<table' +
+    (opts.cls ? ' class="' + opts.cls + '"' : '') +
+    ' style="width:100%;border-collapse:collapse;table-layout:fixed;margin:0 0 10px 0"><colgroup>' +
     widths
       .map(function (w) {
         return '<col style="width:' + w + '%">';
@@ -27716,7 +27093,7 @@ function _a36DetTableOpen(widths, heads) {
     '</colgroup><thead><tr>' +
     heads
       .map(function (h) {
-        return '<th style="' + A36_DET_TH + '">' + h + '</th>';
+        return '<th style="' + (opts.th || A36_DET_TH) + '">' + h + '</th>';
       })
       .join('') +
     '</tr></thead>'
@@ -27724,7 +27101,7 @@ function _a36DetTableOpen(widths, heads) {
 }
 
 // One table row. A cell is a string of HTML, or { html, right:true } for a right-aligned number, or { html, center:true } for a centered one.
-function _a36DetRow(cells) {
+function _a36DetRow(cells, tdStyle) {
   return (
     '<tr>' +
     cells
@@ -27734,7 +27111,7 @@ function _a36DetRow(cells) {
         var txt = typeof c === 'object' ? c.html : c;
         return (
           '<td style="' +
-          A36_DET_TD +
+          (tdStyle || A36_DET_TD) +
           (right ? ';text-align:right' : '') +
           (center ? ';text-align:center' : '') +
           '">' +
@@ -28699,7 +28076,7 @@ var A36_DET_P_TIGHT = 'margin:0 0 4px 0;font-size:13.34px;line-height:1.4;color:
 // Impact paragraph (only when an approved text exists and only on the first finding of that point in the chapter: the text says what the
 // point does, not what is wrong with this unit). No "Missing:" or "Issue:" line: it repeated the headline (Matt 2026-11-18). The audit states
 // facts only: no Solution line (Matt 2026-11-17). impactSeen = { key: true } of the chapter (updated here).
-function _a36DetFindingTok(f, impactSeen) {
+function _a36DetFindingTok(f, impactSeen, ctx) {
   var showImpact = f.impact && !(impactSeen && impactSeen[f.key]);
   if (f.impact && impactSeen) impactSeen[f.key] = true;
   function part(lead, text) {
@@ -28712,6 +28089,7 @@ function _a36DetFindingTok(f, impactSeen) {
       '">' +
       // "1." under the N.3 Findings heading right above it; the full "2.3.1" only in the Findings Summary, far from the heading (Matt 2026-11-18)
       _escHtml((f.num ? String(f.num).split('.').pop() + '. ' : '') + f.headline) +
+      _a36StarHtml(f, ctx) +
       '</div>' +
       (showImpact ? '<p style="' + A36_DET_P_TIGHT + '">' + part('Impact', f.impact) + '</p>' : '') +
       '</div>',
@@ -30508,7 +29886,8 @@ function _a36DetLibraryTokens(d, b, ctx, sectionNo) {
   var impactSeen = {};
   model.findings.forEach(function (f, fi) {
     f.num = sectionNo + '.3.' + (fi + 1); // the number of the finding is its place in this chapter (the Findings Summary prints the same number)
-    var ft = _a36DetFindingTok(f, impactSeen);
+    var ft = _a36DetFindingTok(f, impactSeen, ctx);
+    ft.star = _a36StarWanted([f], ctx);
     tokens.push(ft);
     if (f.pic) {
       var num = ++ctx.figure.n;
@@ -30858,7 +30237,7 @@ function _a36AuditBuildingTokens(d, b, ctx, showBuildingInfra) {
     return list.length
       ? list
           .map(function (f) {
-            return '<div style="margin:0 0 4px 0;padding-left:14px;text-indent:-14px"><span style="color:var(--rpt-orange);font-weight:700">&#9679;</span>&nbsp; ' + _escHtml(_a36FirstSentence(f.headline)) + '</div>';
+            return '<div style="margin:0 0 4px 0;padding-left:14px;text-indent:-14px"><span style="color:var(--rpt-orange);font-weight:700">&#9679;</span>&nbsp; ' + _escHtml(_a36FirstSentence(f.headline)) + _a36StarHtml(f, ctx) + '</div>';
           })
           .join('')
       : '<span style="color:var(--rpt-green-dark);font-weight:700">&#10003;</span>&nbsp; ' + _a36NoFindingText(cat, n);
@@ -30891,6 +30270,11 @@ function _a36AuditBuildingTokens(d, b, ctx, showBuildingInfra) {
     '<th style="' + TH + ';text-align:left">Equipment Type</th><th style="' + TH + ';text-align:center">Units</th><th style="' + TH + ';text-align:left">Opportunities</th>' +
     '</tr></thead>';
   var tableToks = _a36DetTableToks(open, rows, null);
+  // One footnote line under each part of the table that shows an asterisk (_a36DetBody prints it; _a36DetCost reserves its room).
+  if (_a36StarWanted(findings, ctx)) {
+    tableToks[0].tbl.note = A36_STAR_NOTE;
+    tableToks[0].tbl.noteH = A36_STAR_NOTE_H;
+  }
   tableToks.forEach(function (t) {
     tokens.push(t);
   });
@@ -30925,6 +30309,35 @@ function _a36AuditBuildingTokens(d, b, ctx, showBuildingInfra) {
 }
 
 /**
+ * _a36IsA36Item(f) - the ONE rule that says whether an opportunity (a finding of _a36DetModel) is an ASHRAE 36 item: it has a Guideline 36 section
+ * (f.section: the section of its sequence in EM_SEQUENCE_DEFS, or g36Section of its priced point row), or it is the zone setpoints opportunity
+ * (Appendix A compares the setpoints with the Guideline 36 defaults). Power meter, lighting, schedules, overrides of fixed values, the terminal
+ * unit program standard and facility audit deficiencies have no Guideline 36 section: they are not ASHRAE 36 items (Matt 2026-11-18).
+ */
+function _a36IsA36Item(f) {
+  if (!f) return false;
+  if (f.key === 'zoneSetpoints') return true;
+  return String(f.section || '').replace(/[\u00a7\s]/g, '') !== '';
+}
+
+// The asterisk after an opportunity that is not an ASHRAE 36 item, and the one footnote line of a table part that shows one (Matt 2026-11-18).
+var A36_STAR_NOTE = '<p style="margin:0 0 6px 0;font-size:' + RPT_MIN_TEXT_PX + 'px;line-height:1.3;color:var(--rpt-page-text)">* Not an ASHRAE 36 item.</p>';
+var A36_STAR_NOTE_H = 24; // px reserved under a table part that has an asterisk (the note line and its margin)
+function _a36StarHtml(f, ctx) {
+  return !ctx || ctx.a36On === false || _a36IsA36Item(f) ? '' : '<span class="a36-star">*</span>';
+}
+function _a36StarWanted(list, ctx) {
+  return !!ctx && ctx.a36On !== false && list.some(function (f) { return !_a36IsA36Item(f); });
+}
+
+// The Opportunities Summary prints one text line per row (Matt 2026-11-18). The table is a dense table (rpt-mp-dense: 12 px text, 9 pt). The longest texts of the
+// real project at 12 px need 33 / 103 / 127 / 250 / 97 px (No., Library, System, Issue with its asterisk, Effect) plus 17 px of cell padding and border; the
+// text column is 720 px wide. Percent of the table width:
+var A36_SUM_COLS = [7.5, 17, 20.5, 38.5, 16.5];
+var A36_SUM_TD = A36_DET_TD.replace('font-size:13.34px', 'font-size:12px');
+var A36_SUM_TH = 'padding:5px 8px;font-size:12px;font-weight:700;text-transform:uppercase;letter-spacing:0.04em;color:var(--rpt-page-text);text-align:center;border:1px solid var(--rpt-border)';
+
+/**
  * _a36DetSummaryIssue - the Issue cell of the Opportunities Summary: the short name of the issue only (Matt 2026-11-18: one line per row;
  * the summary does not explain the scope: the units affected and the missing points are in the library sections).
  */
@@ -30955,14 +30368,20 @@ function _a36DetSummaryTokens(ctx, sectionNo) {
       },
       h: A36_DET_TITLE_H,
     };
-    _a36DetTableToks(
-      _a36DetTableOpen([8, 20, 21, 37, 14], ['No.', 'Library', 'System', 'Issue', 'Effect']),
+    var sumToks = _a36DetTableToks(
+      _a36DetTableOpen(A36_SUM_COLS, ['No.', 'Library', 'System', 'Issue', 'Effect'], { cls: RPT_MP_DENSE_ACTIVE ? 'rpt-mp-dense' : '', th: A36_SUM_TH }),
       list.map(function (f) {
         // One line per row (Matt 2026-11-18): the library without the word "Library" (the column says it), the short issue name.
-        return _a36DetRow([{ html: String(f.num || f.n), center: true }, _escHtml(String(f.lib).replace(/ Library$/, '')), _escHtml(f.groupLabel), _escHtml(_a36DetSummaryIssue(f)), _escHtml(f.effect)]);
+        return _a36DetRow([{ html: String(f.num || f.n), center: true }, _escHtml(String(f.lib).replace(/ Library$/, '')), _escHtml(f.groupLabel), _escHtml(_a36DetSummaryIssue(f)) + _a36StarHtml(f, ctx), _escHtml(f.effect)], A36_SUM_TD);
       }),
       summaryTitle,
-    ).forEach(function (t) {
+    );
+    // One footnote line under each part of the table that shows an asterisk.
+    if (_a36StarWanted(list, ctx)) {
+      sumToks[0].tbl.note = A36_STAR_NOTE;
+      sumToks[0].tbl.noteH = A36_STAR_NOTE_H;
+    }
+    sumToks.forEach(function (t) {
       tokens.push(t);
     });
   }
@@ -31068,8 +30487,8 @@ function generateASHRAE36AuditHTML(data, selectedSections) {
     return html.replace(/<div class="rpt-page([^"]*)"/, '<div class="rpt-page$1" data-section="' + key + '"');
   }
 
-  // Detailed style (selectedSections.detailed): the sections are numbered in print order: Executive Summary, Building Readiness, one section
-  // per library, Findings Summary, Control Sequences; then Appendix A (Setpoint Programming Review, only when zone setpoint data exists).
+  // Detailed style (selectedSections.detailed): the sections are numbered in print order: Executive Summary, Building Readiness (when the
+  // ASHRAE 36 Sequences section is selected), one section per library, Opportunities Summary, ASHRAE 36 Readiness, Control Sequences; then Appendix A (Setpoint Programming Review, only when zone setpoint data exists).
   var detailed = s.detailed === true;
   var sectionNo = 1;
   // The Setpoint Programming Review prints as Appendix A when the project has zone setpoint data; the chapters point to it only then.
@@ -31084,14 +30503,16 @@ function generateASHRAE36AuditHTML(data, selectedSections) {
 
   // The audit comes first: the cover, the Executive Summary, the per-building pages (Simple: when ticked; Detailed: when ticked, plus the chapters of
   // the libraries) and the Findings Summary. None of them names ASHRAE 36. The "ASHRAE 36 Sequences" section (key costEstimate) holds everything that
-  // compares the systems with ASHRAE 36: the scores, the Building Readiness table, the Control Sequences table and the devices to install and
-  // sequences to program of each building. It is printed only when selected.
+  // compares the systems with ASHRAE 36: the Building Readiness table (printed after the Executive Summary), the scores and the Control Sequences
+  // table. It is printed only when selected.
   // One findings model per report (the cover, the Executive Summary, the per-building pages and the chapters read it).
   data._a36AuditCtx = _a36DetContext(data);
   var detCtx = detailed ? data._a36AuditCtx : null;
   if (detCtx) detCtx.setpointAppendix = hasSetpointAppendix;
   data._a36Detailed = detailed; // the A36 building cards print their intro line only in Simple
   var a36On = s.costEstimate !== false;
+  // the "not an ASHRAE 36 item" asterisks and their footnote print only when the ASHRAE 36 Sequences section is selected
+  data._a36AuditCtx.a36On = a36On;
 
   // Per-Building Detail prints in Detailed only when the user ticks it (default unchecked).
   var buildingOn = s.building !== false && (!detailed || s.building === true);
@@ -31105,6 +30526,15 @@ function generateASHRAE36AuditHTML(data, selectedSections) {
     if (detailed) sectionNo += 1;
     execPages.forEach(function (pg) {
       pages.push(_tagA36Section(pg, 'executive'));
+      pageNum++;
+    });
+  }
+
+  // The Building Readiness table prints right after the Executive Summary (Matt 2026-11-18), when the ASHRAE 36 Sequences section is selected. Its
+  // pages carry the section key of that section (costEstimate); the scores page and the Control Sequences table stay at the back.
+  if (a36On) {
+    rptPageASHRAE36Executive(pageNum, data, detailed ? { readinessNo: sectionNo++, setpointAppendix: hasSetpointAppendix } : undefined, 'a36').forEach(function (pg) {
+      pages.push(_tagA36Section(pg, 'costEstimate'));
       pageNum++;
     });
   }
@@ -31139,14 +30569,10 @@ function generateASHRAE36AuditHTML(data, selectedSections) {
     });
   }
 
-  // ASHRAE 36 Sequences section (only when selected): the scores, the Building Readiness table, the Control Sequences table and, with Per-Building
-  // Detail, the devices to install and the sequences to program of each building.
+  // ASHRAE 36 Sequences section (only when selected): the scores and the Control Sequences table. (The Building Readiness table prints after the
+  // Executive Summary; the per-building ASHRAE 36 pages are gone.)
   if (a36On) {
     rptPageASHRAE36Scores(pageNum, data, detailed ? sectionNo++ : undefined).forEach(function (pg) {
-      pages.push(_tagA36Section(pg, 'costEstimate'));
-      pageNum++;
-    });
-    rptPageASHRAE36Executive(pageNum, data, detailed ? { readinessNo: sectionNo++, setpointAppendix: hasSetpointAppendix } : undefined, 'a36').forEach(function (pg) {
       pages.push(_tagA36Section(pg, 'costEstimate'));
       pageNum++;
     });
@@ -31155,18 +30581,6 @@ function generateASHRAE36AuditHTML(data, selectedSections) {
       pages.push(_tagA36Section(pg, 'costEstimate'));
       pageNum++;
     });
-
-    if (buildingOn) {
-      // Every building flows: its table continues on the next page when the page is full (_a36BuildingFlowTokens).
-      var bTokens = [];
-      data.buildings.forEach(function (b) {
-        bTokens = bTokens.concat(_a36BuildingFlowTokens(data, b));
-      });
-      _a36DetPages(pageNum, data, bTokens, 'ASHRAE 36 Sequences by Building').forEach(function (pg) {
-        pages.push(_tagA36Section(pg, 'costEstimate'));
-        pageNum++;
-      });
-    }
   }
 
   // Batch 3 item 6 / plan 3e Option A: Recommendations page deleted from the Audit report
