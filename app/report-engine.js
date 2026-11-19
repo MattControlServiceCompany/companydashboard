@@ -18542,6 +18542,8 @@ var A36_AUDIT_RING_TIERS = [
   { label: 'Plants', one: 'plant', many: 'plants', cats: ['chwp', 'hwp', 'ct'] },
   { label: 'Air Handling Units', one: 'unit', many: 'units', cats: ['ahu', 'rtu', 'doas', 'furnace'] },
   { label: 'Zone Terminal Units', one: 'terminal unit', many: 'terminal units', cats: ['vav', 'fpb', 'ddvav', 'zone', 'fcu'] },
+  { label: 'Heaters', one: 'heater', many: 'heaters', cats: ['heater'] },
+  { label: 'Exhaust Fans', one: 'exhaust fan', many: 'exhaust fans', cats: ['ef'] },
   { label: 'Lighting Control Units', one: 'unit', many: 'units', cats: ['lighting'] },
 ];
 function _a36AuditRingStats(d, libName) {
@@ -18574,7 +18576,11 @@ function _a36AuditRingStats(d, libName) {
     }, 0);
   };
   var all = Object.keys(catUnits);
-  var tiers = A36_AUDIT_RING_TIERS.map(function (t) {
+  // A type of equipment no tier names is one more tier, so the tiers always add up to the units (Matt 2026-11-18: the listed types add to the total).
+  var named = [].concat.apply([], A36_AUDIT_RING_TIERS.map(function (t) { return t.cats; }));
+  var other = all.filter(function (k) { return named.indexOf(k) === -1; });
+  var defs = other.length ? A36_AUDIT_RING_TIERS.concat([{ label: 'Other Equipment Units', one: 'unit', many: 'units', cats: other }]) : A36_AUDIT_RING_TIERS;
+  var tiers = defs.map(function (t) {
     var of = sum(t.cats, catUnits);
     return { label: t.label, one: t.one, many: t.many, of: of, n: Math.max(0, of - Math.min(of, sum(t.cats, hitBy))) };
   }).filter(function (t) {
@@ -18819,8 +18825,7 @@ function _a36ExecTerminalStandardParagraph(d) {
 
 /**
  * Cover page of the Audit Report. The audit covers the whole building automation system, so the cover names the buildings, the equipment
- * audited by type and the number of findings of the audit. The ASHRAE 36 scores are on the first page of the ASHRAE 36 Sequences section
- * (rptPageASHRAE36Scores). Hero page: no interior header, uses CSC letterhead. No date line: the report date prints in the footer.
+ * audited by type and the number of findings of the audit. Hero page: no interior header, uses CSC letterhead. No date line: the report date prints in the footer.
  */
 function rptPageASHRAE36Cover(n, d, perBuildingIncluded, detailed) {
   var p = d.portfolio;
@@ -18881,113 +18886,6 @@ function rptPageASHRAE36Cover(n, d, perBuildingIncluded, detailed) {
     data: fakeData,
     label: 'Page ' + n + ' — Audit Cover',
   });
-}
-
-// The overall ASHRAE 36 readiness result in plain sentences ("The libraries have 84% of the ASHRAE 36 sensors and sequences in place. ..."): the
-// portfolio scores of collectASHRAE36Data (p.composite, p.pointPct, p.seqPct) and the three buildings with the lowest score. Printed on the first
-// page of the ASHRAE 36 Sequences section only.
-function _a36ReadinessSummary(d) {
-  var p = d.portfolio;
-  var nouns = _a36BuildingNouns(d);
-  var noun = p.totalBuildings === 1 ? nouns.one : nouns.many;
-  var low = d.buildings
-    .filter(function (b) { return b.seqPct !== null && b.seqPct !== undefined; })
-    .sort(function (a, c) { return a.composite - c.composite || rptBuildingNameSort(a.name, c.name); })
-    .slice(0, 3);
-  var sensorPct = typeof p.pointPct === 'number' ? p.pointPct : null;
-  var seqPct = typeof p.seqPct === 'number' ? p.seqPct : null;
-  var gap = '';
-  if (sensorPct !== null && seqPct !== null) {
-    if (sensorPct > seqPct && sensorPct >= 50) {
-      gap = ' Sensor coverage is ' + sensorPct + '%, but only ' + seqPct + '% of the ASHRAE 36 control sequences are in place: most of the sensors are installed, and the larger gap is programming.';
-    } else if (seqPct > sensorPct && seqPct >= 50) {
-      gap = ' Sequence readiness is ' + seqPct + '%, but only ' + sensorPct + '% of the ASHRAE 36 sensors are installed: most of the programming is in place, and the larger gap is sensors.';
-    } else {
-      gap = ' Sensor coverage is ' + sensorPct + '% and sequence readiness is ' + seqPct + '%.';
-    }
-  } else if (sensorPct !== null) {
-    gap = ' Sensor coverage is ' + sensorPct + '%.';
-  } else if (seqPct !== null) {
-    gap = ' Sequence readiness is ' + seqPct + '%.';
-  }
-  var lowNames = low.map(function (b) { return _a36DisplayName(b) + ' (' + b.composite + '%)'; });
-  var numWord = ['', 'One', 'Two', 'Three'];
-  var lowSentence = '';
-  if (low.length && p.totalBuildings > low.length) {
-    lowSentence =
-      low.length === 1
-        ? ' The ' + nouns.one + ' that needs the most work is ' + lowNames[0] + '.'
-        : ' ' + numWord[low.length] + ' ' + nouns.many + ' need the most work: ' + _a36DetJoin(lowNames) + '.';
-  }
-  return 'The ' + noun + (p.totalBuildings === 1 ? ' has ' : ' have ') + p.composite + '% of the ASHRAE 36 sensors and sequences in place.' + gap + lowSentence;
-}
-
-/**
- * First page of the ASHRAE 36 Sequences section: the three ASHRAE 36 scores (Overall Score, Sensor Coverage, Sequence Readiness), the readiness
- * result, the sequences to program and the devices to install, and the stat strip of the two work counts. ASHRAE 36 is one reference the audit
- * compares the systems with; the audit itself (cover, Executive Summary, buildings, findings) does not depend on it. Shown only when the section
- * is selected.
- * @param {number} n - page number
- * @param {object} d - data from collectASHRAE36Data
- * @param {number} [detailedSectionNo] - Detailed style: the section number of the page (large numbered title)
- * @returns {Array<string>} one page
- */
-function rptPageASHRAE36Scores(n, d, detailedSectionNo) {
-  var detailed = !!detailedSectionNo;
-  var p = d.portfolio;
-  var counts = _a36ConsolidatedCounts(d);
-  var seqs = counts.sequences;
-  var sensors = counts.sensors;
-  var title = detailed
-    ? _a36DetSectionTitle(detailedSectionNo, 'ASHRAE 36 Readiness', '')
-    : '<div style="font-size:' + RPT_SECTION_HEAD_PX + 'px;font-weight:700;color:var(--rpt-blue);margin-bottom:8px">ASHRAE 36 Readiness</div>';
-  var intro =
-    '<div style="font-size:14px;color:var(--rpt-page-text);line-height:1.6;margin-bottom:8px">' +
-    'ASHRAE 36, the industry standard for high-performance heating, cooling and ventilation control, lists the sensors and control sequences that a building automation system needs. ' +
-    'This section compares the audited ' + (p.totalBuildings === 1 ? 'system' : 'systems') + ' with that standard. It is one reference. The audit itself covers all of the equipment and all of its control sequences. ' +
-    // Matt 2026-11-18: how occupancy-based ventilation meets ASHRAE 36 (section numbers from EM_SEQUENCE_DEFS vav_dcv and demandCtrl).
-    'ASHRAE 36 includes occupancy-based ventilation (demand-controlled ventilation) in its zone sequences (section 5.2.1) and in the minimum outdoor air control of the air handling units (section 5.16.3): each zone with a CO2 sensor resets its outdoor air requirement from the CO2 level, and the air handling unit sets its minimum outdoor air from the sum of those requirements.' +
-    '</div>';
-  var gauges =
-    '<div style="display:flex;justify-content:center;gap:36px;margin:24px 0 8px">' +
-    '<div style="text-align:center">' + _a36GaugeSVG(p.composite, 'var(--rpt-blue)', 'Overall Score', 110, true) +
-    '<div style="font-size:11px;color:var(--rpt-page-text);margin-top:4px">Overall Score</div></div>' +
-    '<div style="text-align:center">' + _a36GaugeSVG(p.pointPct, 'var(--rpt-green)', 'Sensors', 110, true) +
-    '<div style="font-size:11px;color:var(--rpt-page-text);margin-top:4px">Sensor Coverage</div></div>' +
-    '<div style="text-align:center">' + _a36GaugeSVG(p.seqPct, 'var(--rpt-green)', 'Sequences', 110, true) +
-    '<div style="font-size:11px;color:var(--rpt-page-text);margin-top:4px">Sequence Readiness</div></div>' +
-    '</div>' +
-    '<div style="font-size:12px;color:var(--rpt-page-text);text-align:center;line-height:1.5;margin:0 0 8px">Each percentage shows how much of the ASHRAE 36 sensor and sequence set is in place: 100% means none is missing.</div>';
-  var finding =
-    'Compared with ASHRAE 36, <strong>' + _escHtml(d.project.name) + '</strong> has <strong>' + rptCount(seqs) + ' control sequence' + (seqs !== 1 ? 's' : '') +
-    ' to program</strong> and <strong>' + rptCount(sensors) + (sensors === 1 ? ' sensor or device' : ' sensors and devices') + ' to install</strong>.' +
-    // Item 14 (2026-11-14): the two device counts differ; say why in one sentence (both numbers come from the same shared values).
-    (!detailed && sensors !== p.totalMissingHardwarePoints && p.totalMissingHardwarePoints > 0
-      ? ' The ' + rptCount(sensors) + ' devices to install are fewer than the ' + rptCount(p.totalMissingHardwarePoints) + ' missing points in the Building Readiness table, because one device can serve more than one missing point and points on units that do not control a room temperature are not counted.'
-      : '');
-  var statCard = function (value, label) {
-    return (
-      '<div class="rpt-a36-stat-card" style="flex:1;padding:10px 12px;text-align:center">' +
-      '<div style="font-size:20px;font-weight:700;color:var(--rpt-blue)">' + value + '</div>' +
-      '<div style="font-size:10px;color:var(--rpt-page-text)">' + label + '</div>' +
-      '</div>'
-    );
-  };
-  var body =
-    title +
-    intro +
-    gauges +
-    '<div style="font-size:14px;color:var(--rpt-page-text);line-height:1.6;margin:0 0 10px">' + _escHtml(_a36ReadinessSummary(d)) + '</div>' +
-    '<div class="rpt-a36-callout" style="font-size:14px;line-height:1.6;color:var(--rpt-page-text)">' + finding + '</div>' +
-    '<div style="height:16px"></div>' +
-    '<div style="display:flex;gap:16px;margin-top:12px">' +
-    statCard(rptCount(seqs), 'Sequences to Program') +
-    statCard(rptCount(sensors), 'Devices to Install') +
-    '</div>';
-  var fakeData = { project: { client: d.project.name }, period: { label: '', reportDate: d.rawDate } };
-  return [
-    rptPage(n, 'Audit Report: ASHRAE 36 Readiness', body, { hideIntHdr: true, data: fakeData, label: 'Page ' + n + ' — ASHRAE 36 Readiness' }),
-  ];
 }
 
 // ─── rptPageASHRAE36Executive ─────────────────────────────────────────────
@@ -19320,8 +19218,7 @@ function rptPageASHRAE36Executive(n, d, detailedTitles, view) {
       var _obvQty = _seqQty('demandCtrl') + _seqQty('vav_dcv');
       _princ.push(
         _ordinal[_nth++] + ' concerns ventilation. ' + _a36DetUpperFirst(_co2Parts.join(' and ')) + (_missingCO2 === 1 ? ' has' : ' have') + ' no carbon dioxide (CO2) sensor. ' +
-        // Matt 2026-11-18: less basic explaining; say what demand-controlled ventilation is. Where ASHRAE 36 calls for it is in the ASHRAE 36
-        // section (rptPageASHRAE36Scores): the base report names no standard.
+        // Matt 2026-11-18: less basic explaining; say what demand-controlled ventilation is. The base report names no standard.
         'Without that sensor, the system cannot run occupancy-based ventilation, also called demand-controlled ventilation, which uses the CO2 level of each zone to match the outdoor air to the number of people present. ' +
         'Where it is missing, each unit brings in a fixed minimum amount of outdoor air in every occupied hour, and the heating and cooling equipment conditions that air also when few people are present.' +
         (_obvQty > _missingCO2
@@ -25845,17 +25742,19 @@ function _a36DetNames(names, max) {
 var A36_DET_DCV_KEYS = ['co2_zone_standalone', 'co2_zone', 'co2_ahu', 'vav_dcv', 'demandCtrl'];
 // The note after a CO2 finding counted against the whole group: what the units of the group without the finding are. "The other 3 have no
 // zone heating or cooling setpoint in the building automation system, which only monitors them." '' when every unit has the finding.
-function _a36DetDcvNote(g, units) {
+function _a36DetDcvNote(g, units, affected) {
   var rest = g.units.length - units;
   if (rest <= 0) return '';
-  var monitor = 0;
-  var na = 0;
-  g.units.forEach(function (u) {
-    if (_a36DcvUnitKind(u) !== '') return;
-    if (typeof _pricingIsMonitoringOnlyZoneUnit === 'function' && _pricingIsMonitoringOnlyZoneUnit(u)) monitor++;
-    else na++;
-  });
-  var withIt = Math.max(0, rest - monitor - na);
+  // The units of the group with a CO2 sensor point are the covered points of the System Description (_a36DetGroupFindings: one reader); the
+  // units the finding names are not "other" units.
+  var co2 = _a36DetGroupFindings(g).covered.by.co2;
+  var have = co2 ? co2.names : [];
+  var withIt = Math.min(
+    rest,
+    g.units.filter(function (u) {
+      return have.indexOf(u.name || 'Unknown') > -1 && (affected || []).indexOf(u.name || 'Unknown') === -1;
+    }).length
+  );
   var verb = function (n, one, many) {
     return rptCount(n) + ' ' + (n === 1 ? one : many);
   };
@@ -26863,7 +26762,9 @@ var A36_DET_TABLE_GAP_H = 10; // px, the bottom margin of every printed table pa
 var A36_DET_MIN_LAST_ROWS = 3; // the last page of a table that runs over several pages holds at least this many rows (no row alone on a page)
 function _a36DetCost(t, prev) {
   var titleH = t.tbl && t.tbl.title ? t.tbl.title.h : 0;
-  return (t.estH || 20) + (t.tbl && !(prev && prev.tbl === t.tbl) ? t.tbl.theadH + A36_DET_TABLE_GAP_H + titleH + (t.tbl.noteH || 0) : 0);
+  // the title of a chapter that follows the starred opportunities of the chapter above on the same page: the footnote of that chapter prints
+  // before it (_a36DetBody), so its height is part of the cost (the reserve of the whole flow is for the footnote of the last chapter)
+  return (t.estH || 20) + (t.noteAbove && prev ? A36_STAR_NOTE_H : 0) + (t.tbl && !(prev && prev.tbl === t.tbl) ? t.tbl.theadH + A36_DET_TABLE_GAP_H + titleH + (t.tbl.noteH || 0) : 0);
 }
 
 // Space of a keepNext run that starts at token i: the tokens i..j (j = the last token of the run; a run of System Descriptions text and
@@ -26889,6 +26790,14 @@ function _a36DetChainEnd(tokens, i, limited) {
 var A36_DET_FLOW_FILL = 0.7; // rule 3a: a page filled less than this does not send a group to the next page
 function _a36DetPaginate(tokens, budget) {
   var cost = _a36DetCost;
+  var starAbove = false;
+  tokens.forEach(function (t) {
+    if (t.chapterStart) {
+      t.noteAbove = starAbove;
+      starAbove = false;
+    }
+    if (t.star) starAbove = true;
+  });
   var chunks = [];
   var cur = [];
   var used = 0;
@@ -27019,7 +26928,20 @@ function _a36DetMoveRowsToLastPart(chunks, budget) {
 function _a36DetBody(chunk, chunkIndex) {
   var h = '';
   var i = 0;
+  // The footnote of a chapter opportunity ("* Not an ASHRAE 36 item.") prints directly after the last token of the chapter that has an asterisk on
+  // this page, before the title of the chapter that follows (a chapter ends where the next chapterStart token begins). noteAt = token indexes.
+  var noteAt = {};
+  var segStar = false;
+  chunk.forEach(function (tk, k) {
+    if (k && tk.chapterStart) {
+      if (segStar) noteAt[k - 1] = true;
+      segStar = false;
+    }
+    if (tk.star) segStar = true;
+  });
+  if (segStar) noteAt[chunk.length - 1] = true;
   while (i < chunk.length) {
+    var from = i;
     var t = chunk[i];
     if (t.tbl) {
       var rows = '';
@@ -27039,6 +26961,9 @@ function _a36DetBody(chunk, chunkIndex) {
       h += t.html;
       i++;
     }
+    for (var nk = from; nk < i; nk++) {
+      if (noteAt[nk]) h += A36_STAR_NOTE;
+    }
   }
   return h;
 }
@@ -27057,13 +26982,8 @@ function _a36DetPages(n, d, tokens, label) {
   });
   return chunks.map(function (chunk, i) {
     var pageLabel = label || chunk[0].lib; // a flow of several libraries labels each page with its first library
-    // one footnote line at the end of a page that shows an asterisk of a chapter opportunity (the tables print their own)
-    var starNote = chunk.some(function (t) {
-      return t.star;
-    })
-      ? A36_STAR_NOTE
-      : '';
-    return rptPage(n + i, 'Audit Report: ' + pageLabel, _a36DetBody(chunk, i) + starNote, {
+    // the footnote of a chapter opportunity is printed by _a36DetBody, after the last token of its own chapter (the tables print their own)
+    return rptPage(n + i, 'Audit Report: ' + pageLabel, _a36DetBody(chunk, i), {
       hideIntHdr: true,
       data: fakeData,
       label: 'Page ' + (n + i) + ' — ' + pageLabel,
@@ -27384,6 +27304,22 @@ function _a36DetPlainNoun(text) {
     .replace(/\s+/g, ' ')
     .trim();
 }
+// Opportunities of one group that share the same missing device or points (the cause, f.cause of _a36DetHeadline) and the same units state the
+// cause once: the second and later ones say what the missing device also stops ("The missing variable frequency drive also stops minimum outdoor
+// air."). The opportunities stay separate (count, Opportunities Summary, price); only the headline text changes (Matt 2026-11-18).
+function _a36DetShortenRepeatedCauses(list) {
+  var seen = {};
+  list.forEach(function (f) {
+    var c = f.cause;
+    if (!c) return;
+    var k = [f.groupLabel, c.key, f.units, f.total].join('\u0001');
+    if (!seen[k]) {
+      seen[k] = true;
+      return;
+    }
+    if (c.tail) f.headline = 'The missing ' + c.noun + ' also stop' + (c.plural ? '' : 's') + ' ' + c.tail + '.';
+  });
+}
 function _a36DetHeadline(f, g, units, kind, o) {
   var labelText = _a36DetJoin(
     String(f.label || '')
@@ -27407,13 +27343,17 @@ function _a36DetHeadline(f, g, units, kind, o) {
   // The drive keys: the missing points of a sequence finding, the point itself of a point finding (a missing speed point on a
   // constant-speed fan or pump is a missing drive; the heading states that fact).
   var keys = kind === 'seq' ? f.missingKeys || [] : [f.key];
+  f.cause = null;
   if (o.fanDrive && keys.some(_a36DetIsFanSpeedKey)) {
+    f.cause = { key: 'drive:fan', noun: 'variable frequency drive', plural: false, tail: kind === 'seq' && labelText ? labelText : '' };
     sentence = subject + ' ' + have + ' no variable frequency drive on ' + (plural ? 'their' : 'its') + ' supply fan' + (plural ? 's' : '') + (kind === 'seq' && labelText ? ', so ' + labelText + ' cannot run' : '') + '.';
   } else if (o.pumpDrive && keys.indexOf('hwPumpSpeed') > -1) {
+    f.cause = { key: 'drive:pump', noun: 'variable frequency drive', plural: false, tail: kind === 'seq' && labelText ? labelText : '' };
     sentence = subject + ' ' + have + ' no variable frequency drive on ' + (plural ? 'their' : 'its') + ' pumps' + (kind === 'seq' && labelText ? ', so ' + labelText + ' cannot run' : '') + '.';
   } else if (kind === 'seq') {
     if (points.length) {
       sentence = subject + ' ' + lack + ' the ' + _a36DetJoin(points) + ' point' + (points.length > 1 ? 's' : '') + ' for ' + labelText + '.';
+      if (g && labelText) f.cause = { key: 'points:' + points.join('|'), noun: _a36DetJoin(points) + ' point' + (points.length > 1 ? 's' : ''), plural: points.length > 1, tail: labelText };
       if (!g) sentence = 'The building lacks the ' + _a36DetJoin(points) + ' point' + (points.length > 1 ? 's' : '') + ' for ' + labelText + '.';
     } else if (!g) sentence = 'The building automation system does not have ' + labelText + ' programmed.';
     else sentence = subject + ' ' + (plural ? 'do not have ' : 'does not have ') + labelText + ' programmed.';
@@ -27534,7 +27474,7 @@ function _a36DetModel(d, rowsById, picMap, loaded) {
       f.fracTail = '';
       f.groupTotal = g ? g.units.length : f.total;
       f.dcvNarrow = dcvNarrow;
-      f.dcvNote = dcvNarrow ? _a36DetDcvNote(g, units) : '';
+      f.dcvNote = dcvNarrow ? _a36DetDcvNote(g, units, f.affected) : '';
       var frac = _a36DetFraction(units, dcvNarrow ? f.groupTotal : f.total, f.fracNoun, '');
       var szGroup = !!(g && g.singleZone);
       // The drive is priced by the one rule _pricingDriveIsPriced (pricing-estimator.js): the supply fan drive on a single-zone unit with no fan
@@ -27751,6 +27691,7 @@ function _a36DetModel(d, rowsById, picMap, loaded) {
         add(g, 'seq', s.key, s.label, Math.min(s.qty, g.units.length), s.row, { affected: one.affected, missing: one.missing, missingText: one.missingText, missingKeys: one.missingKeys });
       });
     });
+    _a36DetShortenRepeatedCauses(lib.findings);
     work.building.sensors.forEach(function (w) {
       add(null, 'sensor', w.row._pointKey, w.label, w.qty, w.row, {});
     });
@@ -30603,6 +30544,8 @@ function _a36DetNormalizeText(html) {
       t = t.replace(/\bset points\b/g, 'setpoints').replace(/\bset point\b/g, 'setpoint').replace(/\bSet Points\b/g, 'Setpoints').replace(/\bSet Point\b/g, 'Setpoint').replace(/\bSet points\b/g, 'Setpoints').replace(/\bSet point\b/g, 'Setpoint');
       t = t.replace(/\bcfm\b/gi, 'CFM');
       // C3: no abbreviation in client text; C1: static pressure unit; C5: one bracket level around a unit name
+      // "single-zone" is one adjective, like "multi-zone" (Matt 2026-11-18)
+      t = t.replace(/\b(S|s)ingle (Z|z)one\b/g, '$1ingle-$2one');
       t = t.replace(/\bTemp\b/g, 'Temperature').replace(/\bOA\b/g, 'Outdoor Air').replace(/\bCHW\b/g, 'Chilled Water');
       t = t.replace(/\bin H2O\b/g, 'in. w.c.');
       t = t.replace(/\(([^()]*[^()\s]) \(([^()]+)\)\)/g, '$1 ($2)');
@@ -30645,7 +30588,7 @@ function generateASHRAE36AuditHTML(data, selectedSections) {
   }
 
   // Detailed style (selectedSections.detailed): the sections are numbered in print order: Executive Summary, Building Readiness (when the
-  // ASHRAE 36 Sequences section is selected), one section per library, Opportunities Summary, ASHRAE 36 Readiness, Control Sequences; then Appendix A (Setpoint Programming Review, only when zone setpoint data exists).
+  // ASHRAE 36 Sequences section is selected), one section per library, Opportunities Summary, Control Sequences; then Appendix A (Setpoint Programming Review, only when zone setpoint data exists).
   var detailed = s.detailed === true;
   var sectionNo = 1;
   // The Setpoint Programming Review prints as Appendix A when the project has zone setpoint data; the chapters point to it only then.
@@ -30688,7 +30631,7 @@ function generateASHRAE36AuditHTML(data, selectedSections) {
   }
 
   // The Building Readiness table prints right after the Executive Summary (Matt 2026-11-18), when the ASHRAE 36 Sequences section is selected. Its
-  // pages carry the section key of that section (costEstimate); the scores page and the Control Sequences table stay at the back.
+  // pages carry the section key of that section (costEstimate); the Control Sequences table stays at the back.
   if (a36On) {
     rptPageASHRAE36Executive(pageNum, data, detailed ? { readinessNo: sectionNo++, setpointAppendix: hasSetpointAppendix } : undefined, 'a36').forEach(function (pg) {
       pages.push(_tagA36Section(pg, 'costEstimate'));
@@ -30726,13 +30669,9 @@ function generateASHRAE36AuditHTML(data, selectedSections) {
     });
   }
 
-  // ASHRAE 36 Sequences section (only when selected): the scores and the Control Sequences table. (The Building Readiness table prints after the
-  // Executive Summary; the per-building ASHRAE 36 pages are gone.)
+  // ASHRAE 36 Sequences section (only when selected): the Control Sequences table. (The Building Readiness table prints after the Executive
+  // Summary; the per-building ASHRAE 36 pages and the ASHRAE 36 Readiness page are gone: Matt 2026-11-18.)
   if (a36On) {
-    rptPageASHRAE36Scores(pageNum, data, detailed ? sectionNo++ : undefined).forEach(function (pg) {
-      pages.push(_tagA36Section(pg, 'costEstimate'));
-      pageNum++;
-    });
     // Phase 5 — Cost Estimate page (spec §10, 2026-06-18): the Control Sequences table. Returns an Array (1 page when it fits; 2+ when paginated).
     rptPageASHRAE36CostEstimate(pageNum, data, detailed ? sectionNo++ : undefined).forEach(function (pg) {
       pages.push(_tagA36Section(pg, 'costEstimate'));

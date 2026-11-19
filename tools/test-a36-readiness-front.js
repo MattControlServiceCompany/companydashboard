@@ -117,8 +117,9 @@ const ok = (c, m) => {
       ok(first > readiness[0].i, k + ': the Building Readiness table comes before the first building or library page');
       ok(pg.filter((p) => /Building Readiness/.test(p.h1.join(' ')) || /^\s*\d*\.?\s*Building Readiness/.test(p.text)).length === readiness.length, k + ': the Building Readiness table prints once (not again at the back)');
       const back = pg.filter((p, i) => p.section === 'costEstimate' && i > first);
-      ok(back.length >= 2 && !back.some((p) => /Total for |DEVICES TO INSTALL|Devices to Install\s*Sequences to Program\s*Total/i.test(p.text) && /Total for /.test(p.text)), k + ': the back of the report has no per-building ASHRAE 36 pages (' + back.length + ' pages)');
-      ok(back.some((p) => /Control Sequences/.test(p.text)) && back.some((p) => /Overall Score/.test(p.text)), k + ': the ASHRAE 36 section keeps its intro (scores) and the Control Sequences table');
+      ok(back.length >= 1 && !back.some((p) => /Total for |DEVICES TO INSTALL|Devices to Install\s*Sequences to Program\s*Total/i.test(p.text) && /Total for /.test(p.text)), k + ': the back of the report has no per-building ASHRAE 36 pages (' + back.length + ' pages)');
+      // (Matt 2026-11-18) the ASHRAE 36 Readiness page (scores, readiness sentence, sequences to program, devices to install) is removed; the Control Sequences table stays.
+      ok(back.some((p) => /Control Sequences/.test(p.text)) && !back.some((p) => /ASHRAE 36 Readiness/.test(p.text) || /Sequences to Program\s*Devices to Install|Devices to Install\s*Sequences to Program/.test(p.text)), k + ': the ASHRAE 36 section keeps the Control Sequences table and has no ASHRAE 36 Readiness page');
       ok(!back.some((p) => /Building Readiness/.test(p.text) && !/Control Sequences/.test(p.text) && /Readiness bands/.test(p.text)), k + ': the readiness table legend is not at the back');
       const text = pg.map((p) => p.text).join(' ');
       ok(!/ASHRAE 36 Sequences by Building/.test(text), k + ': no "ASHRAE 36 Sequences by Building" pages');
