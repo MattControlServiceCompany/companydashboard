@@ -2508,6 +2508,10 @@ async function siteResetAllMeterTableSettings() {
    site-ui.js delegates to this array and should NOT maintain its own copy.
 */
 var RELEASE_NOTES = [
+  { v: 'v2026.11.18.359', date: '2026-11-18', title: 'Audit Report: one utility page for all buildings; review fixes',
+    items: [ { type: 'feature', text: 'Audit Report: one Utility Use page ranks the buildings by Energy Use Intensity and shows the yearly change in total energy of each building. The building pages no longer show a yearly chart.' },
+             { type: 'removed', text: 'Audit Report: the ASHRAE 36 Readiness page, which repeated the cover.' },
+             { type: 'fix', text: 'Audit Report: the * note prints under its own library; the Executive Summary unit counts add up; the CO2 counts agree; a repeated cause is not repeated in full; Electric only replaces No gas meter on file.' } ] },
   { v: 'v2026.11.18.358', date: '2026-11-18', title: 'Audit Report: plain power meter item; simple numbers in the Opportunities Summary',
     items: [ { type: 'improved', text: 'Audit Report: the building power meter item is one line, with no Impact text and no asterisk.' },
              { type: 'improved', text: 'Audit Report: the No. column of the Opportunities Summary shows the number of the item in its library section (1, 2, 3).' } ] },
