@@ -2508,6 +2508,8 @@ async function siteResetAllMeterTableSettings() {
    site-ui.js delegates to this array and should NOT maintain its own copy.
 */
 var RELEASE_NOTES = [
+  { v: 'v2026.11.19.363', date: '2026-11-19', title: 'Audit Report: wrapped opportunity lines',
+    items: [ { type: 'improved', text: 'Audit Report: when an opportunity wraps, the next lines sit a little further in than its first line.' } ] },
   { v: 'v2026.11.19.362', date: '2026-11-19', title: 'Audit Report: opportunities indented',
     items: [ { type: 'improved', text: 'Audit Report: the opportunities under the system descriptions of each library are indented 1/4 in, in the PDF and in Word.' } ] },
   { v: 'v2026.11.19.361', date: '2026-11-19', title: 'Audit Report: building page photo and rings',
