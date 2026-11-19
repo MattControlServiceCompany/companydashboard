@@ -4,7 +4,7 @@
 //   2. no page ends short before the last page (each page except the last is filled to 70 % of the body or more);
 //   3. Full Scope includes the room CO2 work: its total on page 1 and on the Cost Estimate page is the one number
 //      _rptA36TierCostData returns, there is no Optional row and no optional block, and the sentence says what is included;
-//   4. "What you get:" is bold and has space above it; there is no "What the names mean" block; Step 1 is the company's work.
+//   4. (Matt 2026-11-19) the Recommended Scope of Work replaces the step table, "Why This Approach" and "What you get:"; there is no "What the names mean" block; Step 1 is the company's work.
 // Run: CH_TMP_ROOT=<scratch> node tools/test-proposal-layout-2026-11-18.js   (exit 0 = all pass)
 'use strict';
 const path = require('path');
@@ -101,10 +101,10 @@ const ok = (c, m) => {
     ok(!/Optional/i.test(res.all), 'no "Optional" row or block in the proposal');
     ok(!/The options below do not include/.test(res.all) && /Full Scope includes [\d,]+ carbon dioxide \(CO2\) sensors? in rooms/.test(res.all.replace(/\s+/g, ' ')), 'one plain sentence says Full Scope includes the room CO2 sensors');
     ok(res.pages[0].text.indexOf('optional, priced separately') < 0, 'no gap line says "(optional, priced separately)"');
-    ok(/Compliance Work/.test(res.all) && /Full Scope Work/.test(res.all) && /Recommended Work/.test(res.all), 'scope headings: Recommended Work, Compliance Work, Full Scope Work');
+    // (Matt 2026-11-19) "Recommended Work" + "Why This Approach" + the step table are one section: "Recommended Scope of Work".
+    ok(/Compliance Work/.test(res.all) && /Full Scope Work/.test(res.all) && /Recommended Scope of Work/.test(res.all) && !/Recommended Work/.test(res.all), 'scope headings: Recommended Scope of Work, Compliance Work, Full Scope Work');
+    ok(!/Why This Approach|What you get:/.test(res.all), 'no "Why This Approach" and no "What you get:" (Matt 2026-11-19)');
     ok(!/What the names mean/.test(res.all), 'no "What the names mean" block');
-    ok(Number(res.wyWeight) >= 700 && Number(res.wyParentWeight) < 600, 'the label "What you get:" is bold, the sentence is not (' + res.wyWeight + ' / ' + res.wyParentWeight + ')');
-    ok(res.wyGap !== null && res.wyGap >= 14 && res.wyGap <= 18, 'space above "What you get:" is 14-18px: ' + res.wyGap);
     ok(/Control Service Company checks the equipment/.test(res.all), 'Step 1 says Control Service Company does the work');
     ok(!/Check the equipment and confirm|Reset zone setpoints/.test(res.all), 'no client-work wording for Step 1');
     ok(errs.length === 0, 'no page errors: ' + errs.slice(0, 3).join(' | '));

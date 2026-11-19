@@ -72,7 +72,8 @@ check(!/Glossary/.test(RE.replace(/\/\/[^\n]*/g, '')) &&!/A room or area that on
 check(!/bits\[0\] \+ ' for '/.test(RE) && /function some\(keys, noun\)/.test(RE), 'A6. a description holds no reading; a share of units leads the sentence ("On 1 of the 3 fans, ...")');
 
 // P1
-check(!/Alarms and reports that show/.test(RE) && /'Better comfort and efficiency from '/.test(RE), 'P1. Recommended "What you get" makes no alarm or report claim');
+// (Matt 2026-11-19) the "What you get" sentence went with the step table: no alarm or report claim, and no sentence left.
+check(!/Alarms and reports that show/.test(RE) && !/'Better comfort and efficiency from '/.test(RE), 'P1. Recommended "What you get" is removed: no alarm or report claim');
 
 // P2
 check(/parts\.push\(_a36DetJoin\(newNames\)\)/.test(RE) && /replace\(\/\^Check \/, 'check '\)/.test(RE), 'P2. Order of Work joins with "and" and lower-cases a later "Check"');
