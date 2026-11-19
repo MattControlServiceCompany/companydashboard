@@ -297,7 +297,6 @@ const SEQUENCE_SAVINGS_IMPACT = {
     // still guarantees dsp/sat-reset get admitted too as rounds continue, rather than being frozen
     // out entirely. This is the "compose, don't fight" resolution: DCV is preferred at every
     // opportunity, but a finite, ROI-scored set of other high-tier measures still gets a seat.
-    priorityBonus: 1.75,
     tier: 'high',
     type: 'savings',
     weight: 2.5,
@@ -317,7 +316,6 @@ const SEQUENCE_SAVINGS_IMPACT = {
     // 2026-07-27: priorityBonus — see the full rationale (and the revised 1.75 sizing after
     // real-data verification) in demandCtrl's comment block above; same reasoning applies
     // identically at zone level.
-    priorityBonus: 1.75,
     tier: 'high',
     type: 'savings',
     weight: 2.5,
@@ -603,8 +601,9 @@ function _pricingTierLabelHTML(tier) {
 
 // Savings are NOT computed here. The pricing estimator owns cost only. The projected annual
 // savings total is read from the Energy Savings matrix (getProjMatrixSavingsTotal, app/energy-savings.js),
-// which prices every measure monthly at Utility Data rates. No matrix total = plain message.
-function _pricingSavingsLineHTML(projId) {
+// which prices every measure monthly at Utility Data rates. No matrix total = the estimate of the option shown (option = { est, tier }:
+// _pricingOptionSavingsEstimate, _pricingOptionEstimateText; Matt 2026-11-19), or the plain message when it has no data.
+function _pricingSavingsLineHTML(projId, option) {
   var total = typeof getProjMatrixSavingsTotal === 'function' ? getProjMatrixSavingsTotal(projId) : null;
   // Net cost and simple payback of the measure cost lines: one payback function (simplePayback, computations/cost-lines.js).
   var msrs = _pricingSelectedMeasures(projId);
@@ -613,7 +612,7 @@ function _pricingSavingsLineHTML(projId) {
     '<div style="width:100%;margin-top:6px;font-size:10px;color:var(--text3);font-style:italic">' +
     (total !== null
       ? 'Projected annual savings from the Energy Savings matrix: ' + _pricingFmt(total) + '/yr.'
-      : 'No savings estimate yet.') +
+      : (option && _pricingOptionEstimateText(option.est, option.tier)) || 'No savings estimate yet.') +
     (cost && cost.gross > 0
       ? ' Measure cost lines: net cost ' +
         _pricingFmt(cost.net) +
@@ -1578,7 +1577,7 @@ function _pricingSortRecommendedRows(rows) {
     // its own hardware-readiness group now — a DCV row that still needs its CO2 sensor installed
     // (_hwGroup 'gap') must never display ahead of a no-hardware-required row (_hwGroup 'ready')
     // of any other measure. Reads the SAME rec._hwGroup buildCatalogRows stamps per unit and
-    // _pricingSortUnitsNoHwFirst already uses for MEMBERSHIP ranking (see that function's header
+    // _pricingSortUnitsByScore already uses for MEMBERSHIP ranking (see that function's header
     // comment) — this is the DISPLAY-order counterpart; the two must never silently disagree.
     // Missing _hwGroup (only possible on the defensive "no impactDef" fallback path) is treated
     // as needing hardware (never silently ranked as if it were the easy case).
@@ -4387,6 +4386,32 @@ function _pricingBuildingOccupiedWindow(equipResults) {
   var stop = Math.round(mean(stops) / 60);
   return stop > start ? { start: start, stop: Math.min(24, stop) } : null;
 }
+// The newest 12 complete bill months of a building of the project (buildingAnnualUse), or null. ONE reader for every savings estimate.
+function _pricingBuildingUse(projId, name) {
+  var ud =
+    typeof _a36UtilityBuilding === 'function' && typeof buildingAnnualUse === 'function'
+      ? _a36UtilityBuilding({ project: { id: projId } }, { name: name })
+      : null;
+  return ud ? buildingAnnualUse(projId, ud.id) : null;
+}
+// The blended rate of a fuel: cost / use (null when either is missing).
+function _pricingRateOf(cost, use) {
+  return cost > 0 && use > 0 ? cost / use : null;
+}
+// The mean gas rate of the buildings of the project that have a gas meter: the gas rate of a building with none. 0 when none has one.
+function _pricingProjectGasRate(projId) {
+  var rates = [];
+  ((typeof getUDBldgs === 'function' && getUDBldgs(projId)) || []).forEach(function (ub) {
+    var u = typeof buildingAnnualUse === 'function' ? buildingAnnualUse(projId, ub.id) : null;
+    var g = u && u.hasGas ? _pricingRateOf(u.gasCost, u.therms) : null;
+    if (g) rates.push(g);
+  });
+  return rates.length
+    ? rates.reduce(function (x, y) {
+        return x + y;
+      }, 0) / rates.length
+    : 0;
+}
 function _pricingZoneCo2SavingsEstimate(projId, optionalRows, estimate, totals) {
   var K = PRICING_ZONE_CO2_ESTIMATE;
   var toggles = (estimate && estimate.rowToggles) || {};
@@ -4415,28 +4440,12 @@ function _pricingZoneCo2SavingsEstimate(projId, optionalRows, estimate, totals) 
     ashByName[b.name] = b;
   });
   var useOf = function (name) {
-    var ud =
-      typeof _a36UtilityBuilding === 'function' && typeof buildingAnnualUse === 'function'
-        ? _a36UtilityBuilding({ project: { id: projId } }, { name: name })
-        : null;
-    return ud ? buildingAnnualUse(projId, ud.id) : null;
+    return _pricingBuildingUse(projId, name);
   };
-  var rateOf = function (cost, use) {
-    return cost > 0 && use > 0 ? cost / use : null;
-  };
-  // The mean gas rate of the project's buildings that have a gas meter: the gas rate of a building with none.
+  var rateOf = _pricingRateOf;
   var meanGasRate = null;
   var gasRateOfProject = function () {
-    if (meanGasRate !== null) return meanGasRate;
-    var rates = [];
-    ((typeof getUDBldgs === 'function' && getUDBldgs(projId)) || []).forEach(function (ub) {
-      var u = typeof buildingAnnualUse === 'function' ? buildingAnnualUse(projId, ub.id) : null;
-      var g = u && u.hasGas ? rateOf(u.gasCost, u.therms) : null;
-      if (g) rates.push(g);
-    });
-    meanGasRate = rates.length
-      ? rates.reduce(function (x, y) { return x + y; }, 0) / rates.length
-      : 0;
+    if (meanGasRate === null) meanGasRate = _pricingProjectGasRate(projId);
     return meanGasRate;
   };
   var scen = ['low', 'likely', 'high'];
@@ -4549,11 +4558,464 @@ function _pricingZoneCo2EstimateText(est, hasProgramming) {
     'Estimated savings ' + usd(d.likely) + ' per year (range ' + usd(d.low) + ' to ' + usd(d.high) + ')' +
     (d.years ? '; estimated payback about ' + d.years + (d.years === 1 ? ' year' : ' years') : '') +
     '.';
-  out.basis =
-    'Estimates use each building\'s ' + (est.year ? est.year + ' ' : '') + 'energy use and rates' +
-    (est.weatherCity ? ' and typical ' + est.weatherCity + ' weather' : '') + '.';
+  out.basis = _pricingEstimateBasisText(est.year, est.weatherCity);
   return out;
 }
+
+/* ── Option savings estimate (Matt 2026-11-19: "Shouldn't we be able to estimate savings and payback? ... Make everything estimates.") ──
+   THE one owner of the estimated annual savings and the simple payback of a set of priced rows (an option: Compliance, Recommended, Full Scope,
+   or any part of one). The Cost Estimate tab, the Service Proposal and the Recommended membership rule read it; none computes its own.
+   The room CO2 estimate (_pricingZoneCo2SavingsEstimate) stays the one source for the zone CO2 lines: this function calls it and never
+   recomputes them. Estimates only: annual values, low / likely / high.
+     use           the building's newest 12 complete bill months (buildingAnnualUse): kWh, therms, electric cost, gas cost
+     end uses      share of the building's own use that goes to cooling, fans, lighting, heating and pumps (PRICING_OPTION_SAVINGS_ESTIMATE.endUse)
+     fractions     share of an end use that one kind of work saves (PRICING_OPTION_SAVINGS_ESTIMATE.fractions), times the coverage
+                   (units in the item / air handlers or terminal units of that kind in the building: collectASHRAE36Data equipCounts)
+     rates         the building's own blended rate per fuel (cost / use). A building with no gas meter takes the mean gas rate of the buildings of
+                   the project that have one. No utility data = no estimate (the item stays as it is).
+     savings       energy x rate per fuel, never a dollar delta
+     overlap       per building and end use, what is left after several items = the product of (1 - fraction) over the items, not the sum.
+                   An override item and its own sequence item in the same set count once.
+     payback       simplePayback (computations/cost-lines.js), no incentive; price = the workbook share of the rows (totals.rowShares) or lineTotal
+   Items with no entry in the fractions table claim no energy (power meter, minimum outdoor air, freeze protection, offline check, boiler
+   staging, discharge airflow, other devices): they stay in every option they are in today.
+   rows = priced rows of one option (labor and quantity overrides applied), estimate = _pricingGetEstimate, totals = _pricingComputeTotals of
+   exactly these rows, ctx = optional object shared between calls (keeps the audit data of one build).
+   Returns { claims, complete, year, items: [{ key, building, label, qty, price, claimed, exempt, hasData, years, over, kwh, therms, usd, rowIds }],
+             buildings: [{ building, price, hasClaim, kwh, therms, usd, years }],
+             total: { price, kwh, therms, usd: { low, likely, high }, years: { low, likely, high } },
+             display: { low, likely, high, years } | null } with low / likely / high = the low / likely / high SAVINGS case; years low = high savings.
+   display = rounded for a client text ($ to the nearest 100, years whole). */
+var PRICING_OPTION_SAVINGS_ESTIMATE = {
+  // ESTIMATING ASSUMPTIONS, not measured values. Each value carries its source or 'judgment'. Change a value here and every output follows.
+  keepLimitYears: 10, // Matt 2026-11-19: Recommended keeps a savings unit only when its likely payback is this many years or less
+  // End-use split of a building's own annual use. Source: EIA CBECS 2018 public assembly, tables E3 (electricity) and E7 (gas).
+  endUse: { cool: 0.32, fan: 0.09, light: 0.12, heatGas: 0.84 },
+  // A building with fewer therms than this heats with electricity (judgment): its heating is a share of the kWh, its cooling share is lower.
+  lowGas: { therms: 1500, cool: 0.28, heatEl: 0.2 },
+  pump: 0.025, // share of the kWh of a building with hot or chilled water pumps (judgment)
+  // Share of an end use that one kind of work saves: [low, likely, high]. cover = how the quantity of the item scales it ('ahu' = air handlers,
+  // 'box' = terminal units, null = the item is the whole building). src = the source of [low, likely, high].
+  fractions: {
+    ahu_dsp_reset: { cover: 'ahu', needsVav: true, uses: { fan: [0.15, 0.25, 0.4] }, src: ['judgment', 'OSTI 17429313 field median, duct static pressure reset only 25%', 'judgment'] },
+    ahu_sat_reset: {
+      cover: 'ahu',
+      uses: { cool: [0.03, 0.05, 0.08], heat: [0.02, 0.04, 0.06], fan: [0.1, 0.2, 0.3] },
+      src: ['judgment', 'judgment', 'judgment'],
+    },
+    ahu_economizer: { cover: 'ahu', uses: { cool: [0.05, 0.1, 0.18] }, src: ['judgment', 'judgment', 'judgment'] },
+    demandCtrl: {
+      cover: 'ahu',
+      uses: { heat: [0.026, 0.05, 0.088], cool: [0.006, 0.013, 0.021] },
+      src: ['judgment', 'judgment', 'NREL ComStock demand controlled ventilation (8.8% gas heating, 2.1% cooling)'],
+    },
+    hwp_pump_dp_reset: { cover: null, uses: { pump: [0.1, 0.2, 0.4] }, src: ['judgment', 'judgment', 'judgment'] },
+    chwp_pump_dp_reset: { cover: null, uses: { pump: [0.1, 0.2, 0.4] }, src: ['judgment', 'judgment', 'judgment'] },
+    terminalStandard: {
+      cover: 'box',
+      uses: { cool: [0.03, 0.07, 0.14], fan: [0.03, 0.07, 0.14], heat: [0.03, 0.07, 0.14] },
+      src: ['judgment', 'judgment', 'OSTI 17429313 field median, terminal unit minimum airflow only 14%'],
+    },
+    // A released override gives the saving of the sequence it blocks (the same shares as that sequence, or less).
+    satOverride: { releases: 'ahu_sat_reset', cover: null, uses: { cool: [0.03, 0.05, 0.08], heat: [0.02, 0.04, 0.06] }, src: ['judgment', 'judgment', 'judgment'] },
+    spOverride: { releases: 'ahu_dsp_reset', cover: null, uses: { fan: [0.15, 0.25, 0.4] }, src: ['judgment', 'OSTI 17429313 field median, duct static pressure reset only 25%', 'judgment'] },
+    hwOverride: { releases: 'hwp_supply_reset', cover: null, uses: { heat: [0.01, 0.03, 0.06] }, src: ['judgment', 'judgment', 'judgment'] },
+    hwDpOverride: { releases: 'hwp_pump_dp_reset', cover: null, uses: { pump: [0.05, 0.1, 0.2] }, src: ['judgment', 'judgment', 'judgment'] },
+    chwDpOverride: { releases: 'chwp_pump_dp_reset', cover: null, uses: { pump: [0.05, 0.1, 0.2] }, src: ['judgment', 'judgment', 'judgment'] },
+  },
+  photocellKwh: [0, 300, 900], // kWh a year of one exterior lighting photocell (judgment)
+  // Occupancy sensors for interior lighting: spaces x fixtures x watts x hours x vacancy x factor. Fixtures, watts, hours and factor are the
+  // defaults of the occupancy_sensors template (app/ecm-calculators.js); the vacancy shares are judgment.
+  occupancy: { fixtures: 8, watts: 32, hours: 2500, factor: 0.85, vacancy: [0.2, 0.3, 0.5] },
+};
+
+var PRICING_OPTION_CASES = ['low', 'likely', 'high'];
+// Programs the estimate claims no energy for (the ranking puts them first; Recommended always keeps them): see the header.
+function _pricingOptionClaims(key) {
+  return !!PRICING_OPTION_SAVINGS_ESTIMATE.fractions[key] || key === 'lightingPhotocell' || key === 'lightingOccupancy';
+}
+// Fractions and fixed kWh of one item: { uses: [{ use, f: [low, likely, high] }], fixed: [kWh low, likely, high] | null }, or null when it claims nothing.
+function _pricingOptionItemFractions(key, qty, counts) {
+  var K = PRICING_OPTION_SAVINGS_ESTIMATE;
+  if (key === 'lightingPhotocell') {
+    return {
+      uses: [],
+      fixed: K.photocellKwh.map(function (v) {
+        return v * Math.max(1, qty);
+      }),
+    };
+  }
+  if (key === 'lightingOccupancy') {
+    var o = K.occupancy;
+    var kw = (Math.max(1, qty) * o.fixtures * o.watts) / 1000;
+    return {
+      uses: [],
+      fixed: o.vacancy.map(function (v) {
+        return kw * o.hours * v * o.factor;
+      }),
+    };
+  }
+  var def = K.fractions[key];
+  if (!def) return null;
+  var cover = 1;
+  if (def.cover === 'ahu') cover = Math.min(1, qty / counts.ahu);
+  else if (def.cover === 'box') cover = Math.min(1, qty / counts.box);
+  var uses = [];
+  if (!(def.needsVav && !counts.vav)) {
+    Object.keys(def.uses).forEach(function (eu) {
+      uses.push({
+        use: eu,
+        f: def.uses[eu].map(function (v) {
+          return v * cover;
+        }),
+      });
+    });
+  }
+  return { uses: uses, fixed: null };
+}
+// The energy of each end use of one building: kWh and therms a year.
+function _pricingOptionEndUseBase(use, counts) {
+  var K = PRICING_OPTION_SAVINGS_ESTIMATE;
+  var therms = use.therms || 0;
+  var low = therms < K.lowGas.therms;
+  return {
+    low: low,
+    cool: use.kwh * (low ? K.lowGas.cool : K.endUse.cool),
+    fan: use.kwh * K.endUse.fan,
+    heatEl: low ? use.kwh * K.lowGas.heatEl : 0,
+    light: use.kwh * K.endUse.light,
+    pump: counts.pump ? use.kwh * K.pump : 0,
+    heatGas: low ? 0 : therms * K.endUse.heatGas,
+  };
+}
+// kWh, therms and $ of a share f of one end use.
+function _pricingOptionUseSaving(base, rates, use, f) {
+  if (use === 'heat') {
+    return base.low
+      ? { kwh: base.heatEl * f, therms: 0, usd: base.heatEl * f * rates.elec }
+      : { kwh: 0, therms: base.heatGas * f, usd: base.heatGas * f * rates.gas };
+  }
+  return { kwh: base[use] * f, therms: 0, usd: base[use] * f * rates.elec };
+}
+function _pricingOptionSavingsEstimate(projId, rows, estimate, totals, ctx) {
+  var K = PRICING_OPTION_SAVINGS_ESTIMATE;
+  ctx = ctx || {};
+  var toggles = (estimate && estimate.rowToggles) || {};
+  var shares = totals && totals.rowShares ? totals.rowShares : null;
+  var priceOf = function (r) {
+    var k = r._baseId || r.id;
+    var v = shares && shares[k] != null ? shares[k] : r.lineTotal;
+    return v || 0;
+  };
+  var active = (rows || []).filter(function (r) {
+    return toggles[r._baseId || r.id] !== false;
+  });
+  // The items: a unit (a savings sequence and the hardware it claims, _pricingBuildRoiUnits) or one row.
+  var items = [];
+  var inUnit = {};
+  _pricingBuildRoiUnits(active).forEach(function (u) {
+    var rs = [u.seqRow].concat(u.hwRows);
+    rs.forEach(function (r) {
+      inUnit[r.id] = true;
+    });
+    items.push({ key: u.seqRow.seqKey, building: u.seqRow.building, qty: u.seqRow.qty || 0, rows: rs, label: u.seqRow.item, unit: true, hwGroup: u.seqRow._hwGroup });
+  });
+  active.forEach(function (r) {
+    if (inUnit[r.id]) return;
+    items.push({ key: r.oppKey || r.seqKey || '', building: r.building, qty: r.qty || 0, rows: [r], label: r.item, unit: false });
+  });
+  // The audit data, once per build.
+  if (!ctx.ash) ctx.ash = typeof collectASHRAE36Data === 'function' ? collectASHRAE36Data(projId) || { buildings: [] } : { buildings: [] };
+  if (!ctx.byName) {
+    ctx.byName = {};
+    (ctx.ash.buildings || []).forEach(function (b) {
+      ctx.byName[b.name] = b;
+    });
+  }
+  if (!ctx.bld) ctx.bld = {};
+  var bldOf = function (name) {
+    if (ctx.bld[name] !== undefined) return ctx.bld[name];
+    var use = _pricingBuildingUse(projId, name);
+    var ab = ctx.byName[name];
+    var er = use ? _pricingRateOf(use.electricCost, use.kwh) : null;
+    var out = null;
+    if (use && ab && er && use.kwh > 0) {
+      var c = ab.equipCounts || {};
+      var gr = use.hasGas ? _pricingRateOf(use.gasCost, use.therms) : _pricingProjectGasRate(projId);
+      var counts = {
+        ahu: Math.max(1, (c.ahu || 0) + (c.rtu || 0) + (c.doas || 0)),
+        box: Math.max(1, (c.vav || 0) + (c.ddvav || 0) + (c.fpb || 0) + (c.fcu || 0)),
+        vav: (c.vav || 0) + (c.ddvav || 0) + (c.fpb || 0) > 0,
+        pump: !!(c.hwp || c.chwp),
+      };
+      out = { use: use, unitCost: { elec: er, gas: gr || 0 }, counts: counts, base: _pricingOptionEndUseBase(use, counts) };
+    }
+    ctx.bld[name] = out;
+    return out;
+  };
+  var zero = function () {
+    return { low: 0, likely: 0, high: 0 };
+  };
+  // Each item alone: its own energy and dollars.
+  items.forEach(function (it) {
+    it.price = it.rows.reduce(function (s, r) {
+      return s + priceOf(r);
+    }, 0);
+    it.rowIds = it.rows.map(function (r) {
+      return r.id;
+    });
+    it.claimed = _pricingOptionClaims(it.key);
+    it.exempt = it.key === 'vav_dcv'; // priced by the room CO2 estimate, never by the payback rule
+    it.hasData = false;
+    it.kwh = zero();
+    it.therms = zero();
+    it.usd = zero();
+    var B = it.claimed && !it.exempt ? bldOf(it.building) : null;
+    if (!B) return;
+    var fr = _pricingOptionItemFractions(it.key, it.qty, B.counts);
+    if (!fr) return;
+    it.hasData = true;
+    it.fr = fr;
+    PRICING_OPTION_CASES.forEach(function (k, i) {
+      fr.uses.forEach(function (u) {
+        var s = _pricingOptionUseSaving(B.base, B.unitCost, u.use, u.f[i]);
+        it.kwh[k] += s.kwh;
+        it.therms[k] += s.therms;
+        it.usd[k] += s.usd;
+      });
+      if (fr.fixed) {
+        var kwhFixed = Math.min(fr.fixed[i], B.base.light);
+        it.kwh[k] += kwhFixed;
+        it.usd[k] += kwhFixed * B.unitCost.elec;
+      }
+    });
+  });
+  // The room CO2 lines (dense rooms), from their own owner.
+  var co2 = null;
+  var co2Rows = active.filter(_pricingIsOptionalZoneCo2Row);
+  if (co2Rows.length) {
+    var dense = _pricingDenseOptionalRows(co2Rows).optional;
+    if (dense.length) co2 = _pricingZoneCo2SavingsEstimate(projId, dense, estimate, _pricingComputeTotals(dense, estimate, projId));
+  }
+  var co2Of = function (name) {
+    var hit = null;
+    ((co2 && co2.buildings) || []).forEach(function (b) {
+      if (b.building === name) hit = b;
+    });
+    return hit;
+  };
+  items.forEach(function (it) {
+    if (it.key !== 'vav_dcv' || it.hwGroup !== 'gap') return;
+    var cb = co2Of(it.building);
+    if (!cb || !cb.usd) return;
+    it.hasData = true;
+    PRICING_OPTION_CASES.forEach(function (k) {
+      it.kwh[k] = cb.kwh[k];
+      it.therms[k] = cb.therms[k];
+      it.usd[k] = cb.usd[k];
+    });
+  });
+  items.forEach(function (it) {
+    it.years = it.hasData ? simplePayback(it.price, 0, it.usd.likely).years : null;
+    it.over = it.claimed && !it.exempt && it.hasData && it.price > 0 && (it.years === null || it.years > K.keepLimitYears);
+  });
+  // Per building: price, overlap, totals.
+  var order = [];
+  var seen = {};
+  active.forEach(function (r) {
+    if (r.building && !seen[r.building]) {
+      seen[r.building] = true;
+      order.push(r.building);
+    }
+  });
+  var buildings = order.map(function (name) {
+    var mine = items.filter(function (it) {
+      return it.building === name;
+    });
+    var B = bldOf(name);
+    var out = {
+      building: name,
+      price: active.reduce(function (s, r) {
+        return r.building === name ? s + priceOf(r) : s;
+      }, 0),
+      hasClaim: mine.some(function (it) {
+        return it.claimed && !it.exempt;
+      }),
+      kwh: zero(),
+      therms: zero(),
+      usd: zero(),
+      years: null,
+    };
+    var cb = co2Of(name);
+    var haveEst = !!B && mine.some(function (it) { return it.hasData && it.claimed && !it.exempt; });
+    out.hasData = (out.hasClaim ? !!B : true) && (!cb || !!cb.usd);
+    if (cb) out.hasClaim = true;
+    if (!out.hasData) return out;
+    // An override and its own sequence in the set count once.
+    var keys = {};
+    mine.forEach(function (it) {
+      keys[it.key] = true;
+    });
+    var counted = mine.filter(function (it) {
+      if (!it.hasData || !it.fr) return false;
+      var def = K.fractions[it.key];
+      return !(def && def.releases && keys[def.releases]);
+    });
+    PRICING_OPTION_CASES.forEach(function (k, i) {
+      if (haveEst) {
+        var rem = {};
+        counted.forEach(function (it) {
+          it.fr.uses.forEach(function (u) {
+            rem[u.use] = (rem[u.use] === undefined ? 1 : rem[u.use]) * (1 - u.f[i]);
+          });
+          if (it.fr.fixed) {
+            var kf = Math.min(it.fr.fixed[i], B.base.light);
+            out.kwh[k] += kf;
+            out.usd[k] += kf * B.unitCost.elec;
+          }
+        });
+        Object.keys(rem).forEach(function (eu) {
+          var s = _pricingOptionUseSaving(B.base, B.unitCost, eu, 1 - rem[eu]);
+          out.kwh[k] += s.kwh;
+          out.therms[k] += s.therms;
+          out.usd[k] += s.usd;
+        });
+      }
+      if (cb && cb.usd) {
+        out.kwh[k] += cb.kwh[k];
+        out.therms[k] += cb.therms[k];
+        out.usd[k] += cb.usd[k];
+      }
+    });
+    out.years = simplePayback(out.price, 0, out.usd.likely).years;
+    return out;
+  });
+  var sum = function (f) {
+    return buildings.reduce(function (s, b) {
+      return s + f(b);
+    }, 0);
+  };
+  var total = {
+    price: totals && totals.grand != null ? totals.grand : sum(function (b) { return b.price; }),
+    kwh: zero(),
+    therms: zero(),
+    usd: zero(),
+    years: { low: null, likely: null, high: null },
+  };
+  var claims = buildings.some(function (b) {
+    return b.hasClaim;
+  });
+  var complete = claims && buildings.every(function (b) {
+    return !b.hasClaim || b.hasData;
+  });
+  PRICING_OPTION_CASES.forEach(function (k) {
+    total.kwh[k] = sum(function (b) { return b.kwh[k]; });
+    total.therms[k] = sum(function (b) { return b.therms[k]; });
+    total.usd[k] = sum(function (b) { return b.usd[k]; });
+    total.years[k] = complete ? simplePayback(total.price, 0, total.usd[k]).years : null;
+  });
+  var r100 = function (v) {
+    return Math.round(v / 100) * 100;
+  };
+  var labels = [];
+  buildings.forEach(function (b) {
+    var u = b.hasClaim ? _pricingBuildingUse(projId, b.building) : null;
+    if (u && u.label && labels.indexOf(u.label) === -1) labels.push(u.label);
+  });
+  return {
+    claims: claims,
+    complete: complete,
+    year: labels.length === 1 ? labels[0] : null,
+    items: items.map(function (it) {
+      return {
+        key: it.key, building: it.building, label: it.label, qty: it.qty, price: it.price, claimed: it.claimed, exempt: it.exempt,
+        unit: it.unit, hasData: it.hasData, years: it.years, over: it.over, kwh: it.kwh, therms: it.therms, usd: it.usd, rowIds: it.rowIds,
+      };
+    }),
+    buildings: buildings,
+    total: total,
+    display: complete
+      ? {
+          low: r100(total.usd.low),
+          likely: r100(total.usd.likely),
+          high: r100(total.usd.high),
+          years: total.years.likely === null ? null : Math.max(1, Math.round(total.years.likely)),
+        }
+      : null,
+  };
+}
+
+// The client sentence under the cost of an option (Cost Estimate tab and Service Proposal print this one text). tier = the option key.
+// Compliance claims no energy savings. Returns '' when the estimate has no data (no sentence is better than a wrong one).
+function _pricingOptionEstimateText(est, tier) {
+  if (tier === 'compliance') return 'No energy savings claimed: this option installs devices and safety programming.';
+  var d = est && est.display;
+  if (!d || !(d.likely > 0)) return '';
+  var usd = function (v) {
+    return '$' + Math.round(v).toLocaleString('en-US');
+  };
+  return (
+    'Estimated savings ' + usd(d.likely) + ' per year (range ' + usd(d.low) + ' to ' + usd(d.high) + ')' +
+    (d.years ? '; estimated payback about ' + d.years + (d.years === 1 ? ' year' : ' years') : '') + '.'
+  );
+}
+// The one basis sentence of every estimate (the room CO2 estimate and the options print this one text).
+function _pricingEstimateBasisText(year, weatherCity) {
+  return (
+    'Estimates use each building\'s ' + (year ? year + ' ' : '') + 'energy use and rates' +
+    (weatherCity ? ' and typical ' + weatherCity + ' weather' : '') +
+    ', and the savings shares come from published field studies and national building energy data.'
+  );
+}
+
+/* The membership rule of Recommended (Matt 2026-11-19): a savings item stays only when its likely payback is
+   PRICING_OPTION_SAVINGS_ESTIMATE.keepLimitYears or less. Items with no energy claim (power meters, minimum outdoor air, freeze protection,
+   the offline check, ...) and items with no utility data always stay. recRows = the candidate rows of Recommended (ids are final). Workbook shares
+   depend on the set, so the rule runs again after every removal until nothing is left to remove. Returns { rows, notNow, scores }:
+   rows = the kept rows (each item row carries _rankScore: the estimated payback ranking, 1000 for an item with no energy claim, else 100 /
+   likely years), notNow = [{ building, key, label, years }] the removed items. */
+function _pricingApplyEstimateMembership(projId, recRows, estimate) {
+  var ctx = {};
+  var removed = [];
+  var rows = recRows;
+  var est = null;
+  for (var pass = 0; pass < 12; pass++) {
+    var work = _pricingApplyQtyOverrides(projId, _pricingApplyLaborOverrides(projId, rows)).filter(function (r) {
+      return !_pricingIsOptionalZoneCo2Row(r);
+    });
+    est = _pricingOptionSavingsEstimate(projId, work, estimate, _pricingComputeTotals(work, estimate, projId), ctx);
+    var out = est.items.filter(function (it) {
+      return it.over;
+    });
+    if (!out.length) break;
+    var drop = {};
+    out.forEach(function (it) {
+      it.rowIds.forEach(function (id) {
+        drop[id] = true;
+      });
+      removed.push({ building: it.building, key: it.key, label: it.label, years: it.years });
+    });
+    rows = rows.filter(function (r) {
+      return !drop[r.id];
+    });
+  }
+  var score = {};
+  ((est && est.items) || []).forEach(function (it) {
+    if (!it.unit && !it.claimed) return; // a single row with no claim keeps its place (power meter, offline check, ...)
+    var s = it.claimed && !it.exempt ? (it.hasData && it.years ? 100 / it.years : null) : 1000;
+    if (s === null) return;
+    it.rowIds.forEach(function (id) {
+      score[id] = s;
+    });
+  });
+  rows.forEach(function (r) {
+    if (score[r.id] !== undefined) r._rankScore = score[r.id];
+  });
+  return { rows: rows, notNow: removed };
+}
+// The items Recommended does not hold because their estimated payback is over the limit: [{ building, key, label, years }], set when
+// the rows of Recommended were built (_pricingRecommendedRowsAll).
+var _pricingNotRecommendedCache = {};
 
 /* Cost Estimate tab: the "Optional: Zone CO2 Sensors" section. Read-only. rawRows = the optional rows of
    the tier the tab shows (from _pricingTierRowsSplit, the same build that gave the base rows).
@@ -5280,7 +5742,7 @@ function _pricingFindCheapestSku(pointKey, catalog, cfg) {
    3. Ceiling = _pricingComputeBudgetTotal(budget) when a recurring budget is
       set — membership is the ranked (2026-07-28: no-hardware-required units
       first, _pricingEquipRowScore/best ROI-per-dollar as the tie-break within
-      each group — see _pricingSortUnitsNoHwFirst) greedy prefix that fits
+      each group — see _pricingSortUnitsByScore) greedy prefix that fits
       (_pricingGreedyPrefix, the shipped v631 Fit-to-Budget engine, reused
       verbatim). No budget (or Mode A financing, or an invalid term) →
       membership = HIGH-impact units only (Matt's specified fallback).
@@ -5452,6 +5914,12 @@ function _pricingRecommendedRowsAll(projId) {
   // row" safety net (see that function's header comment) picks these up as their own single-row
   // units for phase scheduling, same as any other unbundled row.
   recRows = recRows.concat(buildSensorInvestigationRows(projId)).concat(_pricingProgramRows(projId));
+
+  // Membership by estimated payback (Matt 2026-11-19): a savings item stays only when its likely simple payback is
+  // PRICING_OPTION_SAVINGS_ESTIMATE.keepLimitYears or less; items with no energy claim always stay. The removed items stay in Full Scope.
+  var _member = _pricingApplyEstimateMembership(projId, recRows, estimate);
+  recRows = _member.rows;
+  _pricingNotRecommendedCache[projId] = _member.notNow;
 
   // ── Phase 5: Two-key sort for phase-2 rows within each building group (correction #3)
   // Apply sort within building groups, preserve building order and phase-1/phase-2 structure.
@@ -6452,24 +6920,13 @@ function _pricingComputeBldgRoiScores(rows) {
    no savings data, so they sink to the bottom of the ranking (score -1, below any real
    sequence's 0). Merged rows are scored from their sequence half. ── */
 function _pricingEquipRowScore(row) {
-  // phase-1 standalone hw rows (no blocking sequence) never have _savingsWeight stamped —
-  // score them below any real sequence (whose minimum possible score is 0) so they sink to
-  // the bottom of the 'equipment' ranked list rather than the top.
+  // Recommended rows carry the estimated payback ranking (_pricingApplyEstimateMembership: shortest payback = highest score, 1000 = no energy
+  // claimed) (Matt 2026-11-19). Rows of the other options keep the weight ratio: no bonus (the DCV priorityBonus and the no-hardware bonus are
+  // removed; the order of work is the estimated payback).
+  if (row._rankScore != null) return row._rankScore;
+  // phase-1 standalone hw rows (no blocking sequence) never have _savingsWeight stamped: they sink below any real sequence.
   if (row.phase !== 2) return -1;
-  // 2026-07-27 (Matt: "DCV should be highest priority", stated twice) — priorityBonus is an
-  // explicit, data-driven premium (defined per-measure in SEQUENCE_SAVINGS_IMPACT, not a
-  // hardcoded seqKey check here) added on top of the raw weight/effectiveCostTier ROI ratio. It
-  // expresses factors that ratio cannot: install ease and diagnostic value, for measures where
-  // that is genuinely true (today: DCV only — see demandCtrl's comment block for the full
-  // rationale and the worst-case-still-wins math). A measure with no priorityBonus field behaves
-  // exactly as before (bonus defaults to 0). This is read by every caller of this function —
-  // Recommended-tier Fit-to-Budget membership (_pricingGreedyPrefix via _pricingBuildRoiUnits) AND
-  // the calendar-phase packer (_pricingComputeRecommendedTimeline) — so DCV ranks first in both
-  // "does it make the tier" and "which phase does it land in", not just in table display order.
-  var _impactDef =
-    row.seqKey && typeof SEQUENCE_SAVINGS_IMPACT !== 'undefined' ? SEQUENCE_SAVINGS_IMPACT[row.seqKey] : null;
-  var _priorityBonus = (_impactDef && _impactDef.priorityBonus) || 0;
-  return _priorityBonus + (row._savingsWeight || 0) / Math.max(row._effectiveCostTier || 1, 1);
+  return (row._savingsWeight || 0) / Math.max(row._effectiveCostTier || 1, 1);
 }
 
 /* ── Pair phase-1 hardware rows with the phase-2 sequence row they block, within ONE
@@ -6609,81 +7066,14 @@ function _pricingBuildRoiUnits(rows) {
   return units;
 }
 
-/* ── _pricingUnitNeedsHardware(u) / _pricingSortUnitsNoHwFirst(units) ─────────────────────────
-   Change 2 (2026-07-28, fix/roi-no-hardware-first-per-unit) — Matt: "I know I told you to
-   prioritize DCV but we really should be prioritizing sequences that don't require installing
-   sensors first." This REVISES the earlier DCV priority-bonus direction, not the priorityBonus
-   value itself (left at 1.75 — it still correctly orders DCV WITHIN each hardware-readiness
-   group; see SEQUENCE_SAVINGS_IMPACT.demandCtrl's comment).
-
-   Problem the old single-key sort had: _pricingEquipRowScore is priorityBonus + weight /
-   effectiveCostTier. A DCV unit that STILL needs its CO2 sensor (1.75 + 2.5/2 = 3.0) could tie a
-   programming-only duct-static-reset unit (0 + 3/1 = 3.0) — exactly the ordering Matt is
-   rejecting. Tuning the bonus/divisor further to force a particular ordering was explicitly
-   ruled out (plan: "Do NOT implement this by inflating a bonus or tuning a divisor... Make it an
-   explicit two-key sort"). This is that explicit two-key sort: hardware-need is the PRIMARY key
-   (no-hardware-required units always sort before hardware-required units, as a whole group), ROI
-   score (_pricingEquipRowScore, unchanged) is the SECONDARY key within each group.
-
-   Implementation note: the two groups are sorted+diversified INDEPENDENTLY, then concatenated
-   (no-hardware group first) — never re-merged into one score-sorted array. If they were merged
-   and diversified as one list, a same-score tie that happens to straddle the group boundary
-   (e.g. a hardware-needing DCV unit at 3.0 next to a no-hardware duct-static unit also at 3.0)
-   would look like one contiguous tie group to _pricingDiversifyTiedUnits (which only checks
-   score, not hw-need) and its family round-robin could shuffle a hardware-needing unit ahead of
-   a no-hardware one, silently reintroducing the exact ordering this change removes. Splitting
-   first makes that impossible: no unit in the hardware-required group can ever precede any unit
-   in the no-hardware group, regardless of score.
-
-   `u.hwRows` (the _pricingBuildRoiUnits unit shape) is authoritative for "needs hardware" — a
-   'ready'-group seqRow (buildCatalogRows' per-unit split, Change 1) never claims a hardware row
-   (see _pricingPairHwSeq), so hwRows.length > 0 exactly captures "this unit's atomic bundle
-   includes an unclaimed sensor to install". The remapped unit shape used by
-   _pricingComputeRecommendedTimeline (`{rows: [...], score, ...}`, no `hwRows` field) is handled
-   via its `rows` array instead: `rows.some(r => r.phase === 1)` — true for any unit whose bundle
-   contains a hardware row, including the defensive single-row leftover-fold-in units.
-
-   2026-07-29 (fix/pricing-phases-and-sensor-hours) — Matt wants "the best balance", not an
-   absolute rule: the hard partition above (no-hardware group strictly before hardware group,
-   regardless of score) measured out to Phases 1-3 (~2.5 years) being 100% programming-only and
-   60 of 97 hardware units ($530,776.30) deferred purely by the tier wall rather than by score —
-   worst case Courthouse vav_dcv ($236,251.20) pushed two phases later than its score warrants.
-   Replaced with the SAME additive-bonus mechanism _pricingEquipRowScore already uses for DCV's
-   priorityBonus (a flat premium added to the weight/effectiveCostTier ratio, not a hard
-   re-ordering rule) — see PRICING_NO_HW_SCORE_BONUS below. Simulated against real Client D data
-   (Downloads\CompanyHub-localdatafile-20260729.json) at bonus 0.5/1.0/2.0: 0.5 and 1.0 gave the
-   identical result (headroom exists, not a knife edge) — Phases 1-2 stay 100% programming, Phase
-   3 now carries real hardware (7 hardware installs across phases 1-3, was 0) — while 2.0
-   collapsed back to the old hard-wall behavior. Shipping 1.0.
-   ─────────────────────────────────────────────────────────────────────────── */
-function _pricingUnitNeedsHardware(u) {
-  if (u.hwRows) return u.hwRows.length > 0;
-  if (u.rows) {
-    return u.rows.some(function (r) {
-      return r.phase === 1;
-    });
-  }
-  return false;
-}
-
-// Flat premium added to a no-hardware unit's score before ranking (see the 2026-07-29 header
-// comment above _pricingUnitNeedsHardware) — same additive-bonus shape as
-// SEQUENCE_SAVINGS_IMPACT.*.priorityBonus, sized from real-data simulation, not a magic number
-// inline so it can be re-tuned in one place.
-var PRICING_NO_HW_SCORE_BONUS = 1.0;
-
-function _pricingUnitEffScore(u) {
-  return u.score + (_pricingUnitNeedsHardware(u) ? 0 : PRICING_NO_HW_SCORE_BONUS);
-}
-
-function _pricingSortUnitsNoHwFirst(units) {
+/* ── _pricingSortUnitsByScore(units) ── best score first, the units of equal score spread by measure family (_pricingDiversifyTiedUnits).
+   The score of a Recommended unit is its estimated payback ranking (_pricingEquipRowScore), so the shortest payback is first and the items that
+   claim no energy (minimum outdoor air, safety) are first of all (Matt 2026-11-19). The no-hardware bonus is removed. */
+function _pricingSortUnitsByScore(units) {
   var sorted = units.slice().sort(function (a, b) {
-    return _pricingUnitEffScore(b) - _pricingUnitEffScore(a);
+    return b.score - a.score;
   });
-  // _pricingDiversifyTiedUnits ties on the SAME effective score (bonus included) so a no-hardware
-  // and a hardware-needing unit only tie-diversify together when their bonused scores genuinely
-  // match, not their raw ones.
-  return _pricingDiversifyTiedUnits(sorted, _pricingUnitEffScore);
+  return _pricingDiversifyTiedUnits(sorted);
 }
 
 /* ── _pricingGreedyPrefix(units, ceiling) ────────────────────────────────────
@@ -6707,12 +7097,12 @@ function _pricingSortUnitsNoHwFirst(units) {
    line was added. See _pricingDiversifyTiedUnits' header comment for the full diagnosis.
 
    2026-07-28 (fix/roi-no-hardware-first-per-unit): sort/diversify replaced with
-   _pricingSortUnitsNoHwFirst — see its header comment. No-hardware units now fill the ceiling
+   _pricingSortUnitsByScore — see its header comment. No-hardware units now fill the ceiling
    before any hardware-needing unit is offered, at every ceiling size (Recommended-tier
    membership AND any smaller Fit-to-Budget ceiling a caller passes in).
    ─────────────────────────────────────────────────────────────────────────── */
 function _pricingGreedyPrefix(units, ceiling) {
-  var sorted = _pricingSortUnitsNoHwFirst(units);
+  var sorted = _pricingSortUnitsByScore(units);
 
   var running = 0;
   var keepKeys = [];
@@ -6774,7 +7164,7 @@ function _pricingGreedyPrefix(units, ceiling) {
    priorityBonus gets the same front-of-round-robin treatment, no seqKey-specific branch here.
 
    2026-07-29 (fix/pricing-phases-and-sensor-hours): takes an optional `scoreFn` accessor so
-   _pricingSortUnitsNoHwFirst can tie-group on its bonused effective score (raw score +
+   _pricingSortUnitsByScore can tie-group on its bonused effective score (raw score +
    PRICING_NO_HW_SCORE_BONUS) instead of the raw `.score` field — defaults to reading `.score`
    directly, so every other/pre-existing caller is unaffected.
    ─────────────────────────────────────────────────────────────────────────── */
@@ -6795,23 +7185,14 @@ function _pricingDiversifyTiedUnits(sortedUnits, scoreFn) {
     } else {
       var byFamily = {};
       var familyOrder = [];
-      var priorityFamilies = [];
       tieGroup.forEach(function (u) {
         var fam = (u.seqRow && u.seqRow.seqKey) || '__none__';
         if (!byFamily[fam]) {
           byFamily[fam] = [];
-          var impactDef = typeof SEQUENCE_SAVINGS_IMPACT !== 'undefined' ? SEQUENCE_SAVINGS_IMPACT[fam] : null;
-          if (impactDef && impactDef.priorityBonus) {
-            priorityFamilies.push(fam);
-          } else {
-            familyOrder.push(fam);
-          }
+          familyOrder.push(fam);
         }
         byFamily[fam].push(u);
       });
-      // Priority families (DCV today) first, in their own relative order, then everyone else in
-      // first-seen order — see the header comment above for why.
-      familyOrder = priorityFamilies.concat(familyOrder);
       var maxLen = 0;
       familyOrder.forEach(function (fam) {
         if (byFamily[fam].length > maxLen) maxLen = byFamily[fam].length;
@@ -8649,7 +9030,7 @@ function _pricingComputeProgramCostModel(projId, phaseCount) {
    portfolio, directly contradicting that promise.
 
    New rule: rank every priced row across the WHOLE portfolio (2026-07-28: no-hardware-required
-   units first, then by ROI within each group — see _pricingSortUnitsNoHwFirst), then fill Phase 1
+   units first, then by ROI within each group — see _pricingSortUnitsByScore), then fill Phase 1
    with the best-ranked measures regardless of building, Phase 2 the next tier, Phase 3 the rest —
    each phase still bounded by its own measures envelope (allowance − that phase's own recurring EM
    labor). Concretely:
@@ -8815,7 +9196,7 @@ function _pricingComputeRecommendedTimeline(projId) {
     });
   });
   // 2026-07-28 (fix/roi-no-hardware-first-per-unit): no-hardware-first primary key, ROI score
-  // (stable sort, best first) secondary key within each group — see _pricingSortUnitsNoHwFirst's
+  // (stable sort, best first) secondary key within each group — see _pricingSortUnitsByScore's
   // header comment for the full rationale (this REVISES the pure ROI-score ordering DCV's
   // priorityBonus previously relied on, per Matt: "we really should be prioritizing sequences
   // that don't require installing sensors first").
@@ -8824,8 +9205,8 @@ function _pricingComputeRecommendedTimeline(projId) {
   // never crowds an equally-scored sibling family (e.g. 5 tied ahu_dsp_reset/fan-energy units) out
   // of the phase it would otherwise fit. See _pricingDiversifyTiedUnits' header comment for the
   // full diagnosis/design. Never changes cross-score ranking; now run separately within each
-  // hardware-readiness group (see _pricingSortUnitsNoHwFirst) so it can never cross that boundary.
-  units = _pricingSortUnitsNoHwFirst(units);
+  // hardware-readiness group (see _pricingSortUnitsByScore) so it can never cross that boundary.
+  units = _pricingSortUnitsByScore(units);
 
   // phaseUnits (built by _pricingEnsureTimelinePhase above, one entry per generated phase): the
   // UNIT-granularity working set for the greedy walk + repair pass below (kept separate from the
@@ -9314,7 +9695,7 @@ function _pricingComputeRecommendedTimeline(projId) {
  *
  * THIS DOES NOT RE-PRICE OR RE-RANK ANYTHING. It re-runs the SAME two building blocks
  * _pricingComputeRecommendedTimeline itself uses to decide phase membership — _pricingBuildRoiUnits
- * (hardware+sequence bundling) and _pricingSortUnitsNoHwFirst (the no-hardware-first, ROI-score-
+ * (hardware+sequence bundling) and _pricingSortUnitsByScore (the no-hardware-first, ROI-score-
  * secondary ordering, PRICING_NO_HW_SCORE_BONUS included, untouched) — over the term's own rows
  * only, then bin-packs the SAME greedy first-fit walk _pricingComputeRecommendedTimeline uses for
  * phases (see that function's "Multi-round greedy first-fit walk" section, ~L7480) at MONTH
@@ -9406,7 +9787,7 @@ function _pricingComputeTermMonthlyAllocation(projId, termRows, monthCount, mont
       total: _pricingComputeTotals([r], estimate, projId).grand || 0,
     });
   });
-  units = _pricingSortUnitsNoHwFirst(units);
+  units = _pricingSortUnitsByScore(units);
 
   // envelopes[monthIdx]: the REAL net-of-labor dollar room for NEW measures in that specific
   // calendar month — 2026-08-02 fix (see this function's header comment for the full diagnosis).
@@ -10919,7 +11300,7 @@ initCostEstimateTab = function initCostEstimateTab(projId) {
       });
     });
     // 2026-07-28 (fix/roi-no-hardware-first-per-unit) — same primary/secondary discipline as
-    // _pricingSortRecommendedRows/_pricingSortUnitsNoHwFirst: no-hardware-required rows first
+    // _pricingSortRecommendedRows/_pricingSortUnitsByScore: no-hardware-required rows first
     // (hwGroup 'ready'), ROI score as the secondary/tie-break within each group. Missing hwGroup
     // (standalone hw rows, defensive fallback) treated as needing hardware, never as the easy case.
     _flatItems.sort(function (a, b) {
@@ -11074,9 +11455,12 @@ initCostEstimateTab = function initCostEstimateTab(projId) {
   // (Tier: label now rendered at the front of footerParts, see Phase 3 comment above.)
 
   // Savings line: read from the Energy Savings matrix (single owner), never computed here.
-  if (tier === 'recommended' || tier === 'both') {
-    footerParts.push(_pricingSavingsLineHTML(projId));
-  }
+  footerParts.push(
+    _pricingSavingsLineHTML(projId, {
+      est: _pricingOptionSavingsEstimate(projId, tier === 'both' && recRows ? recRows : filteredRows, estimate, tier === 'both' && recTotals ? recTotals : totals),
+      tier: tier === 'both' ? 'recommended' : tier,
+    }),
+  );
 
   // b771dec6 3b: M&V disclaimer moved from here into the Top ROI card
   // (see _pricingTopRoiCallout's `showDisclaimer` param / call site below).
@@ -11672,6 +12056,13 @@ function _pricingComputeSummaryData(projId, estimate) {
     tierTotals[t.key] = _pricingComputeTotals(perTier[t.key], estimate, projId);
   });
 
+  // The estimated savings and payback of each option (the one owner, _pricingOptionSavingsEstimate) and the items Recommended does not hold.
+  var optionEstimate = {};
+  var optionCtx = {};
+  tierDefs.forEach(function (t) {
+    optionEstimate[t.key] = _pricingOptionSavingsEstimate(projId, perTier[t.key], estimate, tierTotals[t.key], optionCtx);
+  });
+
   var buildings = bldgOrder.map(function (bName) {
     var tiers = {};
     tierDefs.forEach(function (t) {
@@ -11703,7 +12094,14 @@ function _pricingComputeSummaryData(projId, estimate) {
   // perTier exposed so the client proposal's optional "Itemized Measures" sub-option can
   // aggregate measures across the portfolio without recomputing any pricing. Rows carry the
   // final lineTotal / item name / clientSummary only; no cost build-up. (No new math here.)
-  return { buildings: buildings, tierTotals: tierTotals, perTier: perTier, optional: optionalByTier };
+  return {
+    buildings: buildings,
+    tierTotals: tierTotals,
+    perTier: perTier,
+    optional: optionalByTier,
+    option: optionEstimate,
+    notNow: _pricingNotRecommendedCache[projId] || [],
+  };
 }
 
 /* ── Phase 4: patch _pricingRefreshFooter to apply labor overrides ──────── */
@@ -11769,7 +12167,7 @@ function _pricingComputeSummaryData(projId, estimate) {
       '<span style="flex:1"></span>',
       '<span style="font-size:11px;color:var(--text3)">' + totals.included + ' of ' + totals.total + ' items</span>',
       '<span style="font-size:11px;color:var(--text3)">' + _rfCaveatParts.join(' · ') + '</span>',
-      tier === 'recommended' ? _pricingSavingsLineHTML(projId) : '',
+      _pricingSavingsLineHTML(projId, { est: _pricingOptionSavingsEstimate(projId, rows, est, totals), tier: tier }),
       // 2026-07-28 (fix/pricing-phases-and-sensor-hours, backlog 8d7911c1): Compliance/Full-Scope
       // only, same as the full-render footer above — the program-wide net-of-labor ceiling
       // Recommended used to compare against is REMOVED (Recommended is now an unbounded,
