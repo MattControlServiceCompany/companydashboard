@@ -35,6 +35,7 @@ const ok = (c, m) => {
       const add = (id, sqft, meters) => (bldgs[id] = { id, name: id, sqft, meters });
       const E = (bills) => ({ id: 'e', commodity: 'Electric', bills });
       const G = (bills) => ({ id: 'g', commodity: 'Gas', bills });
+      const P = (bills) => ({ id: 'p', commodity: 'Propane', bills });
       // A: Nov 2024 to Dec 2025 (14 months) electric + gas, all estimated
       add('A', 10000, [E(eBills('2024-11', '2025-12', true)), G(gBills('2024-11', '2025-12', true))]);
       add('B11', 10000, [E(eBills('2025-02', '2025-12')), G(gBills('2025-02', '2025-12'))]); // 11 months
@@ -43,6 +44,10 @@ const ok = (c, m) => {
       add('E', 8000, [E(eBills('2025-01', '2025-12')), G(gBills('2025-02', '2025-12'))]); // gas lacks January
       add('F', 0, [E(eBills('2025-01', '2025-12'))]); // no floor area
       add('G', 6000, []); // no meters
+      // 2026-11-19: gas billed one month behind the electric (electric to Jan 2026, gas to Dec 2025): the window is Jan to Dec 2025, not null
+      add('LAG', 7000, [E(eBills('2025-01', '2026-01')), G(gBills('2025-01', '2025-12'))]);
+      // 2026-11-19: propane by delivery (3 deliveries), electric every month: propane never makes a month incomplete; gallons in the window summed
+      add('PRO', 7000, [E(eBills('2025-01', '2025-12')), P([{ start: '2024-11-01', end: '2024-11-30', gallonsDelivered: 300, totalCost: 600 }, { start: '2025-02-01', end: '2025-02-28', gallonsDelivered: 400, totalCost: 800 }, { start: '2025-10-01', end: '2025-10-31', gallonsDelivered: 250, totalCost: 500 }])]);
       window.getUDBldg = (pid, bid) => bldgs[bid];
       const out = {};
       const sumE = (a, z) => mk(a, z).reduce((s, ym, i) => s + 1000 + i, 0);
@@ -63,6 +68,10 @@ const ok = (c, m) => {
       out.F = buildingAnnualUse('p', 'F');
       out.G = buildingAnnualUse('p', 'G');
       out.missing = buildingAnnualUse('p', 'nope');
+      out.LAG = buildingAnnualUse('p', 'LAG');
+      out.PRO = buildingAnnualUse('p', 'PRO');
+      out.byPRO = buildingUseByYear('p', 'PRO');
+      out.sum12 = mk('2025-01', '2025-12').reduce((s, ym, i) => s + 1000 + i, 0);
       // buildingUseByYear: H has 2022 (complete), 2023 (gas lacks March: partial, left out), 2024 (complete), 2025 (Jan to Oct only: partial)
       add('H', 9000, [E(eBills('2022-01', '2022-12').concat(eBills('2023-01', '2023-12'), eBills('2024-01', '2024-12'), eBills('2025-01', '2025-10'))), G(gBills('2022-01', '2022-12').concat(gBills('2023-01', '2023-02'), gBills('2023-04', '2023-12'), gBills('2024-01', '2024-12'), gBills('2025-01', '2025-10')))]);
       add('I', 4000, [E(eBills('2023-01', '2024-12'))]); // electric only, 2 years
@@ -96,6 +105,10 @@ const ok = (c, m) => {
     ok(r.F && r.F.eui === null && r.F.costPerSqft === null && r.F.kwh > 0, 'no floor area: EUI and cost per ft2 null, use still returned');
     ok(r.G === null, 'no meters: null');
     ok(r.missing === null, 'unknown building: null');
+    ok(r.LAG && r.LAG.startMonth === '2025-01' && r.LAG.endMonth === '2025-12' && r.LAG.kwh === r.sum12, 'gas one month behind electric: the window ends at the newest month with both (Jan to Dec 2025), not null: ' + JSON.stringify(r.LAG && [r.LAG.startMonth, r.LAG.endMonth, r.LAG.kwh]));
+    // 400 + 250 gallons delivered in Jan to Dec 2025 (the Nov 2024 delivery is outside); electric 12 months
+    ok(r.PRO && r.PRO.endMonth === '2025-12' && r.PRO.propaneGal === 650 && r.PRO.kwh === r.sum12, 'propane by delivery: the year is complete and the gallons in the window are summed (650): ' + JSON.stringify(r.PRO && [r.PRO.endMonth, r.PRO.propaneGal]));
+    ok(r.byPRO.length === 1 && r.byPRO[0].year === 2025 && r.byPRO[0].gal === 650, 'by year: propane deliveries do not make a year partial');
     ok(r.AExcl && JSON.stringify(r.AExcl) === JSON.stringify(r.A), 'meters excluded from the baseline are still counted');
     ok(r.byH.length === 2 && r.byH[0].year === 2022 && r.byH[1].year === 2024, 'by year: only the complete years, oldest first: ' + JSON.stringify(r.byH.map((y) => y.year)));
     ok(r.byH[0].kwh === Array.from({ length: 12 }, (_, i) => 1000 + i).reduce((a, b) => a + b, 0) && r.byH[0].therms === Array.from({ length: 12 }, (_, i) => 50 + i).reduce((a, b) => a + b, 0) && r.byH[0].hasGas === true, 'by year: kWh and therms are the sums of the 12 months: ' + JSON.stringify(r.byH[0]));

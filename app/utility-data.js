@@ -1094,18 +1094,28 @@ function buildingUseByYear(pid, bid) {
   const out = [];
   years.forEach((y) => {
     const win = presentedMonthRange(y + '-01', y + '-12');
-    if (!win.every((ym) => mu.byYM[ym] && mu.commodities.every((c) => mu.byYM[ym].n[c]))) return;
+    if (!win.every((ym) => _udMonthComplete(mu.byYM, ym, mu.commodities))) return;
     const sum = win.reduce((a, ym) => ({ kwh: a.kwh + mu.byYM[ym].kwh, therms: a.therms + mu.byYM[ym].therms, gal: a.gal + mu.byYM[ym].gal, cost: a.cost + mu.byYM[ym].cost }), { kwh: 0, therms: 0, gal: 0, cost: 0 });
     const kBtu = computeKBtu(sum.kwh, hasGas ? sum.therms : 0, sum.gal);
     out.push({ year: Number(y), kwh: sum.kwh, therms: hasGas ? sum.therms : null, gal: sum.gal, cost: sum.cost, hasGas: hasGas, kBtu: kBtu, eui: sqft > 0 ? computePeriodEUI(kBtu, 12, sqft) : null });
   });
   return out;
 }
+// _udMonthComplete(byYM, ym, commodities): true when month ym has a bill of every metered fuel of the building (Electric, Gas). Propane is
+// bought by delivery, not billed each month (2026-11-19: a school with 3 propane deliveries had no annual use at all), so it never makes a
+// month incomplete; its gallons are summed over the months of the window.
+function _udMonthComplete(byYM, ym, commodities) {
+  const m = byYM[ym];
+  if (!m) return false;
+  const monthly = commodities.filter((c) => c !== 'Propane');
+  return monthly.every((c) => m.n[c]);
+}
 // buildingAnnualUse(pid, bid) - THE one answer to "how much energy did this building use in its newest 12 complete bill months".
 // For REPORTING use (Audit Report building pages and the utility comparison page): it reads every Electric, Gas and Propane meter of the
 // building directly and ignores project.scope.meterExcludeIds (that exclusion is for the savings baseline, not for what the building used).
-// Month of a bill = billMonth (the one month rule). The window ends at the newest bill month of the building and holds 12 months in a row; every
-// commodity the building has must have a bill in each of the 12 months, else null (no partial-year figure). Returns null with no data.
+// Month of a bill = billMonth (the one month rule). The window ends at the newest month with a bill of every metered fuel (_udMonthComplete;
+// 2026-11-19: a gas bill one month behind the electric bill no longer erases the year) and holds 12 months in a row; each of the 12 months must
+// be complete, else null (no partial-year figure). Propane deliveries in the window are summed. Returns null with no data.
 // Returns { months: 12, startMonth, endMonth ('YYYY-MM'), label ('2025' for Jan to Dec of one year, else 'Jun 2024 to May 2025'), kwh, therms (null
 // when the building has no gas meter), propaneGal, cost ($ of the bill totals), electricCost and gasCost (the $ of the electric and of the gas bills; gasCost null
 // with no gas meter; the blended rate of a fuel = its cost / its use), sqft, kBtu (computeKBtu), eui (computePeriodEUI; null with no sqft),
@@ -1115,12 +1125,12 @@ function buildingAnnualUse(pid, bid) {
   if (!mu) return null;
   const b = mu.b;
   const byYM = mu.byYM;
-  const yms = Object.keys(byYM).sort();
+  const commodities = mu.commodities;
+  const yms = Object.keys(byYM).sort().filter((ym) => _udMonthComplete(byYM, ym, commodities));
   if (!yms.length) return null;
   const endMonth = yms[yms.length - 1];
   const win = presentedMonthRange(addMonth(endMonth, -11), endMonth);
-  const commodities = mu.commodities;
-  if (!win.every((ym) => byYM[ym] && commodities.every((c) => byYM[ym].n[c]))) return null;
+  if (!win.every((ym) => _udMonthComplete(byYM, ym, commodities))) return null;
   const sum = win.reduce(
     (a, ym) => ({ kwh: a.kwh + byYM[ym].kwh, therms: a.therms + byYM[ym].therms, gal: a.gal + byYM[ym].gal, cost: a.cost + byYM[ym].cost, elecCost: a.elecCost + byYM[ym].elecCost, gasCost: a.gasCost + byYM[ym].gasCost, est: a.est + byYM[ym].est, bills: a.bills + byYM[ym].bills }),
     { kwh: 0, therms: 0, gal: 0, cost: 0, elecCost: 0, gasCost: 0, est: 0, bills: 0 },
