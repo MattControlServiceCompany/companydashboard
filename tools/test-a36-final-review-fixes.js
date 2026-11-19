@@ -71,8 +71,7 @@ ok(lits.every((s) => /variable-speed savings/.test(s)), '3. no report string say
   ok(!/do not use outdoor air for free cooling|hold one supply air temperature at all times|do not control their minimum outdoor air/.test(RE), '4. the three overclaiming phrases are gone');
   // 7: the PDF text layer writes the non-breaking hyphen of a tag as a plain hyphen, so search and copy find "UH-1"
   ok(/'‑': '-'/.test(fs.readFileSync(path.join(ROOT, 'app', 'report-pdf.js'), 'utf8')), '7. PDF text layer: non-breaking hyphen reads as a plain hyphen');
-  // 5: one cell text for a category with no device to install
-  ok(!/rawSensorsSum/.test(RE) && /\? 'None needed'\s*:\s*sensorsBreakdown/.test(RE), '5. a category with no device to install reads "None needed" in every row');
+  // 5: retired 2026-11-18: the per-building ASHRAE 36 pages that held the Devices to Install column are deleted (7d484c89)
   // 1: the findings state facts only (Matt 2026-11-17): no Solution line, so no install/program advice
   ok(!/part\('Solution'/.test(RE) && !/pointIsControllerOnly/.test(RE) && !/programming only, no device to install/.test(RE), '1. the findings print no Solution line');
   // 6: a sentence that holds for some terminals leads with the count

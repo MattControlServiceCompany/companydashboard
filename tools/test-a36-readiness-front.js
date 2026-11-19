@@ -94,14 +94,17 @@ const ok = (c, m) => {
       override: _a36IsA36Item({ key: 'hwOverride', kind: 'building', section: '' }),
       term: _a36IsA36Item({ key: 'terminalStandard', kind: 'terminalStd', section: '' }),
       deficiency: _a36IsA36Item({ key: 'deficiency', kind: 'deficiency', section: '' }),
-      star: _a36StarHtml({ key: 'powerMeter', section: '' }, { a36On: true }),
-      starOff: _a36StarHtml({ key: 'powerMeter', section: '' }, { a36On: false }),
+      star: _a36StarHtml({ key: 'schedules', section: '' }, { a36On: true }),
+      starOff: _a36StarHtml({ key: 'schedules', section: '' }, { a36On: false }),
+      starMeter: _a36StarHtml({ key: 'powerMeter', section: '' }, { a36On: true }),
+      meterImpact: /would record the electric demand/.test(String(_a36DetModel)),
       starA36: _a36StarHtml({ key: 'ahu_dsp_reset', section: '5.16.1' }, { a36On: true }),
       fnDefined: typeof _a36BuildingFlowTokens === 'undefined' && typeof _a36BuildingContent === 'undefined',
     }));
     ok(rule.seq && rule.sensor && rule.setpoints, 'rule: a sequence or point with a Guideline 36 section, and the zone setpoints, are ASHRAE 36 items');
     ok(!rule.meter && !rule.light && !rule.sched && !rule.override && !rule.term && !rule.deficiency, 'rule: power meter, lighting, schedules, overrides, terminal unit programs and deficiencies are not ASHRAE 36 items');
     ok(/a36-star/.test(rule.star) && rule.starOff === '' && rule.starA36 === '', 'rule: the asterisk prints for a non-ASHRAE 36 item only, and only when the section is on');
+    ok(rule.starMeter === '' && !rule.meterImpact, 'the building power meter has no asterisk and no Impact text (Matt 2026-11-18)');
     ok(rule.fnDefined, 'the code of the per-building ASHRAE 36 pages is deleted');
 
     ['simple_on', 'det_on'].forEach((k) => {
