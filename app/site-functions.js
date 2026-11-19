@@ -2508,6 +2508,9 @@ async function siteResetAllMeterTableSettings() {
    site-ui.js delegates to this array and should NOT maintain its own copy.
 */
 var RELEASE_NOTES = [
+  { v: 'v2026.11.18.358', date: '2026-11-18', title: 'Audit Report: plain power meter item; simple numbers in the Opportunities Summary',
+    items: [ { type: 'improved', text: 'Audit Report: the building power meter item is one line, with no Impact text and no asterisk.' },
+             { type: 'improved', text: 'Audit Report: the No. column of the Opportunities Summary shows the number of the item in its library section (1, 2, 3).' } ] },
   { v: 'v2026.11.18.357', date: '2026-11-18', title: 'Audit Report layout; proposal without setpoint and schedule work',
     items: [ { type: 'improved', text: 'Audit Report: each building page shows its utility use in a facts card (Energy Use Intensity, kWh, therms or electric only, cost, floor area) and a chart of every complete year on file.' },
              { type: 'improved', text: 'Audit Report: Building Readiness follows the Executive Summary; the separate ASHRAE 36 building pages are gone; a * marks each opportunity that is not an ASHRAE 36 item.' },
