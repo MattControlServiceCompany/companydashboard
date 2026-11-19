@@ -16600,7 +16600,7 @@ var A36_SCOPE_PROGRAM = {
   chwp_supply_reset: { plain: 'chilled water temperature reset', noun: 'chilled water system', does: 'the chiller makes warmer water when the building needs less cooling, so it uses less energy' },
   chwp_pump_dp_reset: { plain: 'chilled water pump pressure reset', noun: 'chilled water system', does: 'the pumps slow down when fewer valves are open' },
   chwp_staging: { plain: 'chiller staging', noun: 'chilled water system', does: 'a chiller starts only when the building needs it, so fewer chillers run' },
-  demandCtrl: { plain: 'occupancy-based ventilation', noun: 'air handler', does: 'outdoor air follows the CO2 level, so the unit does not heat or cool more outdoor air than the people need' },
+  demandCtrl: { plain: 'CO2-based outdoor air control', noun: 'air handler', does: 'outdoor air follows the CO2 level, so the unit does not heat or cool more outdoor air than the people need' },
   vav_dcv: { plain: 'occupancy-based ventilation', noun: 'zone terminal unit', does: 'the outdoor air of each room follows its CO2 level, so it matches the people in the room' },
   terminalStandard: { plain: 'terminal unit program upgrade', noun: 'zone terminal unit', does: 'the room airflow boxes get the standard ASHRAE 36 program' },
   override: { plain: 'manual overrides removed', noun: 'place', does: 'setpoints that are held by hand are released, so the automatic control runs again' },
@@ -21611,7 +21611,7 @@ var _RPT_A36_TIER_PLAIN = {
   'full-scope':
     // Full Scope also prices optional devices that ASHRAE 36 does not require (fan coil units, heaters); the Audit Report lists only the required gaps.
     // Keep it short (about 120 characters): a longer line pushes the page 1 cost table into the footer.
-    'Every ASHRAE 36 device and sequence, plus extra devices beyond the audit opportunities and fault reports.',
+    'Every ASHRAE 36 device and sequence, plus extra devices and fault reports.',
 };
 
 /**
@@ -21621,7 +21621,7 @@ var _RPT_A36_TIER_PLAIN = {
  */
 function _rptA36TierPlain(key, hasRoomCo2) {
   if (key === 'full-scope' && hasRoomCo2) {
-    return 'Every ASHRAE 36 device and sequence, including CO2 sensors in rooms, plus extra devices beyond the audit opportunities and fault reports.';
+    return 'Every ASHRAE 36 device and sequence, including room CO2 sensors, extra devices and fault reports.';
   }
   return _RPT_A36_TIER_PLAIN[key];
 }
