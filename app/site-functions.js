@@ -2508,6 +2508,8 @@ async function siteResetAllMeterTableSettings() {
    site-ui.js delegates to this array and should NOT maintain its own copy.
 */
 var RELEASE_NOTES = [
+  { v: 'v2026.11.19.367', date: '2026-11-19', title: 'Service Proposal: clear scope of work',
+    items: [ { type: 'improved', text: 'Service Proposal: the Recommended Scope of Work lists the devices installed and the programming done, each with what it does, then one line per piece of equipment in each library (Install, Program, Fix).' }, { type: 'feature', text: 'Service Proposal: the room CO2 sensors show as an optional add with their price under Recommended and Compliance.' } ] },
   { v: 'v2026.11.19.366', date: '2026-11-19', title: 'Service Proposal: Recommended Scope of Work',
     items: [ { type: 'improved', text: 'Service Proposal: the Recommended work is now a scope of work for each library: what is installed and programmed on which equipment, with the step of each item. The large step table is removed. Prices do not change.' } ] },
   { v: 'v2026.11.19.365', date: '2026-11-19', title: 'Audit Report Word file: building page tables',
