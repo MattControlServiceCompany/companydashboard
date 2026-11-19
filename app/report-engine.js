@@ -19125,6 +19125,10 @@ function rptPageASHRAE36Executive(n, d, detailedTitles, view) {
     var _ahus = _tierOf('Air Handling Units');
     var _zones = _tierOf('Zone Terminal Units');
     var _range = [_plants ? _tierPhrase(_plants, 'heating and cooling ') : '', _ahus ? _tierPhrase(_ahus, 'air handling ') : ''].filter(Boolean);
+    // Every other type the units total counts (heaters, exhaust fans, other units), so the listed types add up to the total (review 2026-11-19).
+    (_st ? _st.tiers : []).forEach(function (t) {
+      if (['Plants', 'Air Handling Units', 'Zone Terminal Units', 'Lighting Control Units'].indexOf(t.label) < 0 && t.of > 0) _range.push(_tierPhrase(t, t.label === 'Other Equipment Units' ? 'other equipment ' : ''));
+    });
     _sec('Scope and Method', [
       'This audit examined how the building automation system' + (p.totalBuildings > 1 ? 's' : '') + ' of ' +
         (p.totalBuildings > 1 ? 'the ' + rptCount(p.totalBuildings) + ' ' + _nounMany : 'the ' + _nounOne) +
