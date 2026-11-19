@@ -122,7 +122,13 @@ function _docxRun(opts) {
   var lines = text.split('\n');
   var body = lines
     .map(function (line, i) {
-      var t = '<w:t xml:space="preserve">' + _docxEscapeXml(line) + '</w:t>';
+      // U+2011 (non-breaking hyphen): Arial has no glyph for it (Word shows a macron). Word's own element draws a hyphen that does not break.
+      var t = line
+        .split('\u2011')
+        .map(function (part) {
+          return '<w:t xml:space="preserve">' + _docxEscapeXml(part) + '</w:t>';
+        })
+        .join('<w:noBreakHyphen/>');
       return (i > 0 ? '<w:br/>' : '') + t;
     })
     .join('');
@@ -269,6 +275,13 @@ function _docxTableCell(opts) {
   tcPr += '<w:tcW w:w="' + opts.widthTwips + '" w:type="dxa"/>';
   if (opts.gridSpan) tcPr += '<w:gridSpan w:val="' + opts.gridSpan + '"/>';
   if (opts.vMerge) tcPr += '<w:vMerge w:val="' + opts.vMerge + '"/>';
+  if (opts.borders && (opts.borders.top || opts.borders.bottom)) {
+    // The cell's own top / bottom rule as the page shows it (row lines, the rules around a Total row).
+    var _bd = function (n, b) {
+      return b ? '<w:' + n + ' w:val="single" w:sz="' + b.sz + '" w:space="0" w:color="' + _docxEscapeXml(b.color) + '"/>' : '';
+    };
+    tcPr += '<w:tcBorders>' + _bd('top', opts.borders.top) + _bd('bottom', opts.borders.bottom) + '</w:tcBorders>';
+  }
   if (opts.shade) tcPr += '<w:shd w:val="clear" w:color="auto" w:fill="' + _docxEscapeXml(opts.shade) + '"/>';
   if (opts.margins) {
     var mg = opts.margins;
@@ -1775,6 +1788,17 @@ function _docxStampLiveStyles(liveRoot, cloneRoot) {
       var w = live[i].getBoundingClientRect().width;
       if (w > 0) t.setAttribute('data-dx-w', String(Math.round(w * 10) / 10));
       if (liveCols) {
+        // The cell's own top / bottom rule and vertical alignment, as the page shows them.
+        ['Top', 'Bottom'].forEach(function (side) {
+          var bw = parseFloat(cs['border' + side + 'Width']) || 0;
+          if (cs['border' + side + 'Style'] !== 'none' && bw > 0) {
+            var bhex = _docxCssColorToHex(cs['border' + side + 'Color']);
+            if (bhex) t.setAttribute(side === 'Top' ? 'data-dx-bt' : 'data-dx-bb', bhex.replace('#', '') + '|' + Math.max(2, Math.round(bw * 6)));
+          }
+        });
+        if (cs.verticalAlign === 'top' || cs.verticalAlign === 'bottom') t.setAttribute('data-dx-va', cs.verticalAlign);
+      }
+      if (liveCols) {
         // The cell's inner padding in px (top,right,bottom,left); 1 px = 15 twips in Word.
         var pad = [cs.paddingTop, cs.paddingRight, cs.paddingBottom, cs.paddingLeft].map(function (v) {
           return Math.round((parseFloat(v) || 0) * 10) / 10;
@@ -1815,6 +1839,22 @@ function _docxStampTextBlocks(liveRoot, cloneRoot) {
     if (cs.textTransform === 'uppercase') clone[i].setAttribute('data-dx-caps', '1');
     var mb = parseFloat(cs.marginBottom);
     if (mb >= 0) clone[i].setAttribute('data-dx-mb', String(Math.round(mb * 10) / 10));
+    if (_docxIsAshraeReport()) {
+      // A hanging indent (padding-left with a negative text-indent: a bullet and its wrapped lines) and a pulled-up block
+      // (negative margin-top, with the height of the block above it) as the page shows them.
+      var padL = parseFloat(cs.paddingLeft) || 0;
+      var tInd = parseFloat(cs.textIndent) || 0;
+      if (padL > 0 && tInd < 0) {
+        clone[i].setAttribute('data-dx-pl', String(Math.round(padL * 10) / 10));
+        clone[i].setAttribute('data-dx-ti', String(Math.round(tInd * 10) / 10));
+      }
+      var mtp = parseFloat(cs.marginTop);
+      if (mtp < 0) {
+        clone[i].setAttribute('data-dx-mt', String(Math.round(mtp * 10) / 10));
+        var prevLive = live[i].previousElementSibling;
+        if (prevLive) clone[i].setAttribute('data-dx-prevh', String(Math.round(prevLive.getBoundingClientRect().height * 10) / 10));
+      }
+    }
     // A flex row: the width, grow factor and text alignment of each child, and the gap between them.
     if (/flex/.test(cs.display) && cs.flexDirection.indexOf('column') !== 0) {
       var kids = live[i].children;
@@ -1874,7 +1914,41 @@ function _docxCellMargins(cell) {
   var tw = pad.map(function (px) {
     return Math.round(px * 15);
   });
+  // A table inside a cell (the facts cards beside a photo): Word text cannot go below 10 pt, so the side padding gives way a little
+  // and the labels keep to the lines the PDF shows.
+  if (tbl.parentElement && tbl.parentElement.closest && tbl.parentElement.closest('td,th')) {
+    tw[1] = Math.min(tw[1], 60);
+    tw[3] = Math.min(tw[3], 60);
+  }
   return { top: tw[0], right: tw[1], bottom: tw[2], left: tw[3] };
+}
+
+/**
+ * The top / bottom rule of a stamped cell as the page shows it: { top, bottom } each { color (hex), sz (eighths of a point) } or absent.
+ * Read from the computed style of the live cell (data-dx-bt / data-dx-bb: "hex|sz"); nothing is fixed here.
+ */
+function _docxCellRules(cell) {
+  var read = function (v) {
+    var m = /^([0-9A-Fa-f]{6})\|(\d+)$/.exec(v || '');
+    return m ? { color: m[1], sz: parseInt(m[2], 10) } : null;
+  };
+  var top = read(cell.getAttribute('data-dx-bt'));
+  var bottom = read(cell.getAttribute('data-dx-bb'));
+  return top || bottom ? { top: top, bottom: bottom } : undefined;
+}
+
+/** Cut the bottom fraction of the picture in a paragraph (srcRect, and a shorter extent), so a picture with empty space below it does not leave a gap. */
+function _docxCropPictureBottom(paraXml, frac) {
+  if (!/<w:drawing>/.test(paraXml) || !(frac > 0)) return paraXml;
+  var keep = 1 - frac;
+  return paraXml
+    .replace(/(<wp:extent cx="\d+" cy=")(\d+)(")/, function (m, a, cy, c) {
+      return a + Math.round(parseInt(cy, 10) * keep) + c;
+    })
+    .replace(/(<a:ext cx="\d+" cy=")(\d+)(")/, function (m, a, cy, c) {
+      return a + Math.round(parseInt(cy, 10) * keep) + c;
+    })
+    .replace('<a:stretch>', '<a:srcRect b="' + Math.round(frac * 100000) + '"/><a:stretch>');
 }
 
 /** Alignment of a table cell: its own inline text-align, else the one stamped from the live page, else ''. */
@@ -2497,6 +2571,13 @@ function _docxTranslateTable(tableEl, ctx) {
               if (inlRuns.length) cellParagraphs.push(_docxParagraph({ runs: inlRuns, align: align, spacingAfter: 0 }));
             } else if (child.nodeType === 1) {
               cellParagraphs = cellParagraphs.concat(_docxTranslateBlock(child, ctx, cellBaseFmt));
+              // The page pulls this block up over empty space under the picture above it (negative margin-top): cut that space off the picture.
+              var _pull = parseFloat(child.getAttribute('data-dx-mt'));
+              var _prevH = parseFloat(child.getAttribute('data-dx-prevh'));
+              if (_pull < 0 && _prevH > 0 && cellParagraphs.length > 1) {
+                var _pi = cellParagraphs.length - 2;
+                cellParagraphs[_pi] = _docxCropPictureBottom(cellParagraphs[_pi], Math.min(0.5, -_pull / _prevH));
+              }
             } else if (child.nodeType === 3) {
               var looseText = _docxCollapseLooseText(child.nodeValue);
               if (looseText) {
@@ -2540,10 +2621,11 @@ function _docxTranslateTable(tableEl, ctx) {
             widthTwips: widthTwips,
             paragraphs: cellParagraphs,
             gridSpan: span > 1 ? span : undefined,
-            vAlign: 'center',
+            vAlign: cell.getAttribute('data-dx-va') || 'center',
             vMerge: rowSpanAttr > 1 ? 'restart' : undefined,
             shade: cellShade || undefined,
             margins: _docxCellMargins(cell) || undefined,
+            borders: _docxCellRules(cell),
             trimLastAfter: _hasStamp,
           }),
         );
@@ -3044,6 +3126,12 @@ function _docxTranslateBlock(el, ctx, inheritedFmt) {
     var pRuns = _docxCollectRuns(el, pBaseFmt, ctx);
     if (!pRuns.length) return []; // empty layout-only leaf -- no stray blank paragraph
     var indOpts = _docxResolveIndentHint(el.getAttribute && el.getAttribute('data-word-indent'));
+    if (!Object.keys(indOpts).length && el.getAttribute && el.getAttribute('data-dx-pl')) {
+      // The page's hanging indent (a bullet, then wrapped lines under the text): 1 px = 15 twips.
+      var _hl = Math.round(parseFloat(el.getAttribute('data-dx-pl')) * 15);
+      var _hh = Math.round(-parseFloat(el.getAttribute('data-dx-ti')) * 15);
+      if (_hl > 0 && _hh > 0) indOpts = { indLeft: _hl, indHanging: _hh };
+    }
     return [
       _docxParagraph(
         Object.assign(
