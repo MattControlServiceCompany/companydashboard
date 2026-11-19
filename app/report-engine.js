@@ -27774,8 +27774,7 @@ function _a36DetModel(d, rowsById, picMap, loaded) {
         pic: null,
         picCands: [],
         section: '',
-        impact:
-          'The building automation system controls ' + pmWhy + '. A power meter on the system would record the electric demand and use of the building, so the system can trend it with the equipment that drives it and the savings of each control change can be measured.',
+        // No Impact text (Matt 2026-11-18: a missing power meter needs no explanation).
         effect: 'Energy use',
         observed: 'The building has no power meter on the building automation system.',
         issueShort: 'No building power meter',
@@ -28088,7 +28087,7 @@ function _a36DetFindingTok(f, impactSeen, ctx) {
       A36_DET_P_TIGHT +
       '">' +
       // "1." under the N.3 Findings heading right above it; the full "2.3.1" only in the Findings Summary, far from the heading (Matt 2026-11-18)
-      _escHtml((f.num ? String(f.num).split('.').pop() + '. ' : '') + f.headline) +
+      _escHtml((f.num ? _a36DetItemNo(f) + '. ' : '') + f.headline) +
       _a36StarHtml(f, ctx) +
       '</div>' +
       (showImpact ? '<p style="' + A36_DET_P_TIGHT + '">' + part('Impact', f.impact) + '</p>' : '') +
@@ -30323,11 +30322,19 @@ function _a36IsA36Item(f) {
 // The asterisk after an opportunity that is not an ASHRAE 36 item, and the one footnote line of a table part that shows one (Matt 2026-11-18).
 var A36_STAR_NOTE = '<p style="margin:0 0 6px 0;font-size:' + RPT_MIN_TEXT_PX + 'px;line-height:1.3;color:var(--rpt-page-text)">* Not an ASHRAE 36 item.</p>';
 var A36_STAR_NOTE_H = 24; // px reserved under a table part that has an asterisk (the note line and its margin)
+// The building power meter gets no asterisk (Matt 2026-11-18: it needs no mark).
+// The No. of an opportunity: the number its library section prints in front of it (1, 2, 3), never the chapter path 3.3.1 (Matt 2026-11-18).
+function _a36DetItemNo(f) {
+  return String(f.num || f.n).split('.').pop();
+}
+function _a36NeedsStar(f, ctx) {
+  return !!ctx && ctx.a36On !== false && !_a36IsA36Item(f) && f.key !== 'powerMeter';
+}
 function _a36StarHtml(f, ctx) {
-  return !ctx || ctx.a36On === false || _a36IsA36Item(f) ? '' : '<span class="a36-star">*</span>';
+  return _a36NeedsStar(f, ctx) ? '<span class="a36-star">*</span>' : '';
 }
 function _a36StarWanted(list, ctx) {
-  return !!ctx && ctx.a36On !== false && list.some(function (f) { return !_a36IsA36Item(f); });
+  return list.some(function (f) { return _a36NeedsStar(f, ctx); });
 }
 
 // The Opportunities Summary prints one text line per row (Matt 2026-11-18). The table is a dense table (rpt-mp-dense: 12 px text, 9 pt). The longest texts of the
@@ -30372,7 +30379,7 @@ function _a36DetSummaryTokens(ctx, sectionNo) {
       _a36DetTableOpen(A36_SUM_COLS, ['No.', 'Library', 'System', 'Issue', 'Effect'], { cls: RPT_MP_DENSE_ACTIVE ? 'rpt-mp-dense' : '', th: A36_SUM_TH }),
       list.map(function (f) {
         // One line per row (Matt 2026-11-18): the library without the word "Library" (the column says it), the short issue name.
-        return _a36DetRow([{ html: String(f.num || f.n), center: true }, _escHtml(String(f.lib).replace(/ Library$/, '')), _escHtml(f.groupLabel), _escHtml(_a36DetSummaryIssue(f)) + _a36StarHtml(f, ctx), _escHtml(f.effect)], A36_SUM_TD);
+        return _a36DetRow([{ html: _a36DetItemNo(f), center: true }, _escHtml(String(f.lib).replace(/ Library$/, '')), _escHtml(f.groupLabel), _escHtml(_a36DetSummaryIssue(f)) + _a36StarHtml(f, ctx), _escHtml(f.effect)], A36_SUM_TD);
       }),
       summaryTitle,
     );

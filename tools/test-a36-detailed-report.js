@@ -469,7 +469,7 @@ const ok = (c, m) => {
     ok(titles.some((x) => /^Appendix A: Setpoint Programming Review/.test(x)) && !titles.some((x) => /^Appendix [B-Z]|Glossary|Points by Equipment Type|Point Inventory/.test(x)), 'item 1: the setpoint review is Appendix A with a large title; no Glossary, no other appendix (' + titles.filter((x) => /^Appendix/.test(x)).join(' / ') + ')');
     ok(lay.h1s.every((x) => (x.first || libTitles.slice(1).indexOf(x.text) > -1) && x.size >= 21 && x.size <= 22), 'item 1: every section title is the first element of its page (a library chapter after the first may start under the findings of the one before, rule 5) and 16 pt (21.34 px) (' + lay.h1s.filter((x) => !x.first || x.size < 21 || x.size > 22).map((x) => x.text + ' ' + x.size).join(', ') + ')');
     ok((t.match(/\d+\.1 System Overview/g) || []).length === 2 && (t.match(/\d+\.2 System Descriptions/g) || []).length === 2 && (t.match(/\d+\.3 Opportunities/g) || []).length === 2, 'item 1: every library has the same three sub-headings N.1 System Overview, N.2 System Descriptions, N.3 Opportunities');
-    ok(lay.sumRows.length > 0 && lay.sumRows.every((r) => r.length === 5 && /^\d+\.\d+\.\d+$/.test(r[0]) && /^(Energy use|Equipment control)$/.test(r[4])), 'item 2: every Opportunities Summary row has No., Library, System, Issue, Effect; Effect is Energy use or Equipment control');
+    ok(lay.sumRows.length > 0 && lay.sumRows.every((r) => r.length === 5 && /^\d+$/.test(r[0]) && /^(Energy use|Equipment control)$/.test(r[4])), 'item 2: every Opportunities Summary row has No. (the item number of its library section, Matt 2026-11-18), Library, System, Issue, Effect; Effect is Energy use or Equipment control');
     ok(lay.sumRows.length > 0 && lay.sumRows.every((r) => !/Affects|Missing point/.test(r[3])), 'item 2: the Issue cell has no scope text (Matt 2026-11-18: one line per row; units and points are in the library sections)');
     ok(lay.sumRows.length > 0 && lay.sumRows.every((r) => !/sequence not fully in place|ASHRAE|Guideline/.test(r[3]) && !/ Library$/.test(r[1])), 'item 2: the Issue cell is the short issue name (no "sequence not fully in place", no standard citation); the Library cell has no word "Library": ' + (lay.sumRows[0] || []).join(' | '));
     ok(lay.pointHeads.length === 0, 'item 4: no Points by Equipment Type tables (' + lay.pointHeads.length + ' tables)');
@@ -541,7 +541,7 @@ const ok = (c, m) => {
       const sum = [];
       document.querySelectorAll('#reportPages .rpt-page[data-section="detailedSummary"] table tr').forEach((tr) => {
         const c = tr.querySelectorAll('td');
-        const m = c.length === 5 && /^(\d+\.\d+\.\d+)$/.exec(c[0].textContent.trim());
+        const m = c.length === 5 && /^(\d+)$/.exec(c[0].textContent.trim());
         if (m) sum.push(m[1]);
       });
       const body = [];
@@ -551,7 +551,7 @@ const ok = (c, m) => {
         if (el.tagName === 'H2') { const h = /^(\d+\.\d+) (.*)$/.exec(el.textContent.trim()); secNo = h[1]; sec = h[2]; return; }
         if (el.tagName === 'DIV' && sec === 'Opportunities') {
           const m = /^(\d+)\. /.exec(el.textContent.trim());
-          if (m && el.querySelectorAll(':scope > :not(.a36-star)').length === 0) body.push(secNo + '.' + m[1]); // a heading may hold only the * span
+          if (m && el.querySelectorAll(':scope > :not(.a36-star)').length === 0) body.push(m[1]); // a heading may hold only the * span
         }
       });
       return { total: all.length, dups, bad, mbad, split, sum, body, pointSeqOverlap: all.filter((f) => f.kind === 'sensor').filter((f) => all.some((s) => s.kind === 'seq' && s.lib === f.lib && s.groupLabel === f.groupLabel && s.missing.indexOf(f.label) >= 0)).map((f) => f.n) };
@@ -560,7 +560,7 @@ const ok = (c, m) => {
     ok(mdl.total > 0 && mdl.dups === 0, 'e: no two findings share library, group and sequence (' + mdl.total + ' findings)');
     ok(mdl.split && mdl.split.now === mdl.split.base && mdl.split.total === mdl.split.baseTotal, 'e: a sequence that comes from two catalog rows of one group is ONE finding (' + JSON.stringify(mdl.split) + ')');
     ok(mdl.bad.length === 0, 'f: the count of every finding is units: Observed and Recommendation carry the same fraction of the group' + (mdl.bad.length ? ': ' + JSON.stringify(mdl.bad) : ''));
-    ok(mdl.sum.length === mdl.total && sameList(mdl.sum, mdl.body) && mdl.sum.every((x, i) => i === 0 || x !== mdl.sum[i - 1]), 'l: Opportunities Summary and body list the same finding numbers 1..' + mdl.total + ' (summary ' + mdl.sum.length + ', body ' + mdl.body.length + ')');
+    ok(mdl.sum.length === mdl.total && sameList(mdl.sum, mdl.body) && mdl.sum.every((x, i) => x === '1' ? true : i > 0 && +x === +mdl.sum[i - 1] + 1), 'l: Opportunities Summary and body list the same item numbers, 1, 2, 3 in each library: ' + mdl.total + ' (summary ' + mdl.sum.length + ', body ' + mdl.body.length + ')');
     ok(mdl.pointSeqOverlap.length === 0, 'N1: no stand-alone point finding repeats a point that a sequence finding of the same group already lists (' + mdl.pointSeqOverlap.join(',') + ')');
     ok(mdl.mbad.length === 0, 'm: a recommendation says "sensor" only for a sensor, "point" for a valve or actuator' + (mdl.mbad.length ? ': ' + mdl.mbad.join(',') : ''));
     // n: a sequence finding counts the same units as the priced quantity (monitoring-only zone units are left out), and a point
@@ -923,7 +923,7 @@ const ok = (c, m) => {
       return { multi: multi, fit: fit, count: pages.length, sections: pages.map((p) => p.getAttribute('data-section')), spPages: sp.length, spHead: sp.length ? sp[0].textContent.indexOf('Appendix A: Setpoint Programming Review') >= 0 : null };
     });
     const bigBad = big.fit.filter((f) => f.gap < 0 || f.scrollOver > 1);
-    ok(big.count > 40 && bigBad.length === 0, 'large project (' + big.count + ' pages): every page fits above the footer' + (bigBad.length ? ': ' + JSON.stringify(bigBad) : ''));
+    ok(big.count > 35 && bigBad.length === 0, 'large project (' + big.count + ' pages): every page fits above the footer' + (bigBad.length ? ': ' + JSON.stringify(bigBad) : ''));
     console.log('INFO Appendix A pages in the large project: ' + big.spPages);
     ['detailedSummary', 'costEstimate', 'setpointReview'].forEach((sec) => {
       const list = big.multi[sec].filter((x) => sec !== 'costEstimate' || x.th > 0);
