@@ -551,7 +551,7 @@ const ok = (c, m) => {
         if (el.tagName === 'H2') { const h = /^(\d+\.\d+) (.*)$/.exec(el.textContent.trim()); secNo = h[1]; sec = h[2]; return; }
         if (el.tagName === 'DIV' && sec === 'Opportunities') {
           const m = /^(\d+)\. /.exec(el.textContent.trim());
-          if (m && el.children.length === 0) body.push(secNo + '.' + m[1]);
+          if (m && el.querySelectorAll(':scope > :not(.a36-star)').length === 0) body.push(secNo + '.' + m[1]); // a heading may hold only the * span
         }
       });
       return { total: all.length, dups, bad, mbad, split, sum, body, pointSeqOverlap: all.filter((f) => f.kind === 'sensor').filter((f) => all.some((s) => s.kind === 'seq' && s.lib === f.lib && s.groupLabel === f.groupLabel && s.missing.indexOf(f.label) >= 0)).map((f) => f.n) };
