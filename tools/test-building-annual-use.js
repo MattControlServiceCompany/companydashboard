@@ -63,6 +63,16 @@ const ok = (c, m) => {
       out.F = buildingAnnualUse('p', 'F');
       out.G = buildingAnnualUse('p', 'G');
       out.missing = buildingAnnualUse('p', 'nope');
+      // buildingUseByYear: H has 2022 (complete), 2023 (gas lacks March: partial, left out), 2024 (complete), 2025 (Jan to Oct only: partial)
+      add('H', 9000, [E(eBills('2022-01', '2022-12').concat(eBills('2023-01', '2023-12'), eBills('2024-01', '2024-12'), eBills('2025-01', '2025-10'))), G(gBills('2022-01', '2022-12').concat(gBills('2023-01', '2023-02'), gBills('2023-04', '2023-12'), gBills('2024-01', '2024-12'), gBills('2025-01', '2025-10')))]);
+      add('I', 4000, [E(eBills('2023-01', '2024-12'))]); // electric only, 2 years
+      out.byH = buildingUseByYear('p', 'H');
+      out.byI = buildingUseByYear('p', 'I');
+      out.byG = buildingUseByYear('p', 'G');
+      out.byMissing = buildingUseByYear('p', 'nope');
+      out.byA = buildingUseByYear('p', 'A'); // 2024: Nov, Dec only (partial); 2025 complete
+      out.byC = buildingUseByYear('p', 'C');
+      out.annualH = buildingAnnualUse('p', 'H');
       // every meter excluded from the baseline: the same answer
       window.isBaselineExcluded = () => true;
       out.AExcl = buildingAnnualUse('p', 'A');
@@ -87,6 +97,13 @@ const ok = (c, m) => {
     ok(r.G === null, 'no meters: null');
     ok(r.missing === null, 'unknown building: null');
     ok(r.AExcl && JSON.stringify(r.AExcl) === JSON.stringify(r.A), 'meters excluded from the baseline are still counted');
+    ok(r.byH.length === 2 && r.byH[0].year === 2022 && r.byH[1].year === 2024, 'by year: only the complete years, oldest first: ' + JSON.stringify(r.byH.map((y) => y.year)));
+    ok(r.byH[0].kwh === Array.from({ length: 12 }, (_, i) => 1000 + i).reduce((a, b) => a + b, 0) && r.byH[0].therms === Array.from({ length: 12 }, (_, i) => 50 + i).reduce((a, b) => a + b, 0) && r.byH[0].hasGas === true, 'by year: kWh and therms are the sums of the 12 months: ' + JSON.stringify(r.byH[0]));
+    ok(r.byI.length === 2 && r.byI[0].therms === null && r.byI[0].hasGas === false && r.byI[0].kwh > 0 && r.byI[0].cost > 0, 'by year: electric only gives therms null, hasGas false');
+    ok(r.byA.length === 1 && r.byA[0].year === 2025 && r.byA[0].kwh === r.A.kwh && r.byA[0].therms === r.A.therms && r.byA[0].cost === r.A.cost, 'by year: a complete year equals buildingAnnualUse of the same months');
+    ok(r.byC.length === 1 && r.byC[0].kwh === r.C.kwh, 'by year: one year gives one entry');
+    ok(r.byG.length === 0 && r.byMissing.length === 0, 'by year: no meters or unknown building gives an empty list');
+    ok(r.annualH && r.annualH.startMonth === '2024-11' && r.annualH.endMonth === '2025-10' && r.annualH.label === 'Nov 2024 to Oct 2025', 'buildingAnnualUse is unchanged: newest 12 months, a partial calendar year does not change it: ' + (r.annualH && r.annualH.label));
     ok(errs.length === 0, 'no page errors: ' + errs.join(' | '));
   } finally {
     await ctx.close();

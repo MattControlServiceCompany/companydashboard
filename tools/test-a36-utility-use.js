@@ -50,7 +50,7 @@ const ok = (c, m) => {
         ),
       });
       // Alpha: gas; Beta: no gas meter; Gamma: 11 months only (no use shown); Delta: no meters at all
-      const ud = [mk('Alpha Library', 20000, 240000, 6000, 36000, ['2025-01', '2025-12']), mk('Beta Library', 10000, 60000, null, 9000, ['2025-01', '2025-12']), mk('Gamma Library', 5000, 30000, 1200, 5000, ['2025-02', '2025-12']), { id: 'bDelta', name: 'Delta Library', sqft: 8000, meters: [] }];
+      const ud = [mk('Alpha Library', 20000, 240000, 6000, 36000, ['2023-01', '2025-12']), mk('Beta Library', 10000, 60000, null, 9000, ['2025-01', '2025-12']), mk('Gamma Library', 5000, 30000, 1200, 5000, ['2025-02', '2025-12']), { id: 'bDelta', name: 'Delta Library', sqft: 8000, meters: [] }];
       const realGet = getUDBldgs;
       window.getUDBldgs = (pid) => (pid === PID ? ud : realGet(pid));
       window.getUDBldg = (pid, bid) => getUDBldgs(pid).find((b) => b.id === bid);
@@ -70,6 +70,17 @@ const ok = (c, m) => {
       const beta = buildingAnnualUse(PID, 'bBeta Library');
       out.alpha = alpha;
       out.beta = beta;
+      // Word: the history charts of a building page become pictures (the shared chart swap), gauge rings untouched
+      const alphaHtml = out.htmls.find((h, i) => out.secs[i] === 'building' && /Alpha Library/.test(out.pages[i]) && /Annual Energy Use/.test(out.pages[i]));
+      const holder = document.createElement('div');
+      holder.innerHTML = alphaHtml;
+      document.body.appendChild(holder);
+      out.bars = Array.from(holder.querySelectorAll('svg[data-use-history]')).map((s) => s.querySelectorAll('rect').length);
+      out.svgBefore = holder.querySelectorAll('svg[data-use-history]').length;
+      await _rptSwapUseHistoryChartsForPng([holder]);
+      out.svgAfter = holder.querySelectorAll('svg[data-use-history]').length;
+      out.imgAfter = holder.querySelectorAll('img[src^="data:image/png"]').length;
+      holder.remove();
       out.expTotEui = computePeriodEUI(computeKBtu(alpha.kwh + beta.kwh, alpha.therms, 0), 12, alpha.sqft + beta.sqft);
       // only one building with data: no comparison page
       ud.splice(1, 1);
@@ -89,6 +100,15 @@ const ok = (c, m) => {
     ok(titleIdx >= 0, 'the comparison page "Utility Use by Library" exists');
     ok(r.secs[titleIdx] === 'building' && r.secs.lastIndexOf('building') === titleIdx, 'it is the last page of the per-building group (after every building page)');
     ok(r.pages.slice(0, titleIdx).filter((t) => /Alpha Library/.test(t) && /Energy Use Intensity \(2025\)/.test(t)).length === 1, 'Alpha Library page has the utility card');
+    const histPages = r.htmls.filter((h, i) => r.secs[i] === 'building');
+    const alphaHist = r.htmls.find((h, i) => r.secs[i] === 'building' && /Alpha Library/.test(r.pages[i]) && /Annual Energy Use/.test(r.pages[i]));
+    const bars = r.bars;
+    ok(/Annual Energy Use, 2023–2025/.test(r.pages.find((t, i) => r.secs[i] === 'building' && /Annual Energy Use/.test(t))), 'building with 3 years: heading "Annual Energy Use, 2023-2025"');
+    ok(bars.length === 2 && bars[0] === 3 && bars[1] === 3, 'building with 3 years and gas: two charts of 3 bars each: ' + JSON.stringify(bars));
+    ok(r.pages.filter((t, i) => r.secs[i] === 'building' && /Annual Energy Use/.test(t)).length === 1, 'only the building with 2 or more complete years has the chart (1 year, 11 months, no meters: none)');
+    ok(r.svgBefore === 2 && r.svgAfter === 0 && r.imgAfter === 2, 'Word: both history charts become PNG pictures: ' + JSON.stringify([r.svgBefore, r.svgAfter, r.imgAfter]));
+    ok(!/finding/i.test(r.pages.find((t, i) => r.secs[i] === 'building' && /Annual Energy Use/.test(t)) || ''), 'the chart page has no "finding" text');
+    void histPages;
     const alphaPage = r.pages.find((t, i) => r.secs[i] === 'building' && /Alpha Library/.test(t) && /Energy Use Intensity \(2025\)/.test(t));
     ok(/240,000 kWh, 6,000 therms\s*\$36,000, [\d,]+ ft²/.test(alphaPage) && !/Outdoor air sensors/.test(alphaPage), 'card with gas replaces the outdoor air card: ' + (alphaPage.match(/Energy Use Intensity[\s\S]{0,120}/) || [''])[0]);
     ok(/Energy Use Intensity \(2025\)\s*\d+\.\d kBtu\/ft²/.test(alphaPage) && /20,000 ft²/.test(alphaPage), 'card value is the intensity; the floor area is in the note');

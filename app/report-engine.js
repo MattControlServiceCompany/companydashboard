@@ -13702,6 +13702,23 @@ async function _rptSwapBoardChartsForPng(pageEls, scale) {
   return { found: charts.length, rasterized: rasterized };
 }
 
+// Word: rasterize the annual use history charts of the Audit Report (svg marked data-use-history) with the shared chart swap.
+async function _rptSwapUseHistoryChartsForPng(pageEls, scale) {
+  scale = scale || RPT_DOCX_GAUGE_RASTER_SCALE;
+  var charts = [];
+  pageEls.forEach(function (pageEl) {
+    if (!pageEl.querySelectorAll) return;
+    Array.prototype.forEach.call(pageEl.querySelectorAll('svg[data-use-history]'), function (svg) {
+      charts.push(svg);
+    });
+  });
+  for (var i = 0; i < charts.length; i++) {
+    try {
+      await _rptSwapChartSvgForPng(charts[i], scale);
+    } catch (e) {}
+  }
+}
+
 /**
  * exportReportToDocx — Word Export Rebuild plan Step 6 (first shipped document), wired for the
  * EMS Agreement (data._agreement). AI/_context/plans/word-export-rebuild-2026-07-30.md Part D
@@ -13828,6 +13845,8 @@ async function exportReportToDocx() {
     if (!data._agreement && !data._ashrae) {
       await _rptSwapBoardChartsForPng(pageEls);
     }
+    // Audit Report only: the use history charts of the building pages (marked data-use-history) become pictures; gauge rings are not touched.
+    if (data._ashrae) await _rptSwapUseHistoryChartsForPng(pageEls);
 
     // The client / period line of the page header (top right in the PDF) goes into the real Word page header,
     // right-aligned, instead of a paragraph in the body of every page.
@@ -30631,6 +30650,69 @@ function _a36UseCard(u) {
       nb(_fmtUSD(u.cost, '$0')) + ', ' + nb(rptCount(u.sqft) + ' ' + A36_FT2),
   };
 }
+// Annual use history of a building (Matt 2026-11-18: show every year of utility data on file). The one reader is buildingUseByYear
+// (app/utility-data.js); this only draws the yearly totals. Energy use, not intensity (the floor area may differ between years). No monthly values.
+// One bar per complete calendar year; the y axis starts at zero; the unit is on the caption and the value is on every bar. Gas gets its own chart.
+function _a36UseHistorySVG(vals, color) {
+  var w = 352,
+    h = 108,
+    padT = 17,
+    padB = 18,
+    padX = 4;
+  var max = Math.max.apply(null, vals.map(function (v) { return v.v; }).concat([1]));
+  var plotH = h - padT - padB;
+  var slot = (w - padX * 2) / vals.length;
+  var bw = Math.min(30, slot * 0.62);
+  var base = h - padB;
+  var big = max >= 1000;
+  var dec = max / 1000 >= 100 ? 0 : 1;
+  var lab = function (v) {
+    return big ? (v / 1000).toFixed(dec) : String(Math.round(v));
+  };
+  var fs = 12;
+  // Years of 4 digits when the slot holds them, else 2 digits after an apostrophe (the heading names the range).
+  var yearText = function (y) {
+    return slot >= 36 ? String(y) : "'" + String(y).slice(2);
+  };
+  var out = '<svg data-use-history="1" width="' + w + '" height="' + h + '" viewBox="0 0 ' + w + ' ' + h + '" xmlns="http://www.w3.org/2000/svg" font-family="Arial,sans-serif">';
+  vals.forEach(function (b, i) {
+    var cx = padX + slot * (i + 0.5);
+    var bh = (b.v / max) * plotH;
+    out += '<rect x="' + (cx - bw / 2).toFixed(1) + '" y="' + (base - bh).toFixed(1) + '" width="' + bw.toFixed(1) + '" height="' + bh.toFixed(1) + '" fill="' + color + '"/>';
+    out += '<text x="' + cx.toFixed(1) + '" y="' + (base - bh - 3).toFixed(1) + '" text-anchor="middle" font-size="' + fs + '" fill="var(--rpt-page-text)">' + lab(b.v) + '</text>';
+    out += '<text x="' + cx.toFixed(1) + '" y="' + (h - 5) + '" text-anchor="middle" font-size="' + fs + '" fill="var(--rpt-page-text)">' + yearText(b.year) + '</text>';
+  });
+  out += '<line x1="' + padX + '" y1="' + base + '" x2="' + (w - padX) + '" y2="' + base + '" stroke="var(--rpt-page-text)" stroke-width="1"/>';
+  return out + '</svg>';
+}
+// The history block of a building page, or null with fewer than 2 complete years of use.
+function _a36UseHistoryHtml(d, b) {
+  if (!d || !d.project || typeof buildingUseByYear !== 'function' || typeof getUDBldgs !== 'function' || typeof _emNormBldgNameForJoin !== 'function') return null;
+  var key = _emNormBldgNameForJoin(b.name);
+  var ud = getUDBldgs(d.project.id).filter(function (x) {
+    return _emNormBldgNameForJoin(x.name) === key;
+  })[0];
+  var yrs = ud ? buildingUseByYear(d.project.id, ud.id) : [];
+  if (yrs.length < 2) return null;
+  var cap = function (t, svg) {
+    return (
+      '<td style="width:50%;vertical-align:top;padding:0 6px 0 0;border:none"><div style="font-size:12px;font-weight:600;color:var(--rpt-page-text);margin:0 0 2px 0">' + t + '</div>' + svg + '</td>'
+    );
+  };
+  var unit = function (list, u) {
+    var m = Math.max.apply(null, list.map(function (x) { return x.v; }).concat([0]));
+    return m >= 1000 ? 'thousand ' + u : u;
+  };
+  var el = yrs.map(function (y) { return { year: y.year, v: y.kwh }; });
+  var gas = yrs[0].hasGas ? yrs.map(function (y) { return { year: y.year, v: y.therms || 0 }; }) : null;
+  return (
+    '<div style="font-size:13.34px;font-weight:700;color:var(--rpt-blue);margin:2px 0 2px 0">Annual Energy Use, ' + yrs[0].year + '\u2013' + yrs[yrs.length - 1].year + '</div>' +
+    '<table style="width:100%;border-collapse:collapse;table-layout:fixed;margin:0 0 8px 0"><tr>' +
+    cap('Electricity, ' + unit(el, 'kWh'), _a36UseHistorySVG(el, 'var(--rpt-elec-cur)')) +
+    (gas ? cap('Natural gas, ' + unit(gas, 'therms'), _a36UseHistorySVG(gas, 'var(--rpt-gas-cur)')) : '<td style="width:50%;border:none"></td>') +
+    '</tr></table>'
+  );
+}
 // The page after the per-building pages: one table of the 12-month use of every building that has it, highest Energy Use Intensity first, with a
 // total row. Only with at least 2 buildings that have use and floor area for the same months. Returns the pages ([] when there is none).
 function _a36UtilityUsePages(pageNum, d) {
@@ -30793,6 +30875,9 @@ function _a36AuditBuildingTokens(d, b, ctx, showBuildingInfra) {
   var rt = ringsTok(72);
   if (rt) tokens.push(rt);
   var headEnd = tokens.length;
+  var histHtml = _a36UseHistoryHtml(d, b);
+  var histTok = histHtml ? _a36DetTok(histHtml, true) : null;
+  if (histTok) tokens.push(histTok);
   // One row per equipment type; a finding is listed on the row of its type. A finding of no listed type goes on the Building-wide row.
   var byCat = {};
   var wide = [];
@@ -30863,6 +30948,8 @@ function _a36AuditBuildingTokens(d, b, ctx, showBuildingInfra) {
     tableToks.forEach(function (t) {
       t.keepNext = false;
     });
+    // The use history chart no longer chains to the table, else the heading, photo and rings together with the chart are taller than a page.
+    if (histTok) histTok.keepNext = false;
   }
   tokens.forEach(function (t) {
     t.lib = name;
