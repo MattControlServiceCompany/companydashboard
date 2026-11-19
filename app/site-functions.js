@@ -2508,6 +2508,8 @@ async function siteResetAllMeterTableSettings() {
    site-ui.js delegates to this array and should NOT maintain its own copy.
 */
 var RELEASE_NOTES = [
+  { v: 'v2026.11.19.376', date: '2026-11-19', title: 'Internal checks',
+    items: [ { type: 'improved', text: 'Internal: the release checks now protect a Recommended option with no work.' } ] },
   { v: 'v2026.11.19.375', date: '2026-11-19', title: 'Service Proposal: no Recommended work',
     items: [ { type: 'fixed', text: 'Service Proposal and Cost Estimate: when every Recommended item pays back in more than 10 years, Recommended says None now and lists the items with their payback.' } ] },
   { v: 'v2026.11.19.374', date: '2026-11-19', title: 'Service Proposal: Order of Work',
