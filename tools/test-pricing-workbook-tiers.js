@@ -162,6 +162,7 @@ const plain = (x) => JSON.parse(JSON.stringify(x));
   delete newSd.optional;
   delete newSd.option; // the estimated savings of each option and the items Recommended does not hold are new (Matt 2026-11-19)
   delete newSd.notNow;
+  delete newSd.recommendedNone; // new (Matt 2026-11-19)
   assert.deepStrictEqual(newSd, plain(oldC._pricingComputeSummaryData('p', est)));
   ok('hourly summary data identical to main');
 }
