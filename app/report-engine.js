@@ -21980,12 +21980,11 @@ function _rptA36CostSummaryHTML(d, HEAD, BODY) {
   });
   var whyLess =
     recT !== null && compT !== null && recT < compT
-      ? ' Recommended costs less than Compliance because it installs only the few devices its control sequences need.'
+      ? ' Recommended costs less: it installs only the devices its sequences need.'
       : '';
   return (
     '<div style="' + HEAD + '">Cost Summary</div>' +
-    '<div style="' + BODY + ';margin-bottom:6px">Each cost is an estimate for the work. There is no monthly fee. ' +
-    'Pick one option.' + whyLess + '</div>' +
+    '<div style="' + BODY + ';margin-bottom:6px">Each cost is an estimate for the work.' + whyLess + '</div>' +
     '<table style="width:100%;border-collapse:collapse;table-layout:fixed;page-break-inside:avoid;break-inside:avoid">' +
     '<colgroup><col style="width:16%"><col style="width:47%"><col style="width:37%"></colgroup>' +
     '<thead><tr><th style="' + th + '">Option</th><th style="' + th + '">What it includes</th><th style="' + th + '">Estimated cost</th></tr></thead>' +
