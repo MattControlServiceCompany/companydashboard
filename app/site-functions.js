@@ -2508,6 +2508,10 @@ async function siteResetAllMeterTableSettings() {
    site-ui.js delegates to this array and should NOT maintain its own copy.
 */
 var RELEASE_NOTES = [
+  { v: 'v2026.11.19.360', date: '2026-11-19', title: 'Audit Report: building pages on one page; utility charts; numbers in order',
+    items: [ { type: 'improved', text: 'Audit Report: each building page fits on one page. Missing points of the same units are one bullet. The ring labels sit under the rings.' },
+             { type: 'improved', text: 'Audit Report: Utility Use by Library is charts after the building pages: the 2025 ranking and the Energy Use Intensity of each library for each year. The table page and the separate end page are removed.' },
+             { type: 'fix', text: 'Audit Report: the opportunity numbers run 1 to N through the report and do not start again at each library. Scope and Method lists the heaters and exhaust fans.' } ] },
   { v: 'v2026.11.18.359', date: '2026-11-18', title: 'Audit Report: one utility page for all buildings; review fixes',
     items: [ { type: 'feature', text: 'Audit Report: one Utility Use page ranks the buildings by Energy Use Intensity and shows the yearly change in total energy of each building. The building pages no longer show a yearly chart.' },
              { type: 'removed', text: 'Audit Report: the ASHRAE 36 Readiness page, which repeated the cover.' },
