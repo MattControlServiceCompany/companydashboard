@@ -2508,6 +2508,11 @@ async function siteResetAllMeterTableSettings() {
    site-ui.js delegates to this array and should NOT maintain its own copy.
 */
 var RELEASE_NOTES = [
+  { v: 'v2026.11.18.357', date: '2026-11-18', title: 'Audit Report layout; proposal without setpoint and schedule work',
+    items: [ { type: 'improved', text: 'Audit Report: each building page shows its utility use in a facts card (Energy Use Intensity, kWh, therms or electric only, cost, floor area) and a chart of every complete year on file.' },
+             { type: 'improved', text: 'Audit Report: Building Readiness follows the Executive Summary; the separate ASHRAE 36 building pages are gone; a * marks each opportunity that is not an ASHRAE 36 item.' },
+             { type: 'improved', text: 'Audit Report: the Opportunities Summary has one line per row; Appendix A names the ASHRAE 36 default setpoints.' },
+             { type: 'change', text: 'Service Proposal: no lines or text for changing setpoints or schedules.' } ] },
   { v: 'v2026.11.18.356', date: '2026-11-18', title: 'Service Proposal: override lines',
     items: [ { type: 'fixed', text: 'Service Proposal: an override line does not repeat its own name under Programming.' } ] },
   { v: 'v2026.11.18.355', date: '2026-11-18', title: 'Service Proposal: clearer cost line names',
