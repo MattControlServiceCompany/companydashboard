@@ -114,7 +114,7 @@ const near = (a, b) => Math.abs(a - b) < 0.006;
     // ---- Step 1 text: one text for the step table and the Order of Work, with no setpoint sentence ----
     ok(out.step1 === 'Control Service Company checks the equipment and confirms what to program.', 'Step 1 text: ' + out.step1);
     const src = require('fs').readFileSync(path.join(ROOT, 'app', 'report-engine.js'), 'utf8');
-    ok((src.match(/_rptA36Step1Text\(\)/g) || []).length === 3, 'the step table and the Order of Work both use _rptA36Step1Text (1 definition + 2 uses)');
+    ok((src.match(/_rptA36Step1Text\(\)/g) || []).length === 3, 'the scope of work head and the Order of Work both use _rptA36Step1Text (1 definition + 2 uses; Matt 2026-11-19: the step table is gone)');
     ok(!/setpointZones|isSetpointReprogram/.test(src), 'report-engine.js has no setpointZones or isSetpointReprogram');
   } finally {
     await ctx.close();

@@ -84,8 +84,10 @@ const proposalFns = [
   '_rptA36ProposalSummaryData',
   '_rptA36RecommendedTimelineHTML',
   '_rptA36RecommendedServicesInnerHTML',
-  '_rptA36WhyThisApproachHTML',
-  '_rptA36PhaseTableDerive',
+  '_rptA36RecommendedScope',
+  '_rptA36ScopeLineText',
+  '_rptA36ScopeAction',
+  '_rptA36ScopeIncludedText',
   '_rptA36VisionInnerHTML',
   '_rptA36ComplianceScopeInnerHTML',
   '_rptA36FullScopeInnerHTML',
@@ -118,7 +120,8 @@ const noCmt = (x) => x.replace(/^[ \t]*\/\/.*$/gm, '').replace(/[ \t]\/\/ .*$/gm
 const proposalSrc = noCmt(fnSrc(RE, '_rptA36TopGaps') + fnSrc(RE, '_rptA36RecommendedStepPlan') + fnSrc(RE, '_rptA36HardwareCategoryAgg'));
 assert(!/Other Hardware|Flow Meters/.test(proposalSrc), 'no Other Hardware / Flow Meters labels');
 assert(/_rptA36RoomCo2Qty/.test(fnSrc(RE, '_rptA36TopGaps')), 'top gaps read the room CO2 count from the shared tier data');
-assert(/_rptA36RecommendedStepPlan/.test(fnSrc(RE, '_rptA36PhaseTableDerive')) && /_rptA36RecommendedStepPlan/.test(fnSrc(RE, '_rptA36RecommendedTimelineHTML')), 'step table and order table read one step plan');
+// (Matt 2026-11-19) the five-column step table is gone: the scope of work and the Order of Work table read the one step plan.
+assert(/_rptA36RecommendedStepPlan/.test(fnSrc(RE, '_rptA36RecommendedScope')) && /_rptA36RecommendedStepPlan/.test(fnSrc(RE, '_rptA36RecommendedTimelineHTML')), 'scope of work and order table read one step plan');
 assert(!/Later/.test(noCmt(fnSrc(RE, '_rptA36RecommendedTimelineHTML'))), 'order table has no Later row');
 assert(!/plantsByName/.test(RE) && !/plantsByName/.test(fnSrc(RE, 'generateASHRAE36Preview')), 'one plant classification for every report: no plantsByName option (was: proposal data built with plantsByName)');
 const oneTime = noCmt(['rptPageASHRAE36ProposalCover', '_rptA36CostSummaryHTML', 'rptPageASHRAE36ProposalPricing', '_rptA36RecommendedServicesInnerHTML', '_rptA36VisionInnerHTML'].map((f) => fnSrc(RE, f)).join('\n')).match(/Each cost is an estimate for the work/g) || [];
