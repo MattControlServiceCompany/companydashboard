@@ -21839,7 +21839,7 @@ function _rptA36TierCostData(d) {
   defs.forEach(function (c) {
     var f = _rptA36FootOf(sd.tierTotals[c.key]);
     if (f) out.tiers.push({ key: c.key, label: c.label, total: f.totalR });
-    // Recommended holds no work (Matt 2026-11-19): the option stays in the table with no price (sd.recommendedNone, _pricingRecommendedEmptyByPayback).
+    // Recommended holds no work (Matt 2026-11-19): the option stays in the table with no price (sd.recommendedNone, _pricingRecommendedNoneNow).
     else if (c.key === 'recommended' && sd.recommendedNone) out.tiers.push({ key: c.key, label: c.label, total: null, none: true });
   });
   out.roomCo2 = sd.roomCo2;
@@ -21849,7 +21849,7 @@ function _rptA36TierCostData(d) {
 
 /**
  * _rptA36RecommendedNone(d) - true when Recommended holds no work because every item is over the payback limit: the one reader of the
- * predicate _pricingRecommendedEmptyByPayback (through sd.recommendedNone). Every proposal text of an empty Recommended reads this (Matt 2026-11-19).
+ * predicate _pricingRecommendedNoneNow (through sd.recommendedNone). Every proposal text of an empty Recommended reads this (Matt 2026-11-19).
  */
 function _rptA36RecommendedNone(d) {
   var sd = _rptA36ProposalSummaryData(d);

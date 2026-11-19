@@ -34,16 +34,16 @@ const RE = fs.readFileSync(path.join(ROOT, 'app', 'report-engine.js'), 'utf8');
     // ---- F1: Order of Work rows ----
     const f1 = await page.evaluate(() => {
       const realPlan = window._rptA36RecommendedStepPlan;
-      const g = (label, isNew) => ({ label: label, isNew: isNew, buildings: [] });
+      const g = (label) => ({ label: label, buildings: [] });
+      // Matt 2026-11-19: one step per kind of work, each kind named once (no finish/continue rows).
       window._rptA36RecommendedStepPlan = () => ({
         steps: [
-          { groups: [], rows: [] },
-          { groups: [g('Supply air temperature reset', true), g('Minimum outdoor air', true)], rows: [] },
-          { groups: [g('Supply air temperature reset', false), g('Economizer', true)], rows: [] },
-          { groups: [g('Minimum outdoor air', false)], rows: [] },
-          { groups: [g('Economizer', false), g('Minimum outdoor air', false)], rows: [] },
+          { kind: 'check', groups: [] },
+          { kind: 'meter', groups: [g('Building power meter')] },
+          { kind: 'plant', groups: [g('Supply air temperature reset'), g('Economizer'), g('CO2-based outdoor air control')] },
+          { kind: 'terminal', groups: [g('Terminal unit program upgrade')] },
         ],
-        stepCount: 5,
+        stepCount: 4,
       });
       try {
         const html = _rptA36RecommendedTimelineHTML({ project: { id: 1 } });
@@ -54,12 +54,11 @@ const RE = fs.readFileSync(path.join(ROOT, 'app', 'report-engine.js'), 'utf8');
         window._rptA36RecommendedStepPlan = realPlan;
       }
     });
-    ok(f1.length === 5 && f1.every((r, i) => r[0] === 'Step ' + (i + 1)), 'F1. five steps in the plan give five rows with the same step numbers: ' + JSON.stringify(f1.map((r) => r[0])));
-    // Review fix 2026-11-14: the row names every group of its step (the proposal step table names them all); "finish" = the
-    // group's last step, "continue" = the group is also in a later step.
-    ok(f1[2] && f1[2][1] === 'Economizer; finish supply air temperature reset.', 'F1. a step with new and ending groups names the new group, then "finish" the earlier one: ' + (f1[2] && f1[2][1]));
-    ok(f1[3] && f1[3][1] === 'Continue minimum outdoor air.', 'F1. a group that is also in a later step reads "Continue <name>.": ' + (f1[3] && f1[3][1]));
-    ok(f1[4] && f1[4][1] === 'Finish economizer and minimum outdoor air.', 'F1. two continued groups: "Finish X and Y.": ' + (f1[4] && f1[4][1]));
+    ok(f1.length === 4 && f1.every((r, i) => r[0] === 'Step ' + (i + 1)), 'F1. four steps in the plan give four rows with the same step numbers: ' + JSON.stringify(f1.map((r) => r[0])));
+    ok(f1[1] && /^Building power meters: installed before the control changes/.test(f1[1][1]), 'F1. the meter step says the meters go in before the control changes: ' + (f1[1] && f1[1][1]));
+    ok(f1[2] && f1[2][1] === 'Air handler, hot water and chilled water sequences: supply air temperature reset, economizer and CO2-based outdoor air control.', 'F1. the sequence step names each sequence once, CO2 keeps its capitals (Matt 2026-11-19): ' + (f1[2] && f1[2][1]));
+    ok(f1[3] && f1[3][1] === 'Terminal unit program upgrade.', 'F1. the terminal step names its work with no repeated head word: ' + (f1[3] && f1[3][1]));
+    ok(!f1.some((r) => /finish|continue/i.test(r[1] || '')), 'F1. no finish/continue rows (Matt 2026-11-19)');
 
     // ---- synthetic projects: single-zone only, mixed, multi-zone only ----
     const scen = await page.evaluate(async () => {
