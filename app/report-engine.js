@@ -16803,13 +16803,6 @@ var ASHRAE36_SECTIONS = {
     // generateASHRAE36ProposalHTML and again inside rptPageASHRAE36ProposalPricing). indent:true
     // draws them visually nested under "Cost Estimate (Priced Tiers)" in the modal. Client-safe:
     // final lineTotal / phase subtotals / measure names / clientSummary only — no cost build-up.
-    {
-      key: 'costEstimatePhaseSplit',
-      label: '  Hardware vs Programming subtotals',
-      group: 'Proposal',
-      defaultOn: true,
-      indent: true,
-    },
     { key: 'costEstimateItemized', label: '  Itemized Measures', group: 'Proposal', defaultOn: false, indent: true },
     // 'Expected Outcomes' toggle removed 2026-07-22 along with rptPageASHRAE36ProposalOutcomes —
     // the page it controlled no longer exists, so the checkbox was deleted rather than left dead.
@@ -24417,7 +24410,6 @@ function rptPageASHRAE36ProposalPricing(n, d, opts) {
   // parent costEstimate section is on — buildingInfra precedent). All default-off here; the caller
   // decides. Each renders additional client-safe detail from the SAME summary chain below.
   var o = opts || {};
-  var wantPhaseSplit = o.phaseSplit === true;
   // 'perBuilding' sub-option + _buildPerBuildingPages removed 2026-07-22 (Matt: "The Cost
   // Estimate per building I do not like and it honestly gives no information. Just remove
   // completely.") — see the removal note further down this function, at the former call site.
@@ -24541,8 +24533,7 @@ function rptPageASHRAE36ProposalPricing(n, d, opts) {
     '<tr>' +
     tierCols
       .map(function (c) {
-        // Estimated Cost = the SAME rounded Hardware + Programming parts phaseSplitRow prints
-        // below (_tierPartsRounded) — not an independent rounding of tt[c.key].grand (see that
+        // Estimated Cost = the rounded Hardware + Programming parts (_tierPartsRounded) — not an independent rounding of tt[c.key].grand (see that
         // helper's comment; fix/tier-hardware-programming-rounding, 2026-07-30).
         var parts = _tierPartsRounded(c.key);
         var g = parts ? _fmtUSD(parts.totalR) : null;
@@ -24562,51 +24553,11 @@ function rptPageASHRAE36ProposalPricing(n, d, opts) {
       .join('') +
     '</tr>';
 
-  // Phase split (sub-option costEstimatePhaseSplit) — folds Phase 1 (hardware/install) vs Phase 2
-  // (programming/commissioning) dollar SUBTOTALS into the SAME tier table, 0 added pages. Values
-  // come from the SAME _tierPartsRounded(c.key) helper amtRow above reads (fix/tier-hardware-
-  // programming-rounding, 2026-07-30) — so these two parts always sum exactly to the Estimated
-  // Cost printed above them. Dollar subtotals only — no hourly rate, no markup mechanics.
-  var phaseSplitRow = '';
-  if (wantPhaseSplit) {
-    var phaseCellStyle =
-      'padding:6px 10px 12px;font-size:9px;color:var(--rpt-page-text);text-align:center;line-height:1.7;' +
-      'border:1px solid var(--rpt-border);vertical-align:top';
-    phaseSplitRow =
-      '<tr>' +
-      tierCols
-        .map(function (c) {
-          // noCatalog guard mirrors the interactive Cost Estimate tab's own footer
-          // (app/pricing-estimator.js:6301-6306 / 6263-6267): phase1 is unpriced (not legitimately
-          // $0) whenever no pricing catalog is imported, so _fmtUSD(0) must never print here.
-          var parts = _tierPartsRounded(c.key);
-          var noCat = parts && parts.noCatalog;
-          var p1 = noCat
-            ? '<span style="color:var(--rpt-page-text);font-weight:400">CSV needed</span>'
-            : parts
-              ? _fmtUSD(parts.p1r) || '—'
-              : '—';
-          var p2 = parts ? _fmtUSD(parts.p2r) : null;
-          return (
-            '<td style="' +
-            phaseCellStyle +
-            '">' +
-            '<div><span style="font-weight:700">Devices and installation:</span> ' +
-            p1 +
-            '</div>' +
-            '<div><span style="font-weight:700">Programming:</span> ' +
-            (p2 || '—') +
-            '</div>' +
-            '</td>'
-          );
-        })
-        .join('') +
-      '</tr>';
-  }
+  // Matt 2026-11-19: no material / labor split in the estimated cost (the Hardware vs Programming subtotals option is removed).
 
   // Interactive tier detail (fix/proposal-tier-option-chooser, 2026-07-19): a click-to-expand
   // "Install & Programming Detail" card per tier, collapsed by default in the live preview.
-  // Always rendered (independent of wantPhaseSplit/wantItemized — those only affect what's
+  // Always rendered (independent of wantItemized — those only affect what's
   // shown INSIDE the panel) whenever the tier totals were actually computed; if
   // _pricingComputeSummaryData threw above, summaryData is null and this row is omitted rather
   // than showing an empty/broken card. See _rptA36TierDetailPanelHTML /
@@ -24633,7 +24584,7 @@ function rptPageASHRAE36ProposalPricing(n, d, opts) {
   // height-budget chunking this file's _buildItemizedPages() already uses successfully) — so the
   // .rpt-page count grows instead of any single page's content overflowing its own boundary.
   // 24 (raised from an initial conservative 16, 2026-07-22): empirically, the chrome ABOVE the
-  // detail row (title/intro/tier table/phaseSplit/timeline/disclaimer/service-agreement block —
+  // detail row (title/intro/tier table/timeline/disclaimer/service-agreement block —
   // see the "after3" verification screenshot for a fully-loaded example) comfortably fits in the
   // TOP HALF of the 1056px page even with every optional block shown, leaving ~450-500px of
   // headroom; at ~14px/bullet + ~80px panel chrome, 24 combined items uses ~416px — safely
@@ -24705,7 +24656,6 @@ function rptPageASHRAE36ProposalPricing(n, d, opts) {
       descRow +
       lblRow +
       amtRow +
-      phaseSplitRow +
       detailRowHtml +
       '</tbody></table>'
     );
@@ -30770,7 +30720,6 @@ function generateASHRAE36ProposalHTML(data, selectedSections) {
     // Selectable pricing-detail sub-options — each only takes effect because costEstimate is on
     // here (independent-flag / parent-gates precedent, buildingInfra). Passed as a 3rd opts arg.
     var pricingOpts = {
-      phaseSplit: s.costEstimatePhaseSplit === true,
       itemized: s.costEstimateItemized === true,
       // The Itemized pages (when chosen) come after the cost pages, so the closing sections wait for them.
       trailBlocks:

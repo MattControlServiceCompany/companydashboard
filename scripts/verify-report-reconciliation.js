@@ -234,32 +234,6 @@ const REGISTRY = [
     },
   },
   {
-    id: 'tier-hardware-programming-partition',
-    doc: 'Service Proposal (opt-in Cost Estimate / Priced Tiers page)',
-    checkType: 'a',
-    site: 'report-engine.js rptPageASHRAE36ProposalPricing phaseSplitRow (~17558-17610) vs amtRow (~17530-17556)',
-    predicate:
-      'rendered Devices and installation + rendered Programming === rendered Estimated Cost, for Compliance and Full Scope tiers (both read from the SAME tt[tier] object, same _fmtUSD rounding)',
-    run(b) {
-      const bad = [];
-      ['compliance', 'full-scope'].forEach((tier) => {
-        const t = b.tierRendered[tier];
-        if (!t) {
-          bad.push({ tier, reason: 'tier not found in rendered page' });
-          return;
-        }
-        const sum = t.hardware + t.programming;
-        if (sum !== t.total)
-          bad.push({ tier, hardware: t.hardware, programming: t.programming, sum, renderedTotal: t.total });
-      });
-      return {
-        pass: bad.length === 0,
-        expected: 'Devices and installation + Programming === Estimated Cost for compliance and full-scope, exactly',
-        actual: bad.length === 0 ? b.tierRendered : bad,
-      };
-    },
-  },
-  {
     // 2026-09-10 (Q2 report fix, punch-list item 2, Matt live review): the CSC letterhead (hero
     // logo + wave footer) locked to the energy-department quarterly/annual report's FIRST 2
     // PHYSICAL PAGES ONLY (Board Executive Summary + Cover) -- see report-engine.js rptPage()'s
@@ -451,51 +425,6 @@ async function gatherPageData(page, projId) {
       out.proposalHasFutureWorkHeading = /Future Work/.test(fwScopeText);
       out.proposalHasFutureWorkCategoryLine = /Sequence categories addressed in future work:/.test(proposalText);
 
-      // Priced-tier table (Compliance / Full Scope columns): Hardware & Installation /
-      // Programming / Estimated Cost. Extract from the actual rendered <table>, column-matched by
-      // header label (never by positional index) so a future column reorder can't silently
-      // desync this extraction from the invariant it's checking.
-      const tierRendered = {};
-      const pricingTable = Array.from(propContainer.querySelectorAll('table')).find((t) => {
-        const heads = Array.from(t.querySelectorAll('th')).map((th) => (th.textContent || '').trim());
-        return heads.includes('Compliance') && heads.includes('Full Scope');
-      });
-      if (pricingTable) {
-        const headCells = Array.from(pricingTable.querySelectorAll('tr')[0].querySelectorAll('th'));
-        const colIndex = {};
-        headCells.forEach((th, i) => {
-          const t = (th.textContent || '').trim();
-          if (t === 'Compliance') colIndex.compliance = i;
-          if (t === 'Full Scope') colIndex['full-scope'] = i;
-        });
-        const rows = Array.from(pricingTable.querySelectorAll('tr'));
-        function moneyFromText(txt) {
-          const m = (txt || '').match(/\$([\d,]+)/);
-          return m ? parseInt(m[1].replace(/,/g, ''), 10) : null;
-        }
-        Object.keys(colIndex).forEach((tierKey) => {
-          const idx = colIndex[tierKey];
-          let total = null,
-            hardware = null,
-            programming = null;
-          rows.forEach((tr) => {
-            const cells = tr.querySelectorAll('td');
-            if (!cells.length || !cells[idx]) return;
-            const cellText = cells[idx].textContent || '';
-            if (/Devices and installation/.test(cellText)) {
-              const m = cellText.match(/Devices and installation:\s*\$([\d,]+)/);
-              if (m) hardware = parseInt(m[1].replace(/,/g, ''), 10);
-              const m2 = cellText.match(/Programming:\s*\$([\d,]+)/);
-              if (m2) programming = parseInt(m2[1].replace(/,/g, ''), 10);
-            } else if (total === null) {
-              const mv = moneyFromText(cellText);
-              if (mv !== null) total = mv;
-            }
-          });
-          if (total !== null || hardware !== null) tierRendered[tierKey] = { total, hardware, programming };
-        });
-      }
-      out.tierRendered = tierRendered;
 
       document.body.removeChild(propContainer);
     } catch (e) {

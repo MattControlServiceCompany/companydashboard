@@ -44,7 +44,6 @@ const ok = (c, m) => {
       sec.complianceScope = true;
       sec.fullScope = true;
       sec.costEstimate = true;
-      sec.costEstimatePhaseSplit = true;
       const html = generateASHRAE36ProposalHTML(d, sec);
       const host = document.createElement('div');
       host.id = 'reportPages';
@@ -84,6 +83,7 @@ const ok = (c, m) => {
     const usd = (v) => '$' + Math.round(v).toLocaleString('en-US');
     console.log('pages:', res.pages.map((p) => p.bottom + '/' + p.limit).join(' '), ' table bottom:', res.tableBottom, ' tiers:', JSON.stringify(res.cost));
     ok(res.pages.length >= 2, 'proposal has pages: ' + res.pages.length);
+    ok(!/Devices and installation|Hardware vs Programming/.test(res.all), 'the estimated cost has no material / labor split (Matt 2026-11-19)');
     ok(res.tableBottom !== null && res.tableBottom <= res.pages[0].limit - 24, 'page 1: the Cost Summary table ends at least 24px above the footer zone (table bottom ' + res.tableBottom + ', footer zone top ' + res.pages[0].limit + ')');
     res.pages.forEach((p, i) => {
       ok(p.bottom <= p.limit, 'page ' + (i + 1) + ': content stays above the footer zone (' + p.bottom + '/' + p.limit + ')');
