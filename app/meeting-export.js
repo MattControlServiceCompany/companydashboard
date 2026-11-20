@@ -176,7 +176,10 @@ async function downloadMeetingDocx(m) {
 async function generateMeetingFile(m, kind) {
   if (!m) return;
   if (kind === 'word') await downloadMeetingDocx(m);
-  else buildMeetingPDF(m);
+  else {
+    await chLoadLib('jspdf'); // Matt 2026-11-19 d184cc83: load on first use (buildMeetingPDF stays synchronous)
+    buildMeetingPDF(m);
+  }
 }
 
 /** meetingFileFromEditor - modal buttons: sync the header fields, then export the open meeting. */

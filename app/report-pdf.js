@@ -282,10 +282,6 @@ async function downloadReportPdf() {
     showToast('No report data available');
     return;
   }
-  if (typeof html2canvas === 'undefined' || !window.jspdf || !window.jspdf.jsPDF) {
-    showToast('The PDF library did not load. Check the internet connection and reload the page.', 'error');
-    return;
-  }
   var found = _rptReportExportPages(data);
   var pages = found.pages.filter(function (p) {
     return p.getClientRects().length > 0;
@@ -303,6 +299,14 @@ async function downloadReportPdf() {
   var filename = rptReportFileName(data, '.pdf');
   var restoreTierPanels = _rptForceOpenTierPanels(found.pagesRoot);
   try {
+    // Matt 2026-11-19 d184cc83: the libraries load on first use. This is after the busy flag is set, so a second
+    // click during the load or the build gets the "already being built" message at once.
+    try {
+      await chLoadLibs(['html2canvas', 'jspdf']);
+    } catch (e) {
+      showToast('The PDF library did not load. Check the internet connection and reload the page.', 'error');
+      return;
+    }
     var jsPDF = window.jspdf.jsPDF;
     var doc = new jsPDF({ unit: 'pt', format: 'letter', orientation: 'portrait', compress: true });
     doc.setProperties({ title: filename.replace(/\.pdf$/, '') });

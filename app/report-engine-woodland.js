@@ -2548,7 +2548,9 @@ async function exportWoodlandReportToXlsx(data) {
     showToast('No report data available');
     return;
   }
-  if (typeof ExcelJS === 'undefined') {
+  try {
+    await chLoadLib('exceljs'); // Matt 2026-11-19 d184cc83: load on first use
+  } catch (e) {
     showToast('ExcelJS library not loaded', 'error');
     return;
   }

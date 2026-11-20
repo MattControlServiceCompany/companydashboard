@@ -74,17 +74,7 @@ const DC_MONTH_RE_ALL = DC_MONTH_RE + '|' + DC_MONTH_RE_SHORT;
 const DC_TRAILER_RE = /^(Reporting\s+Periods|Teacher\s+Contract\s+Days|Conference\s+Dates|Total\s+Student\s+Days)\b/i;
 
 async function dcExtractPDFText(arrayBuffer) {
-  if (!window.pdfjsLib) {
-    await new Promise((res, rej) => {
-      const s = document.createElement('script');
-      s.src = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js';
-      s.onload = res;
-      s.onerror = rej;
-      document.head.appendChild(s);
-    });
-    window.pdfjsLib.GlobalWorkerOptions.workerSrc =
-      'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
-  }
+  await chLoadLib('pdfjs'); // Matt 2026-11-19 d184cc83: the one loader (lib/lazy-libs.js)
   const pdf = await window.pdfjsLib.getDocument({ data: arrayBuffer }).promise;
   // Many district calendar PDFs lay out decorative day-number mini-grids
   // (Su/M/T/W/Th/F/Sa month blocks) beside a text list of dated events. A

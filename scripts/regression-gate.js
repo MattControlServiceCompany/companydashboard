@@ -454,7 +454,7 @@ async function main() {
   const CDN_CACHE_DIR = path.join(TMP_BASE, 'cdn-cache');
   process.env.CH_CDN_CACHE = CDN_CACHE_DIR;
   {
-    const pf = await require('../tools/gate-cdn-cache.js').prefetch(path.join(REPO_ROOT, 'energy-department.html'));
+    const pf = await require('../tools/gate-cdn-cache.js').prefetch([path.join(REPO_ROOT, 'energy-department.html'), path.join(REPO_ROOT, 'lib', 'lazy-libs.js')]);
     console.log('cdn cache: ' + pf.ready + ' files ready (' + pf.fetched + ' fetched)');
   }
   const TMP_DIRS = [RUN_DIR];

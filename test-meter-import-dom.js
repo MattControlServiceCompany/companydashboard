@@ -413,7 +413,8 @@ const PIPE = 'G-77 | G-78';
     // 6f. .xlsx input (real SheetJS in the page): meter rows work. Number cells keep every digit (no 5.55E+12),
     // text cells keep " | ", a number sq ft reads, and an .xlsx made of the older 3-column shape still works.
     const xlsxBytes = (rows) =>
-      page.evaluate((r) => {
+      page.evaluate(async (r) => {
+        await chLoadLib('xlsx'); // (Matt 2026-11-19 d184cc83) the library loads on first use
         const wb = XLSX.utils.book_new();
         XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(r), 'Sheet1');
         return Array.from(new Uint8Array(XLSX.write(wb, { type: 'array', bookType: 'xlsx' })));

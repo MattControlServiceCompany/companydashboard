@@ -12085,8 +12085,10 @@ function emCurrentSetpointZones(pid, bldgId) {
 
 // Writes the .xlsx using the site's existing SheetJS (XLSX global) library —
 // no new dependency. One sheet, headers + one row per zone/equipment.
-function emExportSetpointSchedule(pid, bldgIdFilter, optionLetter) {
-  if (typeof XLSX === 'undefined') {
+async function emExportSetpointSchedule(pid, bldgIdFilter, optionLetter) {
+  try {
+    await chLoadLib('xlsx'); // Matt 2026-11-19 d184cc83: load on first use
+  } catch (e) {
     if (typeof showToast === 'function') showToast('XLSX library not loaded', 'error');
     return;
   }

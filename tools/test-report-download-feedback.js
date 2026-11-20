@@ -49,7 +49,8 @@ const ok = (c, m) => {
 
     const buttonSel = '.report-overlay button[onclick="downloadReportPdf()"]';
     // the synthetic report builds in a second: slow each page down so the build can be watched
-    await page.evaluate(() => {
+    await page.evaluate(async () => {
+      await chLoadLib('html2canvas'); // (Matt 2026-11-19 d184cc83) the library loads on first use; load it before wrapping it
       const original = window.html2canvas;
       window.html2canvas = async function (...args) {
         await new Promise((r) => setTimeout(r, 1500));

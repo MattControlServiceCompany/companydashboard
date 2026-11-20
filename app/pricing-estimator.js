@@ -11989,7 +11989,7 @@ function _pricingExportSets(projId) {
   });
   return sets;
 }
-function pricingExportExcel(projId) {
+async function pricingExportExcel(projId) {
   if (!_pricingWorkbookSettings(projId)) {
     showToast('Switch to the Workbook method to export to Excel', 'error');
     return;
@@ -12016,6 +12016,7 @@ function pricingExportExcel(projId) {
   };
   var p;
   try {
+    await chLoadLib('exceljs'); // Matt 2026-11-19 d184cc83: load on first use
     p = EstimateWorkbookExport.exportSetsBlob(sets, meta);
   } catch (e) {
     showToast('Excel export is not available: ' + (e && e.message ? e.message : e), 'error');

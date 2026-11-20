@@ -1065,7 +1065,7 @@ function _docxBase64ToUint8Array(b64) {
  */
 async function _docxAssemble(documentXml, opts) {
   opts = opts || {};
-  if (typeof JSZip === 'undefined') throw new Error('_docxAssemble: JSZip is not loaded');
+  await chLoadLib('jszip'); // Matt 2026-11-19 d184cc83: load on first use
   if (typeof CSC_DOCX_SKELETON_B64 === 'undefined')
     throw new Error('_docxAssemble: CSC_DOCX_SKELETON_B64 is not loaded (app/docx-skeleton.js)');
 
@@ -3256,7 +3256,7 @@ function _docxTightenReportXml(xml) {
 var _DOCX_VISUAL_SELECTORS = '.rpt-hero,.rpt-vs-box,.rpt-progress-bar,.rpt-gauge-row,.rpt-chart-box';
 var _DOCX_VISUAL_SCALE = 2.5;
 async function _docxRasterizeVisualBlocks(livePages, clonePages) {
-  if (typeof html2canvas === 'undefined') return;
+  await chLoadLib('html2canvas'); // Matt 2026-11-19 d184cc83: load on first use
   for (var pi = 0; pi < livePages.length; pi++) {
     var live = livePages[pi];
     var all = live.querySelectorAll('*');

@@ -10178,6 +10178,10 @@ async function _runExtractionFrom(startIdx) {
   const q = window._pdfQueue;
   if (!q) return;
 
+  // Load the PDF reader on first use (Matt 2026-11-19 d184cc83). A failed load is reported per file by
+  // extractPDFText below, so the page-count pre-scan just skips (the catches below set the count to null).
+  await chLoadLib('pdfjs').catch(() => null);
+
   // Pre-scan page counts for new files only
   for (let i = startIdx; i < q.files.length; i++) {
     if (q._pageCounts[i] != null) continue;
@@ -13590,7 +13594,9 @@ function _pdfSelectedBillPage() {
 // Returns { bytes, msg, sliced, start, end, total }.
 async function _pdfPageSlice(bytes, pageStart, pageEnd) {
   const whole = { bytes, msg: 'Opening full PDF (no stored page range)', sliced: false, start: null, end: null, total: null };
-  if (!(pageStart && pageEnd && window.PDFLib)) return whole;
+  if (!(pageStart && pageEnd)) return whole;
+  await chLoadLib('pdflib').catch(() => null); // Matt 2026-11-19 d184cc83: load on first use; no library = whole PDF
+  if (!window.PDFLib) return whole;
   // pdf-lib's copyPages can throw internal errors ("can't access property 'node', h is undefined") on PDFs with
   // cross-reference issues or damaged page nodes. A failed cut falls back to the whole PDF, never a dead end.
   try {
@@ -13642,7 +13648,7 @@ function _pdfBlobFromB64(b64) {
 }
 async function _pdfPageCount(bytes) {
   try {
-    if (!window.PDFLib) return null;
+    await chLoadLib('pdflib'); // Matt 2026-11-19 d184cc83: load on first use
     const doc = await window.PDFLib.PDFDocument.load(bytes, { ignoreEncryption: true });
     return doc.getPageCount();
   } catch (e) {
@@ -14995,8 +15001,7 @@ async function extractPDFText(ab, statusCb, opts) {
   };
   let pdf = null;
   try {
-    if (typeof pdfjsLib === 'undefined') return null;
-    pdfjsLib.GlobalWorkerOptions.workerSrc = '';
+    await chLoadLib('pdfjs'); // Matt 2026-11-19 d184cc83: load on first use (worker setup is in lib/lazy-libs.js)
     pdf = await _withTimeout(
       pdfjsLib.getDocument({
         data: ab,
@@ -15101,6 +15106,14 @@ async function extractPDFText(ab, statusCb, opts) {
     }
 
     // ── Step 2: OCR any pages that had no/little native text ──
+    if (ocrNeeded.length > 0) {
+      // Matt 2026-11-19 d184cc83: the OCR engine loads on first use. If it does not load, the native text is kept.
+      try {
+        await chLoadLib('tesseract');
+      } catch (e) {
+        if (statusCb) statusCb('OCR engine did not load: ' + e.message);
+      }
+    }
     if (ocrNeeded.length > 0 && typeof Tesseract !== 'undefined') {
       if (statusCb)
         statusCb(
@@ -16849,6 +16862,7 @@ async function processPDF(file) {
           // the true first-pass result — never an already-degraded state left
           // over from an earlier scale iteration in this same loop.
           const _origValidBillCount = validBills.length;
+          if (worstMissing > 0 && retryWarranted) await chLoadLib('tesseract').catch(() => null); // Matt 2026-11-19 d184cc83
           if (worstMissing > 0 && retryWarranted && typeof Tesseract !== 'undefined') {
             statusMsg(
               'Validating extraction... ' +

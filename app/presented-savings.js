@@ -632,10 +632,9 @@ function parsePresentedPdfText(pages, bldgs) {
   return out;
 }
 
-// pdf.js is loaded by energy-department.html (pdfjsLib). Same options as the bill reader.
+// pdf.js loads on first use through chLoadLib (lib/lazy-libs.js, Matt 2026-11-19 d184cc83). Same options as the bill reader.
 async function _ppReadPdfPages(b64) {
-  if (typeof pdfjsLib === 'undefined') throw new Error('The PDF reader is not loaded.');
-  pdfjsLib.GlobalWorkerOptions.workerSrc = '';
+  await chLoadLib('pdfjs');
   var bin = atob(b64);
   var bytes = new Uint8Array(bin.length);
   for (var i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);

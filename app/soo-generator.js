@@ -955,7 +955,7 @@ function sooBuildDocxBodyXmlMulti(groups) {
  */
 async function _sooDocxAssemble(bodyXml, opts) {
   opts = opts || {};
-  if (typeof JSZip === 'undefined') throw new Error('_sooDocxAssemble: JSZip is not loaded');
+  await chLoadLib('jszip'); // Matt 2026-11-19 d184cc83: load on first use
   if (typeof SOO_DOCX_SKELETON_B64 === 'undefined') {
     throw new Error('_sooDocxAssemble: SOO_DOCX_SKELETON_B64 is not loaded (app/soo-docx-skeleton.js)');
   }

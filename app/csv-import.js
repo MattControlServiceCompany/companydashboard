@@ -3476,8 +3476,9 @@ function _acImportFile(projId) {
     document.body.removeChild(inp);
     if (!file) return;
     const reader = new FileReader();
-    reader.onload = function (ev) {
+    reader.onload = async function (ev) {
       try {
+        await chLoadLib('xlsx'); // Matt 2026-11-19 d184cc83: load on first use
         const data = new Uint8Array(ev.target.result);
         const wb = XLSX.read(data, { type: 'array' });
         const ws = wb.Sheets[wb.SheetNames[0]];
@@ -3714,7 +3715,7 @@ function _acImportFromSaved(projId) {
   document.body.appendChild(modal);
 }
 
-function _acLoadSavedDoc(projId, billId) {
+async function _acLoadSavedDoc(projId, billId) {
   document.getElementById('acSavedDocsModal')?.remove();
   const allBills = sget('en_pdf_bills', []) || [];
   const bill = allBills.find((b) => b.id === billId);
@@ -3723,6 +3724,7 @@ function _acLoadSavedDoc(projId, billId) {
     return;
   }
   try {
+    await chLoadLib('xlsx'); // Matt 2026-11-19 d184cc83: load on first use
     const binary = atob(bill.pdfData.split(',').pop());
     const bytes = new Uint8Array(binary.length);
     for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
@@ -4095,11 +4097,12 @@ function mtgSchedulePreview() {
   _mtgPreviewTimer = setTimeout(mtgRenderPreview, 500);
 }
 
-function mtgRenderPreview() {
+async function mtgRenderPreview() {
   if (!_editingMeeting) return;
   const frame = document.getElementById('mtgPreviewFrame');
   if (!frame) return;
   try {
+    await chLoadLib('jspdf'); // Matt 2026-11-19 d184cc83: load on first use (buildMeetingPDF stays synchronous)
     const nick = document.getElementById('mtg-nickname');
     if (nick) _editingMeeting.projectNickname = nick.value;
     const dt = document.getElementById('mtg-date');
@@ -4955,7 +4958,7 @@ function handleBldgImportFile(input) {
   if (!file) return;
   document.getElementById('bldgImportDropLabel').textContent = '⏳ Reading ' + file.name + '…';
   const reader = new FileReader();
-  reader.onload = function (e) {
+  reader.onload = async function (e) {
     try {
       let table = [];
       const name = file.name.toLowerCase();
@@ -4967,7 +4970,9 @@ function handleBldgImportFile(input) {
         }
       } else {
         // Excel path — use SheetJS
-        if (typeof XLSX === 'undefined') {
+        try {
+          await chLoadLib('xlsx'); // Matt 2026-11-19 d184cc83: load on first use
+        } catch (loadErr) {
           showToast('Excel library not loaded — try a CSV export instead', 'warn');
           return;
         }

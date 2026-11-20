@@ -78,6 +78,7 @@ const ok = (c, m) => {
         if (src.startsWith('blob:')) {
           const buf = await (await fetch(src)).arrayBuffer();
           out.head = new TextDecoder('latin1').decode(buf.slice(0, 5));
+          await chLoadLib('pdfjs'); // (Matt 2026-11-19 d184cc83) libraries load on first use
           if (window.pdfjsLib) {
             try {
               window.pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
@@ -98,6 +99,8 @@ const ok = (c, m) => {
           renderMeetingEditorBody();
         });
       }
+      // (Matt 2026-11-19 d184cc83) the first preview loads jsPDF on first use: wait for the frame, not a fixed time
+      await page.waitForFunction(() => (document.getElementById('mtgPreviewFrame').getAttribute('src') || '').startsWith('blob:'), null, { timeout: 30000 }).catch(() => {});
       await page.waitForTimeout(1200);
       const a = await frameInfo();
       ok(a.src === 'blob:', mode + ': preview frame src is blob: (' + a.src + ')');
@@ -134,6 +137,7 @@ const ok = (c, m) => {
     ]) {
       const r = await page.evaluate(async (iso) => {
         const m = { id: 1, type: 'agenda', date: iso, projectNickname: 'Test District', sectionHeading: 'Energy Management Services Program', contactTables: [], topics: [], history: [] };
+        await chLoadLibs(['jspdf', 'pdfjs']); // (Matt 2026-11-19 d184cc83) libraries load on first use
         const buf = buildMeetingPDF(m, true).output('arraybuffer');
         window.pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
         const pdf = await window.pdfjsLib.getDocument({ data: new Uint8Array(buf) }).promise;

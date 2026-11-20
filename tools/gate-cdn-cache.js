@@ -89,9 +89,9 @@ async function cdnRoute(ctx) {
   });
 }
 
-// Gate side: fetch the CDN URLs named in an HTML file once. Returns { total, fetched }.
-async function prefetch(htmlFile) {
-  const html = fs.readFileSync(htmlFile, 'utf8');
+// Gate side: fetch the CDN URLs named in the given files (the page and lib/lazy-libs.js) once. Returns { total, fetched }.
+async function prefetch(files) {
+  const html = [].concat(files).map((f) => fs.readFileSync(f, 'utf8')).join(' ');
   const urls = Array.from(new Set(html.match(/https:\/\/(cdn\.jsdelivr\.net|cdnjs\.cloudflare\.com)\/[^\s"'<>)]+/g) || []));
   let fetched = 0;
   await Promise.all(

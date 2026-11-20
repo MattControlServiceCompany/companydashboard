@@ -179,11 +179,13 @@ function faImportFile(pid, input) {
     reader.readAsText(file);
     return;
   }
-  if (typeof XLSX === 'undefined') {
-    showToast('Spreadsheet reader not loaded', 'error');
-    return;
-  }
-  reader.onload = function () {
+  reader.onload = async function () {
+    try {
+      await chLoadLib('xlsx'); // Matt 2026-11-19 d184cc83: load on first use
+    } catch (e) {
+      showToast('Spreadsheet reader not loaded', 'error');
+      return;
+    }
     var wb = XLSX.read(reader.result, { type: 'array' });
     var sheets = {};
     [AUDIT_IMPORT_SHEETS.audit, AUDIT_IMPORT_SHEETS.csc].forEach(function (n) {

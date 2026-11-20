@@ -292,7 +292,7 @@ function handleMeterRosterFile(input) {
   const dropLabel = document.getElementById('macDropLabel');
   if (dropLabel) dropLabel.textContent = '⏳ Reading ' + file.name + '…';
   const reader = new FileReader();
-  reader.onload = function (e) {
+  reader.onload = async function (e) {
     try {
       let rows2D = [];
       const name = file.name.toLowerCase();
@@ -303,7 +303,9 @@ function handleMeterRosterFile(input) {
           .filter((l) => l.length > 0);
         for (let i = 1; i < lines.length; i++) rows2D.push(splitCsvLine(lines[i]));
       } else {
-        if (typeof XLSX === 'undefined') {
+        try {
+          await chLoadLib('xlsx'); // Matt 2026-11-19 d184cc83: load on first use
+        } catch (loadErr) {
           showToast('Excel library not loaded — try a CSV export instead', 'warn');
           return;
         }

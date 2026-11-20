@@ -16805,51 +16805,10 @@
       <div id="reportPages" class="report-pages"></div>
     </div>
 
-    <script
-      src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"
-      integrity="sha384-/1qUCSGwTur9vjf/z9lmu/eCUYbpOTgSjmpbMQZ1/CtX2v/WcAIKqRv+U1DUCG6e"
-      crossorigin="anonymous"
-    ></script>
-    <script
-      src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js"
-      integrity="sha384-GJqSu7vueQ9qN0E9yLPb3Wtpd7OrgK8KmYzC8T1IysG1bcvxvIO4qtYR/D3A991F"
-      crossorigin="anonymous"
-    ></script>
-    <script
-      src="https://cdn.jsdelivr.net/npm/jspdf@2.5.2/dist/jspdf.umd.min.js"
-      integrity="sha384-en/ztfPSRkGfME4KIm05joYXynqzUgbsG5nMrj/xEFAHXkeZfO3yMK8QQ+mP7p1/"
-      crossorigin="anonymous"
-    ></script>
-    <script
-      src="https://cdn.jsdelivr.net/npm/pdf-lib@1.17.1/dist/pdf-lib.min.js"
-      integrity="sha384-weMABwrltA6jWR8DDe9Jp5blk+tZQh7ugpCsF3JwSA53WZM9/14PjS5LAJNHNjAI"
-      crossorigin="anonymous"
-    ></script>
-    <script
-      src="https://cdn.jsdelivr.net/npm/html2canvas@1.4.1/dist/html2canvas.min.js"
-      integrity="sha384-ZZ1pncU3bQe8y31yfZdMFdSpttDoPmOZg2wguVK9almUodir1PghgT0eY7Mrty8H"
-      crossorigin="anonymous"
-    ></script>
-    <script
-      src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"
-      integrity="sha384-vtjasyidUo0kW94K5MXDXntzOJpQgBKXmE7e2Ga4LG0skTTLeBi97eFAXsqewJjw"
-      crossorigin="anonymous"
-    ></script>
-    <!-- ExcelJS — used by exportWoodlandReportToXlsx() (app/report-engine-woodland.js) for
-         cell fill colors, bold totals, and an embedded Page-7 chart PNG (worksheet.addImage()),
-         and by EstimateWorkbookExport (app/estimate-workbook-export.js) to fill the estimate
-         template — capabilities the SheetJS community build above cannot write. SheetJS remains
-         the only xlsx library used everywhere else (import paths, unchanged). -->
-    <script
-      src="https://cdn.jsdelivr.net/npm/exceljs@4.4.0/dist/exceljs.min.js"
-      integrity="sha384-Pqp51FUN2/qzfxZxBCtF0stpc9ONI6MYZpVqmo8m20SoaQCzf+arZvACkLkirlPz"
-      crossorigin="anonymous"
-    ></script>
-    <script
-      src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"
-      integrity="sha384-+mbV2IY1Zk/X1p/nWllGySJSUN8uMs+gUAN10Or95UBH0fpj6GfKgPmgC5EXieXG"
-      crossorigin="anonymous"
-    ></script>
+    <!-- Code libraries (pdf.js, tesseract, jsPDF, pdf-lib, html2canvas, SheetJS, ExcelJS, JSZip) load on first use
+         through chLoadLib() in lib/lazy-libs.js (Matt 2026-11-19 d184cc83). Chart.js (top of page) and Quill (below)
+         stay as tags. -->
+    <script src="lib/lazy-libs.js?v=49ff21ee"></script>
     <!-- CompanyHub computation modules -->
     <script src="lib/date-helpers.js?v=64b86c4e"></script>
     <script src="lib/formatting.js?v=5b191acf"></script>
@@ -16889,9 +16848,9 @@
     <script src="app/ems-leads-store.js?v=4c52e6d5"></script>
     <script src="app/core.js?v=7b906e20"></script>
     <script src="app/energy-savings.js?v=4871eac1"></script>
-    <script src="app/bill-analysis.js?v=b9833a7a"></script>
+    <script src="app/bill-analysis.js?v=b8928cc2"></script>
     <script src="extraction/bill-validation.js?v=ce36eb70"></script>
-    <script src="app/district-calendar.js?v=7356dd9c"></script>
+    <script src="app/district-calendar.js?v=38f7320f"></script>
     <script src="app/calendar-diff.js?v=542bfbce"></script>
     <script src="app/project-calendar.js?v=f2e85b9f"></script>
     <script src="app/bas-diff.js?v=9aba15db"></script>
@@ -16909,9 +16868,9 @@
     <script src="app/utility-data.js?v=f45d84db"></script>
     <script src="app/savings-methods.js?v=33f54c84"></script>
     <script src="app/pipeline-diagram.js?v=2f7d41ab"></script>
-    <script src="app/csv-import.js?v=92c00af3"></script>
+    <script src="app/csv-import.js?v=45b3f64f"></script>
     <script src="app/bill-pdf-attach.js?v=0f1f86bd"></script>
-    <script src="app/meter-autocreate.js?v=4461d2d9"></script>
+    <script src="app/meter-autocreate.js?v=0d1db589"></script>
     <script src="app/bill-corrections-review.js?v=e0116527"></script>
     <script src="app/auto-repair.js?v=2a27397c"></script>
     <!-- Word Export Rebuild plan Steps 1/3 (app/docx-skeleton.js, app/docx-writer.js) were never
@@ -16924,22 +16883,22 @@
          tags are the load-order prerequisite that step (and every step since 6) actually needs
          to function through the live app at all, not new report content. -->
     <script src="app/docx-skeleton.js?v=939b4e69"></script>
-    <script src="app/docx-writer.js?v=5ae33b67"></script>
-    <script src="app/meeting-export.js?v=3a99c987"></script>
+    <script src="app/docx-writer.js?v=284c8b5d"></script>
+    <script src="app/meeting-export.js?v=2c6b41e9"></script>
     <script src="app/picture-folder.js?v=627f31a6"></script>
     <script src="app/version-push.js?v=6e5cd589"></script>
     <script src="app/site-events.js?v=56b9d96b"></script>
-    <script src="app/report-engine.js?v=fa3ab507"></script>
+    <script src="app/report-engine.js?v=e7d004c6"></script>
     <script src="app/report-printed.js?v=9212dd7b"></script>
-    <script src="app/report-engine-woodland.js?v=ff6ebd7c"></script>
+    <script src="app/report-engine-woodland.js?v=184ed341"></script>
     <script src="app/report-preview.js?v=fc2af226"></script>
-    <script src="app/report-pdf.js?v=6cb646e4"></script>
-    <script src="app/presented-savings.js?v=d4a33e4d"></script>
+    <script src="app/report-pdf.js?v=93ec7eaf"></script>
+    <script src="app/presented-savings.js?v=72d3c67f"></script>
     <script src="app/data/bas-weather-bins.js?v=44a36437"></script>
     <script src="app/calc-autofill.js?v=7e902f22"></script>
-    <script src="app/calculators.js?v=0237b3a1"></script>
+    <script src="app/calculators.js?v=932feba1"></script>
     <script src="app/ecm-calculators.js?v=a9fd6140"></script>
-    <script src="app/equipment-matrix.js?v=0c313203"></script>
+    <script src="app/equipment-matrix.js?v=420e17bd"></script>
     <!-- soo-generator.js (SOO Phase 1, item 3f1415af): reads points/config flags via the
          EXISTING emGetNormalizedPoints/emComputeCompliance/emLoadEquipConfigFlags (equipment-
          matrix.js, loaded above). Format-correction pass (2026-09-13): renders the MASTER
@@ -16947,18 +16906,18 @@
          runs), NOT the report-engine .rpt-page shell — soo-docx-skeleton.js supplies the
          master-doc-derived skeleton its own Word export splices into. -->
     <script src="app/soo-docx-skeleton.js?v=8bdaaf04"></script>
-    <script src="app/soo-generator.js?v=d88e6dea"></script>
+    <script src="app/soo-generator.js?v=c165b4d3"></script>
     <script src="app/graphics-setpoints.js?v=3520e4dc"></script>
     <script src="app/budget.js?v=1b3823ff"></script>
     <script src="app/hours.js?v=52829aab"></script>
     <script src="app/scorecard.js?v=45e0d490"></script>
     <script src="app/bas-trends.js?v=60d231d9"></script>
     <script src="app/bas-alarms.js?v=0e20cb1e"></script>
-    <script src="app/facility-audit.js?v=a31b5507"></script>
-    <script src="app/pricing-estimator.js?v=6da3b25b"></script>
+    <script src="app/facility-audit.js?v=861b02b8"></script>
+    <script src="app/pricing-estimator.js?v=a8f18721"></script>
     <script src="app/estimate-workbook.js?v=dd94e0ae"></script>
     <script src="app/estimate-workbook-export.js?v=3f1baea7"></script>
-    <script src="app/audit-estimate.js?v=f3c18352"></script>
+    <script src="app/audit-estimate.js?v=c25f103f"></script>
     <script src="app/agreement-engine.js?v=5589d907"></script>
 
     <script src="app/restore-merge.js?v=6166147f"></script>

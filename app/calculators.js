@@ -2770,10 +2770,13 @@ function _hvlExportGuard(projId) {
 }
 
 /* ── Excel export (SheetJS — the xlsx library already used for import elsewhere) ── */
-function hvacLoadExportXlsx(projId) {
+async function hvacLoadExportXlsx(projId) {
   const data = _hvlExportGuard(projId);
-  if (!data || typeof XLSX === 'undefined') {
-    if (typeof XLSX === 'undefined') showToast('Excel export is unavailable — the xlsx library did not load', 'error');
+  if (!data) return;
+  try {
+    await chLoadLib('xlsx'); // Matt 2026-11-19 d184cc83: load on first use
+  } catch (e) {
+    showToast('Excel export is unavailable — the xlsx library did not load', 'error');
     return;
   }
   const est = data.est;
@@ -2991,10 +2994,12 @@ async function hvacLoadExportWord(projId) {
 }
 
 /* ── PDF export (print-to-PDF, 8.5x11 — html2canvas + jsPDF, already loaded site-wide) ── */
-function hvacLoadExportPdf(projId) {
+async function hvacLoadExportPdf(projId) {
   const data = _hvlExportGuard(projId);
   if (!data) return;
-  if (typeof html2canvas === 'undefined' || !window.jspdf) {
+  try {
+    await chLoadLibs(['html2canvas', 'jspdf']); // Matt 2026-11-19 d184cc83: load on first use
+  } catch (e) {
     showToast('PDF export is unavailable — the PDF library did not load', 'error');
     return;
   }

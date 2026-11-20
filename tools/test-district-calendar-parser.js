@@ -169,6 +169,7 @@ function buildItems() {
 function run() {
   const sandbox = loadModule(jsPath);
   const items = buildItems();
+  sandbox.chLoadLib = async () => {}; // (Matt 2026-11-19 d184cc83) the library loader; the test stubs pdfjsLib below
   sandbox.window.pdfjsLib = {
     getDocument: () => ({
       promise: Promise.resolve({

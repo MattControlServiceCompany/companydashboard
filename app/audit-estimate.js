@@ -1603,9 +1603,9 @@ function auditEstSetMethod(projId, method) {
 
 /* ── Excel export (workbook method) ───────────────────────────────────────────────────────────
    Writes the breakdown's EstimateWorkbook input into the estimate template with
-   EstimateWorkbookExport (app/estimate-workbook-export.js). ExcelJS is a CDN global; the export
-   throws synchronously when it is missing, so the call is wrapped. */
-function auditEstExportExcel(projId, auditType) {
+   EstimateWorkbookExport (app/estimate-workbook-export.js). ExcelJS is a CDN library that loads on first
+   use (chLoadLib, Matt 2026-11-19 d184cc83); a failed load is reported in the same toast. */
+async function auditEstExportExcel(projId, auditType) {
   var b = auditEstComputeBreakdown(projId, auditType);
   if (!b || !b.workbook) {
     showToast('Switch to the Workbook method to export to Excel', 'error');
@@ -1629,6 +1629,7 @@ function auditEstExportExcel(projId, auditType) {
   };
   var p;
   try {
+    await chLoadLib('exceljs');
     p = EstimateWorkbookExport.exportBlob(b.workbook.input, meta);
   } catch (e) {
     showToast('Excel export is not available: ' + (e && e.message ? e.message : e), 'error');
