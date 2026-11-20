@@ -1949,7 +1949,11 @@ function rptPage(pageNum, title, bodyHTML, options = {}) {
     '</div>' +
     '<div class="rpt-page" data-page="' +
     pageNum +
-    '">' +
+    '"' +
+    // flows: this page continues the text of the page before it (a flowed section). The PDF keeps the page; Word keeps the text
+    // flowing instead of breaking the sheet at that point (Matt 2026-11-19).
+    (options.flowsFromPrev ? ' data-flow="1"' : '') +
+    '>' +
     // csc-header-img-inset (2026-07-30, letterhead overflow fix, item 5b789cc8): this <img>
     // previously carried no class and no width/height attributes, so it was invisible to the
     // Word image-sizing regex below and Word rendered it at its native intrinsic pixel size
@@ -20037,7 +20041,7 @@ function rptPageASHRAE36Executive(n, d, detailedTitles, view) {
     });
     if (_execCur) _execPages.push(_execCur);
     _execPages.forEach(function (html, k) {
-      resultPages.push(rptPage(n + k, 'Audit Report: Executive Summary', html, { hideIntHdr: true, data: fakeData, label: 'Page ' + (n + k) + ' — Executive Summary' }));
+      resultPages.push(rptPage(n + k, 'Audit Report: Executive Summary', html, { hideIntHdr: true, flowsFromPrev: k > 0, data: fakeData, label: 'Page ' + (n + k) + ' — Executive Summary' }));
     });
     _execPageCount = _execPages.length;
   } else if (_pushTableToNextPage && view !== 'a36') {

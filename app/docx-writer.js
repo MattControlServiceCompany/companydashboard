@@ -1848,6 +1848,10 @@ function _docxStampTextBlocks(liveRoot, cloneRoot) {
         clone[i].setAttribute('data-dx-pl', String(Math.round(padL * 10) / 10));
         clone[i].setAttribute('data-dx-ti', String(Math.round(tInd * 10) / 10));
       }
+      // A bullet row built as a padded block whose first child is an absolutely placed marker (padding-left, marker at left:0): its
+      // width is the hanging indent, so the marker and the text are one Word paragraph (Matt 2026-11-19).
+      var mk = live[i].firstElementChild;
+      if (padL > 0 && mk && getComputedStyle(mk).position === 'absolute') clone[i].setAttribute('data-dx-marker-pl', String(Math.round(padL * 10) / 10));
       var mtp = parseFloat(cs.marginTop);
       if (mtp < 0) {
         clone[i].setAttribute('data-dx-mt', String(Math.round(mtp * 10) / 10));
@@ -3096,6 +3100,45 @@ function _docxTranslateBlock(el, ctx, inheritedFmt) {
     return [_docxParagraph({ runs: fRuns, spacingAfter: 80, indLeft: 360, indHanging: 360 })];
   }
 
+  // A bullet row built as a padded block with an absolutely placed marker as its first child (stamped data-dx-marker-pl): the
+  // marker, a tab and the item text are ONE paragraph with a hanging indent; each plain block inside it (a description line)
+  // is a paragraph at the same left indent (Matt 2026-11-19). Before this the marker and the text were separate paragraphs.
+  if (tag === 'DIV' && el.getAttribute && el.getAttribute('data-dx-marker-pl') && el.children.length >= 1) {
+    var mkPl = Math.round(parseFloat(el.getAttribute('data-dx-marker-pl')) * 15);
+    var mkFmt = _docxStyleFmtFromEl(el, baseFmt, ctx);
+    var mkMarkerEntries = [];
+    var mkEntries = [];
+    var mkBlocks = [];
+    Array.prototype.slice.call(el.childNodes).forEach(function (node) {
+      if (node === el.firstElementChild) _docxWalkInline(node, mkFmt, mkMarkerEntries, ctx);
+      else if (node.nodeType === 1 && _DOCX_BLOCK_TAGS[node.tagName]) mkBlocks.push(node);
+      else _docxWalkInline(node, mkFmt, mkEntries, ctx);
+    });
+    var mkMarker = _docxFinalizeRuns(mkMarkerEntries);
+    var mkRuns = _docxFinalizeRuns(mkEntries);
+    var mkOut = [];
+    if (mkRuns.length) {
+      // the marker run is followed by a tab so the text starts at the hanging indent
+      mkOut.push(
+        _docxParagraph({
+          runs: mkMarker.concat([_docxRun(Object.assign({ text: '	' }, mkFmt))], mkRuns),
+          spacingAfter: 40,
+          indLeft: mkPl,
+          indHanging: mkPl,
+        }),
+      );
+    }
+    mkBlocks.forEach(function (b) {
+      if (_docxHasBlockChild(b)) {
+        mkOut = mkOut.concat(_docxTranslateBlock(b, ctx, mkFmt));
+        return;
+      }
+      var bRuns = _docxCollectRuns(b, _docxStyleFmtFromEl(b, mkFmt, ctx), ctx);
+      if (bRuns.length) mkOut.push(_docxParagraph({ runs: bRuns, spacingAfter: 40, indLeft: mkPl }));
+    });
+    return mkOut;
+  }
+
   // Report page title and the client / period line under it: real Word heading styles (Heading 1 and 2).
   var _elCls = (el.getAttribute && el.getAttribute('class')) || '';
   if (tag === 'DIV' && /(^|\s)(rpt-pg-title|rpt-info)(\s|$)/.test(_elCls)) {
@@ -3362,7 +3405,10 @@ function _docxTranslatePages(pageEls) {
     var breakMode = 'none';
 
     // Every source page (a report section) starts on a new Word page, whether or not the estimate fits.
-    if (i < perPage.length - 1) {
+    // A page marked data-flow continues the text of the page before it (a flowed section): no break, Word fills the sheet (Matt 2026-11-19).
+    var _nextFlows = i < perPage.length - 1 && pageEls[i + 1].getAttribute && pageEls[i + 1].getAttribute('data-flow') === '1';
+    if (_nextFlows) breakMode = 'flow';
+    if (i < perPage.length - 1 && !_nextFlows) {
       // pageBreakBefore on the next page's first block (a paragraph, or the first paragraph of a table's first
       // cell). Never a break run in the last paragraph: that paragraph can itself land on a fresh sheet and
       // leave a blank page.
