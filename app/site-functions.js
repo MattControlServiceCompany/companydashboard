@@ -2508,6 +2508,10 @@ async function siteResetAllMeterTableSettings() {
    site-ui.js delegates to this array and should NOT maintain its own copy.
 */
 var RELEASE_NOTES = [
+  { v: 'v2026.11.20.378', date: '2026-11-20', title: 'Word downloads and faster start',
+    items: [ { type: 'fixed', text: 'Service Proposal (Word): in the Install & Programming Detail lists, each bullet and its text are on one line.' },
+             { type: 'fixed', text: 'Audit Report (Word): the Executive Summary text fills page 2 and continues on page 3, with no empty space.' },
+             { type: 'improved', text: 'The site starts faster: the PDF, Excel, Word and text-reading tools load when you first use them.' } ] },
   { v: 'v2026.11.19.377', date: '2026-11-19', title: 'Building power meter: $5,000',
     items: [ { type: 'changed', text: 'Cost Estimate and Service Proposal: each building power meter is a fixed price of $5,000 (material and labor). The Excel export has a Fixed-price sheet.' } ] },
   { v: 'v2026.11.19.376', date: '2026-11-19', title: 'Internal checks',
