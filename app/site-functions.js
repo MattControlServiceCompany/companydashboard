@@ -2508,6 +2508,9 @@ async function siteResetAllMeterTableSettings() {
    site-ui.js delegates to this array and should NOT maintain its own copy.
 */
 var RELEASE_NOTES = [
+  { v: 'v2026.11.20.379', date: '2026-11-20', title: 'Dampers are not graded as units',
+    items: [ { type: 'fixed', text: 'Equipment Matrix: a damper program (for example a cross-tie damper between two rooftop units) is typed Damper and is not graded like a rooftop unit or air handler. Smoke dampers are typed Fire / Smoke.' },
+             { type: 'changed', text: 'Cost Estimate: damper programs no longer add rooftop unit or air handler work, so some totals are lower.' } ] },
   { v: 'v2026.11.20.378', date: '2026-11-20', title: 'Word downloads and faster start',
     items: [ { type: 'fixed', text: 'Service Proposal (Word): in the Install & Programming Detail lists, each bullet and its text are on one line.' },
              { type: 'fixed', text: 'Audit Report (Word): the Executive Summary text fills page 2 and continues on page 3, with no empty space.' },
