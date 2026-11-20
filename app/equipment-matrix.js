@@ -187,6 +187,9 @@ var EM_CATEGORY_LABELS = {
   // 3d6d7244 Phase 5: life-safety/shutdown relay equipment (e.g. "Fireman's AHU Shutdown") —
   // own visible category per Matt's 2026-07-03 confirmation, NOT scored for ASHRAE 36 compliance
   lifesafety: 'Life Safety',
+  // A damper control program (cross-tie, isolation, bypass damper): its own category, NOT scored for ASHRAE 36.
+  // A damper name wins over a unit tag in the same name (see emDamperCategory).
+  damper: 'Damper',
 };
 
 /* ── EM_TYPE_FILTER_ORDER ──────────────────────────────────────────────────
@@ -228,6 +231,7 @@ var EM_TYPE_FILTER_ORDER = [
   'elevator',
   'security',
   'lifesafety',
+  'damper',
   'monitoring',
   'other',
 ];
@@ -2408,6 +2412,20 @@ function emAuditUnitCategory(nameStr, storedCat) {
   return storedCat;
 }
 
+/* ── emDamperCategory ───────────────────────────────────────────────────────
+   A name that names a damper is a damper control program, not the unit it ties to:
+   "RTU-1-2 Cross Tie Damper" is a damper between two rooftop units, "AHU-1 Smoke Dampers" is life safety.
+   The damper word wins over any RTU / AHU / unit tag in the same name. A smoke, fire or relief damper is life
+   safety / building relief, not the unit it is tagged with: it is 'fire' (Fire / Smoke), the same category the
+   dictionary gives 'smoke damper' and emClassifyEquipType gives 'relief damper'. Every other damper is
+   'damper' (not scored for ASHRAE 36). Returns null when the name has no damper word.
+   The ONE place this rule lives: emParseEquipBaseName and emClassifyEquipType both call it.            */
+function emDamperCategory(nameStr) {
+  var n = String(nameStr || '');
+  if (!/\bdampers?\b/i.test(n)) return null;
+  return /\b(?:smoke|fire|relief)\b/i.test(n) ? 'fire' : 'damper';
+}
+
 /* ── emParseEquipBaseName ────────────────────────────────────────────────────
    Parses an equipment NAME (not type-string) and returns a base category key
    if a clear HVAC type token is present.  Returns null if no clear token is
@@ -2440,6 +2458,9 @@ function emParseEquipBaseName(nameStr) {
   // "Air Handling Unit 1B - Return Duct" must NOT classify as 'ahu' — it is a duct branch sub-program.
   if (/\bvfd\s+integration\d*\b/i.test(n)) return 'controls';
   if (/ - (?:\S+\s+)*(?:supply|return)\s+duct\d*$/i.test(n)) return null; // falls to emClassifyEquipType → 'other'
+  // Priority 0: a damper name is a damper program, whatever unit tag it carries ("RTU-1-2 Cross Tie Damper").
+  var _damperCat = emDamperCategory(n);
+  if (_damperCat) return _damperCat;
   // Priority 1: DOAS (before RTU/AHU to catch "DOAS-AHU-1")
   if (/\bdoas\b/i.test(n)) return 'doas';
   // Priority 2: ERV (energy recovery ventilator — own category per user)
@@ -2494,6 +2515,10 @@ function emClassifyEquipType(equipTypeStr) {
   var raw = equipTypeStr.trim();
 
   if (/\bvfd\s+integration\d*\b/i.test(raw)) return 'other';
+
+  // A damper word wins over any unit tag in the name (also compound slash names that emParseEquipBaseName skips).
+  var _damperCat = emDamperCategory(raw);
+  if (_damperCat) return _damperCat;
 
   // ── A. Strip leading manufacturer names ──
   var mfgPattern =
@@ -2927,6 +2952,8 @@ function emVerifyTypeByPoints(group) {
     };
   }
   if (ptKeys.length === 0) return { category: provisional, subtype: '' };
+  // A damper program is named by its damper: point evidence never re-types it as an air unit or terminal.
+  if (provisional === 'damper') return { category: 'damper', subtype: '', rule: 'damper-name', confidence: 'strong' };
 
   // Build a single lowercased space-joined string for quick regex scanning
   var pts = ptKeys.map(function (k) {
@@ -4292,7 +4319,8 @@ var _emTypePriority = {
   elevator: 21,
   monitoring: 22,
   security: 23,
-  other: 24,
+  damper: 24,
+  other: 25,
 };
 var _emSortCol = null;
 var _emSortDir = 1;
@@ -4803,6 +4831,7 @@ function emCalcSummaryStats(rows) {
     lifesafety: 0,
     vrf: 0,
     ac: 0,
+    damper: 0,
   };
   // 9018b1c6: subtype counts (additive; ahu base count still accumulates all ahu-category rows)
   var _subtypeCounts = { 'sz-rtu': 0, 'vav-rtu': 0, 'mtz-rtu': 0, 'sz-ahu': 0, 'vav-ahu': 0, 'mtz-ahu': 0 };
@@ -4863,6 +4892,7 @@ function emCalcSummaryStats(rows) {
     lifesafety: _nonHvacTypes.lifesafety,
     vrf: _nonHvacTypes.vrf,
     ac: _nonHvacTypes.ac,
+    damper: _nonHvacTypes.damper,
     subtypes: _subtypeCounts,
   };
 }
@@ -5989,6 +6019,7 @@ function emUpdateStatsPillsForRaw(rows) {
     (stats.elevator ? emStatPillCompact(EM_CATEGORY_LABELS.elevator, stats.elevator) : '') +
     (stats.security ? emStatPillCompact(EM_CATEGORY_LABELS.security, stats.security) : '') +
     (stats.lifesafety ? emStatPillCompact(EM_CATEGORY_LABELS.lifesafety, stats.lifesafety) : '') +
+    (stats.damper ? emStatPillCompact(EM_CATEGORY_LABELS.damper, stats.damper) : '') +
     (stats.monitoring ? emStatPillCompact('Monitoring', stats.monitoring) : '') +
     (stats.other ? emStatPillCompact('Other', stats.other) : '') +
     emStatPillCompact('Has Data', stats.live) +
@@ -20902,6 +20933,17 @@ EM_POINT_CATEGORIES.sensor = [
       /\batmospheric\s+press\b/i,
     ],
     aliases: ['outdoor temperature', 'weather station', 'wind speed', 'solar radiation'],
+  },
+];
+
+EM_POINT_CATEGORIES.damper = [
+  {
+    key: 'damperControl',
+    label: 'Damper Control',
+    nonAshrae: true,
+    required: false,
+    patterns: [/\bdampers?\b/i, /\bcross.?tie\b/i, /\bisolation\b/i],
+    aliases: ['damper position', 'damper command', 'damper status', 'cross tie damper'],
   },
 ];
 

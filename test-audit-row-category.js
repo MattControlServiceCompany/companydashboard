@@ -2,10 +2,14 @@
 // water meters are points / meters, never units. Loads the REAL emParseEquipBaseName. SYNTHETIC names only.
 const fs = require('fs'), vm = require('vm'), assert = require('assert');
 const src = fs.readFileSync(__dirname + '/app/equipment-matrix.js', 'utf8');
-const start = src.indexOf('function emParseEquipBaseName(');
-let i = src.indexOf('{', start), depth = 0, end = i;
-for (; end < src.length; end++) { if (src[end] === '{') depth++; else if (src[end] === '}' && --depth === 0) break; }
-const ctx = {}; vm.createContext(ctx); vm.runInContext(src.slice(start, end + 1), ctx);
+function fnSource(name) {
+  const start = src.indexOf('function ' + name + '(');
+  let i = src.indexOf('{', start), depth = 0, end = i;
+  for (; end < src.length; end++) { if (src[end] === '{') depth++; else if (src[end] === '}' && --depth === 0) break; }
+  return src.slice(start, end + 1);
+}
+// emParseEquipBaseName calls emDamperCategory (the one damper rule): load both real functions
+const ctx = {}; vm.createContext(ctx); vm.runInContext(fnSource('emDamperCategory') + '\n' + fnSource('emParseEquipBaseName'), ctx);
 const cat = (n) => ctx.emParseEquipBaseName(n);
 // the stored category rule must NOT move these rows (pricing = origin/main)
 ['Baseboard Heaters Zone 1-1', 'Book Drop Heaters', 'First Floor Perimeter Heat', 'Aerco Integration', 'Hot Water - Site 1']
