@@ -123,7 +123,7 @@ const ok = (c, m) => {
       r.t && !/The audit read/.test(r.t.impact) && /reset[^.]*\. The audit recommends upgrading the terminal unit programs of the library to the Control Service Company standard terminal unit sequence\.$/.test(r.t.impact),
       'Impact ends with the extent of the reading and the recommendation: ' + (r.t && r.t.impact.slice(-260))
     );
-    ok(r.t && r.t.key === 'terminalStandard' && r.t.effect === 'Energy use' && r.t.category === 'vav' && r.t.groupLabel === 'Zone terminal units', 'key, effect, equipment type and group of the opportunity');
+    ok(r.t && r.t.key === 'terminalStandard' && r.t.effect === 'Cuts terminal reheat and airflow energy' && r.t.category === 'vav' && r.t.groupLabel === 'Zone terminal units', 'key, effect, equipment type and group of the opportunity'); // (Matt 2026-11-22 3f54bb50) Effect is a short phrase
     ok(
       r.para.indexOf('The terminal unit programs at Test Library fall short of the Control Service Company standard terminal unit sequence. The library has 7 terminal units. The programs have no discharge air temperature control with a 50°F floor, no heating lockout above 50°F outdoor air, no occupancy standby and no CO2 ventilation reset. These features protect a zone in heating from cold discharge air, save reheat energy in mild weather, save heating, cooling and fan energy in vacant zones and save ventilation energy in lightly used zones.') === 0,
       'Executive Summary paragraph: ' + r.para

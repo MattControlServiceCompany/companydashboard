@@ -119,7 +119,7 @@ const ok = (c, m) => {
       return out;
     });
     ok(m.held.length === 1 && m.held[0].label === 'Hot water reset overridden' && m.held[0].observed === 'The hot water supply setpoint is held at 120°F by a manual override, so the outdoor air reset does not run.', 'override with a value: one opportunity with the observed fact: ' + JSON.stringify(m.held));
-    ok(m.held[0] && m.held[0].kind === 'building' && m.held[0].effect === 'Energy use' && m.held[0].category === 'hwp' && m.held[0].headline === m.held[0].observed, 'the opportunity is an energy item on the hot water plant row of the building page');
+    ok(m.held[0] && m.held[0].kind === 'building' && m.held[0].effect === 'Less boiler heat loss in mild weather' && m.held[0].category === 'hwp' && m.held[0].headline === m.held[0].observed, 'the opportunity is an energy item on the hot water plant row of the building page'); // (Matt 2026-11-22 3f54bb50) Effect is a short phrase
     ok(m.noValue.length === 0 && m.notEnabled.length === 0 && m.none.length === 0, 'no override value, a sequence that is not enabled, or no record: no opportunity');
     ok(errs.length === 0, 'no page errors: ' + errs.join(' | '));
   } finally {

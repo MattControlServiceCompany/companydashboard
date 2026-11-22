@@ -219,6 +219,8 @@ const SEQUENCE_SAVINGS_IMPACT = {
       'cutting fan energy in applicable systems. [NLR-DSP-2026, OSTI 3022261]',
     // clientSummary: client-facing 1-sentence benefit statement (2026-06-30 report defect fix).
     // No citations, warnings, tool names, or portfolio-specific counts — see savingsRationale above for internal use.
+    // effect: the short Effect phrase of the Opportunities Summary (Matt 2026-11-22 3f54bb50): how the fix helps, energy first, 3-7 words.
+    effect: 'Cuts fan energy at part load',
     clientSummary:
       'Reduces supply fan energy by automatically lowering duct pressure whenever zones have enough airflow, ' +
       'cutting fan energy use during part-load hours.',
@@ -233,6 +235,8 @@ const SEQUENCE_SAVINGS_IMPACT = {
     savingsRationale:
       'Supply air temperature trim-and-respond reset eliminates over-cooling and simultaneous heating, ' +
       'reducing chiller and reheat energy. [LBNL-ASHRAE36-2022]',
+    // effect: the short Effect phrase of the Opportunities Summary (Matt 2026-11-22 3f54bb50): how the fix helps, energy first, 3-7 words.
+    effect: 'Less simultaneous heating and cooling',
     clientSummary:
       'Adjusts supply air temperature to match real-time building demand, reducing simultaneous heating and ' +
       'cooling and lowering overall heating and cooling energy use.',
@@ -247,6 +251,8 @@ const SEQUENCE_SAVINGS_IMPACT = {
     savingsRationale:
       'Modulating economizer provides free cooling when outdoor conditions are favorable, directly displacing ' +
       'compressor energy. Site-specific analysis is needed for a $ projection.',
+    // effect: the short Effect phrase of the Opportunities Summary (Matt 2026-11-22 3f54bb50): how the fix helps, energy first, 3-7 words.
+    effect: 'Free cooling from outdoor air',
     clientSummary:
       'Uses outdoor air for free cooling whenever conditions allow, reducing mechanical cooling run time and ' +
       'compressor energy.',
@@ -307,6 +313,8 @@ const SEQUENCE_SAVINGS_IMPACT = {
       'CO2-based demand-controlled ventilation (AHU duct level) reduces outdoor air delivery during ' +
       'lower-occupancy periods, cutting heating and cooling energy. [NREL-DCV-2023, OSTI 2284042]. ' +
       'Verify applicability to institutional/detention occupancy.',
+    // effect: the short Effect phrase of the Opportunities Summary (Matt 2026-11-22 3f54bb50): how the fix helps, energy first, 3-7 words.
+    effect: 'Ventilation matched to occupancy',
     clientSummary:
       'Reduces outdoor air intake during lower-occupancy periods, cutting the heating and cooling energy needed ' +
       'to condition unnecessary ventilation air.',
@@ -326,6 +334,8 @@ const SEQUENCE_SAVINGS_IMPACT = {
       'CO2-based demand-controlled ventilation (zone level — needs zone CO2 sensors) reduces outdoor air ' +
       'per zone during lower-occupancy periods. Same basis as AHU-level DCV. [NREL-DCV-2023, OSTI 2284042]. ' +
       'Note: verify applicability to institutional/detention occupancy patterns.',
+    // effect: the short Effect phrase of the Opportunities Summary (Matt 2026-11-22 3f54bb50): how the fix helps, energy first, 3-7 words.
+    effect: 'Ventilation matched to occupancy',
     clientSummary:
       'Reduces outdoor air delivered to each zone based on real-time occupancy, avoiding the energy cost of ' +
       'over-ventilating lightly used spaces.',
@@ -342,6 +352,8 @@ const SEQUENCE_SAVINGS_IMPACT = {
       'and can push condensing boilers into higher-efficiency operation ' +
       'reducing heating gas consumption. Savings depend on boiler type — consult BAS Savings Calc for site-specific estimate. ' +
       '⚠ Verify boiler type: MED (non-condensing) / MED-HIGH (condensing).',
+    // effect: the short Effect phrase of the Opportunities Summary (Matt 2026-11-22 3f54bb50): how the fix helps, energy first, 3-7 words.
+    effect: 'Less boiler heat loss in mild weather',
     clientSummary:
       'Lowers boiler water temperature during mild weather, reducing boiler firing and heating gas consumption.',
     source: '[ASHRAE36-2021]',
@@ -357,6 +369,8 @@ const SEQUENCE_SAVINGS_IMPACT = {
       'reducing chiller lift. A higher CHWST improves chiller COP. ' +
       'Centrifugal chillers most sensitive to CHWST; scroll/recip see smaller gains. ' +
       'Requires site-specific calculation for $ savings.',
+    // effect: the short Effect phrase of the Opportunities Summary (Matt 2026-11-22 3f54bb50): how the fix helps, energy first, 3-7 words.
+    effect: 'Chiller runs more efficiently at light load',
     clientSummary: 'Raises chilled water temperature under light cooling loads, reducing chiller energy use.',
     source: '[ASHRAE36-2021]',
     sourceType: SAVINGS_SOURCE_ENGINEERING,
@@ -371,6 +385,8 @@ const SEQUENCE_SAVINGS_IMPACT = {
       'Pump power follows the cube law, so a small speed reduction cuts pump power by much more. ' +
       'Requires differential pressure sensor installation; programming change is low-cost once sensor is in place. ' +
       '(Qualitative only — no single-measure study for controls-only savings; drop $ estimate.)',
+    // effect: the short Effect phrase of the Opportunities Summary (Matt 2026-11-22 3f54bb50): how the fix helps, energy first, 3-7 words.
+    effect: 'Cuts hot water pump energy',
     clientSummary: 'Reduces hot water pump speed during lower-load periods, cutting pump energy use.',
     source: '[NLR-VSP-2025]',
     sourceType: SAVINGS_SOURCE_ENGINEERING,
@@ -385,6 +401,8 @@ const SEQUENCE_SAVINGS_IMPACT = {
       'Pump power follows the cube law, so a small speed reduction cuts pump power by much more. ' +
       'CHW pump is typically larger than HW side, so absolute savings may be higher. ' +
       '(Qualitative only — no single-measure study for controls-only savings; drop $ estimate.)',
+    // effect: the short Effect phrase of the Opportunities Summary (Matt 2026-11-22 3f54bb50): how the fix helps, energy first, 3-7 words.
+    effect: 'Cuts chilled water pump energy',
     clientSummary: 'Reduces chilled water pump speed during lower-load periods, cutting pump energy use.',
     source: '[NLR-VSP-2025]',
     sourceType: SAVINGS_SOURCE_ENGINEERING,
@@ -397,6 +415,8 @@ const SEQUENCE_SAVINGS_IMPACT = {
     savingsRationale:
       'Return fan speed coordination with supply fan maintains building pressurization and eliminates ' +
       'excess recirculation energy. Only applicable in systems with a powered return fan (hasReturnFan config).',
+    // effect: the short Effect phrase of the Opportunities Summary (Matt 2026-11-22 3f54bb50): how the fix helps, energy first, 3-7 words.
+    effect: 'Cuts return fan energy',
     clientSummary:
       'Coordinates return fan speed with the supply fan, maintaining proper building pressurization and ' +
       'eliminating wasted recirculation energy.',
@@ -413,6 +433,8 @@ const SEQUENCE_SAVINGS_IMPACT = {
       'setpoint, cooling only above the cooling setpoint, with a deadband in between. Eliminating zone ' +
       'over-conditioning directly reduces both heating and cooling energy. ' +
       'A terminal unit with no cooling or heating setpoint point cannot run this logic.',
+    // effect: the short Effect phrase of the Opportunities Summary (Matt 2026-11-22 3f54bb50): how the fix helps, energy first, 3-7 words.
+    effect: 'Less simultaneous heating and cooling',
     clientSummary:
       'Establishes separate heating and cooling setpoints with a deadband between them, eliminating unnecessary ' +
       'simultaneous heating and cooling at the zone level.',
@@ -428,6 +450,8 @@ const SEQUENCE_SAVINGS_IMPACT = {
       'ASHRAE 36 reheat sequencing prevents simultaneous heating and cooling by releasing reheat only after the ' +
       'cooling damper reaches minimum. Correct implementation reduces energy waste ' +
       'in systems with misconfigured VAV reheat.',
+    // effect: the short Effect phrase of the Opportunities Summary (Matt 2026-11-22 3f54bb50): how the fix helps, energy first, 3-7 words.
+    effect: 'Less simultaneous heating and cooling',
     clientSummary:
       'Sequences reheat to activate only after the cooling damper reaches minimum position, preventing ' +
       'simultaneous heating and cooling energy waste.',
@@ -444,6 +468,8 @@ const SEQUENCE_SAVINGS_IMPACT = {
       'code is met regardless of fan operating point. ' +
       'Energy: prevents part-load over-ventilation penalty (secondary benefit). ' +
       'Primarily a ventilation quality and compliance measure; energy savings are secondary.',
+    // effect: the short Effect phrase of the Opportunities Summary (Matt 2026-11-22 3f54bb50): how the fix helps, energy first, 3-7 words.
+    effect: 'No energy wasted on extra outdoor air',
     clientSummary:
       'Ensures the correct amount of outside air is delivered at every fan speed, meeting ventilation ' +
       'requirements while avoiding over-ventilation energy waste.',
@@ -459,6 +485,8 @@ const SEQUENCE_SAVINGS_IMPACT = {
       'Enables Duct SP Reset: damper write-back allows the BAS to detect zone damper positions for ' +
       'supply fan pressure optimization (DSP reset) and unoccupied-mode damper closure. ' +
       'Also enables fault detection for stuck-damper identification.',
+    // effect: the short Effect phrase of the Opportunities Summary (Matt 2026-11-22 3f54bb50): how the fix helps, energy first, 3-7 words.
+    effect: 'Lets duct pressure drop at part load',
     clientSummary:
       'Provides zone damper position feedback to the building automation system, enabling duct pressure reset ' +
       'and automatic unoccupied-mode damper closure.',
@@ -476,6 +504,8 @@ const SEQUENCE_SAVINGS_IMPACT = {
       'Enables HW Plant Reset: boiler/chiller staging sequences ensure the correctly sized unit runs ' +
       'at each load level, avoiding part-load inefficiency and enabling HW supply temperature and ' +
       'DP reset sequences to function correctly.',
+    // effect: the short Effect phrase of the Opportunities Summary (Matt 2026-11-22 3f54bb50): how the fix helps, energy first, 3-7 words.
+    effect: 'Only the boilers needed run',
     clientSummary:
       'Sequences multiple boilers so the right-sized unit runs at each load level, avoiding part-load ' +
       'inefficiency and enabling hot water temperature reset.',
@@ -493,6 +523,8 @@ const SEQUENCE_SAVINGS_IMPACT = {
       'Enables CHW Plant Reset: chiller staging sequences ensure the correctly sized unit runs ' +
       'at each load level, avoiding part-load inefficiency and enabling CHW supply temperature and ' +
       'DP reset sequences to function correctly.',
+    // effect: the short Effect phrase of the Opportunities Summary (Matt 2026-11-22 3f54bb50): how the fix helps, energy first, 3-7 words.
+    effect: 'Only the chillers needed run',
     clientSummary:
       'Sequences multiple chillers so the right-sized unit runs at each load level, avoiding part-load ' +
       'inefficiency and enabling chilled water temperature reset.',
@@ -510,6 +542,8 @@ const SEQUENCE_SAVINGS_IMPACT = {
       'Freeze protection prevents coil damage during cold weather — a safety and reliability requirement, ' +
       'not an energy optimization. Cost avoidance from prevented repairs can be significant but is not ' +
       'an energy savings.',
+    // effect: the short Effect phrase of the Opportunities Summary (Matt 2026-11-22 3f54bb50): how the fix helps, energy first, 3-7 words.
+    effect: 'Protects coils from freeze damage',
     clientSummary:
       'Protects heating and cooling coils from freeze damage during cold weather, reducing the risk of costly ' +
       'equipment failure.',
