@@ -67,6 +67,16 @@ function eq(a, b, l) {
     }, PID);
     await page.evaluate((pid) => _pricingMigrateColSchema(pid), PID);
     eq(await page.evaluate((pid) => _pricingGetColWidths(pid), PID), { 2: 150, 12: 90 }, 'legacy widths migrated v1->v3');
+    // 5. (5df0a14e) two columns inserted at index 13: a v3 map shifts Impact (13) and Notes (14) to 15 and 16; columns before 13 stay
+    await page.evaluate(async (pid) => {
+      await window.DB.set('ch_tbl_colschema_ver_pricing_tbl_' + pid, 3);
+      await window.DB.set('ch_tbl_col_widths_pricing_tbl_' + pid, { 2: 150, 12: 80, 13: 170, 14: 150 });
+      await window.DB.set('ch_tbl_hidden_pricing_tbl_' + pid, [4, 13]);
+    }, PID);
+    await page.evaluate((pid) => _pricingMigrateColSchema(pid), PID);
+    eq(await page.evaluate((pid) => _pricingGetColWidths(pid), PID), { 2: 150, 12: 80, 15: 170, 16: 150 }, 'v3 widths migrated v3->v5');
+    eq(await page.evaluate((pid) => _pricingGetHiddenCols(pid), PID), [4, 15], 'v3 hidden columns migrated v3->v5');
+    eq(await page.evaluate((pid) => _pricingGetColSchemaVersion(pid), PID), 5, 'schema marker is 5');
     eq(errs.filter((e) => e.indexOf('PHASE OVER') >= 0).length, 0, 'no console.error PHASE OVER');
   } finally {
     await ctx.close();

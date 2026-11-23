@@ -658,6 +658,38 @@ function _pricingSavingsLineHTML(projId, option) {
   );
 }
 
+// The top line of the Cost Estimate tab (Matt 2026-11-23, 5df0a14e): the estimated savings and payback of the option on screen, in normal text under the
+// pricing settings line. One owner of the numbers: _pricingOptionSavingsEstimate (read through the rows the last draw cached, the rows of the footer);
+// one owner of the text: _pricingOptionTopLineText. Compare shows both options. Redrawn by _pricingRefreshFooter and by every full draw.
+function _pricingTopSavingsHTML(projId) {
+  var est = _pricingGetEstimate(projId);
+  var tier = est.tier || 'compliance';
+  var rows = _pricingRowCache[projId];
+  var all = _pricingRowCache[projId + '_all'];
+  var text = '';
+  if (rows && all) {
+    var estOf = function (r, a, t) {
+      return _pricingOptionSavingsEstimate(projId, r, est, _pricingComputeFilteredTotals(a, r, est, projId));
+    };
+    var none = 'no estimate yet';
+    if (tier === 'both') {
+      var rec = _pricingRowCache[projId + '_rec'];
+      var recAll = _pricingRowCache[projId + '_recall'];
+      text =
+        '<strong>Recommended:</strong> ' + _escHtml(rec && recAll ? _pricingOptionTopLineText(estOf(rec, recAll), 'recommended') || none : none) +
+        ' <span style="color:var(--text3)">|</span> <strong>Compliance:</strong> ' + _escHtml(_pricingOptionTopLineText(null, 'compliance'));
+    } else if (tier === 'compliance') {
+      text = _escHtml(_pricingOptionTopLineText(null, 'compliance'));
+    } else {
+      text = _escHtml(_pricingOptionTopLineText(estOf(rows, all), tier) || 'No savings estimate yet.');
+    }
+  }
+  return (
+    '<div id="pricing-top-savings-' + projId + '" style="flex-shrink:0;padding:8px 14px;background:var(--s1);border-bottom:1px solid var(--border2);' +
+    'font-size:13px;font-weight:600;color:var(--text)">' + text + '</div>'
+  );
+}
+
 // The selected measures of the Energy Savings matrix (the same set getProjMatrixSavingsTotal adds up).
 function _pricingSelectedMeasures(projId) {
   var sd = typeof getProjSavingsData === 'function' ? getProjSavingsData(projId) : null;
@@ -4564,9 +4596,7 @@ function _pricingZoneCo2SavingsEstimate(projId, optionalRows, estimate, totals) 
   buildings.forEach(function (b) {
     if (b.usd) b.years = simplePayback(b.price, 0, b.usd.likely).years;
   });
-  var r100 = function (v) {
-    return Math.round(v / 100) * 100;
-  };
+  var r100 = _pricingEstimateRound100;
   var labels = est
     .map(function (b) { return b.year; })
     .filter(function (y, i, a) { return y && a.indexOf(y) === i; });
@@ -4582,7 +4612,7 @@ function _pricingZoneCo2SavingsEstimate(projId, optionalRows, estimate, totals) 
           low: r100(total.usd.low),
           likely: r100(total.usd.likely),
           high: r100(total.usd.high),
-          years: total.years.likely === null ? null : Math.max(1, Math.round(total.years.likely)),
+          years: _pricingEstimateYears(total.years.likely),
         }
       : null,
   };
@@ -4913,9 +4943,7 @@ function _pricingOptionSavingsEstimate(projId, rows, estimate, totals, ctx) {
     total.usd[k] = sum(function (b) { return b.usd[k]; });
     total.years[k] = complete ? simplePayback(total.price, 0, total.usd[k]).years : null;
   });
-  var r100 = function (v) {
-    return Math.round(v / 100) * 100;
-  };
+  var r100 = _pricingEstimateRound100;
   var labels = [];
   buildings.forEach(function (b) {
     var u = b.hasClaim ? _pricingBuildingUse(projId, b.building) : null;
@@ -4939,9 +4967,36 @@ function _pricingOptionSavingsEstimate(projId, rows, estimate, totals, ctx) {
           low: r100(total.usd.low),
           likely: r100(total.usd.likely),
           high: r100(total.usd.high),
-          years: total.years.likely === null ? null : Math.max(1, Math.round(total.years.likely)),
+          years: _pricingEstimateYears(total.years.likely),
         }
       : null,
+  };
+}
+
+// The display rounding of every estimate: dollars to the nearest $100, payback to whole years (at least 1). The option line and the
+// per-item cells of the Cost Estimate table both use these two (Matt 2026-11-23, 5df0a14e).
+function _pricingEstimateRound100(v) {
+  return Math.round(v / 100) * 100;
+}
+function _pricingEstimateYears(y) {
+  return y === null || y === undefined ? null : Math.max(1, Math.round(y));
+}
+// One item of _pricingOptionSavingsEstimate(...).items as the table shows it (site only: no report or export reads this).
+// Returns { savings, years, title }: cell HTML, and a dash when the item has no energy claim or no formula result.
+function _pricingItemSavingsCellsHTML(it) {
+  var dash = '<span style="color:var(--text3)">—</span>';
+  if (!it) return { savings: dash, years: dash, title: '' };
+  if (!it.hasData) return { savings: dash, years: dash, title: it.reason ? it.reason : '' };
+  var usd = function (v) {
+    return '$' + Math.round(v).toLocaleString('en-US');
+  };
+  var yrs = _pricingEstimateYears(it.years);
+  return {
+    savings: usd(_pricingEstimateRound100(it.usd.likely)),
+    years: yrs === null ? dash : it.years < 1 ? '&lt;1' : String(yrs), // under one year reads as <1, not 1
+    title:
+      'Estimated savings range ' + usd(_pricingEstimateRound100(it.usd.low)) + ' to ' + usd(_pricingEstimateRound100(it.usd.high)) + ' per year' +
+      (it.reason ? '. ' + it.reason : ''),
   };
 }
 
@@ -4957,6 +5012,20 @@ function _pricingOptionEstimateText(est, tier) {
   return (
     'Estimated savings ' + usd(d.likely) + ' per year (range ' + usd(d.low) + ' to ' + usd(d.high) + ')' +
     (d.years ? '; estimated payback about ' + d.years + (d.years === 1 ? ' year' : ' years') : '') + '.'
+  );
+}
+// The top line of the Cost Estimate tab (Matt 2026-11-23, 5df0a14e): the same display values as _pricingOptionEstimateText, in short form.
+// Returns '' when the estimate has no data.
+function _pricingOptionTopLineText(est, tier) {
+  if (tier === 'compliance') return 'No energy savings claimed: this option installs devices and safety programming.';
+  var d = est && est.display;
+  if (!d || !(d.likely > 0)) return '';
+  var usd = function (v) {
+    return '$' + Math.round(v).toLocaleString('en-US');
+  };
+  return (
+    'Estimated savings ' + usd(d.likely) + '/yr (range ' + usd(d.low) + '-' + usd(d.high) + ')' +
+    (d.years ? ' · payback about ' + d.years + ' yr' : '')
   );
 }
 // The one basis sentence of every estimate (the room CO2 estimate and the options print this one text).
@@ -6463,8 +6532,10 @@ var _pricingBldgFilter = {}; // projId → building name or '' for All
            Display-only — never affects unitPrice/lineTotal math, which _pricingApplyLaborOverrides
            already computes upstream of rendering.
    col 12: Line Total — sortable (numeric) — driven by basis selector
-   col 13: Impact — no-sort — Phase 5 savings badge
-   col 14: Notes — sortable
+   col 13: Est. savings ($/yr, likely) — no-sort — per item, from _pricingOptionSavingsEstimate (site only; Recommended and Full Scope)
+   col 14: Payback (yr) — no-sort — per item, same source
+   col 15: Impact — no-sort — Phase 5 savings badge
+   col 16: Notes — sortable
    ─────────────────────────────────────────────────────────────────────────── */
 var PRICING_TBL_COLS = [
   { label: 'Incl', noSort: true, noHide: true, numeric: false, minWidth: 36 }, // 0
@@ -6480,15 +6551,18 @@ var PRICING_TBL_COLS = [
   { label: 'Hours', noSort: false, noHide: false, numeric: true, minWidth: 70 }, // 10 — labor hours, split out of Contract (phase 4923ca9b/75827077)
   { label: 'Rate', noSort: false, noHide: false, numeric: true, minWidth: 70 }, // 11 — cc78ac9e: labor $/hr rate, restored between Hours and Line Total
   { label: 'Line Total', noSort: false, noHide: false, numeric: true, minWidth: 80 }, // 12 — label overridden at render time with active basis
+  // 13, 14 — the estimated savings and payback of each item (Matt 2026-11-23, 5df0a14e). Site only: no report or export reads PRICING_TBL_COLS.
+  { label: 'Est. savings ($/yr, likely)', noSort: true, noHide: false, noHideEmpty: true, numeric: true, minWidth: 110, isItemSavingsCol: true },
+  { label: 'Payback (yr)', noSort: true, noHide: false, noHideEmpty: true, numeric: true, minWidth: 80, isItemSavingsCol: true },
   {
     label: 'Impact',
     noSort: true,
     noHide: false,
     numeric: false,
-    minWidth: 170, // 13 — Phase 5 savings-tier badge + (0ae36950) the $-savings-range chip moved here from Notes
+    minWidth: 170, // 15 — Phase 5 savings-tier badge + (0ae36950) the $-savings-range chip moved here from Notes
     isImpactCol: true,
   },
-  { label: 'Notes', noSort: false, noHide: false, numeric: false, minWidth: 150 }, // 14
+  { label: 'Notes', noSort: false, noHide: false, numeric: false, minWidth: 150 }, // 16
 ];
 
 /* ── Apply labor overrides to a cloned row list ──────────────────────────── */
@@ -6759,12 +6833,14 @@ function _pricingSetHiddenCols(projId, hiddenArr) {
    shifts once, never re-shifts an already-migrated or fresh map, and never
    deletes the user's saved widths/hidden set, only relocates them to the
    column they were originally set for. */
-var PRICING_COL_SCHEMA_VERSION = 3; // 3 = cc78ac9e (Rate column inserted at index 11)
+var PRICING_COL_SCHEMA_VERSION = 5; // 3 = cc78ac9e (Rate column inserted at index 11); 5 = the two item-savings columns inserted at index 13 (5df0a14e)
 // One entry per version bump: shifting FROM (entry index + 1) TO (entry index + 2) inserted a
 // column at `threshold` — every existing index >= threshold moves up by one.
 var _PRICING_COL_SCHEMA_SHIFT_STEPS = [
   { fromVer: 1, threshold: 10 }, // v1 -> v2: Hours column inserted at index 10 (Phase 4)
   { fromVer: 2, threshold: 11 }, // v2 -> v3: Rate column inserted at index 11 (cc78ac9e)
+  { fromVer: 3, threshold: 13 }, // v3 -> v4: Est. savings column inserted at index 13 (5df0a14e)
+  { fromVer: 4, threshold: 13 }, // v4 -> v5: Payback column inserted at index 14 (shifts Impact and Notes again; 5df0a14e)
 ];
 function _pricingGetColSchemaVersion(projId) {
   return sget('ch_tbl_colschema_ver_pricing_tbl_' + projId, 1); // 1 = pre-Phase-4 (no marker ever written)
@@ -6873,7 +6949,7 @@ function _pricingRowColValue(row, colIdx) {
       return row.phase === 2 && row.seqKey ? _pricingGetConfig().hourlyRate || COST_LABOR_RATE_DEFAULT : -1;
     case 12:
       return row.lineTotal != null ? row.lineTotal : -1;
-    case 14:
+    case 16:
       return row.note || '';
     default:
       return '';
@@ -7439,7 +7515,7 @@ function _pricingHideEmptyCols(projId, rows) {
   // Find cols where every data row has empty/zero value
   var hidden = _pricingGetHiddenCols(projId);
   for (var ci = 2; ci < PRICING_TBL_COLS.length; ci++) {
-    if (PRICING_TBL_COLS[ci].noHide) continue;
+    if (PRICING_TBL_COLS[ci].noHide || PRICING_TBL_COLS[ci].noHideEmpty) continue; // noHideEmpty: values come from the estimate, not the row
     if (hidden.indexOf(ci) !== -1) continue; // already hidden
     var allEmpty = rows.every(function (r) {
       var v = _pricingRowColValue(r, ci);
@@ -10235,6 +10311,14 @@ initCostEstimateTab = function initCostEstimateTab(projId) {
     hidden = hidden.concat([_impactColIdx]);
   }
 
+  // The per-item savings columns (5df0a14e) show only where the option claims energy savings: Recommended and Full Scope.
+  // Compliance claims none and Compare holds two options at once (its top line shows each). Derived, never saved.
+  if (tier !== 'recommended' && tier !== 'full-scope') {
+    PRICING_TBL_COLS.forEach(function (c, ci) {
+      if (c.isItemSavingsCol && hidden.indexOf(ci) === -1) hidden = hidden.concat([ci]);
+    });
+  }
+
   // Phase 6 (5ff6c401): auto-hide the Building column (index 1) when a single building is
   // selected in the Building filter — every visible row shows the identical value once the
   // group-header divider rows are removed below, so the column is pure redundant width in that
@@ -10306,7 +10390,10 @@ initCostEstimateTab = function initCostEstimateTab(projId) {
   // Update cache with labor-override-applied, filtered rows
   _pricingRowCache[projId] = filteredRows;
   _pricingRowCache[projId + '_all'] = baseRows;
-  if (recRows) _pricingRowCache[projId + '_rec'] = recRows;
+  if (recRows) {
+    _pricingRowCache[projId + '_rec'] = recRows;
+    _pricingRowCache[projId + '_recall'] = recRowsAll; // the top line of the tab (_pricingTopSavingsHTML) prices Compare with the same rows as the footer
+  }
 
   var totals = _pricingComputeFilteredTotals(baseRows, filteredRows, estimate, projId);
   var recTotals = recRows ? _pricingComputeFilteredTotals(recRowsAll, recRows, estimate, projId) : null;
@@ -10368,6 +10455,24 @@ initCostEstimateTab = function initCostEstimateTab(projId) {
 
   // ── 8. Render row function (Phase 4: adds hours-override input for labor rows)
   var recRowIdxByBase = isBothMode ? _buildBothModeIndex(recRows || []) : {};
+
+  // The estimated savings of the option on screen (the one owner, _pricingOptionSavingsEstimate): the footer line and the per-item cells read this one result.
+  var _optEst = _pricingOptionSavingsEstimate(
+    projId,
+    tier === 'both' && recRows ? recRows : filteredRows,
+    estimate,
+    tier === 'both' && recTotals ? recTotals : totals,
+  );
+  // Each item shows on its first row (a unit: its sequence row, which also leads the merged hardware + sequence row), so the column adds up to the option.
+  var _itemByRowId = {};
+  _optEst.items.forEach(function (it) {
+    if (it.rowIds && it.rowIds.length) _itemByRowId[it.rowIds[0]] = it;
+  });
+  function _itemSavingsTds(it) {
+    var c = _pricingItemSavingsCellsHTML(it);
+    var t = c.title ? ' title="' + _escHtml(c.title) + '"' : '';
+    return ['<span' + t + '>' + c.savings + '</span>', '<span' + t + '>' + c.years + '</span>'];
+  }
 
   var workbookPartPrices = totals.rowShares ? auditEstGetWorkbookSettings(projId).partPrices : {};
   function renderRow(row, isBothMd, matchedRecRow, hiddenCols) {
@@ -10728,7 +10833,12 @@ initCostEstimateTab = function initCostEstimateTab(projId) {
     }
     cells.push(lineTotalContent);
 
-    // col 13: Impact — savings-tier badge (correction #4 / Phase 5). Single-line inline-block span,
+    // cols 13, 14: estimated savings and payback of the item that starts on this row
+    _itemSavingsTds(_itemByRowId[row.id]).forEach(function (h) {
+      cells.push(h);
+    });
+
+    // col 15: Impact — savings-tier badge (correction #4 / Phase 5). Single-line inline-block span,
     // so this cell never grows the row taller than any other row's baseline height.
     var impactCellContent = '';
     if (tier === 'recommended' && row.phase === 2 && row.savingsImpact) {
@@ -10828,9 +10938,9 @@ initCostEstimateTab = function initCostEstimateTab(projId) {
     cells.forEach(function (cellContent, ci) {
       if (hiddenCols.indexOf(ci) !== -1) return; // skip hidden columns
       var col = PRICING_TBL_COLS[ci] || {};
-      // col 14 (Notes) may contain wrapped rationale text — allow wrap; other cols nowrap
-      var isNotesCol = ci === 14;
-      var isImpactCol = ci === 13;
+      // col 16 (Notes) may contain wrapped rationale text — allow wrap; other cols nowrap
+      var isNotesCol = ci === 16;
+      var isImpactCol = ci === 15;
       var tdStyle = isNotesCol
         ? 'overflow:hidden;padding:5px 8px;border-right:1px solid var(--border2);border-bottom:1px solid var(--border2);vertical-align:top;'
         : 'overflow:hidden;text-overflow:ellipsis;white-space:nowrap;padding:5px 8px;border-right:1px solid var(--border2);border-bottom:1px solid var(--border2);';
@@ -10840,7 +10950,7 @@ initCostEstimateTab = function initCostEstimateTab(projId) {
       // MUST be before the generic numeric right-align block (which also matches ci===10)
       else if (ci === 10 && row.phase === 2 && row.seqKey) tdStyle += 'padding:3px 6px;';
       // cols 5 (Qty), 7 (List), 8 (Net), 9 (Contract), 10 (Hours), 11 (Rate), 12 (Line Total) are right-aligned numerics
-      else if (ci === 5 || ci === 7 || ci === 8 || ci === 9 || ci === 10 || ci === 11 || ci === 12)
+      else if (ci === 5 || ci === 7 || ci === 8 || ci === 9 || ci === 10 || ci === 11 || ci === 12 || ci === 13 || ci === 14)
         tdStyle += 'text-align:right;font-variant-numeric:tabular-nums;';
       else if (isImpactCol) tdStyle += 'text-align:center;vertical-align:middle;';
       var cls = ci === 0 || ci === 1 ? ' class="ch-frozen"' : '';
@@ -11135,7 +11245,12 @@ initCostEstimateTab = function initCostEstimateTab(projId) {
           '</span>';
     cells.push(_lineTotalContent);
 
-    // col 13: Impact — same rule as renderRow (Recommended tier phase-2 only), sourced from the
+    // cols 13, 14: estimated savings and payback of the item (its first row is the sequence row of this pair)
+    _itemSavingsTds(_itemByRowId[seqRow.id] || _itemByRowId[hwRow.id]).forEach(function (h) {
+      cells.push(h);
+    });
+
+    // col 15: Impact — same rule as renderRow (Recommended tier phase-2 only), sourced from the
     // sequence half of the pair.
     var _impactCellContent = '';
     if (tier === 'recommended' && seqRow.savingsImpact) {
@@ -11209,13 +11324,13 @@ initCostEstimateTab = function initCostEstimateTab(projId) {
     var tds = '';
     cells.forEach(function (cellContent, ci) {
       if (hiddenCols.indexOf(ci) !== -1) return;
-      var isNotesCol = ci === 14;
-      var isImpactCol = ci === 13;
+      var isNotesCol = ci === 16;
+      var isImpactCol = ci === 15;
       var tdStyle = isNotesCol
         ? 'overflow:hidden;padding:5px 8px;border-right:1px solid var(--border2);border-bottom:1px solid var(--border2);vertical-align:top;'
         : 'overflow:hidden;text-overflow:ellipsis;white-space:nowrap;padding:5px 8px;border-right:1px solid var(--border2);border-bottom:1px solid var(--border2);';
       if (ci === 0) tdStyle += 'text-align:center;width:36px;border-right:1px solid var(--border2);';
-      else if (ci === 5 || ci === 7 || ci === 8 || ci === 9 || ci === 10 || ci === 11 || ci === 12)
+      else if (ci === 5 || ci === 7 || ci === 8 || ci === 9 || ci === 10 || ci === 11 || ci === 12 || ci === 13 || ci === 14)
         tdStyle += 'text-align:right;font-variant-numeric:tabular-nums;';
       else if (isImpactCol) tdStyle += 'text-align:center;vertical-align:middle;';
       var cls = ci === 0 || ci === 1 ? ' class="ch-frozen"' : '';
@@ -11472,7 +11587,7 @@ initCostEstimateTab = function initCostEstimateTab(projId) {
   // Savings line: read from the Energy Savings matrix (single owner), never computed here.
   footerParts.push(
     _pricingSavingsLineHTML(projId, {
-      est: _pricingOptionSavingsEstimate(projId, tier === 'both' && recRows ? recRows : filteredRows, estimate, tier === 'both' && recTotals ? recTotals : totals),
+      est: _optEst,
       tier: tier === 'both' ? 'recommended' : tier,
     }),
   );
@@ -11875,7 +11990,8 @@ function _pricingEstimateTypeBarHTML(projId, type) {
       : '') +
     '</div>' +
     _pricingPriceListPanelHTML(projId) +
-    (type === 'retrofit' && wbSet ? _pricingWorkbookPanelHTML(projId, wbSet) : '')
+    (type === 'retrofit' && wbSet ? _pricingWorkbookPanelHTML(projId, wbSet) : '') +
+    (type === 'retrofit' ? _pricingTopSavingsHTML(projId) : '')
   );
 }
 
@@ -12186,6 +12302,9 @@ function _pricingComputeSummaryData(projId, estimate) {
       _rfCaveatParts.push(totals.pendingPriceCount + ' item(s) pending price (excluded)');
     if (totals.engReviewCount > 0) _rfCaveatParts.push(totals.engReviewCount + ' eng-review');
     _rfCaveatParts.push('Basis: ' + (cfg.priceBasis || 'contract'));
+
+    var topEl = document.getElementById('pricing-top-savings-' + projId);
+    if (topEl) topEl.outerHTML = _pricingTopSavingsHTML(projId);
 
     var footerEl = document.getElementById('pricing-footer-' + projId);
     if (!footerEl) return;

@@ -191,6 +191,48 @@ const sum = (rs) => rs.reduce((s, r) => s + r.lineTotal, 0);
   assert.strictEqual(sb._pricingEstimateBasisText('2025', 'Kansas City'), "Savings are estimated with engineering formulas for each measure (fan and pump laws, airflow and heat transfer with typical Kansas City weather) from each building's 2025 utility use and its equipment.");
   ok('sentences: estimate with range and payback, Compliance claims none, one basis sentence');
 }
+// 6b. (Matt 2026-11-23, 5df0a14e) the per-item cells and the top line of the Cost Estimate tab: same numbers, same rounding, site only
+{
+  const sb = make({ 'Test Hall': use }, counts);
+  const e = sb._pricingOptionSavingsEstimate('p', rows, est, { grand: sum(rows) });
+  const by = {};
+  e.items.forEach((i) => (by[i.key] = i));
+  const cells = (k) => JSON.parse(JSON.stringify(sb._pricingItemSavingsCellsHTML(by[k])));
+  // each item shows on its first row; every item has one and the rows are different
+  const first = e.items.map((i) => i.rowIds[0]);
+  assert.strictEqual(new Set(first).size, e.items.length, 'one first row for every item');
+  first.forEach((id) => assert.ok(rows.some((r) => r.id === id), id + ' is a row of the option'));
+  const dsp = cells('ahu_sat_reset');
+  assert.strictEqual(dsp.savings, '$2,900', 'likely 2,871.16 to the nearest $100, the same rounding as the option line');
+  assert.strictEqual(dsp.years, '&lt;1', 'payback 2,000 / 2,871 = 0.7 years shows as <1 (an item under one year; Manager 2026-11-23 5df0a14e)');
+  assert.strictEqual(dsp.title, 'Estimated savings range $' + sb._pricingEstimateRound100(by.ahu_sat_reset.usd.low).toLocaleString('en-US') + ' to $' + sb._pricingEstimateRound100(by.ahu_sat_reset.usd.high).toLocaleString('en-US') + ' per year');
+  assert.strictEqual(cells('ahu_dsp_reset').savings, '$300', '260.93 rounds to $300');
+  ['powerMeter', 'ahu_min_oa', 'ahu_freeze_prot'].forEach((k) => {
+    const c = cells(k);
+    assert.ok(/—/.test(c.savings) && /—/.test(c.years), k + ': no energy claim shows a dash');
+  });
+  assert.ok(/—/.test(sb._pricingItemSavingsCellsHTML(null).savings), 'a row that starts no item shows a dash');
+  // the top line reads the same display values as the client sentence
+  assert.strictEqual(
+    sb._pricingOptionTopLineText(e, 'recommended'),
+    'Estimated savings $3,500/yr (range $' + e.display.low.toLocaleString('en-US') + '-$' + e.display.high.toLocaleString('en-US') + ') · payback about 2 yr',
+  );
+  assert.strictEqual(sb._pricingOptionTopLineText(e, 'compliance'), 'No energy savings claimed: this option installs devices and safety programming.');
+  assert.strictEqual(sb._pricingOptionTopLineText(null, 'recommended'), '');
+  const noUse = make({}, counts)._pricingOptionSavingsEstimate('p', rows, est, { grand: sum(rows) });
+  assert.strictEqual(make({}, counts)._pricingOptionTopLineText(noUse, 'recommended'), '', 'no data: no line');
+  // the columns: right after Total, before Impact; not sortable; no other file reads the column list
+  const cols = sb.PRICING_TBL_COLS.map((c) => c.label);
+  const iTot = cols.indexOf('Line Total');
+  assert.deepStrictEqual(JSON.parse(JSON.stringify(cols.slice(iTot + 1, iTot + 4))), ['Est. savings ($/yr, likely)', 'Payback (yr)', 'Impact']);
+  assert.ok(sb.PRICING_TBL_COLS[iTot + 1].noSort && sb.PRICING_TBL_COLS[iTot + 2].noSort);
+  assert.strictEqual(sb.PRICING_TBL_COLS[iTot + 1].isItemSavingsCol, true);
+  assert.strictEqual(sb.PRICING_COL_SCHEMA_VERSION, 5, 'two columns inserted at 13: schema version 5');
+  assert.strictEqual(sb._pricingRowColValue({ note: 'n' }, cols.indexOf('Notes')), 'n', 'Notes sorts by its own index');
+  const users = fs.readdirSync(path.join(ROOT, 'app')).filter((f) => /\.js$/.test(f) && f !== 'pricing-estimator.js' && /PRICING_TBL_COLS|isItemSavingsCol|_pricingItemSavingsCellsHTML/.test(read('app/' + f)));
+  assert.deepStrictEqual(users, [], 'no report or export file reads the table columns');
+  ok('item savings cells: rounding, dashes, first row of each item, top line text, column order, no other reader of the columns');
+}
 // 7. no "finding" in the client text of the proposal (strings of the proposal functions of app/report-engine.js)
 {
   const src = read('app/report-engine.js');
