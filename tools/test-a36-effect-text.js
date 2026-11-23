@@ -57,6 +57,8 @@ const { launchBrowser } = require(path.join(ROOT, 'tools', 'launch-browser.js'))
         gapMissing: gapOk,
         seqDefsMissing: EM_SEQUENCE_DEFS.map((s) => s.key).filter((k) => !(SEQUENCE_SAVINGS_IMPACT[k] && SEQUENCE_SAVINGS_IMPACT[k].effect)),
         badPhrases: allPhrases.filter((x) => !x || words(x) < 3 || words(x) > 7 || /\d|finding|ASHRAE|Section/i.test(x)),
+        // Matt 2026-11-23 00b22d26: an effect is a reduction ("Less energy wasted on outdoor air"), never an absolute claim ("No ...", "Prevents", "Avoids").
+        absolutePhrases: allPhrases.concat(list.map((f) => f.effect)).filter((x) => /^(No|Prevents|Avoids)|not wasted/.test(String(x))),
         overrideMissing: A36_DET_OVERRIDE.filter((o) => !o.effect).map((o) => o.key),
         keys: list.map((f) => [f.kind, f.key, f.effect]),
         cells: cells,
@@ -69,6 +71,7 @@ const { launchBrowser } = require(path.join(ROOT, 'tools', 'launch-browser.js'))
     ok(r.seqDefsMissing.length === 0, 'every sequence of EM_SEQUENCE_DEFS has an effect phrase in SEQUENCE_SAVINGS_IMPACT; without: ' + (r.seqDefsMissing.join(',') || 'none'));
     ok(r.overrideMissing.length === 0, 'every override of A36_DET_OVERRIDE has an effect phrase');
     ok(r.badPhrases.length === 0, 'every phrase is 3 to 7 words, no digit, no ASHRAE section, no "finding": ' + JSON.stringify(r.badPhrases));
+    ok(r.absolutePhrases.length === 0, 'no effect phrase claims an absolute result (No/Prevents/Avoids) (Matt 2026-11-23 00b22d26): ' + JSON.stringify(r.absolutePhrases));
     ok(r.savingsDsp === 'Cuts fan energy at part load|savings', 'a savings sequence: ' + r.savingsDsp);
     ok(r.enabler === 'Only the boilers needed run|enabler', 'a non-savings sequence: ' + r.enabler);
     ok(r.dspGap === 'Cuts fan energy at part load', 'a missing point (duct static pressure sensor): ' + r.dspGap);

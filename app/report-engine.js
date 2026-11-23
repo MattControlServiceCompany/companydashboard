@@ -15857,7 +15857,7 @@ var ASHRAE36_GAP_DESCRIPTIONS = {
   rat: {
     short: 'Return air temperature sensor',
     impact: 'Confirms system conditioning effectiveness',
-    effect: 'Confirms heating and cooling is not wasted',
+    effect: 'Shows wasted heating and cooling energy',
     plain: 'Measures return air temperature, providing feedback on how effectively the system conditions the building.',
   },
   mat: {
@@ -15915,7 +15915,7 @@ var ASHRAE36_GAP_DESCRIPTIONS = {
   optStart: {
     short: 'Optimal start/stop sequence',
     impact: 'Eliminates unnecessary early-morning warm-up',
-    effect: 'No early warm-up of empty rooms',
+    effect: 'Less early warm-up of empty rooms',
     plain:
       'Minimizes pre-occupancy warm-up time, eliminating early starts that condition an empty building each morning.',
   },
@@ -15940,14 +15940,14 @@ var ASHRAE36_GAP_DESCRIPTIONS = {
   zoneCoolSp: {
     short: 'Zone cooling setpoint',
     impact: 'Baseline requirement',
-    effect: 'Prevents simultaneous heating and cooling',
+    effect: 'Less simultaneous heating and cooling',
     plain:
       'Defines the zone cooling target; required for code compliance and to prevent simultaneous heating and cooling.',
   },
   zoneHtgSp: {
     short: 'Zone heating setpoint',
     impact: 'Baseline requirement',
-    effect: 'No heating of empty rooms',
+    effect: 'Less heating of empty rooms',
     plain: 'Defines the zone heating minimum and enables temperature setbacks to avoid heating empty rooms.',
   },
   discFlow: {
@@ -16102,7 +16102,7 @@ var ASHRAE36_GAP_DESCRIPTIONS = {
   bldgPressure: {
     short: 'Building static pressure sensor',
     impact: 'Required for relief fan/exhaust control',
-    effect: 'Avoids wasted exhaust and relief air',
+    effect: 'Less wasted exhaust and relief air',
     plain: 'Enables exhaust fan modulation to prevent over-pressurization during economizer operation.',
   },
   co2: {
@@ -16121,13 +16121,13 @@ var ASHRAE36_GAP_DESCRIPTIONS = {
   coolSP: {
     short: 'Zone cooling setpoint',
     impact: 'Baseline requirement',
-    effect: 'Prevents simultaneous heating and cooling',
+    effect: 'Less simultaneous heating and cooling',
     plain: 'Defines the zone cooling target; required to prevent simultaneous heating and cooling.',
   },
   htgSP: {
     short: 'Zone heating setpoint',
     impact: 'Baseline requirement',
-    effect: 'No heating of empty rooms',
+    effect: 'Less heating of empty rooms',
     plain: 'Defines the zone heating target and enables unoccupied setbacks to avoid heating empty spaces.',
   },
   dat: {
@@ -27861,7 +27861,7 @@ function _a36DetModel(d, rowsById, picMap, loaded) {
         _a36DetUpperFirst(spFrac) + (spRow.deviatorCount >= spRow.totalZones ? (spRow.totalZones === 1 ? ' has' : ' have') : spRow.deviatorCount === 1 ? ' has' : ' have') + ' setpoints that differ from the recommended setpoints.',
         'Zone setpoints differ from the recommended setpoints on ' + spFrac + '.',
         spRow.deviatorUnits,
-        'Avoids wasted heating and cooling',
+        'Less wasted heating and cooling',
       );
     }
     var schedAll = 0;
@@ -27902,7 +27902,7 @@ function _a36DetModel(d, rowsById, picMap, loaded) {
               : ' ' + (schedNone === 1 ? 'has' : 'have') + ' no occupied period.'),
         'The occupied schedule runs around the clock or holds no occupied period on ' + schedFrac + '.',
         schedUnits,
-        'Equipment off when the building is empty',
+        'Less run time when the building is empty',
       );
     }
     // A setpoint held by a manual override that is active on the WebCTRL screen (row.value of the override sequence, A36_DET_OVERRIDE): the reset of that

@@ -469,7 +469,7 @@ const SEQUENCE_SAVINGS_IMPACT = {
       'Energy: prevents part-load over-ventilation penalty (secondary benefit). ' +
       'Primarily a ventilation quality and compliance measure; energy savings are secondary.',
     // effect: the short Effect phrase of the Opportunities Summary (Matt 2026-11-22 3f54bb50): how the fix helps, energy first, 3-7 words.
-    effect: 'No energy wasted on extra outdoor air',
+    effect: 'Less energy wasted on outdoor air',
     clientSummary:
       'Ensures the correct amount of outside air is delivered at every fan speed, meeting ventilation ' +
       'requirements while avoiding over-ventilation energy waste.',
