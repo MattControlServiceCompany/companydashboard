@@ -2508,6 +2508,8 @@ async function siteResetAllMeterTableSettings() {
    site-ui.js delegates to this array and should NOT maintain its own copy.
 */
 var RELEASE_NOTES = [
+  { v: 'v2026.11.23.381', date: '2026-11-23', title: 'Audit Report: Effect wording',
+    items: [ { type: 'changed', text: 'Audit Report, Opportunities Summary: Effect phrases say how much less energy is wasted (for example "Less energy wasted on outdoor air"), not that no energy is wasted.' } ] },
   { v: 'v2026.11.22.380', date: '2026-11-22', title: 'Audit Report: Effect column says how each fix helps',
     items: [ { type: 'changed', text: 'Audit Report (Detailed style), Opportunities Summary: the Effect column says in a few words how each fix helps, energy first (for example "Cuts fan energy at part load", "Ventilation matched to occupancy"), in place of "Energy use" or "Equipment control". Same text in the PDF and in Word.' } ] },
   { v: 'v2026.11.20.379', date: '2026-11-20', title: 'Dampers are not graded as units',
