@@ -5024,8 +5024,8 @@ function _pricingOptionTopLineText(est, tier) {
     return '$' + Math.round(v).toLocaleString('en-US');
   };
   return (
-    'Estimated savings ' + usd(d.likely) + '/yr (range ' + usd(d.low) + '-' + usd(d.high) + ')' +
-    (d.years ? ' · payback about ' + d.years + ' yr' : '')
+    'Estimated savings ' + usd(d.likely) + ' per year (range ' + usd(d.low) + '-' + usd(d.high) + ')' +
+    (d.years ? ' · payback about ' + d.years + (d.years === 1 ? ' year' : ' years') : '')
   );
 }
 // The one basis sentence of every estimate (the room CO2 estimate and the options print this one text).
@@ -6552,8 +6552,8 @@ var PRICING_TBL_COLS = [
   { label: 'Rate', noSort: false, noHide: false, numeric: true, minWidth: 70 }, // 11 — cc78ac9e: labor $/hr rate, restored between Hours and Line Total
   { label: 'Line Total', noSort: false, noHide: false, numeric: true, minWidth: 80 }, // 12 — label overridden at render time with active basis
   // 13, 14 — the estimated savings and payback of each item (Matt 2026-11-23, 5df0a14e). Site only: no report or export reads PRICING_TBL_COLS.
-  { label: 'Est. savings ($/yr, likely)', noSort: true, noHide: false, noHideEmpty: true, numeric: true, minWidth: 110, isItemSavingsCol: true },
-  { label: 'Payback (yr)', noSort: true, noHide: false, noHideEmpty: true, numeric: true, minWidth: 80, isItemSavingsCol: true },
+  { label: 'Estimated savings per year (likely)', noSort: true, noHide: false, noHideEmpty: true, numeric: true, minWidth: 110, isItemSavingsCol: true },
+  { label: 'Payback (years)', noSort: true, noHide: false, noHideEmpty: true, numeric: true, minWidth: 80, isItemSavingsCol: true },
   {
     label: 'Impact',
     noSort: true,

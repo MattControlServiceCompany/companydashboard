@@ -215,7 +215,7 @@ const sum = (rs) => rs.reduce((s, r) => s + r.lineTotal, 0);
   // the top line reads the same display values as the client sentence
   assert.strictEqual(
     sb._pricingOptionTopLineText(e, 'recommended'),
-    'Estimated savings $3,500/yr (range $' + e.display.low.toLocaleString('en-US') + '-$' + e.display.high.toLocaleString('en-US') + ') · payback about 2 yr',
+    'Estimated savings $3,500 per year (range $' + e.display.low.toLocaleString('en-US') + '-$' + e.display.high.toLocaleString('en-US') + ') · payback about 2 years',
   );
   assert.strictEqual(sb._pricingOptionTopLineText(e, 'compliance'), 'No energy savings claimed: this option installs devices and safety programming.');
   assert.strictEqual(sb._pricingOptionTopLineText(null, 'recommended'), '');
@@ -224,7 +224,7 @@ const sum = (rs) => rs.reduce((s, r) => s + r.lineTotal, 0);
   // the columns: right after Total, before Impact; not sortable; no other file reads the column list
   const cols = sb.PRICING_TBL_COLS.map((c) => c.label);
   const iTot = cols.indexOf('Line Total');
-  assert.deepStrictEqual(JSON.parse(JSON.stringify(cols.slice(iTot + 1, iTot + 4))), ['Est. savings ($/yr, likely)', 'Payback (yr)', 'Impact']);
+  assert.deepStrictEqual(JSON.parse(JSON.stringify(cols.slice(iTot + 1, iTot + 4))), ['Estimated savings per year (likely)', 'Payback (years)', 'Impact']);
   assert.ok(sb.PRICING_TBL_COLS[iTot + 1].noSort && sb.PRICING_TBL_COLS[iTot + 2].noSort);
   assert.strictEqual(sb.PRICING_TBL_COLS[iTot + 1].isItemSavingsCol, true);
   assert.strictEqual(sb.PRICING_COL_SCHEMA_VERSION, 5, 'two columns inserted at 13: schema version 5');
