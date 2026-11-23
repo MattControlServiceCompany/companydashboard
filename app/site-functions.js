@@ -2508,6 +2508,8 @@ async function siteResetAllMeterTableSettings() {
    site-ui.js delegates to this array and should NOT maintain its own copy.
 */
 var RELEASE_NOTES = [
+  { v: 'v2026.11.23.383', date: '2026-11-23', title: 'Cost Estimate: savings shown clearly',
+    items: [ { type: 'changed', text: 'Cost Estimate: the estimated savings and payback of the option now show at the top, under the pricing settings line. Recommended and Full Scope tables have two new columns, Est. savings and Payback, for each item; hover a savings value to see its range. These columns are on the site only: the Service Proposal, the Audit Report and Export to Excel do not change. Item values do not add up to the top line, because work in one building overlaps.' } ] },
   { v: 'v2026.11.23.382', date: '2026-11-23', title: 'Service Proposal: savings from engineering formulas',
     items: [ { type: 'changed', text: 'Service Proposal and Cost Estimate: estimated savings now come from engineering formulas for each kind of work (fan and pump laws, airflow and heat transfer with typical weather hours) using the utility use of each building and its equipment, in place of fixed savings shares. Savings, payback and the work kept in Recommended can change.' } ] },
   { v: 'v2026.11.23.381', date: '2026-11-23', title: 'Audit Report: Effect wording',
