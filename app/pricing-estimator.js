@@ -4406,22 +4406,15 @@ var PRICING_ZONE_CO2_ESTIMATE = {
 };
 // Hours x degrees of the typical year inside the occupied window [startHour, stopHour): { heat, cool } in F hours.
 function _pricingTypicalYearDegreeHours(cityId, startHour, stopHour) {
-  var c = typeof BAS_WEATHER_BINS !== 'undefined' && BAS_WEATHER_BINS.cities ? BAS_WEATHER_BINS.cities[cityId] : null;
-  if (!c) return null;
+  var bins = msOccupiedBins(typeof BAS_WEATHER_BINS !== 'undefined' ? BAS_WEATHER_BINS : null, cityId, startHour, stopHour); // the ONE weather reader
+  if (!bins) return null;
   var K = PRICING_ZONE_CO2_ESTIMATE;
   var heat = 0;
   var cool = 0;
-  for (var m = 0; m < c.temp.length; m++) {
-    for (var b = 0; b < BAS_WEATHER_BINS.bins.length; b++) {
-      var t = BAS_WEATHER_BINS.bins[b];
-      for (var h = startHour; h < stopHour; h++) {
-        var n = c.temp[m][b][h] || 0;
-        if (!n) continue;
-        if (t < K.heatBalanceF) heat += n * (K.heatTargetF - t);
-        else if (t > K.coolTargetF) cool += n * (t - K.coolTargetF);
-      }
-    }
-  }
+  bins.forEach(function (x) {
+    if (x.t < K.heatBalanceF) heat += x.hours * (K.heatTargetF - x.t);
+    else if (x.t > K.coolTargetF) cool += x.hours * (x.t - K.coolTargetF);
+  });
   return { heat: heat, cool: cool };
 }
 // The occupied window of a building: the mean start and stop of the BAS schedules of its zones (all-day schedules left out), whole hours.
@@ -4624,135 +4617,85 @@ function _pricingZoneCo2EstimateText(est, hasProgramming) {
    The room CO2 estimate (_pricingZoneCo2SavingsEstimate) stays the one source for the zone CO2 lines: this function calls it and never
    recomputes them. Estimates only: annual values, low / likely / high.
      use           the building's newest 12 complete bill months (buildingAnnualUse): kWh, therms, electric cost, gas cost
-     end uses      share of the building's own use that goes to cooling, fans, lighting, heating and pumps (PRICING_OPTION_SAVINGS_ESTIMATE.endUse)
-     fractions     share of an end use that one kind of work saves (PRICING_OPTION_SAVINGS_ESTIMATE.fractions), times the coverage
-                   (units in the item / air handlers or terminal units of that kind in the building: collectASHRAE36Data equipCounts)
+     energy        the engineering formula of each measure (computations/measure-savings.js, msEstimate): quantities from the fan model, the
+                   ECM Calculator physics and the typical-year weather bins; inputs and steps are returned with each item. No judged share saved.
+     end uses      the base of each end use the formulas act on: fans from the fan model, cooling and heating from the HVAC Load Estimate Rules
+                   of Thumb on the bill year (_pricingMeasureBuilding). A measure never saves more than the base of its end use.
      rates         the building's own blended rate per fuel (cost / use). A building with no gas meter takes the mean gas rate of the buildings of
                    the project that have one. No utility data = no estimate (the item stays as it is).
      savings       energy x rate per fuel, never a dollar delta
-     overlap       per building and end use, what is left after several items = the product of (1 - fraction) over the items, not the sum.
-                   An override item and its own sequence item in the same set count once.
+     overlap       per building and end use, what is left after several items = the product of (1 - saving / end-use base) over the items, not
+                   the sum. An override item and its own sequence item in the same set count once.
      payback       simplePayback (computations/cost-lines.js), no incentive; price = the workbook share of the rows (totals.rowShares) or lineTotal
-   Items with no entry in the fractions table claim no energy (power meter, minimum outdoor air, freeze protection, offline check, boiler
-   staging, discharge airflow, other devices): they stay in every option they are in today.
+   Items with no owner in MS_OWNERS claim no energy (power meter, minimum outdoor air, freeze protection, offline check, boiler
+   staging, discharge airflow, other devices): they stay in every option they are in today. An item whose formula needs data the building
+   does not have has no estimate (hasData false); an item with no formula (hot water reset) carries the reason and claims nothing.
    rows = priced rows of one option (labor and quantity overrides applied), estimate = _pricingGetEstimate, totals = _pricingComputeTotals of
    exactly these rows, ctx = optional object shared between calls (keeps the audit data of one build).
-   Returns { claims, complete, year, items: [{ key, building, label, qty, price, claimed, exempt, hasData, years, over, kwh, therms, usd, rowIds }],
+   Returns { claims, complete, year, items: [{ key, building, label, qty, price, claimed, exempt, hasData, years, over, kwh, therms, usd, rowIds,
+             inputs: { low, likely, high }: [{ name, value, unit, level, source }], steps: { low, likely, high }: [{ name, formula, value }], reason }],
              buildings: [{ building, price, hasClaim, kwh, therms, usd, years }],
              total: { price, kwh, therms, usd: { low, likely, high }, years: { low, likely, high } },
              display: { low, likely, high, years } | null } with low / likely / high = the low / likely / high SAVINGS case; years low = high savings.
    display = rounded for a client text ($ to the nearest 100, years whole). */
 var PRICING_OPTION_SAVINGS_ESTIMATE = {
-  // ESTIMATING ASSUMPTIONS, not measured values. Each value carries its source or 'judgment'. Change a value here and every output follows.
+  // ESTIMATING ASSUMPTIONS, not measured values. Change a value here and every output follows. The energy of each measure is NOT here: it
+  // comes from the engineering formulas of computations/measure-savings.js (Matt 2026-11-23, 8c5bfd4a: no judged "share saved").
   keepLimitYears: 10, // Matt 2026-11-19: Recommended keeps a savings unit only when its likely payback is this many years or less
-  // End-use split of a building's own annual use. Source: EIA CBECS 2018 public assembly, tables E3 (electricity) and E7 (gas).
-  endUse: { cool: 0.32, fan: 0.09, light: 0.12, heatGas: 0.84 },
-  // A building with fewer therms than this heats with electricity (judgment): its heating is a share of the kWh, its cooling share is lower.
-  lowGas: { therms: 1500, cool: 0.28, heatEl: 0.2 },
-  pump: 0.025, // share of the kWh of a building with hot or chilled water pumps (judgment)
-  // Share of an end use that one kind of work saves: [low, likely, high]. cover = how the quantity of the item scales it ('ahu' = air handlers,
-  // 'box' = terminal units, null = the item is the whole building). src = the source of [low, likely, high].
-  fractions: {
-    ahu_dsp_reset: { cover: 'ahu', needsVav: true, uses: { fan: [0.15, 0.25, 0.4] }, src: ['judgment', 'OSTI 17429313 field median, duct static pressure reset only 25%', 'judgment'] },
-    ahu_sat_reset: {
-      cover: 'ahu',
-      uses: { cool: [0.03, 0.05, 0.08], heat: [0.02, 0.04, 0.06], fan: [0.1, 0.2, 0.3] },
-      src: ['judgment', 'judgment', 'judgment'],
-    },
-    ahu_economizer: { cover: 'ahu', uses: { cool: [0.05, 0.1, 0.18] }, src: ['judgment', 'judgment', 'judgment'] },
-    demandCtrl: {
-      cover: 'ahu',
-      uses: { heat: [0.026, 0.05, 0.088], cool: [0.006, 0.013, 0.021] },
-      src: ['judgment', 'judgment', 'NREL ComStock demand controlled ventilation (8.8% gas heating, 2.1% cooling)'],
-    },
-    hwp_pump_dp_reset: { cover: null, uses: { pump: [0.1, 0.2, 0.4] }, src: ['judgment', 'judgment', 'judgment'] },
-    chwp_pump_dp_reset: { cover: null, uses: { pump: [0.1, 0.2, 0.4] }, src: ['judgment', 'judgment', 'judgment'] },
-    terminalStandard: {
-      cover: 'box',
-      uses: { cool: [0.03, 0.07, 0.14], fan: [0.03, 0.07, 0.14], heat: [0.03, 0.07, 0.14] },
-      src: ['judgment', 'judgment', 'OSTI 17429313 field median, terminal unit minimum airflow only 14%'],
-    },
-    // A released override gives the saving of the sequence it blocks (the same shares as that sequence, or less).
-    satOverride: { releases: 'ahu_sat_reset', cover: null, uses: { cool: [0.03, 0.05, 0.08], heat: [0.02, 0.04, 0.06] }, src: ['judgment', 'judgment', 'judgment'] },
-    spOverride: { releases: 'ahu_dsp_reset', cover: null, needsVav: true, uses: { fan: [0.15, 0.25, 0.4] }, src: ['judgment', 'OSTI 17429313 field median, duct static pressure reset only 25%', 'judgment'] },
-    hwOverride: { releases: 'hwp_supply_reset', cover: null, uses: { heat: [0.01, 0.03, 0.06] }, src: ['judgment', 'judgment', 'judgment'] },
-    hwDpOverride: { releases: 'hwp_pump_dp_reset', cover: null, uses: { pump: [0.05, 0.1, 0.2] }, src: ['judgment', 'judgment', 'judgment'] },
-    chwDpOverride: { releases: 'chwp_pump_dp_reset', cover: null, uses: { pump: [0.05, 0.1, 0.2] }, src: ['judgment', 'judgment', 'judgment'] },
-  },
-  photocellKwh: [0, 300, 900], // kWh a year of one exterior lighting photocell (judgment)
-  // Occupancy sensors for interior lighting: spaces x fixtures x watts x hours x vacancy x factor. Fixtures, watts, hours and factor are the
-  // defaults of the occupancy_sensors template (app/ecm-calculators.js); the vacancy shares are judgment.
-  occupancy: { fixtures: 8, watts: 32, hours: 2500, factor: 0.85, vacancy: [0.2, 0.3, 0.5] },
+  // A building with fewer therms than this heats with electricity (its reheat is electric); more heats with gas (classification rule).
+  electricHeatBelowTherms: 1500,
 };
 
-var PRICING_OPTION_CASES = ['low', 'likely', 'high'];
 // Programs the estimate claims no energy for (the ranking puts them first; Recommended always keeps them): see the header.
 function _pricingOptionClaims(key) {
-  return !!PRICING_OPTION_SAVINGS_ESTIMATE.fractions[key] || key === 'lightingPhotocell' || key === 'lightingOccupancy';
+  return msClaims(key);
 }
-// Fractions and fixed kWh of one item: { uses: [{ use, f: [low, likely, high] }], fixed: [kWh low, likely, high] | null }, or null when it claims nothing.
-function _pricingOptionItemFractions(key, qty, counts) {
-  var K = PRICING_OPTION_SAVINGS_ESTIMATE;
-  if (key === 'lightingPhotocell') {
-    return {
-      uses: [],
-      fixed: K.photocellKwh.map(function (v) {
-        return v * Math.max(1, qty);
-      }),
-    };
-  }
-  if (key === 'lightingOccupancy') {
-    var o = K.occupancy;
-    var kw = (Math.max(1, qty) * o.fixtures * o.watts) / 1000;
-    return {
-      uses: [],
-      fixed: o.vacancy.map(function (v) {
-        return kw * o.hours * v * o.factor;
-      }),
-    };
-  }
-  var def = K.fractions[key];
-  if (!def) return null;
-  // Work that needs VAV terminal units in a building where the Equipment Matrix lists none: no estimate (unknown), never a zero saving
-  // (2026-11-19: a zero saving made the payback 'over the limit' and removed the work from Recommended).
-  if (def.needsVav && !counts.vav) return null;
-  var cover = 1;
-  if (def.cover === 'ahu') cover = Math.min(1, qty / counts.ahu);
-  else if (def.cover === 'box') cover = Math.min(1, qty / counts.box);
-  var uses = [];
-  Object.keys(def.uses).forEach(function (eu) {
-    uses.push({
-      use: eu,
-      f: def.uses[eu].map(function (v) {
-        return v * cover;
-      }),
-    });
+// The utility building id of a building name (the id buildingAnnualUse reads), or null.
+function _pricingUtilityBuildingId(projId, name) {
+  var ud = typeof _a36UtilityBuilding === 'function' ? _a36UtilityBuilding({ project: { id: projId } }, { name: name }) : null;
+  return ud ? ud.id : null;
+}
+/* The building facts every measure formula reads (computations/measure-savings.js): ONE reader for them. Returns the B of measure-savings.js.
+   use = buildingAnnualUse (the stated bill year), ab = the audit building (collectASHRAE36Data: equipment counts and zone schedules).
+   fan model     fanBuildingUnitModels (fan-savings.js; the same units and defaults the Fan Savings template and getEndUse use), total electricity = the
+                 bill year kWh; the fan base is capped by the building kWh less cooling and electric heating (the rule of _fanEndUse)
+   cooling, heat hvacRuleOfThumbEnduse (app/calculators.js): the Rules of Thumb of the HVAC Load Estimate on the bill year totals
+   weather       the occupied window of the BAS zone schedules x the typical year of PRICING_ZONE_CO2_ESTIMATE.weatherCity (msOccupiedBins) */
+function _pricingMeasureBuilding(projId, name, use, ab) {
+  var K = PRICING_ZONE_CO2_ESTIMATE;
+  var c = ab.equipCounts || {};
+  var bid = _pricingUtilityBuildingId(projId, name);
+  var units = fanBuildingUnitModels(projId, bid, use.kwh);
+  var heatFuel = (use.therms || 0) < PRICING_OPTION_SAVINGS_ESTIMATE.electricHeatBelowTherms ? 'electric' : 'gas';
+  var eu = hvacRuleOfThumbEnduse(projId, bid, use.kwh, use.therms || 0, heatFuel === 'electric') || { coolKwh: 0, heatKwh: 0, heatGasTherms: 0 };
+  var cap = use.kwh - eu.coolKwh - eu.heatKwh;
+  var zones = (ab.equipResults || []).filter(function (eq) {
+    return typeof EM_SPACE_TYPE_ZONE_TERMINAL_CATS !== 'undefined' && EM_SPACE_TYPE_ZONE_TERMINAL_CATS[eq.category];
   });
-  return { uses: uses, fixed: null };
-}
-// The energy of each end use of one building: kWh and therms a year.
-function _pricingOptionEndUseBase(use, counts) {
-  var K = PRICING_OPTION_SAVINGS_ESTIMATE;
-  var therms = use.therms || 0;
-  var low = therms < K.lowGas.therms;
+  // the schedules of the zone terminals; a building with air handler schedules only takes those
+  var win = _pricingBuildingOccupiedWindow(zones) || _pricingBuildingOccupiedWindow(ab.equipResults);
+  // No BAS schedule: the default window (70 hours a week, MS_DEFAULT_WINDOW); the estimate is never left empty for a missing schedule
+  var windowInfo = win
+    ? { start: win.start, stop: win.stop, level: 'matrix', source: 'the mean start and stop of the BAS schedules of the building' }
+    : { start: MS_DEFAULT_WINDOW.start, stop: MS_DEFAULT_WINDOW.stop, level: 'default', source: 'default: 70 hours a week (fan-savings.js fanDefaultRunHours, 3,640 h a year) = 10 hours a day, every day; the building has no BAS schedule' };
+  win = { start: windowInfo.start, stop: windowInfo.stop };
   return {
-    low: low,
-    cool: use.kwh * (low ? K.lowGas.cool : K.endUse.cool),
-    fan: use.kwh * K.endUse.fan,
-    heatEl: low ? use.kwh * K.lowGas.heatEl : 0,
-    light: use.kwh * K.endUse.light,
-    pump: counts.pump ? use.kwh * K.pump : 0,
-    heatGas: low ? 0 : therms * K.endUse.heatGas,
+    sqft: use.sqft || 0,
+    heatFuel: heatFuel,
+    afue: K.afue,
+    cop: K.cop,
+    heatBalanceF: K.heatBalanceF,
+    counts: {
+      ahu: Math.max(1, (c.ahu || 0) + (c.rtu || 0) + (c.doas || 0)),
+      box: (c.vav || 0) + (c.ddvav || 0) + (c.fpb || 0) + (c.fcu || 0), // 0 = the Equipment Matrix lists none (unknown, not proof of none)
+    },
+    fanUnits: units,
+    fanCapKwh: cap > 0 ? cap : null,
+    base: { cool: eu.coolKwh, heatEl: eu.heatKwh, heatGas: eu.heatGasTherms },
+    window: windowInfo,
+    bins: msOccupiedBins(BAS_WEATHER_BINS, K.weatherCity, win.start, win.stop),
+    degreeHours: _pricingTypicalYearDegreeHours(K.weatherCity, win.start, win.stop),
   };
-}
-// kWh, therms and $ of a share f of one end use.
-function _pricingOptionUseSaving(base, rates, use, f) {
-  if (use === 'heat') {
-    return base.low
-      ? { kwh: base.heatEl * f, therms: 0, usd: base.heatEl * f * rates.elec }
-      : { kwh: 0, therms: base.heatGas * f, usd: base.heatGas * f * rates.gas };
-  }
-  return { kwh: base[use] * f, therms: 0, usd: base[use] * f * rates.elec };
 }
 function _pricingOptionSavingsEstimate(projId, rows, estimate, totals, ctx) {
   var K = PRICING_OPTION_SAVINGS_ESTIMATE;
@@ -4797,15 +4740,8 @@ function _pricingOptionSavingsEstimate(projId, rows, estimate, totals, ctx) {
     var er = use ? _pricingRateOf(use.electricCost, use.kwh) : null;
     var out = null;
     if (use && ab && er && use.kwh > 0) {
-      var c = ab.equipCounts || {};
       var gr = use.hasGas ? _pricingRateOf(use.gasCost, use.therms) : _pricingProjectGasRate(projId);
-      var counts = {
-        ahu: Math.max(1, (c.ahu || 0) + (c.rtu || 0) + (c.doas || 0)),
-        box: Math.max(1, (c.vav || 0) + (c.ddvav || 0) + (c.fpb || 0) + (c.fcu || 0)),
-        vav: (c.vav || 0) + (c.ddvav || 0) + (c.fpb || 0) > 0,
-        pump: !!(c.hwp || c.chwp),
-      };
-      out = { use: use, unitCost: { elec: er, gas: gr || 0 }, counts: counts, base: _pricingOptionEndUseBase(use, counts) };
+      out = { use: use, unitCost: { elec: er, gas: gr || 0 }, m: _pricingMeasureBuilding(projId, name, use, ab) };
     }
     ctx.bld[name] = out;
     return out;
@@ -4829,22 +4765,23 @@ function _pricingOptionSavingsEstimate(projId, rows, estimate, totals, ctx) {
     it.usd = zero();
     var B = it.claimed && !it.exempt ? bldOf(it.building) : null;
     if (!B) return;
-    var fr = _pricingOptionItemFractions(it.key, it.qty, B.counts);
-    if (!fr) return;
+    var est = msEstimate(it.key, B.m, it.qty);
+    if (!est) return; // no floor area or no weather: no estimate (kept)
+    if (est.none) {
+      it.reason = est.reason; // no formula: nothing claimed
+      return;
+    }
+    if (est.reason) it.reason = est.reason; // does not apply: saving 0 with the reason (hasData, so the 10-year rule treats it)
     it.hasData = true;
-    it.fr = fr;
-    PRICING_OPTION_CASES.forEach(function (k, i) {
-      fr.uses.forEach(function (u) {
-        var s = _pricingOptionUseSaving(B.base, B.unitCost, u.use, u.f[i]);
-        it.kwh[k] += s.kwh;
-        it.therms[k] += s.therms;
-        it.usd[k] += s.usd;
-      });
-      if (fr.fixed) {
-        var kwhFixed = Math.min(fr.fixed[i], B.base.light);
-        it.kwh[k] += kwhFixed;
-        it.usd[k] += kwhFixed * B.unitCost.elec;
-      }
+    it.ms = est;
+    it.inputs = {};
+    it.steps = {};
+    MS_CASES.forEach(function (k) {
+      it.kwh[k] = est[k].kwh;
+      it.therms[k] = est[k].therms;
+      it.usd[k] = est[k].kwh * B.unitCost.elec + est[k].therms * B.unitCost.gas;
+      it.inputs[k] = est[k].inputs;
+      it.steps[k] = est[k].steps;
     });
   });
   // The room CO2 lines (dense rooms), from their own owner.
@@ -4866,7 +4803,7 @@ function _pricingOptionSavingsEstimate(projId, rows, estimate, totals, ctx) {
     var cb = co2Of(it.building);
     if (!cb || !cb.usd) return;
     it.hasData = true;
-    PRICING_OPTION_CASES.forEach(function (k) {
+    MS_CASES.forEach(function (k) {
       it.kwh[k] = cb.kwh[k];
       it.therms[k] = cb.therms[k];
       it.usd[k] = cb.usd[k];
@@ -4914,28 +4851,33 @@ function _pricingOptionSavingsEstimate(projId, rows, estimate, totals, ctx) {
       keys[it.key] = true;
     });
     var counted = mine.filter(function (it) {
-      if (!it.hasData || !it.fr) return false;
-      var def = K.fractions[it.key];
-      return !(def && def.releases && keys[def.releases]);
+      if (!it.hasData || !it.ms) return false;
+      var rel = msReleases(it.key);
+      return !(rel && keys[rel]);
     });
-    PRICING_OPTION_CASES.forEach(function (k, i) {
+    MS_CASES.forEach(function (k) {
       if (haveEst) {
+        // per end use: remaining = product of (1 - share of the end-use base that each measure saves); a measure never saves more than its base
         var rem = {};
+        var base = {};
         counted.forEach(function (it) {
-          it.fr.uses.forEach(function (u) {
-            rem[u.use] = (rem[u.use] === undefined ? 1 : rem[u.use]) * (1 - u.f[i]);
+          var r = it.ms[k];
+          Object.keys(r.byUse).forEach(function (u) {
+            var b = r.baseByUse[u] || 0;
+            base[u] = Math.max(base[u] || 0, b);
+            var f = b > 0 ? Math.min(1, r.byUse[u] / b) : 0;
+            rem[u] = (rem[u] === undefined ? 1 : rem[u]) * (1 - f);
           });
-          if (it.fr.fixed) {
-            var kf = Math.min(it.fr.fixed[i], B.base.light);
-            out.kwh[k] += kf;
-            out.usd[k] += kf * B.unitCost.elec;
-          }
         });
-        Object.keys(rem).forEach(function (eu) {
-          var s = _pricingOptionUseSaving(B.base, B.unitCost, eu, 1 - rem[eu]);
-          out.kwh[k] += s.kwh;
-          out.therms[k] += s.therms;
-          out.usd[k] += s.usd;
+        Object.keys(rem).forEach(function (u) {
+          var s = base[u] * (1 - rem[u]);
+          if (u === 'heatGas') {
+            out.therms[k] += s;
+            out.usd[k] += s * B.unitCost.gas;
+          } else {
+            out.kwh[k] += s;
+            out.usd[k] += s * B.unitCost.elec;
+          }
         });
       }
       if (cb && cb.usd) {
@@ -4965,7 +4907,7 @@ function _pricingOptionSavingsEstimate(projId, rows, estimate, totals, ctx) {
   var complete = claims && buildings.every(function (b) {
     return !b.hasClaim || b.hasData;
   });
-  PRICING_OPTION_CASES.forEach(function (k) {
+  MS_CASES.forEach(function (k) {
     total.kwh[k] = sum(function (b) { return b.kwh[k]; });
     total.therms[k] = sum(function (b) { return b.therms[k]; });
     total.usd[k] = sum(function (b) { return b.usd[k]; });
@@ -4987,6 +4929,7 @@ function _pricingOptionSavingsEstimate(projId, rows, estimate, totals, ctx) {
       return {
         key: it.key, building: it.building, label: it.label, qty: it.qty, price: it.price, claimed: it.claimed, exempt: it.exempt,
         unit: it.unit, hasData: it.hasData, years: it.years, over: it.over, kwh: it.kwh, therms: it.therms, usd: it.usd, rowIds: it.rowIds,
+        inputs: it.inputs || null, steps: it.steps || null, reason: it.reason || null,
       };
     }),
     buildings: buildings,
@@ -5019,9 +4962,9 @@ function _pricingOptionEstimateText(est, tier) {
 // The one basis sentence of every estimate (the room CO2 estimate and the options print this one text).
 function _pricingEstimateBasisText(year, weatherCity) {
   return (
-    'Estimates use each building\'s ' + (year ? year + ' ' : '') + 'energy use and rates' +
-    (weatherCity ? ' and typical ' + weatherCity + ' weather' : '') +
-    ', and the savings shares come from published field studies and national building energy data.'
+    'Savings are estimated with engineering formulas for each measure (fan and pump laws, airflow and heat transfer' +
+    (weatherCity ? ' with typical ' + weatherCity + ' weather' : '') +
+    ") from each building's " + (year ? year + ' ' : '') + 'utility use and its equipment.'
   );
 }
 

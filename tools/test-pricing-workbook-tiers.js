@@ -140,6 +140,8 @@ const ok = (name) => {
   n++;
   console.log('PASS ' + name);
 };
+// the Service Proposal measure formulas + the estimator, as the page loads them (Matt 2026-11-23 8c5bfd4a)
+const PEJS = () => read('computations/measure-savings.js') + read('app/pricing-estimator.js');
 const plain = (x) => JSON.parse(JSON.stringify(x));
 
 // 1. Hourly mode == old code (totals per tier, with and without projId, and summary data)
@@ -147,7 +149,7 @@ const plain = (x) => JSON.parse(JSON.stringify(x));
   const T = tiers();
   const oldC = make(oldPE, { en_pricing_catalog: catalog }, T);
   const newC = make(
-    read('app/pricing-estimator.js'),
+    PEJS(),
     { en_pricing_catalog: catalog, en_pricing_workbook_p: { method: 'hourly' } },
     T,
   );
@@ -171,7 +173,7 @@ const plain = (x) => JSON.parse(JSON.stringify(x));
 {
   const T = tiers();
   const store = { en_pricing_catalog: catalog };
-  const c = make(read('app/pricing-estimator.js'), store, T);
+  const c = make(PEJS(), store, T);
   const r = c._pricingComputeTotals(T.recommended, est, 'p');
   assert.strictEqual(r.method, 'workbook');
   // included rows: h1, h2, s1, s2 (s3 is toggled off)
@@ -344,7 +346,7 @@ const plain = (x) => JSON.parse(JSON.stringify(x));
 // Phase 1 = everything else. Phase 2 is the same with hardware on or off; grand total unchanged.
 {
   const T = tiers();
-  const c = make(read('app/pricing-estimator.js'), { en_pricing_catalog: catalog }, T);
+  const c = make(PEJS(), { en_pricing_catalog: catalog }, T);
   const seqH = 2 * 2.5 + 5 * 1.25;
   const own = EW.compute({ hours: { SE: seqH } }).summary.total;
   const on = c._pricingComputeTotals(T.recommended, est, 'p');
@@ -374,7 +376,7 @@ const plain = (x) => JSON.parse(JSON.stringify(x));
   });
   const T = { compliance: U, recommended: U, 'full-scope': U };
   const store = { en_pricing_catalog: catalog };
-  const c = make(read('app/pricing-estimator.js'), store, T);
+  const c = make(PEJS(), store, T);
   const full = c._pricingComputeTotals(T.recommended, { rowToggles: {}, manualPrices: {} }, 'p').grand;
   for (const frac of [0.9, 0.75, 0.5, 0.3]) {
     const target = Math.round(full * frac);
@@ -399,13 +401,13 @@ const plain = (x) => JSON.parse(JSON.stringify(x));
   const T = tiers();
   const rec = T.recommended.filter((r) => r.phase === 1);
   const e = { rowToggles: {}, manualPrices: {}, laborOverrides: {}, installHoursOverrides: {}, qtyOverrides: {} };
-  const wbC = make(read('app/pricing-estimator.js'), { en_pricing_catalog: catalog }, T);
+  const wbC = make(PEJS(), { en_pricing_catalog: catalog }, T);
   const tot = wbC._pricingComputeTotals(T.recommended, e, 'p');
   assert.strictEqual(tot.method, 'workbook');
   const colSum = rec.reduce((sum, r) => sum + Math.round(wbC._pricingBothRecAmount(r, tot) * 100), 0);
   assert.strictEqual(colSum, Math.round(tot.phase1 * 100), 'workbook Rec. Total column == footer hardware');
   const hC = make(
-    read('app/pricing-estimator.js'),
+    PEJS(),
     { en_pricing_catalog: catalog, en_pricing_workbook_p: { method: 'hourly' } },
     T,
   );
@@ -421,7 +423,7 @@ const plain = (x) => JSON.parse(JSON.stringify(x));
 {
   const T = tiers();
   const e = { rowToggles: {}, manualPrices: {}, laborOverrides: {}, installHoursOverrides: {}, qtyOverrides: {} };
-  const wb = make(read('app/pricing-estimator.js'), { en_pricing_catalog: catalog, en_pricing_estimate_p: e }, T);
+  const wb = make(PEJS(), { en_pricing_catalog: catalog, en_pricing_estimate_p: e }, T);
   // fixed envelope per phase so the timeline spreads the rows over several phases
   wb._pricingComputeProgramCostModel = (p, k) => {
     const ph = [];
@@ -488,14 +490,14 @@ const plain = (x) => JSON.parse(JSON.stringify(x));
     const e = { rowToggles: {}, manualPrices: {}, laborOverrides: {}, installHoursOverrides: {}, qtyOverrides: {} };
     rows.forEach((r) => rnd() < 0.1 && (e.rowToggles[r.id] = false));
     const store = () => ({ en_pricing_catalog: cat, en_pricing_estimate_p: e });
-    const wb = make(read('app/pricing-estimator.js'), store(), T);
+    const wb = make(PEJS(), store(), T);
     wb._pricingComputeProgramCostModel = (p, k) => ({
       phases: Array.from({ length: k }, () => ({ measuresAvailable: 150, allowanceTotal: 1150, emLaborTotal: 1000, overCommitted: false })),
       programAllowanceTotal: 1,
       programEmLaborTotal: 1,
       monthlyAllowance: 1,
     });
-    const hr = make(read('app/pricing-estimator.js'), Object.assign(store(), { en_pricing_workbook_p: { method: 'hourly' } }), T);
+    const hr = make(PEJS(), Object.assign(store(), { en_pricing_workbook_p: { method: 'hourly' } }), T);
     const mn = make(mainPE, Object.assign(store(), { en_pricing_workbook_p: { method: 'hourly' } }), T);
     const tot = wb._pricingComputeTotals(rows, e, 'p');
     if (tot.grand === null) continue;
@@ -570,7 +572,7 @@ const plain = (x) => JSON.parse(JSON.stringify(x));
   });
   const T0 = tiers();
   const T = { compliance: T0.compliance, recommended: T0.recommended.concat([meter('m1', 'Alpha', 1), meter('m2', 'Beta', 2)]), 'full-scope': T0['full-scope'] };
-  const wbc = make(read('app/pricing-estimator.js'), { en_pricing_catalog: catalog }, T);
+  const wbc = make(PEJS(), { en_pricing_catalog: catalog }, T);
   const base = wbc._pricingComputeTotals(T0.recommended, est, 'p');
   const withM = wbc._pricingComputeTotals(T.recommended, est, 'p');
   assert.strictEqual(withM.method, 'workbook');
@@ -588,10 +590,10 @@ const plain = (x) => JSON.parse(JSON.stringify(x));
   assert.strictEqual(ch.filter((c) => c.key === 'fixed')[0].amount, 15000);
   // a typed part price on a fixed row changes nothing
   const store2 = { en_pricing_catalog: catalog, en_pricing_workbook_p: { partPrices: { m1: 1 } } };
-  const wb2 = make(read('app/pricing-estimator.js'), store2, T);
+  const wb2 = make(PEJS(), store2, T);
   assert.strictEqual(wb2._pricingComputeTotals(T.recommended, est, 'p').grand, withM.grand, 'typed part price ignored for a fixed row');
   // hourly: the meter is 5000 x qty on top
-  const hrc = make(read('app/pricing-estimator.js'), { en_pricing_catalog: catalog, en_pricing_workbook_p: { method: 'hourly' } }, T);
+  const hrc = make(PEJS(), { en_pricing_catalog: catalog, en_pricing_workbook_p: { method: 'hourly' } }, T);
   const hb = hrc._pricingComputeTotals(T0.recommended, est, 'p');
   const hm = hrc._pricingComputeTotals(T.recommended, est, 'p');
   assert.strictEqual(hm.grand, hb.grand + 15000, 'hourly: tier total = other rows + 5000 x 3 meters');

@@ -30,6 +30,26 @@ function dcvEnergySaved(p) {
   };
 }
 
+/* pumpVfdEnergySaved(p) - the ONE pump affinity-law physics (Matt 2026-11-23, 8c5bfd4a). The pump_vfd template below and the
+   Service Proposal pump pressure reset (computations/measure-savings.js) both call it.
+   p = { gpm, head_ft, pump_eff, motor_eff (fractions 0-1), avg_speed_ratio (0-1), op_hours }.
+   BHP = gpm x head / (pump constant x pump_eff); kW = hpToKw(BHP, motor_eff); saved = kW x (1 - speed^3) x hours. Un-rounded. Quantities only. */
+function pumpVfdEnergySaved(p) {
+  const bhp_design = (p.gpm * p.head_ft) / (3960 * p.pump_eff);
+  const kw_design = hpToKw(bhp_design, p.motor_eff);
+  const kwh_existing = kw_design * p.op_hours;
+  const kwh_new = kw_design * fanPowerFraction(p.avg_speed_ratio) * p.op_hours;
+  return { bhp_design: bhp_design, kw_design: kw_design, kwh_existing: kwh_existing, kwh_new: kwh_new, savings_kwh: kwh_existing - kwh_new };
+}
+
+/* vavMinFlowFanSaved(p) - the ONE fan physics of a lower terminal minimum airflow (Matt 2026-11-23, 8c5bfd4a). The vav_reheat template
+   (minimum airflow part) and the Service Proposal terminal minimum airflow estimate both call it.
+   p = { fan_kw_design, min_flow_old, min_flow_new (fractions of design airflow), hours }. kWh = fan kW x (power fraction at the old
+   minimum - power fraction at the new minimum) x hours. Never below 0. Un-rounded. Quantities only. */
+function vavMinFlowFanSaved(p) {
+  return Math.max(0, p.fan_kw_design * (fanPowerFraction(p.min_flow_old) - fanPowerFraction(p.min_flow_new)) * p.hours);
+}
+
 const ECM_TEMPLATES = {
   /* ── 1. OA DAMPERS ──────────────────────────────────── */
   oa_dampers: {
@@ -1143,20 +1163,20 @@ const ECM_TEMPLATES = {
       { id: 'savings_kwh', label: 'Annual kWh Savings', unit: 'kWh/yr', formula: 'savings = kwh_existing − kwh_new' },
     ],
     calculate(inp) {
-      const pe = inp.pump_eff / 100;
-      const me = inp.motor_eff / 100;
-      const sr = inp.avg_speed_ratio;
-      const bhp_design = (inp.gpm * inp.head_ft) / (3960 * pe);
-      const kw_design = hpToKw(bhp_design, me);
-      const kwh_existing = kw_design * inp.op_hours;
-      const kwh_new = kw_design * fanPowerFraction(sr) * inp.op_hours;
-      const savings_kwh = kwh_existing - kwh_new;
+      const r = pumpVfdEnergySaved({
+        gpm: inp.gpm,
+        head_ft: inp.head_ft,
+        pump_eff: inp.pump_eff / 100,
+        motor_eff: inp.motor_eff / 100,
+        avg_speed_ratio: inp.avg_speed_ratio,
+        op_hours: inp.op_hours,
+      });
       return {
-        bhp_design: Math.round(bhp_design * 100) / 100,
-        kw_design: Math.round(kw_design * 100) / 100,
-        kwh_existing: Math.round(kwh_existing),
-        kwh_new: Math.round(kwh_new),
-        savings_kwh: Math.round(savings_kwh),
+        bhp_design: Math.round(r.bhp_design * 100) / 100,
+        kw_design: Math.round(r.kw_design * 100) / 100,
+        kwh_existing: Math.round(r.kwh_existing),
+        kwh_new: Math.round(r.kwh_new),
+        savings_kwh: Math.round(r.savings_kwh),
       };
     },
   },
@@ -1514,9 +1534,8 @@ const ECM_TEMPLATES = {
         : Math.round(reheat_btu_total / (BTU_PER_THERM * afue));
       const cool_btu = 1.08 * inp.system_cfm * inp.avg_dt_reheat * inp.season_hours * 0.3;
       const cool_kwh_saved = Math.round(cool_btu / (inp.cooling_cop * BTU_PER_KWH));
-      const fan_kwh_saved = Math.max(
-        0,
-        Math.round(inp.fan_kw_design * (fanPowerFraction(mfOld) - fanPowerFraction(mfNew)) * inp.unocc_hours),
+      const fan_kwh_saved = Math.round(
+        vavMinFlowFanSaved({ fan_kw_design: inp.fan_kw_design, min_flow_old: mfOld, min_flow_new: mfNew, hours: inp.unocc_hours }),
       );
       return {
         reheat_saved_qty: reheat_saved_qty,

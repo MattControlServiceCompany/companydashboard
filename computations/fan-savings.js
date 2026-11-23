@@ -744,6 +744,32 @@ function fanModelUnits(projId, bldgId, read, totalAnnual) {
   return models;
 }
 
+/**
+ * The sized fan models of one building, ready for a savings estimate: fanReadUnits + fanModelUnits, units with a size only.
+ * The one reader a report or the Service Proposal asks for the fan units (Matt 2026-11-23, 8c5bfd4a).
+ * @param {string|number} projId
+ * @param {string} bldgId - the utility building id
+ * @param {number|null} totalAnnual - the building's total baseline electricity kWh per year, or null
+ * @returns {Array<Object>} fanUnitModel results with ok true
+ */
+function fanBuildingUnitModels(projId, bldgId, totalAnnual) {
+  var read = fanReadUnits(projId, bldgId);
+  var sized = fanModelUnits(projId, bldgId, read, totalAnnual).filter(function (m) {
+    return m.ok;
+  });
+  if (sized.length || !(totalAnnual > 0)) return sized;
+  // No fan unit with a size in the Equipment Matrix (missing input, not proof of no fans): ONE default unit takes the fan model's own default,
+  // the national average ventilation share of the building total (rule 'area'), drive unknown.
+  var def = {
+    units: [{ id: FAN_BUILDING_DEFAULT_ID, name: 'Building fans (no sized fan unit in the Equipment Matrix)', category: 'ahu', cfm: null, ampsPoint: null, ampsAsset: null, volts: null, phase: null, hp: null, tons: null, drivePoint: null, hasVfd: null, status: null, occupied: null, hiLoPoints: false, trend: null }],
+    note: read.note,
+  };
+  return fanModelUnits(projId, bldgId, def, totalAnnual).filter(function (m) {
+    return m.ok;
+  });
+}
+var FAN_BUILDING_DEFAULT_ID = 'default-fans'; // the id of the one default fan unit of a building with no sized fan unit (fanBuildingUnitModels)
+
 /** The days-in-month weights of a fan's year (a fan runs all year; the month profile is the month length). Jan..Dec, add up to 1. */
 function fanMonthWeights() {
   return FAN_MONTH_DAYS.map(function (d) {

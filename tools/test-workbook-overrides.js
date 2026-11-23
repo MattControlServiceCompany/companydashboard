@@ -344,6 +344,7 @@ function auditBox(store, srcs) {
   function ceBox(store, pe, au) {
     const sb = makeSandbox(store, [
       read('computations/cost-lines.js'), // simplePayback for the option savings estimate (the page loads it too)
+      read('computations/measure-savings.js'), // (Matt 2026-11-23 8c5bfd4a)
       pe || read('app/pricing-estimator.js'),
       read('app/estimate-workbook.js'),
       au || read('app/audit-estimate.js'),

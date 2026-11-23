@@ -105,7 +105,16 @@ function fanPowerFraction(speedFraction, opts) {
  * @returns {number} fraction of fan power saved
  */
 function ductStaticResetPowerSavings(spReductionFraction, opts) {
-  return 1 - fanPowerFraction(Math.sqrt(1 - spReductionFraction), opts);
+  return 1 - fanPowerFraction(pressureCutSpeedRatio(spReductionFraction), opts);
+}
+
+/**
+ * Speed ratio of a fan or pump after a pressure cut. Affinity law: pressure varies as speed squared, so speed = sqrt(1 - cut).
+ * @param {number} cutFraction - pressure reduction as a fraction (0.2 = 20 percent)
+ * @returns {number} speed as a fraction of full speed
+ */
+function pressureCutSpeedRatio(cutFraction) {
+  return Math.sqrt(1 - cutFraction);
 }
 
 /**

@@ -331,6 +331,14 @@
           "formula": "monthly measure = yearly template quantity x the building's monthly end-use profile; dollars = calcMeasureDollars(measure, measureRatesNow(projId, measure))"
         },
         {
+          "id": "proposal-measure-savings",
+          "name": "Service Proposal Savings From Engineering Formulas",
+          "description": "Chain: building facts (utility bill year, fan units of the Equipment Matrix, HVAC Load Estimate Rules of Thumb end uses, occupied-hours weather bins) -> one owner function per measure returns low / likely / high kWh and therms with its inputs and steps (no dollars) -> _pricingOptionSavingsEstimate combines per end use as a product of (1 - saved share), prices once per building with the building's own rates, and the 10-year rule decides Recommended. A measure with no data or no formula has no estimate (kept), never a zero saving.",
+          "functions": ["msEstimate(key, B, qty)", "msDspReset(B, qty)", "msSatReset(B, qty)", "msEconomizer(B, qty)", "msDemandCtrl(B, qty)", "msTerminalMinFlow(B, qty)", "msPumpDpReset(B, plant)", "msLightingPhotocell(B, qty)", "msLightingOccupancy(B, qty)", "msOccupiedBins(weather, cityId, start, stop)", "_pricingMeasureBuilding(projId, name, use, ab)", "_pricingOptionSavingsEstimate(projId, rows, estimate, totals, ctx)", "fanBuildingUnitModels(projId, bldgId, totalAnnual)", "hvacRuleOfThumbEnduse(projId, bldgId, kwh, therms, electricHeat)", "pumpVfdEnergySaved(p)", "vavMinFlowFanSaved(p)", "pressureCutSpeedRatio(cut)"],
+          "files": ["computations/measure-savings.js", "app/pricing-estimator.js", "app/ecm-calculators.js", "app/calculators.js", "computations/fan-savings.js", "computations/physics.js", "tools/test-measure-savings.js", "tools/test-option-savings-estimate.js"],
+          "formula": "yearly saving per use = engineering formula of the measure (fan affinity, bin method 1.08 x cfm x dT x hours, free cooling bins, pump affinity, watts x hours); building saving per use = base x (1 - product of (1 - saving / base)); dollars = kWh x electric rate + therms x gas rate"
+        },
+        {
           "id": "measure-cost-lines-payback",
           "name": "Measure Cost Lines and One Payback",
           "description": "Each Energy Savings matrix measure holds cost lines (third-party price, internal labor hours x the pricing estimator hourly rate, parts, incentive). simplePayback = (total cost - incentive) / annual matrix savings is the only payback formula. The Energy Savings tab (measure detail and Selected Measures card) and the Cost Estimate tab (roll-up table and footer line) all call it. The pricing estimator does no energy math.",

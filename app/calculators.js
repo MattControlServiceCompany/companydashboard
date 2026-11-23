@@ -1107,6 +1107,7 @@ function _hvlRenderMethod(projId, bldgId, method) {
 // Electric heat is the exception, not the rule: the heating-of-HVAC-kWh share is 0 unless the Equipment Matrix
 // classifies equipment of this building as electric heat (_hvlBuildingHeatingSignals). The gas share comes from
 // _hvlGasHeatShare (the 3-lowest-month baseload method from the building's own gas bills, else the default).
+const HVL_ELEC_HEAT_PCT = 35; // Heating % of HVAC kWh of a building with electric heat (Rules of Thumb start value; _hvlThumbDefaults and hvacRuleOfThumbEnduse)
 function _hvlThumbDefaults(projId, bldgId) {
   const sig = _hvlBuildingHeatingSignals(projId, bldgId);
   const gasShare = _hvlGasHeatShare(projId, bldgId);
@@ -1117,13 +1118,29 @@ function _hvlThumbDefaults(projId, bldgId) {
     kwhPct: elecMeasured ? Math.round(eu.enduse.coolingPct * 1000) / 10 : 45,
     kwhPctMeasured: elecMeasured,
     coolKwhPct: 65,
-    heatKwhPct: sig.hasElectric ? 35 : 0,
+    heatKwhPct: sig.hasElectric ? HVL_ELEC_HEAT_PCT : 0,
     kwPct: 55,
     gasPct: gasShare.pct,
     elecHeat: sig.hasElectric,
     gasPctIsLow: sig.hasElectric && !sig.hasGas,
     gasShare,
   };
+}
+
+// hvacRuleOfThumbEnduse - the HVAC Load Estimate Rules of Thumb applied to ANNUAL totals the caller names (one stated year of bills),
+// never to the baseline period (Matt 2026-11-23, 8c5bfd4a). The Service Proposal savings estimate reads it for the cooling and heating
+// end uses of a building. It is the same calculation as the estimate of a building with annual totals only: computeHvacLoadEstimate with
+// the start values of _hvlThumbDefaults. electricHeat = the caller knows the building heats with electricity (no gas heating): the Rules of Thumb
+// electric heating share applies even when the Equipment Matrix classifies no electric heat. Returns { coolKwh, heatKwh (electric heating),
+// heatGasTherms } or null for an unknown building.
+function hvacRuleOfThumbEnduse(projId, bldgId, kwh, therms, electricHeat) {
+  const b = typeof getUDBldg === 'function' ? getUDBldg(projId, bldgId) : null;
+  if (!b) return null;
+  const resolved = { source: 'annual', label: 'Annual totals', kwh: kwh, kw: 0, therms: therms, elecByMo: {}, gasByMo: {}, kwByMo: {} };
+  const inputs = Object.assign({}, _hvlThumbDefaults(projId, bldgId));
+  if (electricHeat && !(inputs.heatKwhPct > 0)) inputs.heatKwhPct = HVL_ELEC_HEAT_PCT;
+  const est = computeHvacLoadEstimate('thumb', resolved, inputs, parseInt(b.sqft) || 0);
+  return { coolKwh: est.coolKwhTotal, heatKwh: est.heatKwhTotal, heatGasTherms: est.hvacGasT };
 }
 
 function _hvlRenderTraditional(projId, bldgId, method) {

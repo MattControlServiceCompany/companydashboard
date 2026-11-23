@@ -24907,7 +24907,8 @@ function rptPageASHRAE36ProposalPricing(n, d, opts) {
   // PDF and Word export print it + timeline) with the same DOM measurer the other report pages use
   // (_rptMeasureHtmlH) against the page body budget; when it does not fit, the detail moves to the
   // continuation pages (_buildTierDetailPages) which paginate by measured height.
-  var _pageBudget = _rptContentBudget('flush');
+  // 4 px of safety: the page is laid out after the minimum font floor and the measure box differ from it by up to 2 px (Matt 2026-11-23 8c5bfd4a: a page 2 px past the body edge).
+  var _pageBudget = _rptContentBudget('flush') - 4;
   if (summaryData && summaryData.perTier && detailFitsInline) {
     var _openH = _rptMeasureHtmlH(
       (titleBlock + intro + _buildTable(_detailRowInline()) + timelineBlock).replace(

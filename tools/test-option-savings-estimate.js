@@ -3,22 +3,25 @@
 // Owners under test (app/pricing-estimator.js): _pricingOptionSavingsEstimate, _pricingApplyEstimateMembership, _pricingOptionEstimateText,
 // _pricingEquipRowScore; they call simplePayback (computations/cost-lines.js). The building use and the equipment counts are stubbed.
 //
-// Fixture ("Test Hall"): 100,000 kWh for $10,000 ($0.10 per kWh); 10,000 therms for $8,000 ($0.80 per therm); 2 air handlers, 10 terminal units
-// (VAV), 1 hot water plant. End uses (CBECS split in PRICING_OPTION_SAVINGS_ESTIMATE): cooling 32,000 kWh; fans 9,000 kWh; lighting 12,000 kWh;
-// pumps 2,500 kWh; gas heating 8,400 therms.
-// Items (likely case), each alone:
-//   duct static pressure reset, 1 of 2 air handlers: fans 0.25 x 0.5 = 0.125 -> 1,125 kWh = $112.50
-//   supply air temperature reset, 2 of 2: cooling 0.05 -> 1,600 kWh; heating 0.04 -> 336 therms; fans 0.20 -> 1,800 kWh; = $160 + $268.80 + $180 = $608.80
-//   duct static pressure override: fans 0.25 -> 2,250 kWh (releases the duct static pressure reset: counted once with it in the set)
-//   hot water pump pressure override: pumps 0.10 -> 250 kWh = $25 (its own sequence is not in the set: counted)
-//   terminal unit upgrade, 5 of 10 units: cooling, fans, heating 0.07 x 0.5 = 0.035
-//   economizer, 2 of 2: cooling 0.10 -> 3,200 kWh = $320 (price $5,000: 15.6 years, over the limit)
-// Overlap in the building (override of a reset in the set is left out; the rest multiply):
-//   fans    1 - (1 - 0.125)(1 - 0.20)(1 - 0.035) = 0.3245  -> 2,920.5 kWh
-//   cooling 1 - (1 - 0.05)(1 - 0.035)            = 0.08325 -> 2,664 kWh
-//   gas     1 - (1 - 0.04)(1 - 0.035)            = 0.0736  -> 618.24 therms
-//   pumps   0.10 -> 250 kWh
-//   total 5,834.5 kWh + 618.24 therms = $583.45 + $494.592 = $1,078.042 a year (a plain sum would give a different number)
+// (Matt 2026-11-23 8c5bfd4a) The savings of each item now come from the engineering formulas of computations/measure-savings.js (its own test:
+// tools/test-measure-savings.js). This test checks how the proposal combines them. Stubs: the fan units, the Rules of Thumb end uses, the weather.
+//
+// Fixture ("Test Hall"): 50,000 ft2; 100,000 kWh for $10,000 ($0.10 per kWh); 10,000 therms for $8,000 ($0.80 per therm); 2 air handlers,
+// 10 terminal units (VAV), 1 hot water plant. Fan units (variable-speed drive, 3,640 h): 5 kW and 3 kW. End-use base (Rules of Thumb): cooling
+// 30,000 kWh; gas heating 6,000 therms. Window 8 to 18 h; bins 32.5, 57.5 and 77.5 F with 1,000 occupied hours each. Design airflow
+// 50,000 / 300 x 400 = 66,666.7 cfm; average airflow 40,000 cfm (x 0.6). Items (likely case), each alone:
+//   duct static pressure reset, 1 of 2 air handlers: fans 29,120 kWh x 0.256012 x pass 0.7 = 5,218.56 kWh for both, 2,609.28 kWh for one = $260.93
+//   duct static pressure override: 5,218.56 kWh = $521.86 (releases the duct static pressure reset: counted once with it in the set)
+//   supply air temperature reset, 2 of 2: reheat cfm 66,666.7 x 0.4 x 0.35 = 9,333.3; 1.08 x 9,333.3 x 10 F x 2,000 h / 82,000 = 2,458.54 therms;
+//     coil load 2.5 F x 1,000 h x 1.08 x 40,000 cfm / (3.5 x 3,412.14) = 9,043.34 kWh = $904.33 + $1,966.83 = $2,871.16
+//   hot water pump pressure override: gpm 150, 2.5877 kW, 1,000 h below 55 F, x (1 - 0.715542) = 736.09 kWh = $73.61 (own sequence not in the set: counted)
+//   terminal unit upgrade, 5 of 10 units: delta cfm 5 x 6,666.7 x 0.2 x 0.4 = 2,666.7; 1.08 x 2,666.7 x 20 F x 1,000 h / 82,000 = 702.44 therms;
+//     fan 8 kW x 0.5 x 0.4 x (0.35^3 - 0.15^3) x 1,000 h = 63.2 kWh; = $6.32 + $561.95 = $568.27
+//   economizer, 2 of 2: free cooling 58,555.6 kWh, capped at the cooling base 30,000 kWh = $3,000 (price $40,000: 13.3 years, over the limit)
+// Overlap in the building (override of a reset in the set is left out; the rest multiply per end use):
+//   fans    29,120 x (1 - (1 - 2,609.28 / 29,120)(1 - 63.2 / 29,120)) = 2,666.82 kWh
+//   cooling 9,043.34 kWh;  pumps 736.09 kWh;  gas  6,000 x (1 - (1 - 2,458.54 / 6,000)(1 - 702.44 / 6,000)) = 2,873.15 therms
+//   total 12,446.25 kWh + 2,873.15 therms = $1,244.62 + $2,298.52 = $3,543.14 a year (a plain sum would give a different number)
 const vm = require('vm'),
   fs = require('fs'),
   path = require('path'),
@@ -32,28 +35,38 @@ const ok = (m) => {
 };
 const near = (a, b, rel, m) => assert.ok(Math.abs(a - b) <= Math.abs(b) * (rel || 0.0001) + 1e-9, m + ': ' + a + ' vs ' + b);
 
-function make(useByName, counts) {
+const hourly = (v) => Array.from({ length: 24 }, (_, h) => (h >= 8 && h < 18 ? v / 10 : 0)); // 1,000 hours a year inside 8 to 18 h
+const WEATHER = { bins: [32.5, 57.5, 77.5], cities: { 4: { temp: Array.from({ length: 12 }, (_, m) => [hourly(m === 0 ? 1000 : 0), hourly(m === 0 ? 1000 : 0), hourly(m === 0 ? 1000 : 0)]) } } };
+function make(useByName, counts, noSchedule) {
   const el = () => ({ style: {}, appendChild() {}, setAttribute() {}, addEventListener() {}, classList: { add() {}, remove() {} }, innerHTML: '' });
   const store = { en_pricing_workbook_p: { method: 'hourly' } };
   const sb = {
     console, Math, JSON, Object, Array, String, Number, parseFloat, parseInt, isNaN, isFinite, Date, Set, Map, RegExp, Error,
-    document: { getElementById: () => null, createElement: el, head: el(), body: el(), addEventListener() {}, querySelector: () => null, querySelectorAll: () => [], documentElement: el() },
+    document: { getElementById: () => ({}), createElement: el, head: el(), body: el(), addEventListener() {}, querySelector: () => null, querySelectorAll: () => [], documentElement: el() },
     sget: (k, d) => (k in store ? JSON.parse(JSON.stringify(store[k])) : d),
     sset() {}, showToast() {}, setTimeout, clearTimeout, localStorage: { getItem: () => null, setItem() {} }, navigator: {},
-    collectASHRAE36Data: () => ({ buildings: [{ name: 'Test Hall', equipResults: [], equipCounts: counts }] }),
+    collectASHRAE36Data: () => ({ buildings: [{ name: 'Test Hall', equipResults: noSchedule ? [] : [{ category: 'vav', existingSchedule: { startMin: 480, stopMin: 1080 } }], equipCounts: counts }] }),
     getUDBldgs: () => Object.keys(useByName).map((k) => ({ id: k, name: k })),
     _a36UtilityBuilding: (d, b) => (useByName[b.name] ? { id: b.name, name: b.name } : null),
     buildingAnnualUse: (pid, id) => useByName[id],
     EM_SEQUENCE_DEFS: [],
+    // (Matt 2026-11-23 8c5bfd4a) the fan units, the Rules of Thumb end uses and the weather the measure formulas read
+    hvacRuleOfThumbEnduse: (pid, bid, kwh, therms, electricHeat) =>
+      electricHeat ? { coolKwh: 28000, heatKwh: 20000, heatGasTherms: 0 } : { coolKwh: 30000, heatKwh: 0, heatGasTherms: 6000 },
+    BAS_WEATHER_BINS: WEATHER,
+    EM_SPACE_TYPE_ZONE_TERMINAL_CATS: { vav: true },
   };
   sb.window = sb;
   sb.globalThis = sb;
   vm.createContext(sb);
   vm.runInContext(read('lib/formatting.js'), sb);
   vm.runInContext(read('computations/cost-lines.js'), sb);
+  ['computations/physics.js', 'computations/fan-savings.js', 'app/ecm-calculators.js', 'computations/measure-savings.js'].forEach((f) => vm.runInContext(read(f), sb)); // (Matt 2026-11-23 8c5bfd4a)
+  sb.fanBuildingUnitModels = () => [fanUnit(5), fanUnit(3)]; // after fan-savings.js: stands in for the Equipment Matrix reader
   vm.runInContext(read('app/pricing-estimator.js'), sb);
   return sb;
 }
+const fanUnit = (kw) => ({ id: 'f' + kw, ok: true, kw, hours: 3640, hoursLevel: 'default', kwLevel: 'default', kwh: kw * 3640, baselineFraction: 1, driveStatus: 'has', reset: { pass: 0.7, level: 'default' } });
 const use = { label: '2025', sqft: 50000, kwh: 100000, electricCost: 10000, therms: 10000, gasCost: 8000, hasGas: true };
 const counts = { ahu: 2, vav: 10, hwp: 1 };
 const seq = (id, seqKey, qty, total) => ({ id, building: 'Test Hall', phase: 2, seqKey, qty, lineTotal: total, item: seqKey, _hwGroup: 'ready' });
@@ -76,20 +89,23 @@ const sum = (rs) => rs.reduce((s, r) => s + r.lineTotal, 0);
   const sb = make({ 'Test Hall': use }, counts);
   const e = sb._pricingOptionSavingsEstimate('p', rows, est, { grand: sum(rows) });
   assert.ok(e.claims && e.complete, 'claims and complete');
-  near(e.total.kwh.likely, 5834.5, 0.0001, 'likely kWh (product overlap)');
-  near(e.total.therms.likely, 618.24, 0.0001, 'likely therms');
-  near(e.total.usd.likely, 1078.042, 0.0001, 'likely dollars (energy x own rate per fuel)');
+  near(e.total.kwh.likely, 12446.25, 0.0001, 'likely kWh (product overlap)'); // (Matt 2026-11-23 8c5bfd4a) engineering formulas
+  near(e.total.therms.likely, 2873.15, 0.0001, 'likely therms');
+  near(e.total.usd.likely, 3543.14, 0.0001, 'likely dollars (energy x own rate per fuel)');
   assert.ok(e.total.usd.low < e.total.usd.likely && e.total.usd.likely < e.total.usd.high, 'low < likely < high');
   near(e.total.price, 8000, 0.0001, 'price = the totals given');
-  near(e.total.years.likely, 8000 / 1078.042, 0.0001, 'simple payback = price / annual savings');
-  assert.strictEqual(e.display.likely, 1100);
-  assert.strictEqual(e.display.years, 7);
+  near(e.total.years.likely, 8000 / 3543.14, 0.0001, 'simple payback = price / annual savings');
+  assert.strictEqual(e.display.likely, 3500);
+  assert.strictEqual(e.display.years, 2);
   assert.strictEqual(e.year, '2025');
   const by = {};
   e.items.forEach((i) => (by[i.key] = i));
-  near(by.ahu_dsp_reset.usd.likely, 112.5, 0.0001, 'duct static pressure reset alone');
-  near(by.ahu_sat_reset.usd.likely, 608.8, 0.0001, 'supply air temperature reset alone');
-  near(by.hwDpOverride.usd.likely, 25, 0.0001, 'pump pressure override alone');
+  near(by.ahu_dsp_reset.usd.likely, 260.93, 0.0001, 'duct static pressure reset alone (1 of 2 units)');
+  near(by.spOverride.usd.likely, 521.86, 0.0001, 'duct static pressure override alone (every unit)');
+  near(by.ahu_sat_reset.usd.likely, 2871.16, 0.0001, 'supply air temperature reset alone');
+  near(by.terminalStandard.usd.likely, 568.27, 0.0001, 'terminal minimum airflow alone');
+  near(by.hwDpOverride.usd.likely, 73.61, 0.0001, 'pump pressure override alone');
+  assert.ok(by.ahu_dsp_reset.inputs.likely.length > 3 && by.ahu_dsp_reset.steps.likely.length > 2, 'each item carries its inputs and steps');
   assert.strictEqual(by.powerMeter.claimed, false, 'a power meter claims no energy');
   assert.strictEqual(by.ahu_min_oa.claimed, false, 'minimum outdoor air claims no energy');
   assert.strictEqual(by.ahu_freeze_prot.claimed, false, 'freeze protection claims no energy');
@@ -105,7 +121,7 @@ const sum = (rs) => rs.reduce((s, r) => s + r.lineTotal, 0);
   assert.strictEqual(sb._pricingOptionEstimateText(e, 'recommended'), '');
   ok('no utility data: no display, no sentence, nothing over the limit');
 }
-// 2b. 2026-11-19: work that needs VAV terminal units in a building with none has no estimate (kept, unknown), never a zero saving that removes it
+// 2b. (Matt 2026-11-23 8c5bfd4a) a Matrix with no VAV rows is missing input, not proof of no VAV: the item itself shows the unit controls duct static pressure, so it is estimated
 {
   const noVav = { ahu: 2, vav: 0, hwp: 1 };
   const sb = make({ 'Test Hall': use }, noVav);
@@ -113,32 +129,42 @@ const sum = (rs) => rs.reduce((s, r) => s + r.lineTotal, 0);
   const e = sb._pricingOptionSavingsEstimate('p', rs, est, { grand: 1200 });
   const by = {};
   e.items.forEach((i) => (by[i.key] = i));
-  assert.strictEqual(by.ahu_dsp_reset.hasData, false, 'duct static pressure reset without VAV boxes: no estimate');
-  assert.strictEqual(by.ahu_dsp_reset.over, false, 'no estimate is never over the limit');
-  assert.ok(e.items.every((i) => !i.over), 'nothing removed');
-  ok('no VAV terminal units: duct static pressure reset and its override have no estimate and stay');
+  assert.strictEqual(by.ahu_dsp_reset.hasData, true);
+  assert.ok(by.ahu_dsp_reset.usd.likely > 0, 'duct static pressure reset without VAV rows in the Matrix: a real estimate, not 0');
+  assert.ok(!by.ahu_dsp_reset.reason, 'no reason of zero');
+  assert.ok(by.spOverride.usd.likely > 0 || by.spOverride.claimed === false, 'its override is estimated or released into the sequence');
+  ok('no VAV rows in the Equipment Matrix: duct static pressure reset is still estimated from the fan units');
+}
+// 2c. (Matt 2026-11-23 8c5bfd4a) no BAS schedule: the default window (8 to 18 h, 70 hours a week) gives an estimate, never a hole
+{
+  const sb = make({ 'Test Hall': use }, counts, true);
+  const e = sb._pricingOptionSavingsEstimate('p', [seq('s_sat', 'ahu_sat_reset', 2, 2000)], est, { grand: 2000 });
+  near(e.total.usd.likely, 2871.16, 0.0001, 'the default window 8 to 18 h gives the same bins as the 8 to 18 h fixture');
+  const inp = e.items[0].inputs.likely.filter((i) => i.name === 'Occupied hours of the day')[0];
+  assert.ok(inp && inp.level === 'default' && /70 hours a week/.test(inp.source), 'the input states the default window and its source');
+  ok('no BAS schedule: the default window of 70 hours a week is used and stated');
 }
 // 3. a gas-free building uses electric heating and the electric rate
 {
   const sb = make({ 'Test Hall': { label: '2025', sqft: 50000, kwh: 100000, electricCost: 10000, therms: 0, gasCost: 0, hasGas: false } }, counts);
   const e = sb._pricingOptionSavingsEstimate('p', [seq('s_sat', 'ahu_sat_reset', 2, 2000)], est, { grand: 2000 });
-  // cooling 0.28 x 100,000 = 28,000 x 0.05 = 1,400; electric heating 0.20 x 100,000 = 20,000 x 0.04 = 800; fans 9,000 x 0.20 = 1,800 -> 4,000 kWh = $400
-  near(e.total.kwh.likely, 4000, 0.0001, 'electric heating counts as kWh');
-  near(e.total.usd.likely, 400, 0.0001, 'dollars at the electric rate');
+  // (Matt 2026-11-23 8c5bfd4a) electric reheat 201.6e6 Btu / 3,412.14 = 59,085 kWh, capped at the electric heating base 20,000 kWh; cooling 9,043.34 kWh
+  near(e.total.kwh.likely, 29043.34, 0.0001, 'electric heating counts as kWh, capped at its base');
+  near(e.total.usd.likely, 2904.33, 0.0001, 'dollars at the electric rate');
   assert.strictEqual(e.total.therms.likely, 0);
   ok('low-gas building: heating is electric, saved at the electric rate');
 }
 // 4. membership: a unit over 10 years leaves, no-claim items stay, the rest is re-priced
 {
   const sb = make({ 'Test Hall': use }, counts);
-  const all = rows.concat([seq('s_eco', 'ahu_economizer', 2, 5000)]);
+  const all = rows.concat([seq('s_eco', 'ahu_economizer', 2, 40000)]);
   const m = sb._pricingApplyEstimateMembership('p', all, est);
   const ids = m.rows.map((r) => r.id);
-  assert.ok(ids.indexOf('s_eco') === -1, 'the economizer (15.6 years) is out');
+  assert.ok(ids.indexOf('s_eco') === -1, 'the economizer (13.3 years) is out');
   ['s_dsp', 's_sat', 'o_term', 'o_sp', 'o_hwdp'].forEach((id) => assert.ok(ids.indexOf(id) > -1, id + ' stays (payback of 10 years or less)'));
   ['s_minoa', 's_freeze', 'o_meter'].forEach((id) => assert.ok(ids.indexOf(id) > -1, id + ' stays (no energy claimed)'));
   assert.deepStrictEqual(JSON.parse(JSON.stringify(m.notNow.map((x) => x.key))), ['ahu_economizer']);
-  near(m.notNow[0].years, 5000 / 320, 0.0001, 'the removed unit carries its payback');
+  near(m.notNow[0].years, 40000 / 3000, 0.0001, 'the removed unit carries its payback (saving capped at the cooling base)');
   assert.strictEqual(sb.PRICING_OPTION_SAVINGS_ESTIMATE.keepLimitYears, 10, 'the limit is 10 years, one place');
   ok('membership: the unit over 10 years leaves; power meter, minimum outdoor air, freeze protection and the others stay');
 }
@@ -147,8 +173,8 @@ const sum = (rs) => rs.reduce((s, r) => s + r.lineTotal, 0);
   const sb = make({ 'Test Hall': use }, counts);
   const m = sb._pricingApplyEstimateMembership('p', rows, est);
   const sc = (id) => sb._pricingEquipRowScore(m.rows.filter((r) => r.id === id)[0]);
-  near(sc('s_sat'), 100 / (2000 / 608.8), 0.0001, 'score = 100 / likely years');
-  assert.ok(sc('s_sat') > sc('s_dsp'), 'a payback of 3.3 years ranks before 8.9 years');
+  near(sc('s_sat'), 100 / (2000 / 2871.16), 0.0001, 'score = 100 / likely years');
+  assert.ok(sc('s_sat') > sc('s_dsp'), 'a payback of 0.7 years ranks before 3.8 years');
   assert.strictEqual(sc('s_minoa'), 1000, 'no energy claimed: first');
   assert.ok(sc('s_minoa') > sc('s_sat'));
   assert.strictEqual(sb._pricingEquipRowScore({ phase: 1 }), -1, 'a standalone device keeps its place');
@@ -159,9 +185,10 @@ const sum = (rs) => rs.reduce((s, r) => s + r.lineTotal, 0);
 {
   const sb = make({ 'Test Hall': use }, counts);
   const e = sb._pricingOptionSavingsEstimate('p', rows, est, { grand: sum(rows) });
-  assert.strictEqual(sb._pricingOptionEstimateText(e, 'recommended'), 'Estimated savings $1,100 per year (range $' + e.display.low.toLocaleString('en-US') + ' to $' + e.display.high.toLocaleString('en-US') + '); estimated payback about 7 years.');
+  assert.strictEqual(sb._pricingOptionEstimateText(e, 'recommended'), 'Estimated savings $3,500 per year (range $' + e.display.low.toLocaleString('en-US') + ' to $' + e.display.high.toLocaleString('en-US') + '); estimated payback about 2 years.');
   assert.strictEqual(sb._pricingOptionEstimateText(e, 'compliance'), 'No energy savings claimed: this option installs devices and safety programming.');
-  assert.strictEqual(sb._pricingEstimateBasisText('2025', 'Kansas City'), "Estimates use each building's 2025 energy use and rates and typical Kansas City weather, and the savings shares come from published field studies and national building energy data.");
+  // (Matt 2026-11-23 8c5bfd4a) the basis sentence names the engineering formulas
+  assert.strictEqual(sb._pricingEstimateBasisText('2025', 'Kansas City'), "Savings are estimated with engineering formulas for each measure (fan and pump laws, airflow and heat transfer with typical Kansas City weather) from each building's 2025 utility use and its equipment.");
   ok('sentences: estimate with range and payback, Compliance claims none, one basis sentence');
 }
 // 7. no "finding" in the client text of the proposal (strings of the proposal functions of app/report-engine.js)

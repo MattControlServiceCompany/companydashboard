@@ -110,6 +110,7 @@ function make(store) {
   const em = read('app/equipment-matrix.js');
   vm.runInContext(em.slice(em.indexOf('var EM_SPACE_TYPE_ZONE_TERMINAL_CATS'), em.indexOf('/* _emSpaceTypeConfigFlagOverrides')), sb);
   vm.runInContext(read('computations/cost-lines.js'), sb); // simplePayback: the option estimate (Matt 2026-11-19) reads it
+  vm.runInContext(read('computations/measure-savings.js'), sb); // the Service Proposal measure formulas _pricingOptionSavingsEstimate calls (Matt 2026-11-23 8c5bfd4a)
   vm.runInContext(read('app/pricing-estimator.js'), sb);
   vm.runInContext(read('app/estimate-workbook.js'), sb);
   vm.runInContext(read('app/audit-estimate.js'), sb);
