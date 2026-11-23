@@ -2508,6 +2508,8 @@ async function siteResetAllMeterTableSettings() {
    site-ui.js delegates to this array and should NOT maintain its own copy.
 */
 var RELEASE_NOTES = [
+  { v: 'v2026.11.23.382', date: '2026-11-23', title: 'Service Proposal: savings from engineering formulas',
+    items: [ { type: 'changed', text: 'Service Proposal and Cost Estimate: estimated savings now come from engineering formulas for each kind of work (fan and pump laws, airflow and heat transfer with typical weather hours) using the utility use of each building and its equipment, in place of fixed savings shares. Savings, payback and the work kept in Recommended can change.' } ] },
   { v: 'v2026.11.23.381', date: '2026-11-23', title: 'Audit Report: Effect wording',
     items: [ { type: 'changed', text: 'Audit Report, Opportunities Summary: Effect phrases say how much less energy is wasted (for example "Less energy wasted on outdoor air"), not that no energy is wasted.' } ] },
   { v: 'v2026.11.22.380', date: '2026-11-22', title: 'Audit Report: Effect column says how each fix helps',
