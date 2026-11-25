@@ -25149,7 +25149,7 @@ function rptPageASHRAE36ProposalPricing(n, d, opts) {
       var agg = [{ _heading: 'Opportunities (' + det.lines.length + ')' }]
         .concat(
           det.lines.map(function (l) {
-            return { item: l.item, qty: l.qty, lineTotal: l.lineTotal, clientSummary: l.desc || null };
+            return { item: l.item, qty: l.qty, lineTotal: l.lineTotal, clientSummary: l.desc || null, rows: l.rows };
           }),
         )
         .concat(det.included.length ? [{ _heading: 'Included' }] : [])
@@ -25161,7 +25161,23 @@ function rptPageASHRAE36ProposalPricing(n, d, opts) {
         .concat(det.rounding !== null ? [{ item: 'Rounding', qty: null, lineTotal: det.rounding, clientSummary: null }] : []);
       if (!det.lines.length && !det.included.length) return;
 
-      var itColgroup = '<colgroup><col style="width:474px"><col style="width:100px"><col style="width:110px"></colgroup>';
+      // The estimated savings and payback of each line (Service Proposal option costEstimateSavings, Matt 2026-11-25, 38a8f08f): two more columns and a
+      // total row when the box is on and the option has an estimate. The numbers are the ones of the Cost Estimate tab (_pricingLineSavingsText for a
+      // line, _pricingOptionTotalCells for the option: the one owner is _pricingOptionSavingsEstimate). Compliance claims no energy savings: no columns.
+      var savEst = _rptProposalShowSavings(d) && c.key !== 'compliance' ? summaryData.option && summaryData.option[c.key] : null;
+      var savTotal = savEst && typeof _pricingOptionTotalCells === 'function' ? _pricingOptionTotalCells(savEst) : null;
+      var withSav = !!savTotal;
+      var nCols = withSav ? 5 : 3;
+      if (withSav) {
+        agg.forEach(function (row, i) {
+          if (i > 0 && !row._heading && row.rows) row.sav = _pricingLineSavingsText(savEst, row.rows);
+        });
+        agg.push({ item: 'Option total (estimated; savings that overlap are counted once)', qty: null, lineTotal: null, clientSummary: null, _total: savTotal });
+      }
+
+      var itColgroup = withSav
+        ? '<colgroup><col style="width:310px"><col style="width:76px"><col style="width:98px"><col style="width:104px"><col style="width:96px"></colgroup>'
+        : '<colgroup><col style="width:474px"><col style="width:100px"><col style="width:110px"></colgroup>';
       var itThStyle =
         'padding:6px 8px;font-size:9px;font-weight:700;color:var(--rpt-page-text);text-align:center;' +
         'border:1px solid var(--rpt-border)';
@@ -25179,13 +25195,21 @@ function rptPageASHRAE36ProposalPricing(n, d, opts) {
         itThRight +
         '">Total Quantity</th>' +
         '<th style="' + itThRight + '">Price</th>' +
+        (withSav ? '<th style="' + itThRight + '">Estimated Savings per Year</th><th style="' + itThRight + '">Payback (Years)</th>' : '') +
         '</tr></thead>';
 
       function _itemRowHTML(row) {
         var td =
           'padding:5px 8px;font-size:9px;color:var(--rpt-page-text);border:1px solid var(--rpt-border);vertical-align:top';
         var tdR = td + ';text-align:right';
-        if (row._heading) return '<tr><td colspan="3" style="' + td + ';font-weight:700">' + _escHtml(row._heading) + '</td></tr>';
+        if (row._heading) return '<tr><td colspan="' + nCols + '" style="' + td + ';font-weight:700">' + _escHtml(row._heading) + '</td></tr>';
+        var savCells = '';
+        if (withSav) {
+          var sv = row._total || row.sav || null;
+          savCells =
+            '<td style="' + tdR + (row._total ? ';font-weight:700' : '') + '">' + (sv ? _escHtml(sv.savings) : '') + '</td>' +
+            '<td style="' + tdR + (row._total ? ';font-weight:700' : '') + '">' + (sv && sv.years ? _escHtml(sv.years) : '') + '</td>';
+        }
         var nameHTML =
           '<div>' +
           _escHtml(row.item || '') +
@@ -25199,6 +25223,7 @@ function rptPageASHRAE36ProposalPricing(n, d, opts) {
           '<tr>' +
           '<td style="' +
           td +
+          (row._total ? ';font-weight:700' : '') +
           '">' +
           nameHTML +
           '</td>' +
@@ -25214,8 +25239,9 @@ function rptPageASHRAE36ProposalPricing(n, d, opts) {
           '<td style="' +
           tdR +
           '">' +
-          (row.lineTotal === 0 ? 'No additional cost' : _fmtUSD(row.lineTotal) || '—') +
+          (row._total ? '' : row.lineTotal === 0 ? 'No additional cost' : _fmtUSD(row.lineTotal) || '—') +
           '</td>' +
+          savCells +
           '</tr>'
         );
       }

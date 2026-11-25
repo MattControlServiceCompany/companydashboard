@@ -4993,7 +4993,34 @@ function _pricingEstimateRound100(v) {
 function _pricingEstimateYears(y) {
   return y === null || y === undefined ? null : Math.max(1, Math.round(y));
 }
-// One item of _pricingOptionSavingsEstimate(...).items as the table shows it (site only: no report or export reads this).
+// The payback of one item or line as the tables print it: whole years, "<1" under one year (not 1), null when there is none.
+function _pricingEstimateYearsText(years) {
+  var yrs = _pricingEstimateYears(years);
+  return yrs === null ? null : years < 1 ? '<1' : String(yrs);
+}
+// The estimated savings and payback of one cost line of the Service Proposal (an opportunity line of the Itemized Measures tables): the sum of the
+// items of _pricingOptionSavingsEstimate (est) that start on one of the rows of the line (the rule of the Cost Estimate tab, which shows an item on its
+// first row), shown with the same rounding and years text as the tab. Returns { savings: '$28,700', years: '4' } or null when no item of the line
+// has an estimate (a line with no energy claim, no utility data, or no saving).
+function _pricingLineSavingsText(est, rows) {
+  var ids = {};
+  (rows || []).forEach(function (r) {
+    ids[r.id] = true;
+  });
+  var price = 0;
+  var likely = 0;
+  var any = false;
+  ((est && est.items) || []).forEach(function (it) {
+    if (!it.hasData || !it.rowIds || !it.rowIds.length || !ids[it.rowIds[0]]) return;
+    any = true;
+    price += it.price;
+    likely += it.usd.likely;
+  });
+  if (!any || !(_pricingEstimateRound100(likely) > 0)) return null;
+  var years = simplePayback(price, 0, likely).years;
+  return { savings: '$' + Math.round(_pricingEstimateRound100(likely)).toLocaleString('en-US'), years: _pricingEstimateYearsText(years) };
+}
+// One item of _pricingOptionSavingsEstimate(...).items as the table shows it (the Cost Estimate tab; the Service Proposal prints _pricingLineSavingsText).
 // Returns { savings, years, title }: cell HTML, and a dash when the item has no energy claim or no formula result.
 function _pricingItemSavingsCellsHTML(it) {
   var dash = '<span style="color:var(--text3)">—</span>';
@@ -5002,10 +5029,10 @@ function _pricingItemSavingsCellsHTML(it) {
   var usd = function (v) {
     return '$' + Math.round(v).toLocaleString('en-US');
   };
-  var yrs = _pricingEstimateYears(it.years);
+  var yt = _pricingEstimateYearsText(it.years);
   return {
     savings: usd(_pricingEstimateRound100(it.usd.likely)),
-    years: yrs === null ? dash : it.years < 1 ? '&lt;1' : String(yrs), // under one year reads as <1, not 1
+    years: yt === null ? dash : _escHtml(yt),
     title:
       'Estimated savings range ' + usd(_pricingEstimateRound100(it.usd.low)) + ' to ' + usd(_pricingEstimateRound100(it.usd.high)) + ' per year' +
       (it.reason ? '. ' + it.reason : ''),
@@ -5025,6 +5052,13 @@ function _pricingOptionEstimateText(est, tier) {
     'Estimated savings ' + usd(d.likely) + ' per year (range ' + usd(d.low) + ' to ' + usd(d.high) + ')' +
     (d.years ? '; estimated payback about ' + d.years + (d.years === 1 ? ' year' : ' years') : '') + '.'
   );
+}
+// The estimated savings and payback of a whole option as table cells (the total row of the Service Proposal Itemized Measures tables): the same
+// display values as _pricingOptionEstimateText. Returns { savings: '$28,700', years: '4' } or null when the estimate has no data.
+function _pricingOptionTotalCells(est) {
+  var d = est && est.display;
+  if (!d || !(d.likely > 0)) return null;
+  return { savings: '$' + Math.round(d.likely).toLocaleString('en-US'), years: d.years ? String(d.years) : null };
 }
 // The top line of the Cost Estimate tab (Matt 2026-11-23, 5df0a14e): the same display values as _pricingOptionEstimateText, in short form.
 // Returns '' when the estimate has no data.
