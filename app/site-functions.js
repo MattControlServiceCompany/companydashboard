@@ -2508,6 +2508,8 @@ async function siteResetAllMeterTableSettings() {
    site-ui.js delegates to this array and should NOT maintain its own copy.
 */
 var RELEASE_NOTES = [
+  { v: 'v2026.11.25.387', date: '2026-11-25', title: 'Service Proposal: savings of each item',
+    items: [ { type: 'new', text: 'Service Proposal: with Estimated Savings and Payback on, the Itemized Measures tables of Recommended and Full Scope show the estimated savings per year and the payback of each item, and an option total. Check Cost Estimate and Itemized Measures to print them.' } ] },
   { v: 'v2026.11.25.386', date: '2026-11-25', title: 'Service Proposal: savings option and library list title',
     items: [ { type: 'new', text: 'Service Proposal: a new box Estimated Savings and Payback under Cost Estimate. It is on by default. Turn it off to leave every savings and payback number out of the proposal; prices stay the same.' },
              { type: 'improved', text: 'Service Proposal: the library list has its own title, Recommended Scope of Work by Library, and starts on a new page when little room is left.' } ] },
