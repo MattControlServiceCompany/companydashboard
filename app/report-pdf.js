@@ -22,9 +22,9 @@
 var RPT_PDF_PAGE_W_PX = 816;
 var RPT_PDF_PAGE_H_PX = 1056;
 var RPT_PDF_PT_PER_PX = 0.75;
-// 2.5x = 240 dpi, JPEG 0.75: the page text is a picture, so it must be sharp at 200% zoom on screen (Matt, 2026-11-06:
-// "text is out of focus on the PDF download"; at 1.25x / 0.6 = 120 dpi it was). File size is in docs/OPERATIONS.md.
-var RPT_PDF_RASTER_SCALE = 2.5;
+// 1.5625x = 150 dpi, JPEG 0.75 (Matt 2026-11-25, f7c0e1d8: the 96-page JOCO Libraries Audit Report at 240 dpi was 40 MB and bounced a 36 MB
+// email limit; 150 dpi = 17.5 MB). The page text is a picture: 150 dpi is still sharp at 200% zoom; 120 dpi was out of focus (Matt, 2026-11-06).
+var RPT_PDF_RASTER_SCALE = 1.5625;
 var RPT_PDF_JPEG_QUALITY = 0.75;
 
 // jsPDF standard fonts write Windows-1252 text. Map other characters to plain text.
