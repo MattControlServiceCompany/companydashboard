@@ -2508,6 +2508,9 @@ async function siteResetAllMeterTableSettings() {
    site-ui.js delegates to this array and should NOT maintain its own copy.
 */
 var RELEASE_NOTES = [
+  { v: 'v2026.11.25.386', date: '2026-11-25', title: 'Service Proposal: savings option and library list title',
+    items: [ { type: 'new', text: 'Service Proposal: a new box Estimated Savings and Payback under Cost Estimate. It is on by default. Turn it off to leave every savings and payback number out of the proposal; prices stay the same.' },
+             { type: 'improved', text: 'Service Proposal: the library list has its own title, Recommended Scope of Work by Library, and starts on a new page when little room is left.' } ] },
   { v: 'v2026.11.25.385', date: '2026-11-25', title: 'Audit Report: consistent counts and text',
     items: [ { type: 'improved', text: 'Audit Report: disabled sequences (freeze protection, lockouts, rotation, economizer) are now opportunities, a missing device counts once, the CO2 counts name every unit, and the text no longer contradicts itself. The cover names the Service Proposal that follows the audit.' },
              { type: 'improved', text: 'Service Proposal: one line per library to enable the disabled sequences.' } ] },
