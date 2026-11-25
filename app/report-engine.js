@@ -23392,7 +23392,8 @@ function _rptA36ScopeTokens(d) {
       return '<li style="margin-bottom:2px"><strong>' + _escHtml(ln.lead) + ':</strong> ' + body + '</li>';
     });
     push(
-      (i === 0 ? '<div style="' + _RPT_A36_SCOPE_SUB + '">The work, library by library</div>' : '') +
+      // Matt 2026-11-25: a section title of its own (the size of "Recommended Scope of Work"), so the reader sees where the library list starts.
+      (i === 0 ? '<div style="font-size:' + RPT_SECTION_HEAD_PX + 'px;font-weight:700;color:var(--rpt-page-text);margin:12px 0 2px">Recommended Scope of Work by Library</div>' : '') +
         '<div style="' + HEAD + '">' + _escHtml(lib.name) + '</div>' +
         ulOf(lis.slice(0, 2)),
       Math.min(2, lis.length) + 1,
@@ -23493,7 +23494,10 @@ function rptPageASHRAE36ProposalPhaseTable(startN, d, opts) {
 
   var firstBudget = g - HEAD_CHROME_FIRST - PHASE_SAFETY_H;
   var contBudget = g - PHASE_SAFETY_H;
-  var chunks = _rptPaginateTokens(tokens, firstBudget, contBudget);
+  // Matt 2026-11-25: the library list starts on a new page when less than a third of the first page is left under the head (no title with one
+  // library at the bottom of a page); with more room it follows the head on the same page (no half-empty pages, Matt 2026-11-19).
+  var _libsOwnPage = firstBudget < contBudget / 3;
+  var chunks = _libsOwnPage ? [[]].concat(_rptPaginateTokens(tokens, contBudget, contBudget)) : _rptPaginateTokens(tokens, firstBudget, contBudget);
   var trailPlaced = _trailFitOnly ? 0 : _trailSpaced.length;
   if (_trailFitOnly && _trailSpaced.length) {
     var _lastIdx = chunks.length - 1;

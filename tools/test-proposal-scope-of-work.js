@@ -162,6 +162,7 @@ const ok = (c, m) => {
         libs: scope.libs.map((l) => l.name),
         stepTag: /\(Steps? \d/.test(scopeText) || /Step 1, all buildings:/.test(allText),
         hasHeading: /Recommended Scope of Work/.test(allText),
+        byLibTitle: /Recommended Scope of Work by Library/.test(scopeText) && !/The work, library by library/.test(scopeText), // (Matt 2026-11-25) own section title
         oldHeading: /Recommended Work|Why This Approach|What you get:/.test(allText),
         tablesInScope,
         headOrphans,
@@ -215,6 +216,7 @@ const ok = (c, m) => {
     ok(out.hasHeading && !out.oldHeading, '7. the proposal prints "Recommended Scope of Work" and no "Recommended Work", "Why This Approach" or "What you get:"');
     ok(out.headOrphans.length === 0, '7. every library name is followed by its first line: ' + JSON.stringify(out.headOrphans));
     ok(!out.bad, '7. no "Guideline 36" and no "finding" in the scope text');
+    ok(out.byLibTitle, '7. the library list has its own section title "Recommended Scope of Work by Library" (Matt 2026-11-25)');
     ok(out.notIncluded, '7. the "Not included in Recommended:" line is printed');
     ok(JSON.stringify(out.libs) === JSON.stringify(out.libs.slice().sort((a, b) => (a.toLowerCase() < b.toLowerCase() ? -1 : 1))), '7. the libraries are in alphabetical order: ' + out.libs.join(', '));
   } finally {
