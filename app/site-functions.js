@@ -2508,6 +2508,9 @@ async function siteResetAllMeterTableSettings() {
    site-ui.js delegates to this array and should NOT maintain its own copy.
 */
 var RELEASE_NOTES = [
+  { v: 'v2026.11.25.385', date: '2026-11-25', title: 'Audit Report: consistent counts and text',
+    items: [ { type: 'improved', text: 'Audit Report: disabled sequences (freeze protection, lockouts, rotation, economizer) are now opportunities, a missing device counts once, the CO2 counts name every unit, and the text no longer contradicts itself. The cover names the Service Proposal that follows the audit.' },
+             { type: 'improved', text: 'Service Proposal: one line per library to enable the disabled sequences.' } ] },
   { v: 'v2026.11.23.384', date: '2026-11-23', title: 'Cost Estimate: savings labels spelled out',
     items: [ { type: 'changed', text: 'Cost Estimate: the savings columns are now named Estimated savings per year (likely) and Payback (years), and the top line says per year and years in full.' } ] },
   { v: 'v2026.11.23.383', date: '2026-11-23', title: 'Cost Estimate: savings shown clearly',
