@@ -16904,6 +16904,9 @@ var ASHRAE36_SECTIONS = {
     // draws them visually nested under "Cost Estimate (Priced Tiers)" in the modal. Client-safe:
     // final lineTotal / phase subtotals / measure names / clientSummary only — no cost build-up.
     { key: 'costEstimateItemized', label: '  Itemized Measures', group: 'Proposal', defaultOn: false, indent: true },
+    // Estimated savings and payback (38a8f08f, Matt 2026-11-25): default ON. OFF removes every estimated savings and payback number and sentence from the
+    // Service Proposal (one gate: _rptProposalShowSavings). Unlike Itemized it also acts without the parent box: the scope sections print savings too.
+    { key: 'costEstimateSavings', label: '  Estimated Savings and Payback', group: 'Proposal', defaultOn: true, indent: true },
     // 'Expected Outcomes' toggle removed 2026-07-22 along with rptPageASHRAE36ProposalOutcomes —
     // the page it controlled no longer exists, so the checkbox was deleted rather than left dead.
     // 'Per-Building Pricing' (costEstimatePerBuilding) toggle removed 2026-07-22 along with
@@ -22020,23 +22023,32 @@ function _rptA36OptionalCo2Line(o) {
   );
 }
 /**
- * _rptA36OptionalCo2Sentences(o) - the client sentences that follow the optional room CO2 line, all from the one estimate
+ * _rptProposalShowSavings(d) - the ONE gate of the estimated savings and payback in the Service Proposal (section box costEstimateSavings, default on).
+ * generateASHRAE36ProposalHTML sets d._a36ShowSavings from the box; every proposal text with a savings or payback number or sentence asks this.
+ */
+function _rptProposalShowSavings(d) {
+  return !(d && d._a36ShowSavings === false);
+}
+
+/**
+ * _rptA36OptionalCo2Sentences(o, showSavings) - the client sentences that follow the optional room CO2 line, all from the one estimate
  * (_pricingZoneCo2EstimateText): { savings: "Estimated savings $4,400 per year (range $2,100 to $7,000); estimated payback about 6 years." (Compliance:
  * the sensors prepare the rooms), basis: "Estimates use each building's 2025 energy use and rates and typical Kansas City weather.",
  * other: "Not recommended: CO2 sensors in the other 171 rooms (...). Their estimated energy savings do not repay the cost." }. '' for a sentence with no data.
  */
-function _rptA36OptionalCo2Sentences(o) {
+function _rptA36OptionalCo2Sentences(o, showSavings) {
   var out = { savings: '', basis: '', other: '' };
   if (!o) return out;
   if (typeof _pricingZoneCo2EstimateText === 'function') {
     var t = _pricingZoneCo2EstimateText(o.estimate, o.seqQty > 0);
-    out.savings = t.savings;
-    out.basis = t.basis;
+    // Savings off: the savings and payback sentence and its basis go; the Compliance sentence (the sensors prepare the rooms) states no savings.
+    out.savings = showSavings || !(o.seqQty > 0) ? t.savings : '';
+    out.basis = showSavings ? t.basis : '';
   }
   if (o.otherQty > 0) {
     out.other =
       'Not recommended: CO2 sensors in the other ' + rptCount(o.otherQty) + (o.otherQty === 1 ? ' room' : ' rooms') +
-      ' (public floor areas, offices, study rooms, back-of-house rooms). Their estimated energy savings do not repay the cost.';
+      ' (public floor areas, offices, study rooms, back-of-house rooms).' + (showSavings ? ' Their estimated energy savings do not repay the cost.' : '');
   }
   return out;
 }
@@ -22045,6 +22057,7 @@ function _rptA36OptionalCo2Sentences(o) {
  * _rptA36NotNowSentence - the one line of the Recommended scope that names the work Recommended does not hold (Matt 2026-11-19): the items whose
  * estimated payback is over the limit (sd.notNow, from _pricingComputeSummaryData: _pricingApplyEstimateMembership). One kind of work per
  * clause with its libraries; the names are the one name per idea (_rptA36ScopeKeyName). '' when Recommended holds every item.
+ * Savings off (_rptProposalShowSavings): the same list without the payback reason ("Included in Full Scope only: ...").
  */
 function _rptA36NotNowSentence(d) {
   var sd = _rptA36ProposalSummaryData(d);
@@ -22066,6 +22079,7 @@ function _rptA36NotNowSentence(d) {
     byKey[k].libs.sort();
     return byKey[k].name + ' at ' + _rptA36JoinList(byKey[k].libs);
   });
+  if (!_rptProposalShowSavings(d)) return 'Included in Full Scope only: ' + parts.join('; ') + '.';
   return (
     'Not recommended now (estimated payback over ' + PRICING_OPTION_SAVINGS_ESTIMATE.keepLimitYears + ' years): ' + parts.join('; ') +
     '. Full Scope includes this work.'
@@ -22076,9 +22090,10 @@ function _rptA36NotNowSentence(d) {
  * _rptA36EstimateBasis - the one basis sentence of the estimates of the Cost Estimate page (_pricingEstimateBasisText): the sentence of the
  * optional room CO2 estimate when there is one (it names the weather city), else the sentence of the option estimate. '' when no option has an estimate.
  */
-function _rptA36EstimateBasis(sd) {
+function _rptA36EstimateBasis(sd, showSavings) {
+  if (!showSavings) return '';
   var o = sd && sd.optionalCo2 && sd.optionalCo2.recommended;
-  var fromCo2 = o ? _rptA36OptionalCo2Sentences(o).basis : '';
+  var fromCo2 = o ? _rptA36OptionalCo2Sentences(o, true).basis : '';
   if (fromCo2) return fromCo2;
   var rec = sd && sd.option && sd.option.recommended;
   return rec && rec.display && typeof _pricingEstimateBasisText === 'function' ? _pricingEstimateBasisText(rec.year, null) : '';
@@ -22120,7 +22135,7 @@ function _rptA36CostSummaryHTML(d, HEAD, BODY) {
     .map(function (t) {
       return (
         '<tr><td style="' + td + ';font-weight:700">' + _escHtml(t.label) + '</td>' +
-        '<td style="' + td + '">' + _escHtml(t.none ? _pricingRecommendedNoneText() : _rptA36TierPlain(t.key, !!cost.roomCo2)) + '</td>' +
+        '<td style="' + td + '">' + _escHtml(t.none ? _pricingRecommendedNoneText(_rptProposalShowSavings(d)) : _rptA36TierPlain(t.key, !!cost.roomCo2)) + '</td>' +
         '<td style="' + td + ';text-align:right;font-weight:700">' + (t.none ? 'None now' : _fmtUSD(t.total)) +
         (cost.optionalCo2[t.key]
           ? '<div style="font-weight:400;margin-top:2px">' + _escHtml(_rptA36OptionalCo2Line(cost.optionalCo2[t.key])) + '</div>'
@@ -23428,7 +23443,7 @@ function _rptA36ScopeTokens(d) {
     push(optHead + ulOf(optLi.slice(0, 2)), 3);
     for (var oi = 2; oi < optLi.length; oi++) push(ulOf([optLi[oi]]), 1, 2);
     // The estimated savings of these rooms, the basis of the estimate, and the rooms that are not recommended (one estimate, _rptA36OptionalCo2Sentences).
-    var optS = _rptA36OptionalCo2Sentences(opt);
+    var optS = _rptA36OptionalCo2Sentences(opt, _rptProposalShowSavings(d));
     var optText = [optS.savings, optS.basis, optS.other].filter(function (x) { return !!x; });
     if (optText.length) push('<div style="' + _RPT_A36_SCOPE_BODY + ';margin-top:5px">' + _escHtml(optText.join(' ')) + '</div>', 3);
   }
@@ -23587,8 +23602,11 @@ function _rptA36VisionInnerHTML(d, opts) {
       BODY +
       '">' +
       termRangeIntro +
-      ' Control Service Company orders the work by the return each improvement is expected to give, so the ' +
-      'improvements expected to return the most come first.</div>';
+      (_rptProposalShowSavings(d)
+        ? ' Control Service Company orders the work by the return each improvement is expected to give, so the ' +
+          'improvements expected to return the most come first.'
+        : '') +
+      '</div>';
   } else {
     implTable =
       '<div style="' +
@@ -23782,7 +23800,7 @@ function _rptA36ComplianceScopeInnerHTML(d) {
   var co2Line = co2
     ? optCompliance
       ? ' ' + _rptA36OptionalCo2Line(optCompliance) + '.' +
-        (_rptA36OptionalCo2Sentences(optCompliance).savings ? ' ' + _rptA36OptionalCo2Sentences(optCompliance).savings : '') +
+        (_rptA36OptionalCo2Sentences(optCompliance, _rptProposalShowSavings(d)).savings ? ' ' + _rptA36OptionalCo2Sentences(optCompliance, _rptProposalShowSavings(d)).savings : '') +
         ' Full Scope includes ' + (co2.qty === 1 ? 'the room CO2 sensor' : 'all ' + rptCount(co2.qty) + ' room CO2 sensors') + '.'
       : ' Compliance does not include the ' + rptCount(co2.qty) + ' carbon dioxide (CO2) ' + (co2.qty === 1 ? 'sensor' : 'sensors') + ' in rooms. Full Scope includes ' + (co2.qty === 1 ? 'it' : 'them') + '.'
     : '';
@@ -24755,7 +24773,7 @@ function rptPageASHRAE36ProposalPricing(n, d, opts) {
     '<div style="font-size:10px;color:var(--rpt-page-text);line-height:1.6;margin-bottom:12px">' +
     'The options below are three ways to do the work. Each cost is an estimate for the work. There is no monthly ' +
     'fee. Pick one option.' +
-    (_rptA36EstimateBasis(summaryData) ? ' ' + _escHtml(_rptA36EstimateBasis(summaryData)) : '') +
+    (_rptA36EstimateBasis(summaryData, _rptProposalShowSavings(d)) ? ' ' + _escHtml(_rptA36EstimateBasis(summaryData, true)) : '') +
     '</div>';
 
   // Table: 3 fixed columns, total width 684px (3 x 228). table-layout:fixed, black text, no colored
@@ -24845,15 +24863,15 @@ function rptPageASHRAE36ProposalPricing(n, d, opts) {
         if (noneNow) display = 'None now'; // Recommended holds no work: every item is over the payback limit (Matt 2026-11-19)
         var optLine = _rptA36OptionalCo2Line(summaryData && summaryData.optionalCo2 && summaryData.optionalCo2[c.key]);
         // The estimated savings and payback of the option (the one owner, _pricingOptionSavingsEstimate; Compliance claims no energy savings).
-        var estLine = _pricingOptionEstimateText(summaryData && summaryData.option && summaryData.option[c.key], c.key);
+        var showSav = _rptProposalShowSavings(d);
+        var estLine = showSav ? _pricingOptionEstimateText(summaryData && summaryData.option && summaryData.option[c.key], c.key) : '';
+        var co2Sav = optLine ? _rptA36OptionalCo2Sentences(summaryData.optionalCo2[c.key], showSav).savings : '';
         return (
           '<td style="' + amtStyle + '">' + display +
-          (noneNow ? '<div style="font-size:10px;font-weight:400;margin-top:4px;line-height:1.4">' + _escHtml(_pricingRecommendedNoneText()) + '</div>' : '') +
+          (noneNow ? '<div style="font-size:10px;font-weight:400;margin-top:4px;line-height:1.4">' + _escHtml(_pricingRecommendedNoneText(showSav)) + '</div>' : '') +
           (estLine ? '<div style="font-size:10px;font-weight:400;margin-top:4px;line-height:1.4">' + _escHtml(estLine) + '</div>' : '') +
           (optLine ? '<div style="font-size:10px;font-weight:400;margin-top:4px;line-height:1.4">' + _escHtml(optLine) + '</div>' : '') +
-          (optLine && _rptA36OptionalCo2Sentences(summaryData.optionalCo2[c.key]).savings
-            ? '<div style="font-size:10px;font-weight:400;margin-top:2px;line-height:1.4">' + _escHtml(_rptA36OptionalCo2Sentences(summaryData.optionalCo2[c.key]).savings) + '</div>'
-            : '') +
+          (co2Sav ? '<div style="font-size:10px;font-weight:400;margin-top:2px;line-height:1.4">' + _escHtml(co2Sav) + '</div>' : '') +
           '</td>'
         );
       })
@@ -31065,6 +31083,7 @@ function generateASHRAE36ProposalHTML(data, selectedSections) {
   var pages = [];
   var pageNum = 1;
   var s = selectedSections || {};
+  data._a36ShowSavings = s.costEstimateSavings !== false;
 
   function _tagA36Section(html, key) {
     return html.replace(/<div class="rpt-page([^"]*)"/, '<div class="rpt-page$1" data-section="' + key + '"');

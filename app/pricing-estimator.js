@@ -5104,7 +5104,8 @@ function _pricingRecommendedNoneNow(baseRows, notNow) {
   return (!baseRows || !baseRows.length) && !!notNow && notNow.length > 0;
 }
 // The one client sentence of an empty Recommended option.
-function _pricingRecommendedNoneText() {
+function _pricingRecommendedNoneText(withReason) {
+  if (withReason === false) return 'No work is recommended now.';
   return 'No work is recommended now: the estimated payback of each item is over ' + PRICING_OPTION_SAVINGS_ESTIMATE.keepLimitYears + ' years.';
 }
 
