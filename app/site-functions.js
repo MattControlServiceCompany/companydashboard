@@ -2508,6 +2508,8 @@ async function siteResetAllMeterTableSettings() {
    site-ui.js delegates to this array and should NOT maintain its own copy.
 */
 var RELEASE_NOTES = [
+  { v: 'v2026.11.25.390', date: '2026-11-25', title: 'Cost Estimate: savings shown once per item',
+    items: [ { type: 'fixed', text: 'Cost Estimate: an item that covers several merged rows shows its estimated savings and payback on the first row only, so the column no longer counts it twice.' } ] },
   { v: 'v2026.11.25.389', date: '2026-11-25', title: 'Smaller PDF downloads',
     items: [ { type: 'improved', text: 'Download PDF saves the pages at 150 dpi. A long report is about half the size, so it fits in an email. The text stays sharp.' } ] },
   { v: 'v2026.11.25.388', date: '2026-11-25', title: 'Equipment Matrix scores match the Audit Report',
