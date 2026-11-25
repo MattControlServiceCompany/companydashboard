@@ -22,7 +22,7 @@
 var RPT_PDF_PAGE_W_PX = 816;
 var RPT_PDF_PAGE_H_PX = 1056;
 var RPT_PDF_PT_PER_PX = 0.75;
-// 1.5625x = 150 dpi, JPEG 0.75 (Matt 2026-11-25, f7c0e1d8: the 96-page JOCO Libraries Audit Report at 240 dpi was 40 MB and bounced a 36 MB
+// 1.5625x = 150 dpi, JPEG 0.75 (Matt 2026-11-25, f7c0e1d8: a 96-page Audit Report at 240 dpi was 40 MB and bounced a 36 MB
 // email limit; 150 dpi = 17.5 MB). The page text is a picture: 150 dpi is still sharp at 200% zoom; 120 dpi was out of focus (Matt, 2026-11-06).
 var RPT_PDF_RASTER_SCALE = 1.5625;
 var RPT_PDF_JPEG_QUALITY = 0.75;
