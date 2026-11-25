@@ -118,15 +118,14 @@ const F = (kind, headline, extra) => Object.assign({ kind, headline }, extra);
 const list = [
   F('seq', 'Both multi-zone RTUs lack the return air damper actuator point for economizer.', { missing: ['Return Air Damper Actuator'] }),
   F('seq', 'Both multi-zone RTUs lack the supply fan speed command point for duct static pressure reset.', { missing: ['Supply Fan Speed Command'] }),
-  F('seq', 'The missing supply fan speed command point also stops minimum outdoor air.', { missing: ['Supply Fan Speed Command'], repeatCause: true }),
   F('sensor', 'Both multi-zone RTUs have no CO2 sensor.', { label: 'CO2 Sensor (Zone)' }),
   F('seq', 'The duct static pressure setpoints of RTU-1 are held at 1 in. w.c. by a manual override, so the reset does not run.', { missing: [], star: true }),
   F('sensor', '24 of the 25 zone terminal units have no CO2 sensor.', { label: 'CO2 Sensor' }),
 ];
 const outB = bul(list, {});
-ok(outB.length === 3, 'seven opportunities of one row become 3 bullets: merged points, the override, the other units (' + outB.length + ')');
+ok(outB.length === 3, 'five opportunities of one row become 3 bullets (Matt 2026-11-25 6e4b6e04: the repeated-cause row is folded into its root cause before the page): merged points, the override, the other units (' + outB.length + ')');
 ok(/^Both multi-zone RTUs lack the return air damper actuator, supply fan speed command and CO2 sensor points\.$/.test(outB[0].text), 'the points of the same units are one bullet: ' + outB[0].text);
-ok(!outB.some((o) => /also stops/.test(o.text)), 'a repeated-cause line is left out');
+ok(!outB.some((o) => /also stops/.test(o.text)), 'no repeated-cause line reaches the page: the model folds it into its root cause (Matt 2026-11-25 6e4b6e04)');
 ok(/manual override/.test(outB[1].text) && outB[1].star, 'an override stays one short bullet (with its mark)');
 ok(/^24 of the 25 zone terminal units/.test(outB[2].text), 'units that differ stay a separate bullet: ' + outB[2].text);
 ok(bul([list[0]], {})[0].text === list[0].headline, 'a single opportunity keeps its own sentence');

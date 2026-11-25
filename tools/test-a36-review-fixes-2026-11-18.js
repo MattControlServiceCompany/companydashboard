@@ -119,10 +119,11 @@ check(!/rptPageASHRAE36Scores|_a36ReadinessSummary/.test(code) && !/ASHRAE 36 Re
   const names = ['U1', 'U2', 'U3', 'U4', 'U5', 'U6', 'U7'];
   // U1, U2 lack the point (the opportunity). U3 and U4 have it. U5 has it but the sequence does not apply to it. U6 and U7 do not have it.
   sb._a36DetGroupFindings = () => ({ covered: { by: { co2: { names: ['U3', 'U4', 'U5'] } } } });
-  vm.runInContext(fnSrc('_a36DetDcvNote'), sb);
+  vm.runInContext(fnSrc('_a36DetJoin') + '\n' + fnSrc('_a36DetDcvNote'), sb); // (Matt 2026-11-25 6e4b6e04) the note joins its groups
   const g = { units: names.map((n) => ({ name: n })) };
   const note = sb._a36DetDcvNote(g, 2, ['U1', 'U2']);
-  check(note === 'Of the other 5, 3 have a CO2 sensor point.', '5. the note counts every unit with the CO2 point, also one the sequence does not apply to: ' + note);
+  // (Matt 2026-11-25 6e4b6e04) every unit of the group is in a named group: U6 and U7 are not checked for it
+  check(note === 'Of the other 5, 3 have a CO2 sensor point and 2 are not checked for it because occupancy-based ventilation does not apply to them.', '5. the note counts every unit with the CO2 point, also one the sequence does not apply to, and names the others: ' + note);
   check(3 === 3 && /3 have/.test(note), '5. the 3 of the note are the 3 units of the covered points (the System Description prints "present on 3 of the 7")');
   check(sb._a36DetDcvNote({ units: names.slice(0, 2).map((n) => ({ name: n })) }, 2, ['U1', 'U2']) === '', '5. no other units: no note');
 }
@@ -132,7 +133,7 @@ check(!/rptPageASHRAE36Scores|_a36ReadinessSummary/.test(code) && !/ASHRAE 36 Re
   const sb = {};
   vm.createContext(sb);
   vm.runInContext(
-    [fnSrc('_a36DetJoin'), fnSrc('_a36DetUpperFirst'), fnSrc('_a36DetPlainNoun'), fnSrc('_a36DetTypePlural'), fnSrc('_a36DetIsFanSpeedKey'), fnSrc('_a36DetShortenRepeatedCauses'), fnSrc('_a36DetHeadline')].join('\n'),
+    [fnSrc('_a36DetJoin'), fnSrc('_a36DetUpperFirst'), fnSrc('_a36DetPlainNoun'), fnSrc('_a36DetTypePlural'), fnSrc('_a36DetIsFanSpeedKey'), fnSrc('_a36DetFoldRepeatedCauses'), fnSrc('_a36DetHeadline')].join('\n'),
     sb,
   );
   const g = { label: 'Single-Zone Air Handling Unit' };
@@ -144,30 +145,31 @@ check(!/rptPageASHRAE36Scores|_a36ReadinessSummary/.test(code) && !/ASHRAE 36 Re
   f1.headline = sb._a36DetHeadline(f1, g, 2, 'seq', opts({ fanDrive: true }));
   f2.headline = sb._a36DetHeadline(f2, g, 2, 'seq', opts({ fanDrive: true }));
   check(/^Both single-zone|^Both single zone/i.test(f1.headline) && /no variable frequency drive on their supply fans, so supply air temperature reset cannot run\.$/.test(f1.headline), '6. the first opportunity states the cause in full: ' + f1.headline);
-  sb._a36DetShortenRepeatedCauses([f1, f2]);
-  check(f1.headline.indexOf('no variable frequency drive') > -1, '6. the first opportunity keeps the full sentence');
-  check(f2.headline === 'The missing variable frequency drive also stops minimum outdoor air.', '6. the second opportunity of the same drive says what the drive also stops: ' + f2.headline);
+  // (Matt 2026-11-25 6e4b6e04) a repeated cause is folded into the root cause: each missing device counts once, the repeats leave the list
+  const fold1 = sb._a36DetFoldRepeatedCauses([f1, f2]);
+  check(f1.headline.indexOf('no variable frequency drive') > -1 && fold1.length === 1 && fold1[0] === f2, '6. the first opportunity keeps the full sentence and the second one is folded into it');
+  check(/The missing variable frequency drive is also needed by the minimum outdoor air sequence, so it cannot run as the standard writes it\.$/.test(f1.impact) && f1.foldedKeys.length === 1, '6. the root says what the drive is also needed by: ' + f1.impact);
   // points
   const p1 = mkF('Economizer', ['mat'], ['Mixed Air Temperature'], 3);
   const p2 = mkF('Freeze Protection', ['mat'], ['Mixed Air Temperature'], 3);
   p1.headline = sb._a36DetHeadline(p1, g, 3, 'seq', opts());
   p2.headline = sb._a36DetHeadline(p2, g, 3, 'seq', opts());
-  sb._a36DetShortenRepeatedCauses([p1, p2]);
-  check(/lack the mixed air temperature point for economizer\.$/.test(p1.headline) && p2.headline === 'The missing mixed air temperature point also stops freeze protection.', '6. the same missing point: ' + p1.headline + ' / ' + p2.headline);
+  const fold2 = sb._a36DetFoldRepeatedCauses([p1, p2]);
+  check(/lack the mixed air temperature point for economizer\.$/.test(p1.headline) && fold2.length === 1 && /The missing mixed air temperature point is also needed by the freeze protection sequence, so it cannot run as the standard writes it\.$/.test(p1.impact), '6. the same missing point: ' + p1.headline + ' / ' + p1.impact);
   // a different count of units or a different point is a different cause: both stay in full
   const q1 = mkF('Economizer', ['mat'], ['Mixed Air Temperature'], 3);
   const q2 = mkF('Freeze Protection', ['mat', 'sat'], ['Mixed Air Temperature', 'Supply Air Temperature'], 3);
   q1.headline = sb._a36DetHeadline(q1, g, 3, 'seq', opts());
   q2.headline = sb._a36DetHeadline(q2, g, 3, 'seq', opts());
-  sb._a36DetShortenRepeatedCauses([q1, q2]);
-  check(/^All 3 .* lack the mixed air temperature point for economizer\.$/.test(q1.headline) && /lack the mixed air temperature and supply air temperature points for freeze protection\.$/.test(q2.headline), '6. a different set of points keeps its full sentence');
+  const fold3 = sb._a36DetFoldRepeatedCauses([q1, q2]);
+  check(fold3.length === 0 && /^All 3 .* lack the mixed air temperature point for economizer\.$/.test(q1.headline) && /lack the mixed air temperature and supply air temperature points for freeze protection\.$/.test(q2.headline), '6. a different set of points keeps its full sentence');
   // another group: the cause is stated again
   const r1 = Object.assign(mkF('Economizer', ['mat'], ['Mixed Air Temperature'], 3), { groupLabel: 'Other group' });
   const r2 = mkF('Economizer', ['mat'], ['Mixed Air Temperature'], 3);
   r1.headline = 'full1'; r2.headline = 'full2';
   r1.cause = { key: 'points:mat', noun: 'x', plural: false, tail: 'y' }; r2.cause = r1.cause;
-  sb._a36DetShortenRepeatedCauses([r1, r2]);
-  check(r1.headline === 'full1' && r2.headline === 'full2', '6. the same cause in two groups is stated in full in each group');
+  const fold4 = sb._a36DetFoldRepeatedCauses([r1, r2]);
+  check(fold4.length === 0 && r1.headline === 'full1' && r2.headline === 'full2', '6. the same cause in two groups is stated in full in each group');
   // the one wording rule: single-zone, like multi-zone
   const n = new Function(fnSrc('_a36DetNormalizeText') + '\nreturn _a36DetNormalizeText;')();
   const out = n('<p>Both single zone AHUs have it.</p><p>Single Zone Air Handling Unit and multi-zone units</p>');

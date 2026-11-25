@@ -16683,6 +16683,7 @@ var ASHRAE36_SEQUENCE_EXEC_PHRASE = {
  * { plain, noun (singular), does }.
  */
 var A36_SCOPE_PROGRAM = {
+  disabledSequences: { plain: 'enabling of the disabled sequences', noun: 'disabled sequence', does: 'the freeze protection, lockouts, equipment rotation and economizers already in the control programs run again' },
   ahu_sat_reset: { plain: 'supply air temperature reset', noun: 'air handler', does: 'the air handler supplies warmer air when the rooms need less cooling, so it uses less energy' },
   ahu_dsp_reset: { plain: 'duct static pressure reset', noun: 'air handler', does: 'the supply fan slows down when the zones need less air' },
   ahu_economizer: { plain: 'economizer', noun: 'air handler', does: 'the air handler cools with outdoor air when the outdoor air is cool enough, so the cooling equipment runs less' },
@@ -16745,6 +16746,7 @@ function _rptA36ScopeRowKey(r) {
     'building power meter': 'powerMeter',
     'exterior lighting photocell': 'lightingPhotocell',
     'lighting occupancy control': 'lightingOccupancy',
+    'enable the disabled sequences': 'disabledSequences',
   };
   if (byItem[it]) return byItem[it];
   var hit = A36_DET_OVERRIDE.filter(function (o) {
@@ -18671,7 +18673,7 @@ function _a36FindingsCount(n) {
   return rptCount(n) + (n === 1 ? ' opportunity' : ' opportunities');
 }
 
-// " The Recommended option covers 62 of them." The Recommended option covers the opportunities that have a cost line in it (_rptA36OppCounts: the
+// " The Service Proposal that follows this audit recommends work on 62 of them." The Recommended option of the Service Proposal covers the opportunities that have a cost line in it (_rptA36OppCounts: the
 // same lines as the Service Proposal; the optional room carbon dioxide scope is not in the Recommended total). '' when the proposal has no priced
 // scope, or when there is only one opportunity.
 function _a36RecommendedCoverText(d) {
@@ -18682,7 +18684,8 @@ function _a36RecommendedCoverText(d) {
     return '';
   }
   if (!c || c.total < 2 || !(c.fullScope > 0)) return '';
-  return ' The Recommended option covers ' + rptCount(c.recommended) + ' of them.';
+  // Matt 2026-11-25 6e4b6e04: name the Service Proposal that follows the audit (the audit itself has no option).
+  return ' The Service Proposal that follows this audit recommends work on ' + rptCount(c.recommended) + ' of them.';
 }
 
 // The equipment units that at least one opportunity names (a unit with two opportunities counts once; an opportunity of the whole building names no
@@ -18819,7 +18822,7 @@ function _a36ExecDeviceGroups(d) {
   var by = {};
   var list = [];
   ctx.model.findings.forEach(function (f) {
-    if (f.kind === 'seq' || f.kind === 'setpoint' || f.kind === 'schedule' || f.kind === 'terminalStd' || f.key === 'powerMeter' || f.category === 'lighting' || A36_DET_OVERRIDE_KEYS.indexOf(f.key) > -1 || A36_DET_DCV_KEYS.indexOf(f.key) > -1 || /\bCO2\b|carbon dioxide/i.test(f.label || '')) return;
+    if (f.kind === 'seq' || f.kind === 'setpoint' || f.kind === 'schedule' || f.kind === 'terminalStd' || f.key === 'powerMeter' || f.key === 'disabledSequences' || f.category === 'lighting' || A36_DET_OVERRIDE_KEYS.indexOf(f.key) > -1 || A36_DET_DCV_KEYS.indexOf(f.key) > -1 || /\bCO2\b|carbon dioxide/i.test(f.label || '')) return;
     var k = f.label;
     if (!by[k]) list.push((by[k] = { label: f.label, libSet: {}, units: 0, typeSet: {} }));
     by[k].libSet[f.lib] = true;
@@ -18959,6 +18962,37 @@ function _a36SetpointStandardPhrase(d) {
 // The terminal unit opportunity of the audit in one paragraph for the Executive Summary: the libraries whose terminal unit control programs lack features of the
 // Control Service Company standard terminal unit sequence, the features and the recommendation. '' when no library has one. From the findings model (the same
 // list as the cover count and the chapters); the text of each feature is A36_TERM_STD.
+// The disabled sequences of the control programs in one paragraph for the Executive Summary (Matt 2026-11-25 6e4b6e04): the libraries and the sequences,
+// from the opportunities "Enable the disabled sequences" of the findings model (the same list as the cover count and the chapters). '' when none.
+function _a36ExecDisabledSequencesParagraph(d) {
+  var ctx;
+  try {
+    ctx = d._a36AuditCtx || (d._a36AuditCtx = _a36DetContext(d));
+  } catch (e) {
+    console.error('_a36ExecDisabledSequencesParagraph: findings model failed', e);
+    return '';
+  }
+  var list = ctx.model.findings.filter(function (f) { return f.key === 'disabledSequences'; });
+  if (!list.length) return '';
+  var nn = _a36BuildingNouns(d);
+  var by = {};
+  var order = [];
+  list.forEach(function (f) {
+    (f.disabledPhrases || []).forEach(function (p) {
+      if (!by[p]) {
+        by[p] = [];
+        order.push(p);
+      }
+      if (by[p].indexOf(f.lib) < 0) by[p].push(f.lib);
+    });
+  });
+  return (
+    'The control programs of ' + rptCount(list.length) + ' of the ' + rptCount(d.portfolio.totalBuildings) + ' ' + (d.portfolio.totalBuildings === 1 ? nn.one : nn.many) + ' have sequences that save energy or protect equipment, but they are disabled: ' +
+    _a36DetJoin(order.map(function (p) { return p + ' at ' + _a36DetJoin(by[p]); })) + '. ' +
+    'Each library with a disabled sequence has one opportunity, which names the units. Where a sequence is disabled, the equipment does not get that protection or saving.'
+  );
+}
+
 function _a36ExecTerminalStandardParagraph(d) {
   var ctx;
   try {
@@ -19032,7 +19066,7 @@ function rptPageASHRAE36Cover(n, d, perBuildingIncluded, detailed) {
     (p.totalLighting ? ' and <strong>' + rptCount(p.totalLighting) + ' lighting control ' + (p.totalLighting === 1 ? 'unit' : 'units') + '</strong>' : '') +
     (pts ? ' with <strong>' + rptCount(pts) + ' control points</strong>' : '') + ', the audit of <strong>' + _escHtml(d.project.name) + '</strong> recorded <strong>' +
     (info ? _a36FindingsCount(info.total) : 'no opportunities') + '</strong>' +
-    (info && info.total ? ' on <strong>' + rptCount(info.units) + ' equipment unit' + (info.units === 1 ? '' : 's') + '</strong>: the sensors, control points and control sequences that the systems do not have, the zone setpoints that differ from the recommended setpoints and the schedules that run units around the clock or hold no occupied period. The sections that follow describe each ' + nouns.one + ', how its system controls the equipment today and each opportunity.' + _a36RecommendedCoverText(d) : '.');
+    (info && info.total ? ' on <strong>' + rptCount(info.units) + ' equipment unit' + (info.units === 1 ? '' : 's') + '</strong>: the sensors, control points and control sequences that the systems do not have, the zone setpoints that differ from the recommended setpoints, the schedules that run units around the clock or hold no occupied period and the sequences of the control programs that are disabled. The sections that follow describe each ' + nouns.one + ', how its system controls the equipment today and each opportunity.' + _a36RecommendedCoverText(d) : '.');
   var statCard = function (value, label) {
     return (
       '<td class="rpt-a36-stat-card" style="width:25%;text-align:center;vertical-align:top;padding:0 6px;border:none">' +
@@ -19314,7 +19348,7 @@ function rptPageASHRAE36Executive(n, d, detailedTitles, view) {
         (_range.length || _zones
           ? 'The equipment includes ' + _a36DetJoin(_range.concat(p.totalLighting ? [rptCount(p.totalLighting) + ' lighting control ' + (p.totalLighting === 1 ? 'unit' : 'units')] : []).concat(_zones ? [_tierPhrase(_zones, 'zone ') + (_zones.of === 1 ? ', which controls' : ', which control') + ' the airflow to individual rooms'] : [])) + '. '
           : '') +
-        'For each unit, the audit compared what the system can measure, what it can command and what it is programmed to do with a defined set of sensors, control points and control sequences for that type of equipment. In this report, an opportunity is one sensor, control point or control sequence from that set that some or all units of one equipment type in one ' + _nounOne + ' do not have. The zone setpoints of one ' + _nounOne + ' that differ from the standard setpoints are one opportunity, and so are the schedules of one ' + _nounOne + ' that run units around the clock or hold no occupied period.',
+        'For each unit, the audit compared what the system can measure, what it can command and what it is programmed to do with a defined set of sensors, control points and control sequences for that type of equipment. In this report, an opportunity is one sensor, control point or control sequence from that set that some or all units of one equipment type in one ' + _nounOne + ' do not have. The zone setpoints of one ' + _nounOne + ' that differ from the standard setpoints are one opportunity, and so are the schedules of one ' + _nounOne + ' that run units around the clock or hold no occupied period, and the sequences of the control programs of one ' + _nounOne + ' that are disabled.',
     ]);
 
     // Overall result
@@ -19369,12 +19403,19 @@ function rptPageASHRAE36Executive(n, d, detailedTitles, view) {
       hwp_pump_dp_reset: 'pump differential pressure reset slows the pumps when fewer valves are open',
       chwp_pump_dp_reset: 'pump differential pressure reset slows the pumps when fewer valves are open',
     };
-    // What is missing without each air handling unit sequence: the setpoint the sequence would reset (no claim about what the unit does).
+    // What the standard sequence does and what it needs (Matt 2026-11-25 6e4b6e04): the counts are of the units that lack the points of the standard
+    // sequence. A unit with a control program of its own (an economizer, a CO2 reset of the minimum outdoor air) is described in its chapter; no claim
+    // here says the unit has no such function.
     var _seqProblem = {
-      ahu_sat_reset: 'Without supply air temperature reset, the supply air temperature setpoint does not change with the cooling demand of the zones.',
-      ahu_min_oa: 'Without minimum outdoor air control, the outdoor air damper is not set from the outdoor airflow the zones require.',
-      ahu_economizer: 'Without an economizer sequence, the unit does not use outdoor air for cooling when the outdoor air is cool enough.',
-      ahu_dsp_reset: 'Without duct static pressure reset, the duct pressure setpoint does not drop when fewer zones call for air.',
+      ahu_sat_reset: 'Supply air temperature reset moves the supply air temperature setpoint with the cooling demand of the zones.',
+      ahu_min_oa: 'Minimum outdoor air control sets the outdoor air damper from the outdoor airflow the zones require.',
+      ahu_economizer: 'The economizer sequence uses outdoor air for cooling when the outdoor air is cool enough.',
+      ahu_dsp_reset: 'Duct static pressure reset lowers the duct pressure setpoint when fewer zones call for air.',
+    };
+    var _seqPointsSentence = function (list, who) {
+      return who + ' ' + _a36DetJoin(list.map(function (s, i) {
+        return rptCount(s.qty) + (i ? ' for' : s.qty === 1 ? ' lacks the points for' : ' lack the points for') + ' ' + ASHRAE36_SEQUENCE_EXEC_PHRASE[s.key] + (s.key === 'ahu_economizer' ? ' sequence' : '');
+      })) + '.';
     };
     var _seqSentence = function (list, who, counted) {
       return who + ' ' + _a36DetJoin(list.map(function (s, i) {
@@ -19415,10 +19456,10 @@ function rptPageASHRAE36Executive(n, d, detailedTitles, view) {
           var nAir = (d.buildings || []).reduce(function (a, b) {
             return a + (b.equipResults || []).filter(function (eq) { return cats.indexOf(eq.category) > -1; }).length;
           }, 0);
-          return nAir ? _seqSentence(_ahuSeq, 'Of the ' + rptCount(nAir) + ' air handling units,', true) : _seqSentence(_ahuSeq, 'Of the air handling units,');
+          return nAir ? _seqPointsSentence(_ahuSeq, 'Of the ' + rptCount(nAir) + ' air handling units,') : _seqPointsSentence(_ahuSeq, 'Of the air handling units,');
         })() + ' ' +
         _ahuSeq.map(function (s) { return _seqProblem[s.key]; }).filter(Boolean).join(' ') +
-        ' In each case the setpoint does not follow the load, so the fan, cooling and heating energy of the unit does not drop when the zones need less.'
+        ' Where a unit lacks the points, the standard sequence cannot run as written, and the setpoint does not follow the load as that sequence would move it.'
       );
     var _pzSeq = _seqList(/^(hwp|chwp|vav)_/);
     if (_pzSeq.length)
@@ -19440,6 +19481,7 @@ function rptPageASHRAE36Executive(n, d, detailedTitles, view) {
     }
     _sec('Principal Opportunities', _princ);
     _sec('Terminal Unit Sequences', [_a36ExecTerminalStandardParagraph(d)]);
+    _sec('Disabled Sequences', [_a36ExecDisabledSequencesParagraph(d)]);
 
     // The setpoint and schedule opportunities come from the findings model (the same list as the cover count and the chapters).
     var _spSch = _a36ExecSetpointScheduleSentences(d);
@@ -19448,7 +19490,7 @@ function rptPageASHRAE36Executive(n, d, detailedTitles, view) {
       return k === _nB ? (_nB === 1 ? 'the ' + _nounOne + ' has' : 'all ' + rptCount(_nB) + ' ' + _nounMany + ' have') : k ? rptCount(k) + ' of the ' + rptCount(_nB) + ' ' + _nounMany + (k === 1 ? ' has' : ' have') : 'none of the ' + _nounMany + ' has';
     };
     // Matt 2026-11-18: not "Context"; each topic gets its own plain heading.
-    var _ctx = _spSch.setpoints ? [_spSch.setpoints + (detailedTitles.setpointAppendix ? ' Appendix A lists each setpoint with the recommended value beside it.' : '')] : [];
+    var _ctx = _spSch.setpoints ? [_spSch.setpoints + (detailedTitles.setpointAppendix ? ' Appendix A shows the average setpoints of each library and the recommended setpoints.' : '')] : [];
     _sec('Zone Setpoints', _ctx);
     _sec('Schedules', _spSch.schedules ? [_spSch.schedules] : []);
     if (_nB)
@@ -19785,7 +19827,8 @@ function rptPageASHRAE36Executive(n, d, detailedTitles, view) {
   var tableFootnote =
     '<div style="font-size:10px;color:var(--rpt-page-text);margin-top:-10px;margin-bottom:12px;line-height:1.5">' +
     '<strong>Score</strong> is Control Service Company’s own readiness measure. It counts the sensors and sequences ' +
-    'that ASHRAE 36 calls for and weights them by how many apply to each equipment type. ' +
+    'that ASHRAE 36 calls for and weights them by how many apply to each equipment type. Schedules, setpoints and lighting controls are not part of the score. ' +
+    '<strong>Equipment</strong> counts the heating and cooling equipment of each library; the library pages also count its lighting control units. ' +
     // Round 7 R3 (2026-11-14, Matt 2026-07-31 keeps the equipment-weighted portfolio scores): say why the cover scores differ from the counts here.
     (detailed ? '' : 'ASHRAE 36 itself defines no composite score or compliance threshold. The portfolio scores weight each building by its amount of equipment, so they can differ a little from the totals of the counts in this table. ') +
     '<strong>Readiness bands:</strong> High ≥' +
@@ -21490,7 +21533,9 @@ function rptPageASHRAE36SetpointReview(n, d, detailedTitle) {
       '<div class="rpt-a36-callout" style="margin-top:10px">' +
       '<div style="font-size:10px;font-weight:700;color:var(--rpt-blue);margin-bottom:3px">Carbon Dioxide Setpoints</div>' +
       '<div style="font-size:10px;color:var(--rpt-page-text);line-height:1.6">' +
-      'No carbon dioxide setpoints are programmed for occupancy-based ventilation.' +
+      // Matt 2026-11-25 6e4b6e04: the zone setpoint data holds no carbon dioxide setpoint; the minimum outdoor air reset of an air handling unit is a sequence, described in the chapters.
+      'The zone setpoint data of the building automation system holds no carbon dioxide setpoint, so this review compares temperature setpoints only. ' +
+      'The chapters of the libraries describe each air handling unit that resets its minimum outdoor air on the carbon dioxide level.' +
       '</div>' +
       '</div>';
   }
@@ -21541,7 +21586,9 @@ function rptPageASHRAE36SetpointReview(n, d, detailedTitle) {
 
   var preamble =
     '<div style="font-size:11px;color:var(--rpt-page-text);line-height:1.6;margin-bottom:10px">' +
-    'The table compares the zone setpoints programmed in each building with the Control Service Company standard setpoints and schedule for three zone types. ' +
+    // Matt 2026-11-25 6e4b6e04: the table shows the building averages, no zone-type split; the difference of the two standards is explained once.
+    'The table compares the average zone setpoints programmed in each building with the Control Service Company standard setpoints and schedule. ' +
+    'The Control Service Company standard is set for comfort, which most clients prefer to the small extra savings of the ASHRAE 36 default setpoints. The owner keeps control of the setpoints. ' +
     (_detailedReview
       ? 'The Status column gives the number of zones whose setpoints differ from the standard.'
       : 'Occupied setpoints are the temperatures held while the building is in use. Unoccupied setpoints are the temperatures held while it is empty. The deadband is the gap between the heating and cooling setpoints. ' +
@@ -23131,8 +23178,29 @@ function _rptA36RecommendedScope(d) {
       e.rowIds = e.rowIds.concat(ids);
       addDev(e.install, ln.devices);
       if (opp.kind === 'seq') {
-        if (e.program.indexOf(opp.key) < 0) e.program.push(opp.key);
-        progAdd(opp.key, ln.progQty, opp.lib);
+        // (Matt 2026-11-25 6e4b6e04) a line that folded a repeated cause holds the rows of the sequences it folded: the scope names the sequence of each
+        // priced row (the work that is priced), not only the sequence of the root opportunity.
+        var seqQty = {};
+        var seqOrder = [];
+        if (opp.foldedKeys && opp.foldedKeys.length) {
+          ln.rows.forEach(function (r) {
+            var sk = r.phase === 2 && !r.ioOnly ? _rptA36ScopeRowKey(r) : '';
+            if (!sk) return;
+            if (seqQty[sk] === undefined) {
+              seqQty[sk] = 0;
+              seqOrder.push(sk);
+            }
+            seqQty[sk] += r.qty || 0;
+          });
+        }
+        if (!seqOrder.length) {
+          seqOrder = [opp.key];
+          seqQty[opp.key] = ln.progQty;
+        }
+        seqOrder.forEach(function (sk) {
+          if (e.program.indexOf(sk) < 0) e.program.push(sk);
+          progAdd(sk, seqQty[sk], opp.lib);
+        });
       } else if (ovOf(opp.key)) {
         e.overrides.push(opp.key);
         progAdd('override', opp.units || 1, opp.lib);
@@ -25626,7 +25694,18 @@ var A36_CAT_COUNT_LABELS = {
 };
 // The text of an equipment row with no findings (Matt 2026-11-18: say what "no findings" means): what the audit checks for the type (its
 // required points, EM_POINT_CATEGORIES, and its control sequences, EM_SEQUENCE_DEFS) and that the units have it all.
-function _a36NoFindingText(cat, n) {
+// The number of units of an equipment type that an opportunity of the library names (hit = _a36AuditAffectedUnits of the library).
+function _a36NoFindingNamed(cat, hit) {
+  return Object.keys(hit || {}).filter(function (k) {
+    return hit[k] === cat;
+  }).length;
+}
+// named (optional): the units of this type that a building-wide opportunity names (Matt 2026-11-25 6e4b6e04): the row then says what is true: no
+// sensor or point opportunity, and that the building-wide items below name units of this type.
+function _a36NoFindingText(cat, n, named) {
+  if (named > 0) {
+    return 'No sensor or point opportunities; see the building-wide items below.';
+  }
   if (cat === 'lighting') return 'No opportunities: has the schedule, photocell and occupancy points the audit checks';
   var req = typeof EM_POINT_CATEGORIES !== 'undefined' && EM_POINT_CATEGORIES[cat] ? EM_POINT_CATEGORIES[cat].filter(function (c) { return c.required; }).length : 0;
   var seqs = typeof EM_SEQUENCE_DEFS !== 'undefined' ? EM_SEQUENCE_DEFS.filter(function (sd) { return (sd.equipTypes || []).indexOf(cat) > -1; }).length : 0;
@@ -25793,10 +25872,23 @@ function _a36DetDcvNote(g, units, affected) {
   var verb = function (n, one, many) {
     return rptCount(n) + ' ' + (n === 1 ? one : many);
   };
-  // Matt 2026-11-18 ("What does this even mean???"): say only which of the other units have the sensor; no "not checked, because the
-  // equipment record ..." (that is how the audit works, not a fact the reader can use).
-  if (!withIt) return '';
-  return withIt === rest ? 'The other ' + verb(rest, 'has', 'have') + ' a CO2 sensor point.' : 'Of the other ' + rptCount(rest) + ', ' + verb(withIt, 'has', 'have') + ' a CO2 sensor point.';
+  // Matt 2026-11-25 6e4b6e04: every unit of the group is in a named group. The other units are the ones with a CO2 sensor point and the ones the
+  // check leaves out (a unit with no heating or cooling setpoint, which the system only monitors, or a unit that the equipment record marks as one
+  // that occupancy-based ventilation does not apply to): "Of the other 34, 20 have a CO2 sensor point and 14 are not checked for it."
+  var others = rest - withIt;
+  if (!withIt && !others) return '';
+  if (!others) return withIt === rest ? 'The other ' + verb(rest, 'has', 'have') + ' a CO2 sensor point.' : 'Of the other ' + rptCount(rest) + ', ' + verb(withIt, 'has', 'have') + ' a CO2 sensor point.';
+  var mon = g.units.filter(function (u) {
+    var nm = u.name || 'Unknown';
+    return (affected || []).indexOf(nm) === -1 && have.indexOf(nm) === -1 && typeof _pricingIsMonitoringOnlyZoneUnit === 'function' && _pricingIsMonitoringOnlyZoneUnit(u);
+  }).length;
+  mon = Math.min(mon, others);
+  var na = others - mon;
+  var why = [];
+  if (na) why.push(verb(na, 'is', 'are') + ' not checked for it because occupancy-based ventilation does not apply to ' + (na === 1 ? 'it' : 'them'));
+  if (mon) why.push(verb(mon, 'has', 'have') + ' no zone heating or cooling setpoint in the building automation system');
+  if (!withIt && why.length === 1) return rest === 1 ? 'The other unit ' + why[0].replace(/^\S+ /, '') + '.' : 'The other ' + rptCount(rest) + ' ' + why[0].replace(/^\S+ /, '') + '.';
+  return 'Of the other ' + rptCount(rest) + ', ' + verb(withIt, 'has', 'have') + ' a CO2 sensor point and ' + _a36DetJoin(why) + '.';
 }
 function _a36DetDcvBase(g) {
   var n = g.units.filter(function (u) { return _a36DcvUnitKind(u) !== ''; }).length;
@@ -27340,22 +27432,40 @@ function _a36DetPlainNoun(text) {
     .replace(/\s+/g, ' ')
     .trim();
 }
-// Opportunities of one group that share the same missing device or points (the cause, f.cause of _a36DetHeadline) and the same units state the
-// cause once: the second and later ones say what the missing device also stops ("The missing variable frequency drive also stops minimum outdoor
-// air."). The opportunities stay separate (count, Opportunities Summary, price); only the headline text changes (Matt 2026-11-18).
-function _a36DetShortenRepeatedCauses(list) {
-  var seen = {};
+// Opportunities of one group that share the same missing device or points (the cause, f.cause of _a36DetHeadline) and name the same units are ONE
+// opportunity (Matt 2026-11-25 6e4b6e04: a repeated cause is not a separate opportunity). The first one is the root cause; the later ones fold into it:
+// the root keeps their keys (foldedKeys: the cost lines of a folded sequence belong to the root, _pricingRowOpportunity) and its Impact text names every
+// sequence that the missing device is also needed by. Returns the folded findings; the caller removes them from the list of the opportunities.
+function _a36DetFoldRepeatedCauses(list) {
+  var root = {};
+  var folded = [];
   list.forEach(function (f) {
     var c = f.cause;
     if (!c) return;
-    var k = [f.groupLabel, c.key, f.units, f.total].join('\u0001');
-    if (!seen[k]) {
-      seen[k] = true;
+    var k = [f.groupLabel, c.key, f.units, f.total, (f.affected || []).join('\u0002')].join('\u0001');
+    var r = root[k];
+    if (!r) {
+      root[k] = f;
       return;
     }
-    f.repeatCause = true; // the building page leaves this line out (_a36AuditBulletTexts)
-    if (c.tail) f.headline = 'The missing ' + c.noun + ' also stop' + (c.plural ? '' : 's') + ' ' + c.tail + '.';
+    (r.foldedKeys = r.foldedKeys || []).push(f.key);
+    if (c.tail) (r.foldedTails = r.foldedTails || []).push(c.tail);
+    (f.missingKeys || []).forEach(function (mk) {
+      if ((r.missingKeys = r.missingKeys || []).indexOf(mk) === -1) r.missingKeys.push(mk);
+    });
+    folded.push(f);
   });
+  Object.keys(root).forEach(function (k) {
+    var r = root[k];
+    var tails = r.foldedTails || [];
+    if (!tails.length) return;
+    var many = tails.length > 1;
+    r.impact =
+      (r.impact ? r.impact + ' ' : '') +
+      'The missing ' + r.cause.noun + (r.cause.plural ? ' are' : ' is') + ' also needed by the ' + _a36DetJoin(tails) + (many ? ' sequences' : ' sequence') +
+      ', so ' + (many ? 'they cannot run as the standard writes them.' : 'it cannot run as the standard writes it.');
+  });
+  return folded;
 }
 function _a36DetHeadline(f, g, units, kind, o) {
   var labelText = _a36DetJoin(
@@ -27732,7 +27842,19 @@ function _a36DetModel(d, rowsById, picMap, loaded) {
         add(g, 'seq', s.key, s.label, Math.min(s.qty, g.units.length), s.row, { affected: one.affected, missing: one.missing, missingText: one.missingText, missingKeys: one.missingKeys });
       });
     });
-    _a36DetShortenRepeatedCauses(lib.findings);
+    // A repeated cause is no opportunity of its own: it folds into the root cause (_a36DetFoldRepeatedCauses) and the list is numbered again.
+    var foldedCauses = _a36DetFoldRepeatedCauses(lib.findings);
+    if (foldedCauses.length) {
+      lib.findings = lib.findings.filter(function (f) {
+        return foldedCauses.indexOf(f) === -1;
+      });
+      all = all.filter(function (f) {
+        return foldedCauses.indexOf(f) === -1;
+      });
+      all.forEach(function (f, fi) {
+        f.n = fi + 1;
+      });
+    }
     work.building.sensors.forEach(function (w) {
       add(null, 'sensor', w.row._pointKey, w.label, w.qty, w.row, {});
     });
@@ -27885,7 +28007,8 @@ function _a36DetModel(d, rowsById, picMap, loaded) {
       }
     });
     if (schedAll + schedNone > 0) {
-      var schedFrac = _a36DetFraction(schedAll + schedNone, schedTotal, 'scheduled unit', '');
+      // Matt 2026-11-25 6e4b6e04: the units are the heating and cooling units with an imported schedule (the lighting units are not counted here).
+      var schedFrac = _a36DetFraction(schedAll + schedNone, schedTotal, 'scheduled heating and cooling unit', '');
       var runs = rptCount(schedAll) + (schedAll === 1 ? ' runs' : ' run') + ' around the clock';
       var holds = rptCount(schedNone) + (schedNone === 1 ? ' has' : ' have') + ' no occupied period';
       addPlain(
@@ -27894,7 +28017,7 @@ function _a36DetModel(d, rowsById, picMap, loaded) {
         'Occupied schedules',
         schedAll + schedNone,
         schedTotal,
-        'scheduled unit',
+        'scheduled heating and cooling unit',
         _a36DetUpperFirst(schedFrac) +
           (schedAll && schedNone
             ? ' ' + (schedAll + schedNone >= schedTotal && schedTotal === 1 ? 'is' : 'are') + ' on an around-the-clock schedule or ' + (schedAll + schedNone === 1 ? 'has' : 'have') + ' no occupied period: ' + runs + ' and ' + holds + '.'
@@ -27953,6 +28076,14 @@ function _a36DetModel(d, rowsById, picMap, loaded) {
       all.push(ho);
       ho.n = all.length;
     });
+    // The sequences that the control program has and that are disabled (Matt 2026-11-25 6e4b6e04): ONE opportunity of the library, "Enable the disabled
+    // sequences" (1 opportunity = 1 line in the cost estimate). It names the units that hold a disabled sequence, so the unit counts stay the distinct units.
+    var hd = _a36DetDisabledSequences(b, groups, d.project && d.project.id);
+    if (hd) {
+      lib.findings.push(hd);
+      all.push(hd);
+      hd.n = all.length;
+    }
     // Lighting opportunities of this library (a36LightingFacts: the three rules, each from the points the units have or lack). Building-wide items of
     // the lighting units; `affected` names the lighting units, so the unit counts of the audit rings read them like any other unit.
     ((b.lighting && b.lighting.opps) || []).forEach(function (o) {
@@ -28840,6 +28971,124 @@ function _a36DetOverrideText(ov, hit, libName) {
     return subject + ' are held by a manual override (' + _a36DetJoin(hit.map(function (h, i) { return names[i] + ' at ' + _a36DetJoin(h.values.map(fmt)); })) + ')' + tail;
   }
   return subject + (many ? ' are' : ' is') + ' held at ' + _a36DetJoin(all.map(fmt)) + ' by a manual override' + tail;
+}
+
+// The sequences of the control program that save energy or protect equipment and that the audit can read as disabled (Matt 2026-11-25 6e4b6e04: a
+// disabled sequence is an opportunity of its library). A sequence is disabled when its row of en_auditseq_<projectId> has the status
+// 'available_not_enabled' (the program has it and it is not enabled), or, for the economizer, when the row of econ_disabled exists (the program shows the
+// economizer as present but disabled). phrase = the sequence in the sentence "The program has <phrase>, but it is disabled." (the words of the
+// catalog A36_DET_SEQ); why = what the sequence does and what it does not do while disabled; kind = what the fix gives: protect (freeze protection),
+// wear (rotation) or energy (a lockout, the economizer). by = the group class (_a36DetSeqClasses) the wording applies to, none = any.
+var A36_DET_DISABLED = [
+  { id: 'pump_freeze_run', phrase: 'a cold weather freeze protection sequence for the pumps', kind: 'protect',
+    why: 'The freeze protection sequence runs the pumps continuously when the outdoor air temperature is low, so the water keeps moving through the coils and piping. While the sequence is disabled, the pumps do not run for freeze protection.' },
+  { id: 'pump_freeze_run_trip', phrase: 'a sequence that runs the pumps when an air handler low temperature safety trips', kind: 'protect',
+    why: 'The sequence runs the pumps when the low temperature safety of an air handler trips, so water flows through the coil of the air handler. While the sequence is disabled, the pumps do not start on a trip.' },
+  { id: 'plant_oa_lockout', by: 'hwp', phrase: 'a plant lockout on high outdoor air temperature', kind: 'energy',
+    why: 'The plant lockout keeps the plant from being enabled when the outdoor air temperature is above the lockout setpoint, so the boilers do not run when the building needs no heat. While the lockout is disabled, the plant can run in warm weather.' },
+  { id: 'plant_oa_lockout', by: 'chwp', phrase: 'a plant lockout on low outdoor air temperature', kind: 'energy',
+    why: 'The plant lockout keeps the plant from being enabled when the outdoor air temperature is below the lockout setpoint, so the chillers do not run in cold weather. While the lockout is disabled, the plant can run in cold weather.' },
+  { id: 'cool_oa_lockout', phrase: 'a mechanical cooling lockout on low outdoor air temperature', kind: 'energy',
+    why: 'The cooling lockout keeps mechanical cooling off when the outdoor air temperature is below the lockout setpoint. While the lockout is disabled, mechanical cooling can run in cool weather.' },
+  { id: 'heat_oa_lockout', phrase: 'a heating lockout on high outdoor air temperature', kind: 'energy',
+    why: 'The heating lockout keeps heating off when the outdoor air temperature is above the lockout setpoint. While the lockout is disabled, heating can run in warm weather.' },
+  { id: 'boiler_rotation', phrase: 'a lead boiler rotation sequence', kind: 'wear',
+    why: 'Lead boiler rotation shares the run time between the boilers. While the rotation is disabled, the same boiler can stay in the lead position and carry most of the wear.' },
+  { id: 'pump_rotation', phrase: 'a lead pump rotation sequence', kind: 'wear',
+    why: 'Lead pump rotation shares the run time between the pumps. While the rotation is disabled, the same pump can stay in the lead position and carry most of the wear.' },
+  { id: 'econ_disabled', row: true, phrase: 'an economizer', kind: 'energy',
+    why: 'An economizer cools the building with outdoor air when the outdoor air is cool enough, so mechanical cooling runs less. While the economizer is disabled, the unit uses mechanical cooling when outdoor air could do the cooling.' },
+];
+
+// _a36DetDisabledSequences(b, groups, projId) - the opportunity "Enable the disabled sequences" of one library, or null when the control program holds no
+// disabled sequence. The units are read from the rows of the control program pages (_a36DetSequenceIds, the one input of the sequence sentences).
+function _a36DetDisabledSequences(b, groups, projId) {
+  var libName = _a36DisplayName(b);
+  var hits = []; // { name, category, def }
+  var groupTotal = 0;
+  (groups || []).forEach(function (g) {
+    var any = false;
+    var classes = _a36DetSeqClasses(g.category);
+    g.units.forEach(function (eq) {
+      _a36DetSequenceIds(eq && eq.name, libName, projId).forEach(function (r) {
+        A36_DET_DISABLED.forEach(function (def) {
+          if (def.id !== r.id) return;
+          if (def.by && classes.indexOf(def.by) < 0) return;
+          if (def.row ? r.status !== 'enabled' : r.status !== 'available_not_enabled') return;
+          hits.push({ name: eq.name || 'Unknown', category: g.category, def: def });
+          any = true;
+        });
+      });
+    });
+    if (any) groupTotal += g.units.length;
+  });
+  if (!hits.length) return null;
+  // The sentences: one for each sequence wording, naming its units.
+  var by = [];
+  hits.forEach(function (h) {
+    var e = by.filter(function (x) { return x.def === h.def; })[0];
+    if (!e) by.push((e = { def: h.def, names: [] }));
+    var nm = _a36DetEquipName(h.name, libName);
+    if (e.names.indexOf(nm) < 0) e.names.push(nm);
+  });
+  // One sentence (the library page prints the first sentence of the headline, so a second sentence would be left out): the parts join with semicolons.
+  var observed =
+    by
+      .map(function (e, i) {
+        var s = e.names.length === 1
+          ? 'the program of ' + e.names[0] + ' has ' + e.def.phrase + ', but it is disabled'
+          : 'the programs of ' + _a36DetJoin(e.names) + ' each have ' + e.def.phrase + ', but it is disabled';
+        return i ? s : _a36DetUpperFirst(s);
+      })
+      .join('; ') + '.';
+  var whys = [];
+  by.forEach(function (e) {
+    if (whys.indexOf(e.def.why) < 0) whys.push(e.def.why);
+  });
+  var kinds = {};
+  by.forEach(function (e) {
+    kinds[e.def.kind] = true;
+  });
+  var eff = [];
+  if (kinds.protect) eff.push('restores freeze protection');
+  if (kinds.wear) eff.push('spreads equipment wear');
+  if (kinds.energy) eff.push('cuts energy use');
+  var affected = [];
+  var affectedCategories = [];
+  hits.forEach(function (h) {
+    if (affected.indexOf(h.name) < 0) {
+      affected.push(h.name);
+      affectedCategories.push(h.category);
+    }
+  });
+  var f = {
+    lib: libName,
+    groupLabel: 'Building-wide',
+    kind: 'building',
+    key: 'disabledSequences',
+    label: 'Enable the disabled sequences',
+    units: affected.length,
+    total: groupTotal,
+    disabledCount: hits.length, // the sequences to enable (the hours of the cost line)
+    disabledPhrases: by.map(function (e) { return e.def.phrase; }), // the sequences by wording (the Executive Summary names them)
+    affected: affected,
+    affectedCategories: affectedCategories,
+    missing: [],
+    pic: null,
+    picCands: [],
+    section: '',
+    impact: whys.join(' ') + ' The audit recommends enabling the disabled sequence' + (hits.length === 1 ? '' : 's') + ' after the program setpoints are checked.',
+    effect: _a36DetUpperFirst(_a36DetJoin(eff)),
+    observed: observed,
+    issueShort: 'Disabled sequences',
+    fracNoun: 'unit',
+    groupTotal: groupTotal,
+    dcvNote: '',
+  };
+  f.headline = observed;
+  // The opportunity sits on the building-page row of its equipment type (a plant row must not say "No opportunities" next to it).
+  f.category = affectedCategories.every(function (c) { return c === affectedCategories[0]; }) ? affectedCategories[0] : null;
+  return f;
 }
 
 // The sentence of the reset limits of a setpoint. sets = the limits of each unit that has the reset ({} when the unit has none recorded). The
@@ -30244,7 +30493,6 @@ function _a36AuditBulletTexts(list, ctx) {
     var cause = f.cause && /^drive:/.test(f.cause.key);
     var pointLike = !!m && !cause && ((f.kind === 'seq' && f.missing && f.missing.length) || f.kind === 'sensor' || f.kind === 'point');
     if (!pointLike) {
-      if (f.repeatCause) return; // a repeated cause line ("also stops ..."): the cause is named above
       out.push(one);
       return;
     }
@@ -30329,7 +30577,7 @@ function _a36AuditBuildingTokens(d, b, ctx, showBuildingInfra) {
   // Matt 2026-11-18: the recommendation under a missing power meter: recommended where the equipment is large enough for the meter to show
   // what the controls save (the powerMeter opportunity, _a36PowerMeterWorthIt), otherwise not needed.
   var pmRec = findings.some(function (f) { return f.key === 'powerMeter'; });
-  var pmNote = b.hasPowerMonitoring ? '' : pmRec ? 'Recommended' : 'Not recommended: the equipment is too small for a meter to be worth it';
+  var pmNote = b.hasPowerMonitoring ? '' : pmRec ? 'Recommended: the equipment is large enough for a meter to be worth it' : 'Not recommended: the equipment is too small for a meter to be worth it';
   var infraVal = function (on) {
     return on ? 'Installed' : 'Not installed';
   };
@@ -30386,6 +30634,9 @@ function _a36AuditBuildingTokens(d, b, ctx, showBuildingInfra) {
     else wide.push(f);
   });
   var tightRows = false; // the last resort of the fit rule: less padding in the table rows
+  // Matt 2026-11-25 6e4b6e04: the units that the building-wide opportunities (zone setpoints, schedules) name, by equipment type: a type row with no
+  // opportunity of its own must not say "No opportunities" when such an opportunity names its units (the same rule as the unit counts, _a36AuditAffectedUnits).
+  var namedUnits = _a36AuditAffectedUnits(findings, name);
   var findingsCell = function (list, cat, n) {
     return list.length
       ? (cat === 'lighting'
@@ -30398,7 +30649,9 @@ function _a36AuditBuildingTokens(d, b, ctx, showBuildingInfra) {
             return '<div style="margin:0 0 ' + (tightRows ? '1px' : '4px') + ' 0;padding-left:14px;text-indent:-14px"><span style="color:var(--rpt-orange);font-weight:700">&#9679;</span>&nbsp; ' + _escHtml(o.text) + (o.star ? '<span class="a36-star">*</span>' : '') + '</div>';
           })
           .join('')
-      : '<span style="color:var(--rpt-green-dark);font-weight:700">&#10003;</span>&nbsp; ' + _a36NoFindingText(cat, n);
+      : _a36NoFindingNamed(cat, namedUnits) > 0
+        ? _a36NoFindingText(cat, n, _a36NoFindingNamed(cat, namedUnits))
+        : '<span style="color:var(--rpt-green-dark);font-weight:700">&#10003;</span>&nbsp; ' + _a36NoFindingText(cat, n);
   };
   var TH = A36_AUDIT_TH;
   var row = function (cells, k) {

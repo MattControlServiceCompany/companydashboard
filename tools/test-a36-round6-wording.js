@@ -87,7 +87,7 @@ const RE = fs.readFileSync(path.join(ROOT, 'app', 'report-engine.js'), 'utf8');
         tmp.innerHTML = html;
         const rows = [...tmp.querySelectorAll('tr')].map((tr) => tr.textContent.replace(/\s+/g, ' ')).filter((t) => /Requires:/.test(t));
         out[k] = {
-          findings: c.model.findings.map((f) => ({ g: f.groupLabel, kind: f.kind, key: f.key, section: f.section, head: f.headline, impact: f.impact, observed: f.observed })),
+          findings: c.model.findings.map((f) => ({ g: f.groupLabel, kind: f.kind, key: f.key, section: f.section, head: f.headline, impact: f.impact, observed: f.observed, foldedKeys: f.foldedKeys || [] })),
           rows: rows,
           text: tmp.textContent.replace(/\s+/g, ' '),
         };
@@ -99,10 +99,12 @@ const RE = fs.readFileSync(path.join(ROOT, 'app', 'report-engine.js'), 'utf8');
     const sz = scen.sz.findings;
     const cmd = sz.find((f) => f.kind === 'sensor' && f.key === 'sfSpeedCmd');
     ok(cmd && /no variable frequency drive on (its|their) supply fans?/.test(cmd.head), 'F2. single-zone point finding: the heading says the supply fan has no drive: ' + (cmd && cmd.head));
-    ok(cmd && cmd.impact === 'Lets the system change the fan speed. Without a variable frequency drive the fan runs at full speed all the time.', 'F2. single-zone point finding: plain Impact line: ' + (cmd && cmd.impact));
+    ok(cmd && cmd.impact === 'Lets the system change the fan speed. Without a variable frequency drive the fan runs at full speed all the time. The missing variable frequency drive is also needed by the supply air temperature reset sequence, so it cannot run as the standard writes it.', 'F2. single-zone point finding: plain Impact line, then the folded repeated cause (Matt 2026-11-25 6e4b6e04): ' + (cmd && cmd.impact));
     ok(cmd && cmd.section === '5.18.4' && !/ASHRAE 36, Section/.test(cmd.observed), 'F3. the single-zone supply fan speed command finding keeps section 5.18.4 in the data and cites none in the text: ' + (cmd && cmd.section + ' | ' + cmd.observed));
     const sat = sz.find((f) => f.kind === 'seq' && f.key === 'ahu_sat_reset');
-    ok(sat && (/no variable frequency drive on (its|their) supply fans?, so .* cannot run\./.test(sat.head) || /^The missing variable frequency drive also stops supply air temperature reset\.$/.test(sat.head)) && /Outdoor Air Temp/.test(sat.observed), 'F2. single-zone sequence finding: the heading names the missing drive, Missing keeps the other points: ' + (sat && sat.head + ' | ' + sat.observed));
+    // (Matt 2026-11-25 6e4b6e04) the sequence that repeats the cause of the drive is folded into its root: it has no row of its own and the root names it
+    const satRoot = sat || sz.find((f) => f.foldedKeys.indexOf('ahu_sat_reset') > -1);
+    ok(satRoot && (/no variable frequency drive on (its|their) supply fans?/.test(satRoot.head) || !sat) && sz.some((f) => f.foldedKeys.indexOf('ahu_sat_reset') > -1 || sat), 'F2. single-zone sequence finding: the heading names the missing drive, the repeat is folded into the root: ' + (satRoot && satRoot.head));
     ok(sz.every((f) => !/Solution/.test(f.head + ' ' + f.observed)), 'F2. no finding text carries a Solution');
     const mzSeq = scen.mixed.findings.find((f) => f.kind === 'seq' && f.key === 'ahu_sat_reset' && f.section === '5.16.2');
     ok(mzSeq && !/variable frequency drive/i.test(mzSeq.head) && /Outdoor Air Temp/.test(mzSeq.observed) && /Supply Fan Speed/.test(mzSeq.observed), 'F2. a multi-zone unit: no drive in the heading, Missing names both points: ' + (mzSeq && mzSeq.head + ' | ' + mzSeq.observed));

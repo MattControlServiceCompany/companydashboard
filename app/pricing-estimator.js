@@ -60,6 +60,9 @@ const TERMINAL_STANDARD_HOURS_PER_BOX = 1.0;
 // cost estimate). Labor at the project hourly rate; material is the price of the device per unit. A catalog item of the same kind does not
 // replace these (the catalog holds no photocell; its power meter and occupancy sensor SKUs are other devices than the ones these lines cover).
 const OVERRIDE_RELEASE_HOURS = 1.0; // release one manual override (one opportunity of a library)
+// Manager covering estimate 2026-11-25 (6e4b6e04), editable: enable one disabled sequence of the control program (switch it on, check the setpoint
+// it holds, test it). One line per library ("Enable the disabled sequences"), the hours counted for each disabled sequence of the library.
+const DISABLED_SEQUENCE_HOURS_EACH = 0.5;
 const PHOTOCELL_MATERIAL_PRICE = 150; // exterior lighting photocell, per library
 const PHOTOCELL_HOURS = 3; // install and wire it, per library
 const OCCUPANCY_SENSOR_MATERIAL_PRICE = 120; // interior lighting occupancy sensor, per affected interior lighting unit
@@ -3418,6 +3421,9 @@ function buildOpportunityLaborRows(projId, buildingNames) {
   _a36OpportunityList(ashData).forEach(function (f) {
     if (typeof A36_DET_OVERRIDE_KEYS !== 'undefined' && A36_DET_OVERRIDE_KEYS.indexOf(f.key) > -1) {
       labor(f, 1, OVERRIDE_RELEASE_HOURS, '1 manual override', 'Release the manual override so the reset runs.');
+    } else if (f.key === 'disabledSequences') {
+      var nDis = Math.max(f.disabledCount || 1, 1);
+      labor(f, nDis, DISABLED_SEQUENCE_HOURS_EACH * nDis, plural(nDis, 'disabled sequence'), 'Enable the disabled sequences of the control program.');
     } else if (f.key === 'lightingPhotocell') {
       device(f, 1, PHOTOCELL_MATERIAL_PRICE, PHOTOCELL_HOURS, '1 photocell', 'Photocell for the exterior lighting.', 'Exterior Lighting Photocells');
     } else if (f.key === 'lightingOccupancy') {
@@ -3450,8 +3456,14 @@ function _pricingRowOpportunity(row, opps) {
   if (/^(fso_|opt_|sinv_)/.test(row.id || '') || row.isFddAddon) return null;
   function byKey(key, kind) {
     var hits = opps.filter(function (o) {
-      return o.key === key && (!kind || o.kind === kind);
+      // An opportunity that folded a repeated cause (foldedKeys: report-engine.js _a36DetFoldRepeatedCauses) owns the rows of the folded one.
+      return (o.key === key && (!kind || o.kind === kind)) || (!!o.foldedKeys && o.foldedKeys.indexOf(key) > -1);
     });
+    // The opportunity with the key itself comes before one that folded it.
+    var own = hits.filter(function (o) {
+      return o.key === key;
+    });
+    if (own.length) hits = own;
     if (hits.length > 1 && row.category) {
       var cat = hits.filter(function (o) {
         return o.category === row.category || (row.categoryQty && o.category && row.categoryQty[o.category]);
