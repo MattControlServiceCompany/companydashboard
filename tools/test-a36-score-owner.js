@@ -46,15 +46,41 @@ const { launchBrowser } = require(path.join(ROOT, 'tools', 'launch-browser.js'))
       bar.id = 'em-stats-bar';
       document.body.appendChild(bar);
       const pillsText = () => bar.innerText.replace(/\s+/g, ' ');
-      emUpdateStatsPillsForAudit(store.rows, store.rows);
+      emUpdateStatsPillsForAudit(store.rows, store.rows, { building: '', type: '', search: '' });
       out.pills = pillsText();
-      emUpdateStatsPillsForAudit(store.rows.filter((x) => x.building === 'Synthetic Hall'), store.rows);
+      emUpdateStatsPillsForAudit(store.rows.filter((x) => x.building === 'Synthetic Hall'), store.rows, { building: 'Synthetic Hall', type: '', search: '' });
       out.pillsHall = pillsText();
+      // Decision 1 (2026-11-25): a Type or Search filter never changes the score pills; the title says so.
+      const ahuOnly = store.rows.filter((x) => x.category === 'ahu');
+      emUpdateStatsPillsForAudit(ahuOnly, store.rows, { building: '', type: 'ahu', search: '' });
+      out.pillsType = pillsText();
+      out.pillsTypeTitle = Array.prototype.map.call(bar.querySelectorAll('[title]'), (e) => e.title).join(' | ');
+      emUpdateStatsPillsForAudit(store.rows.filter((x) => x.equipName === 'AHU-1'), store.rows, { building: '', type: '', search: 'AHU-1' });
+      out.pillsSearch = pillsText();
+      emUpdateStatsPillsForAudit(store.rows, store.rows, { building: '', type: '', search: '' });
+      out.pillsNoFilterTitle = Array.prototype.map.call(bar.querySelectorAll('[title]'), (e) => e.title).join(' | ');
+      // Decision 2: no sequence applies = null from the owner and "None apply" on the pills and the footer.
+      const keep = store.rows;
+      store.rows = [mk('m1', 'Synthetic Fan Coil Shop', 'FCU-1', 'fcu', { 'Zone Temp': '70' })];
+      out.noSeq = a36ComputeScores(PID);
+      out.noSeqRep = collectASHRAE36Data(PID).portfolio;
+      emUpdateStatsPillsForAudit(store.rows, store.rows, { building: '', type: '', search: '' });
+      out.pillsNoSeq = pillsText();
+      out.footNoSeq = (function () {
+        const d = emGetAuditColDefs(store.rows);
+        const html = buildAuditFooterRow(emComputeAuditFooterTotals(store.rows, d, { building: '' }), d, 'Total', true);
+        const tb = document.createElement('table');
+        tb.innerHTML = '<tbody>' + html + '</tbody>';
+        const cells = Array.prototype.slice.call(tb.querySelectorAll('td'));
+        const i = d.findIndex((x) => x.isAuditSeqPct);
+        return i < 0 ? null : cells[i].textContent.trim();
+      })();
+      store.rows = keep;
       out.stats = emComputeAuditStats(store.rows);
       // Column footer (Total row) and row cells
       const defs = emGetAuditColDefs(store.rows);
-      const foot = (rows) => {
-        const html = buildAuditFooterRow(emComputeAuditFooterTotals(rows, defs), defs, 'Total', true);
+      const foot = (rows, building) => {
+        const html = buildAuditFooterRow(emComputeAuditFooterTotals(rows, defs, { building: building || '' }), defs, 'Total', true);
         const t = document.createElement('table');
         t.innerHTML = '<tbody>' + html + '</tbody>';
         const cells = Array.prototype.slice.call(t.querySelectorAll('td'));
@@ -62,7 +88,7 @@ const { launchBrowser } = require(path.join(ROOT, 'tools', 'launch-browser.js'))
         return { cov: at('isAuditCoverage'), seq: at('isAuditSeqPct') };
       };
       out.foot = foot(store.rows);
-      out.footHall = foot(store.rows.filter((x) => x.building === 'Synthetic Hall'));
+      out.footHall = foot(store.rows.filter((x) => x.building === 'Synthetic Hall'), 'Synthetic Hall');
       const cellText = (row) => {
         const comp = emComputeCompliance(row, emLoadEquipConfigFlags(PID, row.id), []);
         const seq = emComputeSequenceReadiness(row, comp);
@@ -86,6 +112,14 @@ const { launchBrowser } = require(path.join(ROOT, 'tools', 'launch-browser.js'))
     ok(pill(r.pills, 'Sensor Coverage') === l.pointPct && pill(r.pills, 'Sequence Readiness') === l.seqPct && pill(r.pills, 'Overall Score') === l.composite, 'Matrix pills equal the owner (all rows): ' + r.pills);
     const h = r.hall.portfolio;
     ok(pill(r.pillsHall, 'Sensor Coverage') === h.pointPct && pill(r.pillsHall, 'Sequence Readiness') === h.seqPct && pill(r.pillsHall, 'Overall Score') === h.composite, 'Matrix pills with a building filter equal the owner for that building: ' + r.pillsHall);
+    ok(pill(r.pillsType, 'Sensor Coverage') === l.pointPct && pill(r.pillsType, 'Sequence Readiness') === l.seqPct && pill(r.pillsType, 'Overall Score') === l.composite, 'Type filter: score pills stay the building scores: ' + r.pillsType);
+    ok(pill(r.pillsSearch, 'Sensor Coverage') === l.pointPct && pill(r.pillsSearch, 'Sequence Readiness') === l.seqPct && pill(r.pillsSearch, 'Overall Score') === l.composite, 'Search filter: score pills stay the building scores: ' + r.pillsSearch);
+    ok(r.pillsTypeTitle.indexOf('Type and Search filters do not change them') >= 0 && r.pillsNoFilterTitle.indexOf('Type and Search filters do not change them') === -1, 'the filter sentence is in the titles only when Type or Search is on');
+    ok(new RegExp(l.equipCount + '\\s*Units Scored', 'i').test(r.pills), 'Units Scored shows the owner count (' + l.equipCount + '): ' + r.pills);
+    ok(/Programs Imported/i.test(r.pills), 'the program count is labelled Programs Imported: ' + r.pills);
+    ok(r.noSeq.portfolio.seqPct === null && r.noSeqRep.seqPct === null, 'no sequence applies: owner portfolio seqPct is null and the Audit portfolio agrees: ' + JSON.stringify(r.noSeq.portfolio));
+    ok(/None apply\s*Sequence Readiness/i.test(r.pillsNoSeq) && !/0%\s*Sequence Readiness/i.test(r.pillsNoSeq), 'no sequence applies: pill reads None apply: ' + r.pillsNoSeq);
+    ok(r.footNoSeq === 'None apply', 'no sequence applies: footer reads None apply: ' + r.footNoSeq);
     const pc = (t) => Number(String(t).replace('%', ''));
     ok(pc(r.foot.cov) === l.pointPct && pc(r.foot.seq) === l.seqPct, 'Matrix footer equals the pills / owner (all rows): ' + JSON.stringify(r.foot));
     ok(pc(r.footHall.cov) === h.pointPct && pc(r.footHall.seq) === h.seqPct, 'Matrix footer with a building filter equals the owner: ' + JSON.stringify(r.footHall));

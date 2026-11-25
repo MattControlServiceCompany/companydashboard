@@ -5928,8 +5928,10 @@ function emComputeAuditStats(rows) {
 }
 
 /* ── emAuditScorePills ──────────────────────────────────────────────────────
-   The three score pills (Sensor Coverage %, Sequence Readiness %, Overall Score %) for the stats
-   bar. Same numbers as the Audit Report: a36ComputeScores for the buildings of `rows`.
+   The three score pills (Sensor Coverage %, Sequence Readiness %, Overall Score %) and the Units Scored count
+   for the stats bar. They are the Audit Report numbers of the BUILDINGS in view: the building set comes from
+   the Building filter only (`filters.building`, all buildings when empty); the Type and Search filters never
+   change them. Sequence Readiness is "None apply" when no sequence applies (the Audit says the same).
    Returns '' when there is no scored equipment. */
 var EM_SCORE_TITLES = {
   pointPct:
@@ -5939,36 +5941,49 @@ var EM_SCORE_TITLES = {
   composite:
     'Overall Score %: points and sequences met over points and sequences required, weighted by equipment count. Same number as the Audit Report',
 };
-// The scores of the buildings of `rows` (the one owner a36ComputeScores). Pills and column footers both read this.
-function emAuditScoreFor(rows) {
-  var names = {};
-  for (var i = 0; i < rows.length; i++) names[rows[i].building || 'Unknown Building'] = true;
-  var keys = Object.keys(names);
-  var sc = keys.length && typeof a36ComputeScores === 'function' ? a36ComputeScores(window._emActivePid || '', keys) : null;
+var EM_SCORE_FILTER_NOTE =
+  'Scores of the whole buildings in view, as in the Audit Report; the Type and Search filters do not change them.';
+// The title of a score pill or footer cell: the definition, plus the filter note when a Type or Search filter is on.
+function emScoreTitle(key, filters) {
+  var t = EM_SCORE_TITLES[key];
+  return filters && (filters.type || filters.search) ? t + '. ' + EM_SCORE_FILTER_NOTE : t;
+}
+// The scores of the buildings in view (the one owner a36ComputeScores). Pills and column footers both read this.
+// filters: the Matrix filters; only filters.building is used. null or no building = all buildings of the project.
+function emAuditScoreFor(filters) {
+  var names = filters && filters.building ? [filters.building] : [];
+  var sc = typeof a36ComputeScores === 'function' ? a36ComputeScores(window._emActivePid || '', names) : null;
   return sc ? sc.portfolio : null;
 }
-function emAuditScorePills(rows) {
-  var p = emAuditScoreFor(rows);
+function emAuditScorePills(filters) {
+  var p = emAuditScoreFor(filters);
   if (!p) return '';
   var pillDef = function (pct, label, title) {
+    var none = pct === null || pct === undefined;
     var color = pct >= 75 ? 'var(--green)' : pct >= 50 ? 'var(--warn)' : '#c0392b';
+    if (none) color = 'var(--text3)'; // no sequence applies
     return (
       '<div title="' + title + '" style="display:flex;flex-direction:column;align-items:center;min-width:64px">' +
-      '<div style="font-size:18px;font-weight:700;color:' + color + ';line-height:1">' + pct + '%</div>' +
+      '<div style="font-size:' + (none ? '14' : '18') + 'px;font-weight:700;color:' + color + ';line-height:' + (none ? '18px' : '1') + '">' + (none ? 'None apply' : pct + '%') + '</div>' +
       '<div style="font-size:10px;color:var(--text3);margin-top:2px;text-transform:uppercase;letter-spacing:0.04em">' + label + '</div>' +
       '</div>'
     );
   };
   return (
-    pillDef(p.pointPct, 'Sensor Coverage %', EM_SCORE_TITLES.pointPct) +
-    pillDef(p.seqPct, 'Sequence Readiness %', EM_SCORE_TITLES.seqPct) +
-    pillDef(p.composite, 'Overall Score %', EM_SCORE_TITLES.composite)
+    pillDef(p.pointPct, 'Sensor Coverage %', emScoreTitle('pointPct', filters)) +
+    pillDef(p.seqPct, 'Sequence Readiness %', emScoreTitle('seqPct', filters)) +
+    pillDef(p.composite, 'Overall Score %', emScoreTitle('composite', filters)) +
+    emStatPill(
+      'Units Scored',
+      p.equipCount,
+      'Equipment units the scores cover: the scored count of the Audit Report for the buildings in view. The Programs Imported count can be larger (lighting, meters and other programs the audit does not score).'
+    )
   );
 }
 
 /* ── emUpdateStatsPillsForAudit ─────────────────────────────────────────────
    Replace the stats bar with audit-mode pills when in audit view.       */
-function emUpdateStatsPillsForAudit(rows, pointRows) {
+function emUpdateStatsPillsForAudit(rows, pointRows, filters) {
   var bar = document.getElementById('em-stats-bar');
   if (!bar) return;
   emResetStatsBarLayout(bar); // undo Raw View's stacked/collapsible layout if it was active
@@ -5976,8 +5991,8 @@ function emUpdateStatsPillsForAudit(rows, pointRows) {
   var _pt = emPointTotal(pointRows || rows);
   bar.innerHTML =
     emStatPill('Buildings', base.buildings) +
-    emStatPill('Equipment', base.total) +
-    emAuditScorePills(rows) +
+    emStatPill('Programs Imported', base.total, 'Equipment programs in this view, as imported. The scores below cover the Units Scored count.') +
+    emAuditScorePills(filters) +
     emStatPill('Building Automation System Points', _pt.total.toLocaleString(), _pt.title);
 }
 
@@ -6055,7 +6070,7 @@ function emUpdateStatsPillsForRaw(rows) {
    8c7dcc71: Summary always ignores the building filter).
    BAS Points source: emPointTotal(pointRows), the same single count every view uses.
    pointRows is the all-buildings set before phantom rows are removed (phantom rows hold real points). */
-function emUpdateStatsPillsForSummary(rows, pointRows) {
+function emUpdateStatsPillsForSummary(rows, pointRows, filters) {
   var bar = document.getElementById('em-stats-bar');
   if (!bar) return;
   emResetStatsBarLayout(bar); // undo Raw View's stacked/collapsible layout if it was active
@@ -6063,8 +6078,8 @@ function emUpdateStatsPillsForSummary(rows, pointRows) {
   var _pt = emPointTotal(pointRows || rows);
   bar.innerHTML =
     emStatPill('Buildings', base.buildings) +
-    emStatPill('Equipment', base.total) +
-    emAuditScorePills(rows) +
+    emStatPill('Programs Imported', base.total, 'Equipment programs in this view, as imported. The scores below cover the Units Scored count.') +
+    emAuditScorePills({ type: filters && filters.type, search: filters && filters.search }) + // no building: Summary shows all buildings
     emStatPill('Building Automation System Points', _pt.total.toLocaleString(), _pt.title);
 }
 
@@ -7177,7 +7192,7 @@ function emComputeFooterAvgUncached(rows, defs) {
          are computed. If omitted, only _baspoints and _coverage are returned.
    Returns: { _baspoints, _coverage, [_cat_*]: { present, applicable },
                                      [_seq_*]: { present, applicable } }      */
-function emComputeAuditFooterTotals(rows, defs) {
+function emComputeAuditFooterTotals(rows, defs, filters) {
   var ptSum = 0;
   var _footerMaps = emLoadCustomMappings(window._emActivePid || '');
   var _footerPid = window._emActivePid || '';
@@ -7263,10 +7278,11 @@ function emComputeAuditFooterTotals(rows, defs) {
     _baspoints: { sum: ptSum, count: rows.length },
     _coverage: null,
     _seqPct: null,
+    _filters: filters || null,
   };
   // The Sensor Coverage % and Sequence Readiness % footers are the owner's numbers (a36ComputeScores), the
   // same as the pills: no second average of the visible cells.
-  var _footScore = rows.length ? emAuditScoreFor(rows) : null;
+  var _footScore = rows.length ? emAuditScoreFor(filters) : null;
   if (_footScore) {
     result._coverage = { avg: _footScore.pointPct, count: _footScore.equipCount };
     result._seqPct = { avg: _footScore.seqPct, count: _footScore.equipCount };
@@ -7311,10 +7327,12 @@ function buildAuditFooterRow(totalsMap, defs, label, isBold) {
         '</td>';
     } else if ((def.isAuditCoverage || def.isAuditSeqPct) && totalsMap[def.isAuditCoverage ? '_coverage' : '_seqPct']) {
       var cov = totalsMap[def.isAuditCoverage ? '_coverage' : '_seqPct'].avg;
+      var covNone = cov === null || cov === undefined;
       var covColor = cov >= 75 ? 'var(--green)' : cov >= 50 ? 'var(--warn)' : '#c0392b';
+      if (covNone) covColor = 'var(--text3)'; // no sequence applies
       html +=
         '<td title="' +
-        EM_SCORE_TITLES[def.isAuditCoverage ? 'pointPct' : 'seqPct'] +
+        emScoreTitle(def.isAuditCoverage ? 'pointPct' : 'seqPct', totalsMap._filters) +
         '" style="' +
         tdBase +
         'text-align:right;font-weight:' +
@@ -7322,8 +7340,8 @@ function buildAuditFooterRow(totalsMap, defs, label, isBold) {
         ';color:' +
         covColor +
         '">' +
-        cov +
-        '%</td>';
+        (covNone ? 'None apply' : cov + '%') +
+        '</td>';
     } else if ((def.isAuditCat || def.isAuditSeq) && totalsMap[def.key] !== undefined) {
       var colTot = totalsMap[def.key];
       var presentCount = colTot.present;
@@ -8659,7 +8677,7 @@ function emRenderSummaryView(data, filters) {
   // covers the drilled-into-one-building case (see subtask 3 note below /
   // emRenderBuildingDetailView, which has its own separate single-building
   // stat line and intentionally does not touch #em-stats-bar).
-  emUpdateStatsPillsForSummary(filtered, _summaryPointRows);
+  emUpdateStatsPillsForSummary(filtered, _summaryPointRows, filters);
 
   // ── Drill-down routing ──
   if (_emDrillBuilding !== null) {
@@ -9154,6 +9172,7 @@ function emRenderCountsView(data, filters) {
       return it.row;
     }),
     data.rows || [],
+    filters,
   );
 
   var typeItems = bldgFilter
@@ -9824,11 +9843,11 @@ function emRenderAuditTable(data, filters) {
   // Pagination bar removed (2026-09-23) — all rows render in the scrollable wrap.
 
   // Update stats bar for audit view (pass filtered, not raw rows, so pills match visible rows)
-  emUpdateStatsPillsForAudit(filtered, _auditPointRows);
+  emUpdateStatsPillsForAudit(filtered, _auditPointRows, filters);
 
   // Page Total row removed (2026-09-23) — pageRows === filtered now, so it was a duplicate
   // of the Total row. Total row kept.
-  var allTotals = emComputeAuditFooterTotals(filtered, defs);
+  var allTotals = emComputeAuditFooterTotals(filtered, defs, filters);
   var tfootHtml = '<tfoot>' + buildAuditFooterRow(allTotals, defs, 'Total', true) + '</tfoot>';
 
   // Write header skeleton immediately, same lazy row-append pattern as Raw View (see

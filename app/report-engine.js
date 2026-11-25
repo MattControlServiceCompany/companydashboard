@@ -17678,7 +17678,8 @@ function a36ScoreBuilding(projId, auditableRows, maps, onRow) {
 }
 
 // Portfolio gauges, equipment-weighted (Matt's decision, backlog 9f21c94d, 2026-07-31): each building
-// weighs its auditable equipCount. Buildings with a null seqPct are left out of the sequence average.
+// weighs its auditable equipCount. Buildings with a null seqPct are left out of the sequence average; when no building has a
+// sequence, the portfolio seqPct is null too ("None apply", as for one building), never 0.
 // buildings: [{ equipCount, composite, pointPct, seqPct }]
 function a36PortfolioScores(buildings) {
   var total = buildings.reduce(function (s, b) {
@@ -17710,7 +17711,7 @@ function a36PortfolioScores(buildings) {
           return s + b.seqPct * b.equipCount;
         }, 0) / totalForSeq,
       )
-    : 0;
+    : null;
   return { composite: composite, pointPct: pointPct, seqPct: seqPct };
 }
 
