@@ -2508,6 +2508,8 @@ async function siteResetAllMeterTableSettings() {
    site-ui.js delegates to this array and should NOT maintain its own copy.
 */
 var RELEASE_NOTES = [
+  { v: 'v2026.11.25.389', date: '2026-11-25', title: 'Smaller PDF downloads',
+    items: [ { type: 'improved', text: 'Download PDF saves the pages at 150 dpi. A long report is about half the size, so it fits in an email. The text stays sharp.' } ] },
   { v: 'v2026.11.25.388', date: '2026-11-25', title: 'Equipment Matrix scores match the Audit Report',
     items: [ { type: 'fixed', text: 'Equipment Matrix: the score boxes always show the Audit Report scores of the buildings in view. The Type and Search filters no longer change them.' },
              { type: 'improved', text: 'Equipment Matrix: Sequence Readiness shows None apply when no sequence applies, a new Units Scored box shows how many units the scores cover, and the Equipment box is now Programs Imported.' } ] },
