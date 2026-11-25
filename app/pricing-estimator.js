@@ -5039,6 +5039,16 @@ function _pricingItemSavingsCellsHTML(it) {
   };
 }
 
+// The item a merged row (hardware row + sequence row) of the Cost Estimate table shows. A sequence that claims several hardware rows is merged once per
+// hardware row, so its item (it starts on the sequence row) would show on each of those rows; it shows on the first merged row the draw reaches and is
+// null on the others (a dash). itemByRowId: first row id -> item; shownOn: item first row id -> hardware row id (one object per draw, filled here).
+function _pricingItemOfMergedRow(itemByRowId, shownOn, hwRow, seqRow) {
+  var it = itemByRowId[seqRow.id] || itemByRowId[hwRow.id];
+  if (!it) return null;
+  var k = it.rowIds[0];
+  if (shownOn[k] === undefined) shownOn[k] = hwRow.id;
+  return shownOn[k] === hwRow.id ? it : null;
+}
 // The client sentence under the cost of an option (Cost Estimate tab and Service Proposal print this one text). tier = the option key.
 // Compliance claims no energy savings. Returns '' when the estimate has no data (no sentence is better than a wrong one).
 function _pricingOptionEstimateText(est, tier) {
@@ -10515,6 +10525,7 @@ initCostEstimateTab = function initCostEstimateTab(projId) {
   _optEst.items.forEach(function (it) {
     if (it.rowIds && it.rowIds.length) _itemByRowId[it.rowIds[0]] = it;
   });
+  var _mergedItemShownOn = {}; // item first row id -> the hardware row of the merged row that shows it (one draw)
   function _itemSavingsTds(it) {
     var c = _pricingItemSavingsCellsHTML(it);
     var t = c.title ? ' title="' + _escHtml(c.title) + '"' : '';
@@ -11292,8 +11303,8 @@ initCostEstimateTab = function initCostEstimateTab(projId) {
           '</span>';
     cells.push(_lineTotalContent);
 
-    // cols 13, 14: estimated savings and payback of the item (its first row is the sequence row of this pair)
-    _itemSavingsTds(_itemByRowId[seqRow.id] || _itemByRowId[hwRow.id]).forEach(function (h) {
+    // cols 13, 14: estimated savings and payback of the item (its first row is the sequence row of this pair; once per item, see _pricingItemOfMergedRow)
+    _itemSavingsTds(_pricingItemOfMergedRow(_itemByRowId, _mergedItemShownOn, hwRow, seqRow)).forEach(function (h) {
       cells.push(h);
     });
 

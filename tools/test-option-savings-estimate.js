@@ -231,6 +231,14 @@ const sum = (rs) => rs.reduce((s, r) => s + r.lineTotal, 0);
   assert.strictEqual(sb._pricingRowColValue({ note: 'n' }, cols.indexOf('Notes')), 'n', 'Notes sorts by its own index');
   const users = fs.readdirSync(path.join(ROOT, 'app')).filter((f) => /\.js$/.test(f) && f !== 'pricing-estimator.js' && /PRICING_TBL_COLS|isItemSavingsCol|_pricingItemSavingsCellsHTML/.test(read('app/' + f)));
   assert.deepStrictEqual(users, [], 'no report or export file reads the table columns');
+  // merged rows: one sequence claims two hardware rows, so two merged rows hold the same sequence; the item shows on the first merged row only
+  const itm = { rowIds: ['seq1', 'hw1', 'hw2'], hasData: true };
+  const byId = { seq1: itm };
+  const shown = {};
+  assert.strictEqual(sb._pricingItemOfMergedRow(byId, shown, { id: 'hw1' }, { id: 'seq1' }), itm, 'first merged row shows the item');
+  assert.strictEqual(sb._pricingItemOfMergedRow(byId, shown, { id: 'hw2' }, { id: 'seq1' }), null, 'second merged row of the same sequence shows a dash');
+  assert.strictEqual(sb._pricingItemOfMergedRow(byId, shown, { id: 'hw1' }, { id: 'seq1' }), itm, 'a second call for the first row gives the same answer');
+  assert.strictEqual(sb._pricingItemOfMergedRow(byId, {}, { id: 'hw3' }, { id: 'seq9' }), null, 'a pair with no item shows a dash');
   ok('item savings cells: rounding, dashes, first row of each item, top line text, column order, no other reader of the columns');
 }
 // 7. no "finding" in the client text of the proposal (strings of the proposal functions of app/report-engine.js)
