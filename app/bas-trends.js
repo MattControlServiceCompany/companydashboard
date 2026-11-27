@@ -4979,7 +4979,7 @@ function btEstimateSavings(projId, bldgId, opts) {
     // SAT reset saves cooling energy (reheat + chiller) — use 12% of AHU cooling energy
     var satCoolingKwh = fanKw * coolingHrsPerYear * satAhuCount * 0.12;
     // Also saves reheat gas: Delta_SAT = 5°F avg, CFM × 1.08 BTU/hr/cfm/°F → therms
-    var reheatBtuPerHr = cfmPerAhu * 1.08 * 5; // BTU/hr per AHU
+    var reheatBtuPerHr = cfmPerAhu * SENSIBLE_HEAT_FACTOR * 5; // BTU/hr per AHU
     var reheatThermsSaved = (reheatBtuPerHr * coolingHrsPerYear * satAhuCount) / BTU_PER_THERM;
     var satDollars = elecRate && gasRate ? satCoolingKwh * elecRate + reheatThermsSaved * gasRate : null;
     estimates.push({
@@ -5052,7 +5052,7 @@ function btEstimateSavings(projId, bldgId, opts) {
   if (totalShcHrs > 0) {
     var annualShcHrs = totalShcHrs * scaleFactor;
     // Estimate heating waste: 40% of coil capacity wasted during SHC
-    var maxHeatBtuHr = cfmPerAhu * 1.08 * 20; // 20°F temperature rise at full heat
+    var maxHeatBtuHr = cfmPerAhu * SENSIBLE_HEAT_FACTOR * 20; // 20°F temperature rise at full heat
     var shcWasteBtu = maxHeatBtuHr * annualShcHrs * 0.4;
     var shcTherms = shcWasteBtu / BTU_PER_THERM;
     // Cooling waste overhead (compressor working against heating)

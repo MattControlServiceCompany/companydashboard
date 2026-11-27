@@ -5255,11 +5255,11 @@ const coolStepRow = (t) => {
 const humFor = (m, bi, h) =>
   humBins && humBins[m] && humBins[m][bi] ? (humBins[m][bi][h] || 0) / 7000 : 0;
 const coolOAMbtu = (binTemp, sp, hum) =>
-  ((binTemp > sp ? 1.08 * oaCfm * (binTemp - sp) : 0) +
+  ((binTemp > sp ? SENSIBLE_HEAT_FACTOR * oaCfm * (binTemp - sp) : 0) +
     (hum > humRatioSP ? 4840 * oaCfm * (hum - humRatioSP) : 0)) /
   1000;
 const heatOAMbtu = (binTemp, sp) =>
-  binTemp < sp ? (1.08 * oaCfm * (sp - binTemp)) / 1000 : 0;
+  binTemp < sp ? (SENSIBLE_HEAT_FACTOR * oaCfm * (sp - binTemp)) / 1000 : 0;
 const pushCell = (list, m, b, o, w, pk) => {
   if (w <= 0) return;
   list.cells.push({ m, b, o, w, pk });

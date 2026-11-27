@@ -638,10 +638,10 @@ function _pricingTierLabelHTML(tier) {
   );
 }
 
-// Savings are NOT computed here. The pricing estimator owns cost only. The projected annual
-// savings total is read from the Energy Savings matrix (getProjMatrixSavingsTotal, app/energy-savings.js),
-// which prices every measure monthly at Utility Data rates. No matrix total = the estimate of the option shown (option = { est, tier }:
-// _pricingOptionSavingsEstimate, _pricingOptionEstimateText; Matt 2026-11-19), or the plain message when it has no data.
+// The savings line under the cost of an option (option = { est, tier }): ALWAYS the estimate of the option shown (the one total,
+// computations/project-savings.js psRollUp, through _pricingOptionSavingsEstimate and _pricingOptionEstimateText; 2026-11-27), or the plain message
+// when it has no data. The hand-entered measures of the Energy Savings matrix (getProjMatrixSavingsTotal, app/energy-savings.js) are a separate,
+// labelled figure after it; they are never shown instead of the estimate.
 function _pricingSavingsLineHTML(projId, option) {
   var total = typeof getProjMatrixSavingsTotal === 'function' ? getProjMatrixSavingsTotal(projId) : null;
   // Net cost and simple payback of the measure cost lines: one payback function (simplePayback, computations/cost-lines.js).
@@ -649,9 +649,8 @@ function _pricingSavingsLineHTML(projId, option) {
   var cost = msrs.length ? projCostSummary(projId, msrs) : null;
   return (
     '<div style="width:100%;margin-top:6px;font-size:10px;color:var(--text3);font-style:italic">' +
-    (total !== null
-      ? 'Projected annual savings from the Energy Savings matrix: ' + _pricingFmt(total) + '/yr.'
-      : (option && _pricingOptionEstimateText(option.est, option.tier)) || 'No savings estimate yet.') +
+    ((option && _pricingOptionEstimateText(option.est, option.tier)) || 'No savings estimate yet.') +
+    (total !== null ? ' Energy Savings matrix (measures entered by hand): ' + _pricingFmt(total) + '/yr.' : '') +
     (cost && cost.gross > 0
       ? ' Measure cost lines: net cost ' +
         _pricingFmt(cost.net) +
@@ -4479,32 +4478,6 @@ function _pricingBuildingOccupiedWindow(equipResults) {
   var stop = Math.round(mean(stops) / 60);
   return stop > start ? { start: start, stop: Math.min(24, stop) } : null;
 }
-// The newest 12 complete bill months of a building of the project (buildingAnnualUse), or null. ONE reader for every savings estimate.
-function _pricingBuildingUse(projId, name) {
-  var ud =
-    typeof _a36UtilityBuilding === 'function' && typeof buildingAnnualUse === 'function'
-      ? _a36UtilityBuilding({ project: { id: projId } }, { name: name })
-      : null;
-  return ud ? buildingAnnualUse(projId, ud.id) : null;
-}
-// The blended rate of a fuel: cost / use (null when either is missing).
-function _pricingRateOf(cost, use) {
-  return cost > 0 && use > 0 ? cost / use : null;
-}
-// The mean gas rate of the buildings of the project that have a gas meter: the gas rate of a building with none. 0 when none has one.
-function _pricingProjectGasRate(projId) {
-  var rates = [];
-  ((typeof getUDBldgs === 'function' && getUDBldgs(projId)) || []).forEach(function (ub) {
-    var u = typeof buildingAnnualUse === 'function' ? buildingAnnualUse(projId, ub.id) : null;
-    var g = u && u.hasGas ? _pricingRateOf(u.gasCost, u.therms) : null;
-    if (g) rates.push(g);
-  });
-  return rates.length
-    ? rates.reduce(function (x, y) {
-        return x + y;
-      }, 0) / rates.length
-    : 0;
-}
 function _pricingZoneCo2SavingsEstimate(projId, optionalRows, estimate, totals) {
   var K = PRICING_ZONE_CO2_ESTIMATE;
   var toggles = (estimate && estimate.rowToggles) || {};
@@ -4532,21 +4505,13 @@ function _pricingZoneCo2SavingsEstimate(projId, optionalRows, estimate, totals) 
   ((ash && ash.buildings) || []).forEach(function (b) {
     ashByName[b.name] = b;
   });
-  var useOf = function (name) {
-    return _pricingBuildingUse(projId, name);
-  };
-  var rateOf = _pricingRateOf;
-  var meanGasRate = null;
-  var gasRateOfProject = function () {
-    if (meanGasRate === null) meanGasRate = _pricingProjectGasRate(projId);
-    return meanGasRate;
-  };
   var scen = ['low', 'likely', 'high'];
   var buildings = order.map(function (name) {
     var B = byBuilding[name];
     var out = { building: name, rooms: B.roomNames.length, roomNames: B.roomNames, price: B.price, years: null };
     var ab = ashByName[name];
-    var use = useOf(name);
+    var rt = psBuildingRates(projId, name); // the ONE rate reader (computations/project-savings.js)
+    var use = rt ? rt.use : null;
     var zones = ab
       ? ab.equipResults.filter(function (eq) {
           return typeof EM_SPACE_TYPE_ZONE_TERMINAL_CATS !== 'undefined' && EM_SPACE_TYPE_ZONE_TERMINAL_CATS[eq.category];
@@ -4554,8 +4519,8 @@ function _pricingZoneCo2SavingsEstimate(projId, optionalRows, estimate, totals) 
       : [];
     var win = ab ? _pricingBuildingOccupiedWindow(zones) : null;
     var dh = win ? _pricingTypicalYearDegreeHours(K.weatherCity, win.start, win.stop) : null;
-    var elecRate = use ? rateOf(use.electricCost, use.kwh) : null;
-    var gasRate = use ? (use.hasGas ? rateOf(use.gasCost, use.therms) : gasRateOfProject() || null) : null;
+    var elecRate = rt ? rt.elec : null;
+    var gasRate = rt ? rt.gas : null;
     var wsum = zones.reduce(function (s, eq) {
       return s + (K.areaWeight[emRoomUseClass(eq.name)] || 0);
     }, 0);
@@ -4579,7 +4544,7 @@ function _pricingZoneCo2SavingsEstimate(projId, optionalRows, estimate, totals) 
       });
       out.therms[k] = r.therms_saved * c.incremental * out.rooms;
       out.kwh[k] = r.cool_kwh_saved * c.incremental * out.rooms;
-      out.usd[k] = out.therms[k] * gasRate + out.kwh[k] * elecRate;
+      out.usd[k] = psDollars(out.kwh[k], out.therms[k], { elec: elecRate, gas: gasRate }); // the one pricing rule
     });
     out.year = use.label;
     return out;
@@ -4777,13 +4742,11 @@ function _pricingOptionSavingsEstimate(projId, rows, estimate, totals, ctx) {
   if (!ctx.bld) ctx.bld = {};
   var bldOf = function (name) {
     if (ctx.bld[name] !== undefined) return ctx.bld[name];
-    var use = _pricingBuildingUse(projId, name);
+    var rt = psBuildingRates(projId, name); // the ONE rate reader (computations/project-savings.js)
     var ab = ctx.byName[name];
-    var er = use ? _pricingRateOf(use.electricCost, use.kwh) : null;
     var out = null;
-    if (use && ab && er && use.kwh > 0) {
-      var gr = use.hasGas ? _pricingRateOf(use.gasCost, use.therms) : _pricingProjectGasRate(projId);
-      out = { use: use, unitCost: { elec: er, gas: gr || 0 }, m: _pricingMeasureBuilding(projId, name, use, ab) };
+    if (rt && ab && rt.use.kwh > 0) {
+      out = { use: rt.use, unitCost: { elec: rt.elec, gas: rt.gas || 0 }, m: _pricingMeasureBuilding(projId, name, rt.use, ab) };
     }
     ctx.bld[name] = out;
     return out;
@@ -4821,7 +4784,7 @@ function _pricingOptionSavingsEstimate(projId, rows, estimate, totals, ctx) {
     MS_CASES.forEach(function (k) {
       it.kwh[k] = est[k].kwh;
       it.therms[k] = est[k].therms;
-      it.usd[k] = est[k].kwh * B.unitCost.elec + est[k].therms * B.unitCost.gas;
+      it.usd[k] = psDollars(est[k].kwh, est[k].therms, B.unitCost); // the one pricing rule
       it.inputs[k] = est[k].inputs;
       it.steps[k] = est[k].steps;
     });
@@ -4855,143 +4818,73 @@ function _pricingOptionSavingsEstimate(projId, rows, estimate, totals, ctx) {
     it.years = it.hasData ? simplePayback(it.price, 0, it.usd.likely).years : null;
     it.over = it.claimed && !it.exempt && it.hasData && it.price > 0 && (it.years === null || it.years > K.keepLimitYears);
   });
-  // Per building: price, overlap, totals.
-  var order = [];
-  var seen = {};
-  active.forEach(function (r) {
-    if (r.building && !seen[r.building]) {
-      seen[r.building] = true;
-      order.push(r.building);
-    }
-  });
-  var buildings = order.map(function (name) {
-    var mine = items.filter(function (it) {
-      return it.building === name;
-    });
-    var B = bldOf(name);
-    var out = {
-      building: name,
-      price: active.reduce(function (s, r) {
-        return r.building === name ? s + priceOf(r) : s;
-      }, 0),
-      hasClaim: mine.some(function (it) {
-        return it.claimed && !it.exempt;
-      }),
-      kwh: zero(),
-      therms: zero(),
-      usd: zero(),
-      years: null,
+  // Per building: price, overlap, totals: ONE function (computations/project-savings.js psRollUp), the same one the Energy Savings tab reads.
+  var rollItems = items.map(function (it) {
+    var bb = bldOf(it.building);
+    return {
+      key: it.key, building: it.building, price: it.price, claimed: it.claimed, exempt: it.exempt, hasData: it.hasData, ms: it.ms,
+      bldOk: !!bb, unitCost: bb ? bb.unitCost : null, useLabel: bb ? bb.use.label : null,
     };
-    var cb = co2Of(name);
-    var haveEst = !!B && mine.some(function (it) { return it.hasData && it.claimed && !it.exempt; });
-    out.hasData = (out.hasClaim ? !!B : true) && (!cb || !!cb.usd);
-    if (cb) out.hasClaim = true;
-    if (!out.hasData) return out;
-    // An override and its own sequence in the set count once.
-    var keys = {};
-    mine.forEach(function (it) {
-      keys[it.key] = true;
-    });
-    var counted = mine.filter(function (it) {
-      if (!it.hasData || !it.ms) return false;
-      var rel = msReleases(it.key);
-      return !(rel && keys[rel]);
-    });
-    MS_CASES.forEach(function (k) {
-      if (haveEst) {
-        // per end use: remaining = product of (1 - share of the end-use base that each measure saves); a measure never saves more than its base
-        var rem = {};
-        var base = {};
-        counted.forEach(function (it) {
-          var r = it.ms[k];
-          Object.keys(r.byUse).forEach(function (u) {
-            var b = r.baseByUse[u] || 0;
-            base[u] = Math.max(base[u] || 0, b);
-            var f = b > 0 ? Math.min(1, r.byUse[u] / b) : 0;
-            rem[u] = (rem[u] === undefined ? 1 : rem[u]) * (1 - f);
-          });
-        });
-        Object.keys(rem).forEach(function (u) {
-          var s = base[u] * (1 - rem[u]);
-          if (u === 'heatGas') {
-            out.therms[k] += s;
-            out.usd[k] += s * B.unitCost.gas;
-          } else {
-            out.kwh[k] += s;
-            out.usd[k] += s * B.unitCost.elec;
-          }
-        });
-      }
-      if (cb && cb.usd) {
-        out.kwh[k] += cb.kwh[k];
-        out.therms[k] += cb.therms[k];
-        out.usd[k] += cb.usd[k];
-      }
-    });
-    out.years = simplePayback(out.price, 0, out.usd.likely).years;
-    return out;
   });
-  var sum = function (f) {
-    return buildings.reduce(function (s, b) {
-      return s + f(b);
-    }, 0);
-  };
-  var total = {
-    price: totals && totals.grand != null ? totals.grand : sum(function (b) { return b.price; }),
-    kwh: zero(),
-    therms: zero(),
-    usd: zero(),
-    years: { low: null, likely: null, high: null },
-  };
-  var claims = buildings.some(function (b) {
-    return b.hasClaim;
+  ((co2 && co2.buildings) || []).forEach(function (cb) {
+    rollItems.push({ co2: true, building: cb.building, hasData: !!cb.usd, kwh: cb.kwh, therms: cb.therms, usd: cb.usd, rooms: cb.rooms, useLabel: cb.year || null });
   });
-  var complete = claims && buildings.every(function (b) {
-    return !b.hasClaim || b.hasData;
+  var names = [];
+  rollItems.forEach(function (it) {
+    if (it.building && names.indexOf(it.building) === -1) names.push(it.building);
   });
-  MS_CASES.forEach(function (k) {
-    total.kwh[k] = sum(function (b) { return b.kwh[k]; });
-    total.therms[k] = sum(function (b) { return b.therms[k]; });
-    total.usd[k] = sum(function (b) { return b.usd[k]; });
-    total.years[k] = complete ? simplePayback(total.price, 0, total.usd[k]).years : null;
-  });
-  var r100 = _pricingEstimateRound100;
-  var labels = [];
-  buildings.forEach(function (b) {
-    var u = b.hasClaim ? _pricingBuildingUse(projId, b.building) : null;
-    if (u && u.label && labels.indexOf(u.label) === -1) labels.push(u.label);
+  var rolled = psRollUp(rollItems, {
+    totalPrice: totals && totals.grand != null ? totals.grand : null,
+    external: _pricingExternalUse(projId, names),
   });
   return {
-    claims: claims,
-    complete: complete,
-    year: labels.length === 1 ? labels[0] : null,
+    claims: rolled.claims,
+    complete: rolled.complete,
+    year: rolled.year,
     items: items.map(function (it) {
       return {
         key: it.key, building: it.building, label: it.label, qty: it.qty, price: it.price, claimed: it.claimed, exempt: it.exempt,
         unit: it.unit, hasData: it.hasData, years: it.years, over: it.over, kwh: it.kwh, therms: it.therms, usd: it.usd, rowIds: it.rowIds,
         inputs: it.inputs || null, steps: it.steps || null, reason: it.reason || null,
+        // for the derived measure list (_pricingDerivedMeasures): what psRollUp needs
+        ms: it.ms || null, bldOk: !!bldOf(it.building), unitCost: bldOf(it.building) ? bldOf(it.building).unitCost : null,
+        useLabel: bldOf(it.building) ? bldOf(it.building).use.label : null, hwGroup: it.hwGroup || null,
       };
     }),
-    buildings: buildings,
-    total: total,
-    display: complete
-      ? {
-          low: r100(total.usd.low),
-          likely: r100(total.usd.likely),
-          high: r100(total.usd.high),
-          years: _pricingEstimateYears(total.years.likely),
-        }
-      : null,
+    co2: rollItems.filter(function (it) {
+      return it.co2;
+    }), // the room CO2 lines of the option (per building), for the derived measure list
+    buildings: rolled.buildings,
+    total: rolled.total,
+    display: rolled.display,
   };
+}
+
+// The end-use quantities of the hand-entered ECM measures of the Energy Savings matrix, by building NAME (names = the buildings of the estimate):
+// they act on the same end uses first (psRollUp, external), so a measure in the matrix and the same work in the proposal count once. A project
+// with a contract is left alone: its matrix measures keep their saved rates and quantities (Matt 2026-10-27) and stay a separate figure.
+function _pricingExternalUse(projId, names) {
+  if (typeof projHasContract === 'function' && projHasContract(projId)) return [];
+  var sd = typeof getProjSavingsData === 'function' ? getProjSavingsData(projId) : null;
+  var out = [];
+  ((sd && sd.measures) || []).forEach(function (m) {
+    if (m.selected === false) return;
+    var x = psExternalUse(m, typeof ECM_MEASURE_FIELD_MAP !== 'undefined' ? ECM_MEASURE_FIELD_MAP : null);
+    if (!x) return;
+    names.forEach(function (n) {
+      if (_pricingUtilityBuildingId(projId, n) === x.building) out.push({ building: n, byUse: x.byUse });
+    });
+  });
+  return out;
 }
 
 // The display rounding of every estimate: dollars to the nearest $100, payback to whole years (at least 1). The option line and the
 // per-item cells of the Cost Estimate table both use these two (Matt 2026-11-23, 5df0a14e).
 function _pricingEstimateRound100(v) {
-  return Math.round(v / 100) * 100;
+  return psRound100(v);
 }
 function _pricingEstimateYears(y) {
-  return y === null || y === undefined ? null : Math.max(1, Math.round(y));
+  return psYears(y);
 }
 // The payback of one item or line as the tables print it: whole years, "<1" under one year (not 1), null when there is none.
 function _pricingEstimateYearsText(years) {
@@ -12323,6 +12216,76 @@ function _pricingComputeSummaryData(projId, estimate) {
     notNow: _pricingNotRecommendedCache[projId] || [],
     recommendedNone: _pricingRecommendedNoneNow(perTier.recommended, _pricingNotRecommendedCache[projId]),
   };
+}
+
+/* _pricingDerivedMeasures(projId): the DERIVED measures of the Energy Savings list (2026-11-27): the savings items of the Service Proposal estimate,
+   computed on read from the Cost Estimate rows (never stored). One entry per item (key, building, quantity) with its option membership
+   { compliance, recommended, fullScope, optional } and its price in each option, plus the room CO2 line of each building (optional).
+   Returns { measures, optionPrice, external } for psSavings (computations/project-savings.js); the Energy Savings tab (getProjSavings) reads it.
+   Each measure: { id, source: 'proposal:<key>', key, building, label, qty, claimed, exempt, hasData, reason, kwh, therms, usd, options, prices,
+   + what psRollUp needs: ms, bldOk, unitCost, useLabel }. The total of an option is psSavings(derived, option) = the estimate of the option
+   (summaryData.option[tier]) the Cost Estimate tab and the Service Proposal read: both are psRollUp. */
+function _pricingDerivedMeasures(projId) {
+  var estimate = _pricingGetEstimate(projId);
+  var sum = _pricingComputeSummaryData(projId, estimate);
+  var tiers = { compliance: 'compliance', recommended: 'recommended', 'full-scope': 'fullScope' };
+  var byId = {};
+  var measures = [];
+  var optionPrice = {};
+  Object.keys(tiers).forEach(function (t) {
+    var opt = tiers[t];
+    var est = sum.option[t];
+    var tt = sum.tierTotals[t];
+    optionPrice[opt] = tt && tt.grand != null ? tt.grand : null;
+    var seen = {};
+    ((est && est.items) || []).forEach(function (it) {
+      var base = 'proposal:' + it.key + '|' + it.building + '|' + it.qty + '|' + it.label;
+      seen[base] = (seen[base] || 0) + 1;
+      var id = base + '#' + seen[base];
+      var m = byId[id];
+      if (!m) {
+        m = byId[id] = {
+          id: id, source: 'proposal:' + it.key, key: it.key, building: it.building, label: it.label, qty: it.qty, claimed: it.claimed,
+          exempt: it.exempt, hasData: it.hasData, reason: it.reason, kwh: it.kwh, therms: it.therms, usd: it.usd, ms: it.ms, bldOk: it.bldOk,
+          unitCost: it.unitCost, useLabel: it.useLabel, options: {}, prices: {},
+        };
+        measures.push(m);
+      }
+      m.options[opt] = true;
+      m.prices[opt] = it.price;
+    });
+    // the room CO2 lines inside this option (its rows hold the optional zone CO2 rows)
+    ((est && est.co2) || []).forEach(function (c) {
+      var cid = 'proposal:vav_dcv|' + c.building + '|zone-co2|' + opt;
+      measures.push({
+        id: cid, source: 'proposal:vav_dcv', key: 'vav_dcv', co2: true, building: c.building,
+        label: 'Zone CO2 sensors: occupancy-based ventilation (' + c.rooms + ' room' + (c.rooms === 1 ? '' : 's') + ')', qty: c.rooms, claimed: true,
+        exempt: false, hasData: c.hasData, kwh: c.kwh || { low: 0, likely: 0, high: 0 }, therms: c.therms || { low: 0, likely: 0, high: 0 },
+        usd: c.usd || { low: 0, likely: 0, high: 0 }, bldOk: true, useLabel: c.useLabel, options: (function () { var o = {}; o[opt] = true; return o; })(), prices: {},
+      });
+    });
+  });
+  // The room CO2 line: the optional section (dense rooms). Taken from the first option that holds the programming (phase 2 rows).
+  var co2Done = false;
+  ['recommended', 'full-scope', 'compliance'].forEach(function (t) {
+    var sec = sum.optional && sum.optional[t];
+    if (co2Done || !sec || !sec.estimate || !sec.rows.some(function (r) { return r.phase === 2; })) return;
+    co2Done = true;
+    optionPrice.optional = sec.totals && sec.totals.grand != null ? sec.totals.grand : null;
+    sec.estimate.buildings.forEach(function (b) {
+      measures.push({
+        id: 'proposal:vav_dcv|' + b.building + '|zone-co2', source: 'proposal:vav_dcv', key: 'vav_dcv', co2: true, building: b.building,
+        label: 'Zone CO2 sensors: occupancy-based ventilation (' + b.rooms + ' room' + (b.rooms === 1 ? '' : 's') + ')', qty: b.rooms, claimed: true,
+        exempt: false, hasData: !!b.usd, kwh: b.kwh || { low: 0, likely: 0, high: 0 }, therms: b.therms || { low: 0, likely: 0, high: 0 },
+        usd: b.usd || { low: 0, likely: 0, high: 0 }, bldOk: true, useLabel: b.year || null, options: { optional: true }, prices: { optional: b.price },
+      });
+    });
+  });
+  var names = [];
+  measures.forEach(function (m) {
+    if (m.building && names.indexOf(m.building) === -1) names.push(m.building);
+  });
+  return { measures: measures, optionPrice: optionPrice, external: _pricingExternalUse(projId, names) };
 }
 
 /* ── Phase 4: patch _pricingRefreshFooter to apply labor overrides ──────── */

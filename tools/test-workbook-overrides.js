@@ -345,6 +345,7 @@ function auditBox(store, srcs) {
     const sb = makeSandbox(store, [
       read('computations/cost-lines.js'), // simplePayback for the option savings estimate (the page loads it too)
       read('computations/measure-savings.js'), // (Matt 2026-11-23 8c5bfd4a)
+      read('computations/project-savings.js'), // the one savings total and rate reader (2026-11-27)
       pe || read('app/pricing-estimator.js'),
       read('app/estimate-workbook.js'),
       au || read('app/audit-estimate.js'),

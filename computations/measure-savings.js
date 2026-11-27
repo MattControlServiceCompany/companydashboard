@@ -33,7 +33,7 @@
 
 var MS_CASES = ['low', 'likely', 'high'];
 var MS_ELECTRIC_USES = ['fan', 'cool', 'heatEl', 'pumpHw', 'pumpChw', 'lightInt', 'lightExt'];
-var MS_SENSIBLE_FACTOR = 1.08; // Btu/h per cfm per F (sensible heat of air; the factor typed in dcvEnergySaved and the BAS Savings Calc)
+var MS_WEATHER_CITY = 4; // city id of app/data/bas-weather-bins.js (the default city of the BAS Savings Calc): the typical year of every estimate
 var MS_CFM_PER_TON = 400; // supply cfm per ton of cooling: the standard design rule of thumb (ASHRAE / ACCA)
 var MS_SQFT_PER_TON = 300; // the BAS Savings Calc rule (app/calculators.js, max cooling tons = sqft / 300)
 var MS_OA_CFM_PER_SQFT = 0.1; // the BAS Savings Calc rule (outside air cfm = sqft x 0.1)
@@ -267,6 +267,27 @@ function msDspReset(B, qty) {
   });
 }
 
+/* msSatResetCooling(bins, cfmAvg, cop, d): the cooling part of the supply air temperature reset, the ONE formula (2026-11-27). msSatReset and the
+   vav_reheat template of the ECM Calculator both call it. d = { satOld, satMax, lo, hi } (F): supply air now, supply air at the top of the reset,
+   and the outdoor temperatures where the reset is at its maximum (lo or colder) and at its minimum (hi or warmer). In each bin (outdoor t, hours h):
+     coil load saved = SENSIBLE_HEAT_FACTOR x cfmAvg x ( max(0, t - satOld) - max(0, t - satNew) ) x h     (mixed air = outdoor air: an economizer holds the supply air)
+   Returns { coilBtu, kwh } with kwh = coilBtu / (cop x Btu per kWh). Un-rounded. */
+function msSatResetCooling(bins, cfmAvg, cop, d) {
+  var coilBtu = _msSumBins(bins, function (t, h) {
+    var satNew = d.satOld + (d.satMax - d.satOld) * _msClamp((d.hi - t) / (d.hi - d.lo), 0, 1);
+    return SENSIBLE_HEAT_FACTOR * cfmAvg * (Math.max(0, t - d.satOld) - Math.max(0, t - satNew)) * h;
+  });
+  return { coilBtu: coilBtu, kwh: coilBtu / (cop * BTU_PER_KWH) };
+}
+// The same with the stated defaults (likely case), the typical year of the default city in the default occupied window, and the average airflow
+// share of the design airflow: for the ECM Calculator template, which has no weather of its own. systemCfm = the design supply airflow.
+function msSatResetCoolingDefault(systemCfm, cop) {
+  var D = _msDefaults();
+  var bins = msOccupiedBins(BAS_WEATHER_BINS, MS_WEATHER_CITY, MS_DEFAULT_WINDOW.start, MS_DEFAULT_WINDOW.stop);
+  var d = { satOld: _msPick(D.satOld, 1), satMax: _msPick(D.satMax, 1), lo: _msPick(D.satOatLo, 1), hi: _msPick(D.satOatHi, 1) };
+  return msSatResetCooling(bins || [], systemCfm * _msPick(D.avgFlow, 1), cop, d);
+}
+
 /* msSatReset(B, qty): supply air temperature reset (ahu_sat_reset; satOverride = same saving, qty null = every unit). Bin method on the
    typical year of the occupied window. Now: supply air held at satOld (55 F). Reset (ASHRAE Guideline 36): the supply air is satMax (65 F) at
    outdoor air of 60 F or colder, falls linearly to satOld at 70 F. In each bin (outdoor temperature t, hours h):
@@ -289,16 +310,17 @@ function msSatReset(B, qty) {
     var hi = _msPick(D.satOatHi, i);
     var cfmAvg = _msDesignCfm(B) * share * _msPick(D.avgFlow, i);
     var cfmReheat = _msDesignCfm(B) * share * _msPick(D.reheatShare, i) * _msPick(D.mfOld, i); // zones in reheat sit at their minimum airflow
-    var reheatBtu = _msSumBins(B.bins, function (t, h) {
-      var dSat = (satMax - satOld) * _msClamp((hi - t) / (hi - lo), 0, 1);
-      return MS_SENSIBLE_FACTOR * cfmReheat * dSat * h;
+    var reheatBtu = 0;
+    var heat = 0;
+    B.bins.forEach(function (b) {
+      var dSat = (satMax - satOld) * _msClamp((hi - b.t) / (hi - lo), 0, 1);
+      var r = reheatEnergySaved({ cfm: cfmReheat, dT: dSat, hours: b.hours, electric: B.heatFuel !== 'gas', afue: B.afue }); // app/ecm-calculators.js: the one reheat energy
+      reheatBtu += r.btu;
+      heat += r.qty;
     });
-    var coilBtu = _msSumBins(B.bins, function (t, h) {
-      var satNew = satOld + (satMax - satOld) * _msClamp((hi - t) / (hi - lo), 0, 1);
-      return MS_SENSIBLE_FACTOR * cfmAvg * (Math.max(0, t - satOld) - Math.max(0, t - satNew)) * h;
-    });
-    var heat = _msHeatQty(B, reheatBtu);
-    var cool = coilBtu / (B.cop * BTU_PER_KWH);
+    var cr = msSatResetCooling(B.bins, cfmAvg, B.cop, { satOld: satOld, satMax: satMax, lo: lo, hi: hi }); // the one cooling part (the vav_reheat template calls it too)
+    var coilBtu = cr.coilBtu;
+    var cool = cr.kwh;
     var inputs = [
       _msIn('Floor area', B.sqft, 'ft2', 'bill', 'the building floor area (utility data)'),
       _msIn('Design supply airflow', _msDesignCfm(B) * share, 'cfm', 'default', 'floor area / 300 ft2 per ton x 400 cfm per ton (BAS Savings Calc cooling rule)'),
@@ -347,7 +369,7 @@ function msEconomizer(B, qty) {
     var coilBtu = _msSumBins(B.bins, function (t, h) {
       if (t < balance || t >= limit) return 0;
       var tMix = tRa - fOa * (tRa - t);
-      return MS_SENSIBLE_FACTOR * cfmAvg * Math.max(0, tMix - sat - Math.max(0, t - sat)) * h;
+      return SENSIBLE_HEAT_FACTOR * cfmAvg * Math.max(0, tMix - sat - Math.max(0, t - sat)) * h;
     });
     var cool = coilBtu / (B.cop * BTU_PER_KWH);
     var inputs = [
@@ -442,8 +464,9 @@ function msTerminalMinFlow(B, qty) {
     var inReheat = _msPick(D.reheatShare, i); // share of the boxes at their minimum airflow in these hours
     var dCfm = covered * boxCfm * (mOld - mNew) * inReheat;
     var rise = _msPick(D.reheatRise, i);
-    var heatBtu = MS_SENSIBLE_FACTOR * dCfm * rise * hours;
-    var heat = _msHeatQty(B, heatBtu);
+    var rh = reheatEnergySaved({ cfm: dCfm, dT: rise, hours: hours, electric: B.heatFuel !== 'gas', afue: B.afue }); // app/ecm-calculators.js: the one reheat energy
+    var heatBtu = rh.btu;
+    var heat = rh.qty;
     var fanKw = B.fanUnits.reduce(function (s, u) { return s + u.kw * u.baselineFraction; }, 0) * (covered * boxCfm / design) * inReheat;
     var fan = vavMinFlowFanSaved({ fan_kw_design: fanKw, min_flow_old: mOld, min_flow_new: mNew, hours: hours });
     var inputs = [

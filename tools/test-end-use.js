@@ -265,6 +265,8 @@ console.log('--- 3. template inputs and measure map ---');
   vm.runInContext(fs.readFileSync(path.join(root, 'computations/fan-savings.js'), 'utf8'), sb);
   vm.runInContext(fs.readFileSync(path.join(root, 'computations/end-use.js'), 'utf8'), sb);
   vm.runInContext(ecmSrc, sb);
+  sb.BAS_WEATHER_BINS = { bins: [57.5], cities: { 4: { temp: Array.from({ length: 12 }, () => [Array(24).fill(10)]) } } }; // the vav_reheat template cooling reads a typical year
+  vm.runInContext(fs.readFileSync(path.join(root, 'computations/measure-savings.js'), 'utf8'), sb);
   const T = sb.ECM_TEMPLATES;
   const MAP = sb.ECM_MEASURE_FIELD_MAP;
   const euKeys = Object.keys(sb.END_USES).concat(['fans']); // fans: from the Equipment Matrix, tools/test-fan-savings.js

@@ -4,6 +4,7 @@ const vm = require('vm'),
   fs = require('fs'),
   path = require('path');
 const ROOT = path.join(__dirname, '..');
+const { loadSavingsOwners } = require('./savings-sandbox.js'); // project savings owners (2026-11-27)
 function makeCtx(store) {
   const el = () => ({
     style: {},
@@ -73,6 +74,7 @@ function check(name, ok, detail) {
 
 const store = {};
 const ctx = makeCtx(store);
+require('./savings-sandbox.js').loadSavingsOwners(ctx, vm, ROOT);
 load(ctx, 'app/pricing-estimator.js');
 load(ctx, 'app/estimate-workbook.js');
 load(ctx, 'computations/fan-savings.js');
@@ -99,7 +101,8 @@ check(
 );
 check('Compliance estimate = no energy savings claimed', /No energy savings claimed/.test(run(ctx, "_pricingSavingsLineHTML(1, { est: null, tier: 'compliance' })")));
 ctx.getProjMatrixSavingsTotal = () => 12345;
-check('matrix total wins over the estimate', /\$12,345/.test(run(ctx, '_pricingSavingsLineHTML(1, ' + optionArg + ')')) && !/Estimated savings/.test(run(ctx, '_pricingSavingsLineHTML(1, ' + optionArg + ')')));
+// 2026-11-27: the matrix total never replaces the estimate; it is a separate, labelled figure after it
+check('matrix total is a labelled extra figure, the estimate stays', /Estimated savings \$1,100 per year/.test(run(ctx, '_pricingSavingsLineHTML(1, ' + optionArg + ')')) && /Energy Savings matrix \(measures entered by hand\): \$12,345/.test(run(ctx, '_pricingSavingsLineHTML(1, ' + optionArg + ')')), run(ctx, '_pricingSavingsLineHTML(1, ' + optionArg + ')'));
 
 // 2. Saved config: new save stores only changed fields; stored values always win
 delete store.en_pricing_config;

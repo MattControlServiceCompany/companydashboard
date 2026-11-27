@@ -7,6 +7,7 @@ const vm = require('vm'),
   assert = require('assert'),
   cp = require('child_process');
 const ROOT = path.join(__dirname, '..');
+const { loadSavingsOwners } = require('./savings-sandbox.js'); // project savings owners (2026-11-27)
 const EW = require(path.join(ROOT, 'app/estimate-workbook.js'));
 const read = (rel) => fs.readFileSync(path.join(ROOT, rel), 'utf8');
 const oldPE = cp.execFileSync('git', ['show', '587fd84:app/pricing-estimator.js'], {
@@ -65,6 +66,7 @@ function make(peSrc, store, tiers) {
   sb.globalThis = sb;
   vm.createContext(sb);
   vm.runInContext(read('computations/cost-lines.js'), sb); // simplePayback: the option estimate (Matt 2026-11-19) reads it
+  loadSavingsOwners(sb, vm, ROOT);
   vm.runInContext(peSrc, sb);
   vm.runInContext(read('app/estimate-workbook.js'), sb);
   vm.runInContext(read('app/audit-estimate.js'), sb);

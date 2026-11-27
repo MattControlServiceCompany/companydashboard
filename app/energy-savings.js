@@ -441,10 +441,19 @@ function ownerMeasureRates(projId, m) {
 
 // measureRatesNow(projId, m, fallback) - the rates to price a measure with right now, without writing: the
 // owner's current rates for an owner-sourced measure (when they pass the fixed bounds), else the saved rates.
+// A measure of a project with NO contract that holds no rate at all is priced at the building's blended rate (newest 12 bill months, cost / use:
+// psBlendedMeasureRates, computations/project-savings.js, the one rate reader of an estimate). A saved rate, and every measure of a contracted
+// project, is used as it is (Matt 2026-10-27).
 function measureRatesNow(projId, m, fallback) {
   const own = ownerMeasureRates(projId, m);
   if (own && !rateGuardCheckSet(own, projId, m.bldgId, true).length) return own;
-  return m.rates || fallback || {};
+  const saved = m.rates || fallback || {};
+  const hasRate = RATE_WRITE_FIELDS.some((k) => (Array.isArray(saved[k]) ? saved[k].some((v) => parseFloat(v) > 0) : parseFloat(saved[k]) > 0));
+  if (!hasRate && !projHasContract(projId)) {
+    const blended = psBlendedMeasureRates(projId, m.bldgId);
+    if (blended) return blended;
+  }
+  return saved;
 }
 
 // followOwnerMeasureRates(projId, sd) - a measure whose rates came from the owner always holds the owner's
@@ -535,6 +544,30 @@ function getProjMatrixSavingsTotal(projId) {
     total += msrAnnualSavings(proj.id, m);
   });
   return total > 0 ? total : null;
+}
+
+// getProjMeasures(projId) - the ONE measure list of a project (2026-11-27): the hand-entered measures of the Energy Savings matrix (the selected
+// ones) and the DERIVED measures of the Service Proposal estimate (tagged source 'proposal:<key>', each with its option membership
+// compliance / recommended / fullScope / optional). The derived ones are computed on read from the Cost Estimate rows (_pricingDerivedMeasures,
+// app/pricing-estimator.js), never stored.
+function getProjMeasures(projId) {
+  const sd = getProjSavingsData(projId);
+  return {
+    handEntered: ((sd && sd.measures) || []).filter((m) => m.selected !== false),
+    derived: _pricingDerivedMeasures(projId),
+  };
+}
+
+// getProjSavings(projId) - the savings of the project over that one list: { matrix, options: { compliance, recommended, fullScope, optional }, derived }.
+// matrix = the hand-entered measures in dollars (getProjMatrixSavingsTotal, or null); each option = psSavings (computations/project-savings.js): kWh,
+// therms, dollars low / likely / high and payback, after the overlap rule. The Energy Savings tab reads this.
+function getProjSavings(projId) {
+  const list = getProjMeasures(projId);
+  const options = {};
+  PS_OPTIONS.forEach((o) => {
+    options[o] = psSavings(list.derived, o);
+  });
+  return { matrix: getProjMatrixSavingsTotal(projId), options, derived: list.derived };
 }
 
 // ── Cost lines and payback (Phase 7, 2026-10-14). Totals and the payback formula: computations/cost-lines.js. ──
@@ -1123,6 +1156,7 @@ function _renderSavingsContent(wrap, projId) {
         </div>`
     : '';
 
+  const proposalHtml = _svProposalMeasuresHtml(projId);
   wrap.innerHTML = `<div style="padding:16px;overflow-y:auto;flex:1;min-height:0;display:flex;flex-direction:column;gap:16px">
 
           <div class="card" style="flex-shrink:0">
@@ -1174,6 +1208,7 @@ function _renderSavingsContent(wrap, projId) {
             ${emptyStateHtml}
           </div>
 
+          ${proposalHtml}
           ${summaryHtml}
         </div>`;
   // Apply persisted zoom to savings matrix table
@@ -1182,6 +1217,65 @@ function _renderSavingsContent(wrap, projId) {
       setTableZoom('sv-matrix-wrap-' + projId, null, 'en_sv_matrix_zoom_' + projId, 'sv-matrix-zoom-lbl-' + projId);
     });
   }
+}
+
+// The Service Proposal measures of the project (derived measures of getProjMeasures) and the savings of each option (getProjSavings): the same
+// numbers as the Cost Estimate tab and the Service Proposal. Estimates, not measured results.
+function _svProposalMeasuresHtml(projId) {
+  const S = getProjSavings(projId);
+  const shown = S.derived.measures.filter((m) => m.claimed && m.hasData);
+  if (!shown.length && !S.options.optional.members.length) return '';
+  // Dollars use the one display rounding of every estimate (psRound100 / psSavings display), the same as the Cost Estimate tab and the proposal.
+  const usd = (v) => '$' + Math.round(v).toLocaleString();
+  const num = (v) => Math.round(v).toLocaleString();
+  const names = { compliance: 'Compliance', recommended: 'Recommended', fullScope: 'Full Scope', optional: 'Optional: Zone CO2 Sensors' };
+  const th = 'border-right:1px solid var(--border);border-bottom:1px solid var(--border2);background:var(--s1)';
+  const td = 'border-right:1px solid var(--border);border-bottom:1px solid var(--border);white-space:nowrap;overflow:hidden;text-overflow:ellipsis';
+  const right = 'text-align:right;';
+  const wrap = 'white-space:normal;word-break:break-word'; // label columns wrap (ui-standards: text never overflows its cell)
+  const optRows = PS_OPTIONS.filter((o) => o !== 'optional' || S.options.optional.members.length)
+    .map((o) => {
+      const r = S.options[o];
+      const t = r.total;
+      const cost = t.price > 0 ? usd(t.price) : '—';
+      return `<tr><td style="${td}">${names[o]}</td>
+          <td style="${td};${right}">${r.complete ? num(t.kwh.likely) : '—'}</td><td style="${td};${right}">${r.complete ? num(t.therms.likely) : '—'}</td>
+          <td style="${td};${right}">${r.complete ? usd(r.display.low) : '—'}</td><td style="${td};${right};font-weight:700">${r.complete ? usd(r.display.likely) : '$0'}</td>
+          <td style="${td};${right}">${r.complete ? usd(r.display.high) : '—'}</td><td style="${td};${right}">${cost}</td>
+          <td style="${td};${right}">${r.complete && r.display.years ? r.display.years + (r.display.years === 1 ? ' yr' : ' yrs') : '—'}</td></tr>`;
+    })
+    .join('');
+  const flag = (m, o) => (m.options[o] ? '✓' : '');
+  const measureRows = shown
+    .map(
+      (m) => `<tr><td style="${td};${wrap}" title="${_escHtml(m.label || m.key)}">${_escHtml(m.label || m.key)}</td>
+          <td style="${td};${wrap}">${_escHtml(m.building || '')}</td>
+          <td style="${td};text-align:center">${flag(m, 'compliance')}</td><td style="${td};text-align:center">${flag(m, 'recommended')}</td>
+          <td style="${td};text-align:center">${flag(m, 'fullScope')}</td><td style="${td};text-align:center">${flag(m, 'optional')}</td>
+          <td style="${td};${right}">${num(m.kwh.likely)}</td><td style="${td};${right}">${num(m.therms.likely)}</td>
+          <td style="${td};${right}">${usd(psRound100(m.usd.likely))}</td><td style="${td}" title="${_escHtml(m.source)}">${_escHtml(m.source)}</td></tr>`,
+    )
+    .join('');
+  const full = S.options.fullScope.total;
+  const hdr = (t, a) => `<th style="${th};${a || ''}">${t}</th>`;
+  const ft = `${td};background:var(--s1);font-weight:700;border-top:2px solid var(--border2)`;
+  return `<div class="card" style="flex-shrink:0" id="sv-proposal-measures-${projId}">
+          <div class="card-hdr"><span class="card-title">📋 Service Proposal Measures</span></div>
+          <div style="padding:6px 14px 8px;font-size:12px;color:var(--text2);line-height:1.4">Estimated savings of the Service Proposal measures, from each building's newest 12 months of utility bills and its equipment (estimates, not measured results). The option totals take each end use once (a saving never exceeds what the building uses), so the measures do not add up to a total. Hand-entered measures above are a separate figure.</div>
+          <div style="padding:0 14px 12px">
+            <div class="ch-tbl-outer" style="border:1px solid var(--border);border-radius:6px;overflow:hidden;margin-bottom:12px">
+              <table class="dtbl" id="sv-proposal-options-${projId}"><thead><tr>${hdr('Option')}${hdr('kWh / yr', right)}${hdr('Therms / yr', right)}${hdr('$ low', right)}${hdr('$ likely / yr', right)}${hdr('$ high', right)}${hdr('Cost', right)}${hdr('Payback', right)}</tr></thead>
+              <tbody>${optRows}</tbody></table>
+            </div>
+            <div class="ch-tbl-outer" style="border:1px solid var(--border);border-radius:6px;overflow:hidden">
+              <table class="dtbl" id="sv-proposal-list-${projId}"><thead><tr>${hdr('Measure')}${hdr('Building')}${hdr('Compl.', 'text-align:center')}${hdr('Rec.', 'text-align:center')}${hdr('Full', 'text-align:center')}${hdr('Opt.', 'text-align:center')}${hdr('kWh / yr', right)}${hdr('Therms / yr', right)}${hdr('$ likely / yr', right)}${hdr('Source')}</tr></thead>
+              <tbody>${measureRows}</tbody>
+              <tfoot><tr><td colspan="6" style="${ft}">Total, Full Scope (each end use once)</td>
+                <td style="${ft};${right}">${num(full.kwh.likely)}</td><td style="${ft};${right}">${num(full.therms.likely)}</td>
+                <td style="${ft};${right}">${usd(psRound100(full.usd.likely))}</td><td style="${ft}"></td></tr></tfoot></table>
+            </div>
+          </div>
+        </div>`;
 }
 
 // ── Savings page action handlers ──

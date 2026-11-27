@@ -339,6 +339,14 @@
           "formula": "yearly saving per use = engineering formula of the measure (fan affinity, bin method 1.08 x cfm x dT x hours, free cooling bins, pump affinity, watts x hours); building saving per use = base x (1 - product of (1 - saving / base)); dollars = kWh x electric rate + therms x gas rate"
         },
         {
+          "id": "project-savings-one-total",
+          "name": "Project Savings: One Measure List and One Total",
+          "description": "A project has one measure list: the hand-entered Energy Savings matrix measures and the DERIVED measures of the Service Proposal estimate (tagged proposal:<key>, each with option membership compliance / recommended / fullScope / optional, computed on read from the Cost Estimate rows, never stored). psRollUp is the one total (overlap per building and end use, payback by simplePayback, display rounding); psSavings is the total of one option of the derived list. The Energy Savings tab card, the Cost Estimate tab (footer, top line, item column) and the Service Proposal (site, Word and PDF) all read it. One rate reader (psBuildingRates: the building's blended newest-12-month cost / use; a building with no gas meter takes the mean gas rate of the project) prices through calcMeasureDollars. A contracted project keeps its saved matrix rates and quantities.",
+          "functions": ["psRollUp(items, o)", "psSavings(derived, option)", "psDollars(kwh, therms, unitCost)", "psBuildingRates(projId, name)", "psBlendedMeasureRates(projId, bldgId)", "psExternalUse(m, ecmMap)", "getProjMeasures(projId)", "getProjSavings(projId)", "_pricingDerivedMeasures(projId)", "_pricingOptionSavingsEstimate(projId, rows, estimate, totals, ctx)", "msSatResetCooling(bins, cfmAvg, cop, d)", "reheatEnergySaved(p)"],
+          "files": ["computations/project-savings.js", "computations/measure-savings.js", "computations/physics.js", "app/energy-savings.js", "app/pricing-estimator.js", "app/ecm-calculators.js", "tools/test-savings-known-values.js", "tools/savings-sandbox.js"],
+          "formula": "option savings = psRollUp over the option's items: per building and end use, saved = base x (1 - product of (1 - saving / base)); dollars = psDollars(kWh, therms, blended building rate) through calcMeasureDollars; payback = simplePayback(price, 0, likely dollars)"
+        },
+        {
           "id": "measure-cost-lines-payback",
           "name": "Measure Cost Lines and One Payback",
           "description": "Each Energy Savings matrix measure holds cost lines (third-party price, internal labor hours x the pricing estimator hourly rate, parts, incentive). simplePayback = (total cost - incentive) / annual matrix savings is the only payback formula. The Energy Savings tab (measure detail and Selected Measures card) and the Cost Estimate tab (roll-up table and footer line) all call it. The pricing estimator does no energy math.",

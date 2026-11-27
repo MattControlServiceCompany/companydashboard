@@ -41,8 +41,11 @@ const ok = (m) => {
 };
 const near = (a, b, m, rel) => assert.ok(Math.abs(a - b) <= Math.abs(b) * (rel || 0.0001) + 1e-9, m + ': ' + a + ' vs ' + b);
 
+// Synthetic typical year (city 4): bins 32.5, 57.5 and 77.5 F with 1,000 occupied hours each (8 to 18 h), the weather the vav_reheat template cooling reads.
+const _hourly = (v) => Array.from({ length: 24 }, (_, h) => (h >= 8 && h < 18 ? v / 10 : 0));
+const SYN_WEATHER = { bins: [32.5, 57.5, 77.5], cities: { 4: { temp: Array.from({ length: 12 }, (_, m) => [_hourly(m === 0 ? 1000 : 0), _hourly(m === 0 ? 1000 : 0), _hourly(m === 0 ? 1000 : 0)]) } } };
 const sb = {
-  console, Math, JSON, Object, Array, String, Number, isFinite, parseFloat, parseInt, Date, window: {},
+  console, Math, JSON, Object, Array, String, Number, isFinite, parseFloat, parseInt, Date, window: {}, BAS_WEATHER_BINS: SYN_WEATHER,
   document: { getElementById: () => ({}), createElement: () => ({ style: {} }), head: { appendChild() {} }, addEventListener() {}, readyState: 'complete', body: { appendChild() {} } },
 };
 vm.createContext(sb);
@@ -215,7 +218,9 @@ const est = (key, qty, B) => {
   assert.deepStrictEqual(r, { bhp_design: 4.21, kw_design: 3.45, kwh_existing: 6210, kwh_new: 2130, savings_kwh: 4080 });
   const v = JSON.parse(JSON.stringify(run("ECM_TEMPLATES.vav_reheat.calculate({ system_cfm: 20000, pct_zones_heat: 40, avg_dt_reheat: 8, season_hours: 1000, reheat_type: 'gas', boiler_afue: 82, cooling_cop: 3.5, min_flow_old: 35, min_flow_new: 15, fan_kw_design: 15, unocc_hours: 2000 })")));
   // fan = 15 x (0.35^3 - 0.15^3) x 2,000 = 15 x 0.0395 x 2,000 = 1,185
-  assert.deepStrictEqual(v, { reheat_saved_qty: 843, cool_kwh_saved: 4341, fan_kwh_saved: 1185 }, 'the same numbers as before the shared functions were extracted');
-  ok('pump_vfd and vav_reheat templates give their old numbers through the shared functions');
+  // 2026-11-27: the cooling part is msSatResetCooling (decision of the single source): average airflow 20,000 x 0.6 = 12,000 cfm; bin 57.5 F: supply air
+  // 65 F after the reset, coil load saved 2.5 F; the other two bins save 0. 1.08 x 12,000 x 2.5 x 1,000 h / (3.5 x 3,412.14) = 2,713 kWh (was 4,341 with the typed 0.30 factor).
+  assert.deepStrictEqual(v, { reheat_saved_qty: 843, cool_kwh_saved: 2713, fan_kwh_saved: 1185 }, 'reheat and fan as before; cooling = msSatResetCooling');
+  ok('pump_vfd and vav_reheat templates: pump, reheat and fan as before; the cooling part is the shared supply air temperature reset function');
 }
 console.log(n + ' checks passed');

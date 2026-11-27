@@ -20,6 +20,7 @@ const vm = require('vm'),
   path = require('path'),
   assert = require('assert');
 const ROOT = path.join(__dirname, '..');
+const { loadSavingsOwners } = require('./savings-sandbox.js'); // project savings owners (2026-11-27)
 const read = (rel) => fs.readFileSync(path.join(ROOT, rel), 'utf8');
 let n = 0;
 const ok = (m) => {
@@ -57,6 +58,7 @@ function make(useByName, eqList) {
   const em = read('app/equipment-matrix.js');
   vm.runInContext(em.slice(em.indexOf('var EM_SPACE_TYPE_ZONE_TERMINAL_CATS'), em.indexOf('/* _emSpaceTypeConfigFlagOverrides')), sb);
   vm.runInContext(read('computations/measure-savings.js'), sb); // the Service Proposal measure formulas _pricingOptionSavingsEstimate calls (Matt 2026-11-23 8c5bfd4a)
+  loadSavingsOwners(sb, vm, ROOT);
   vm.runInContext(read('app/pricing-estimator.js'), sb);
   return sb;
 }

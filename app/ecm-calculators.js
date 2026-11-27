@@ -20,8 +20,8 @@ const KWH_LABEL = BTU_PER_KWH.toLocaleString('en-US', { maximumFractionDigits: 2
 function dcvEnergySaved(p) {
   const avgOaReduction = p.per_person_frac * (1 - p.avg_occ_frac);
   const cfm_saved = p.oa_cfm_design * avgOaReduction;
-  const heat_btu = 1.08 * cfm_saved * p.heat_degree_hours;
-  const cool_btu = 1.08 * cfm_saved * p.cool_degree_hours;
+  const heat_btu = SENSIBLE_HEAT_FACTOR * cfm_saved * p.heat_degree_hours;
+  const cool_btu = SENSIBLE_HEAT_FACTOR * cfm_saved * p.cool_degree_hours;
   return {
     avgOaReduction: avgOaReduction,
     cfm_saved: cfm_saved,
@@ -48,6 +48,15 @@ function pumpVfdEnergySaved(p) {
    minimum - power fraction at the new minimum) x hours. Never below 0. Un-rounded. Quantities only. */
 function vavMinFlowFanSaved(p) {
   return Math.max(0, p.fan_kw_design * (fanPowerFraction(p.min_flow_old) - fanPowerFraction(p.min_flow_new)) * p.hours);
+}
+
+/* reheatEnergySaved(p) - the ONE sensible reheat energy (2026-11-27). The vav_reheat template (reheat part) and the Service Proposal
+   (supply air temperature reset and terminal minimum airflow, computations/measure-savings.js) both call it.
+   p = { cfm, dT (F), hours, electric (true = electric resistance, COP 1), afue (fraction, gas only) }.
+   Btu = SENSIBLE_HEAT_FACTOR x cfm x dT x hours; qty = therms through the boiler AFUE (gas) or kWh (electric). Un-rounded. Quantities only. */
+function reheatEnergySaved(p) {
+  const btu = SENSIBLE_HEAT_FACTOR * p.cfm * p.dT * p.hours;
+  return { btu: btu, qty: p.electric ? btu / BTU_PER_KWH : btu / (BTU_PER_THERM * p.afue) };
 }
 
 const ECM_TEMPLATES = {
@@ -203,11 +212,11 @@ const ECM_TEMPLATES = {
 
       // Heating energy saved (sensible OA load)
       // Formula: Q [Btu/hr] = 1.08 × CFM × ΔT
-      const heat_btu_total = 1.08 * excess_cfm * inp.avg_delta_t_heating * inp.unocc_heating_hrs;
+      const heat_btu_total = SENSIBLE_HEAT_FACTOR * excess_cfm * inp.avg_delta_t_heating * inp.unocc_heating_hrs;
       const therms_saved = heat_btu_total / (BTU_PER_THERM * afue);
 
       // Cooling energy saved
-      const cool_btu_total = 1.08 * excess_cfm * inp.avg_delta_t_cooling * inp.unocc_cooling_hrs;
+      const cool_btu_total = SENSIBLE_HEAT_FACTOR * excess_cfm * inp.avg_delta_t_cooling * inp.unocc_cooling_hrs;
       const kwh_saved = cool_btu_total / (cop * BTU_PER_KWH);
 
       return {
@@ -726,7 +735,7 @@ const ECM_TEMPLATES = {
       // (efficiency 0 saves nothing; a better wheel saves more).
       const delta_t_raw = Math.max(0, inp.heating_setpoint - inp.design_winter_temp);
       const delta_t_recovered = delta_t_raw * erw_winter;
-      const heat_btu_yr = 1.08 * inp.oa_cfm * delta_t_recovered * inp.heating_hours;
+      const heat_btu_yr = SENSIBLE_HEAT_FACTOR * inp.oa_cfm * delta_t_recovered * inp.heating_hours;
 
       // Convert to therms: BTU / (BTU_PER_THERM × AFUE)
       const useGas = inp.heating_fuel < 0.5;
@@ -1510,9 +1519,9 @@ const ECM_TEMPLATES = {
         id: 'cool_kwh_saved',
         label: 'Cooling kWh Saved (Supply Air Temperature Reset)',
         unit: 'kWh/yr',
-        formula: '1.08 × system_cfm × avg_dT × season_hours × 0.30 / (COP × ' + KWH_LABEL + ')',
+        formula: 'msSatResetCoolingDefault (computations/measure-savings.js): sum over the typical-year bins of 1.08 × average cfm × (coil load at the old supply air − at the reset supply air) × hours / (COP × ' + KWH_LABEL + ')',
         assumption:
-          'Assumption, not measured: 30% of the airflow is taken to benefit from the supply air temperature reset (the 0.30 factor).',
+          'Assumption, not measured: typical-year weather in the default occupied window; average airflow, supply air now and the reset limits are the stated defaults of the Service Proposal estimate (the same function). Not measured.',
       },
       {
         id: 'fan_kwh_saved',
@@ -1528,12 +1537,11 @@ const ECM_TEMPLATES = {
       const mfNew = inp.min_flow_new / 100;
       const isElec = inp.reheat_type === 'electric';
       const zones_cfm = inp.system_cfm * pct;
-      const reheat_btu_total = 1.08 * zones_cfm * inp.avg_dt_reheat * inp.season_hours;
-      const reheat_saved_qty = isElec
-        ? Math.round(reheat_btu_total / BTU_PER_KWH)
-        : Math.round(reheat_btu_total / (BTU_PER_THERM * afue));
-      const cool_btu = 1.08 * inp.system_cfm * inp.avg_dt_reheat * inp.season_hours * 0.3;
-      const cool_kwh_saved = Math.round(cool_btu / (inp.cooling_cop * BTU_PER_KWH));
+      const reheat_saved_qty = Math.round(
+        reheatEnergySaved({ cfm: zones_cfm, dT: inp.avg_dt_reheat, hours: inp.season_hours, electric: isElec, afue: afue }).qty,
+      );
+      // The cooling part is the supply air temperature reset of the Service Proposal: one function, one set of stated defaults.
+      const cool_kwh_saved = Math.round(msSatResetCoolingDefault(inp.system_cfm, inp.cooling_cop).kwh);
       const fan_kwh_saved = Math.round(
         vavMinFlowFanSaved({ fan_kw_design: inp.fan_kw_design, min_flow_old: mfOld, min_flow_new: mfNew, hours: inp.unocc_hours }),
       );

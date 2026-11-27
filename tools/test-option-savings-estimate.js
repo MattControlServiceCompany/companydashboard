@@ -27,6 +27,7 @@ const vm = require('vm'),
   path = require('path'),
   assert = require('assert');
 const ROOT = path.join(__dirname, '..');
+const { loadSavingsOwners } = require('./savings-sandbox.js'); // project savings owners (2026-11-27)
 const read = (rel) => fs.readFileSync(path.join(ROOT, rel), 'utf8');
 let n = 0;
 const ok = (m) => {
@@ -63,6 +64,7 @@ function make(useByName, counts, noSchedule) {
   vm.runInContext(read('computations/cost-lines.js'), sb);
   ['computations/physics.js', 'computations/fan-savings.js', 'app/ecm-calculators.js', 'computations/measure-savings.js'].forEach((f) => vm.runInContext(read(f), sb)); // (Matt 2026-11-23 8c5bfd4a)
   sb.fanBuildingUnitModels = () => [fanUnit(5), fanUnit(3)]; // after fan-savings.js: stands in for the Equipment Matrix reader
+  loadSavingsOwners(sb, vm, ROOT);
   vm.runInContext(read('app/pricing-estimator.js'), sb);
   return sb;
 }

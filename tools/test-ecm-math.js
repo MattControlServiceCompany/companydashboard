@@ -26,8 +26,10 @@ const SYN_EST = {
   hvacKwh: sumArr(COOL), monthlyHvacKwh: COOL, nonHvacKwh: sumArr(OTHER), monthlyNonHvacKwh: OTHER,
   hvacGasT: sumArr(GAS), monthlyHvacGas: GAS, hvacKw: 300, monthlyHvacKw: COOL.map((v) => v / 100), nonHvacKw: 100, monthlyNonHvacKw: OTHER.map((v) => v / 100),
 };
+const _hourly = (v) => Array.from({ length: 24 }, (_, h) => (h >= 8 && h < 18 ? v / 10 : 0));
+const SYN_WEATHER = { bins: [32.5, 57.5, 77.5], cities: { 4: { temp: Array.from({ length: 12 }, (_, m) => [_hourly(m === 0 ? 1000 : 0), _hourly(m === 0 ? 1000 : 0), _hourly(m === 0 ? 1000 : 0)]) } } };
 const sb = {
-  console, window: {},
+  console, window: {}, BAS_WEATHER_BINS: SYN_WEATHER,
   document: { getElementById: () => ({}), createElement: () => ({ style: {} }), head: { appendChild() {} }, addEventListener() {}, readyState: 'complete', body: { appendChild() {} } },
   projects: [{ id: 'p1' }], getProjSavingsData: () => ({ measures }), getUDBldg: (p, b) => (b === 'b1' ? { id: 'b1', name: 'Synthetic Building', sqft: 1000 } : null), sset() {}, showToast() {}, _svRecalcFrom() {},
   // Synthetic stored HVAC Load Estimate of building b1 (the owner of the end-use split), saved by a person.
@@ -57,6 +59,7 @@ vm.runInContext(cut('app/calculators.js', 'function hvlBasisLabel', '// One line
 vm.runInContext(cut('app/calculators.js', 'function solarMonthlyProduction', 'function solarAddAsMeasure'), sb);
 vm.runInContext(fs.readFileSync(path.join(root, 'computations/end-use.js'), 'utf8'), sb);
 vm.runInContext(src, sb);
+vm.runInContext(fs.readFileSync(path.join(root, 'computations/measure-savings.js'), 'utf8'), sb); // msSatResetCoolingDefault: the cooling part of vav_reheat
 const T = sb.ECM_TEMPLATES;
 // Rate inputs have no default (blank until Utility Data fills them); the test supplies a manual value.
 const defs = (id) => { const o = {}; T[id].inputs.forEach((i) => (o[i.id] = i.default)); return o; };
@@ -149,7 +152,7 @@ const ok = (name, cond, info) => { console.log((cond ? 'PASS ' : 'FAIL ') + name
 // 5. 0.3 VAV factor is labelled in plain words
 { const f = T.vav_reheat;
   const o = f.outputs.find((x) => x.id === 'cool_kwh_saved');
-  ok('VAV 30% factor labelled as assumption', /assum/i.test(o.assumption || ''), o.assumption); }
+  ok('VAV cooling basis labelled as an assumption', /assum/i.test(o.assumption || ''), o.assumption); }
 // 6. E-ECM-2 / E-ECM-4 assumption labels, behaviour unchanged
 { const a = T.oa_dampers.outputs.find((x) => x.id === 'excess_cfm'); ok('damper assumption label', a && /assum/i.test((a && a.assumption) || ''), a && a.assumption);
   const b = T.boiler_replacement.outputs.find((x) => x.id === 'existing_therms'); ok('boiler assumption label', b && /assum/i.test((b && b.assumption) || ''), b && b.assumption); }

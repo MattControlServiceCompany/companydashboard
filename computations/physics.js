@@ -19,6 +19,10 @@ var THERMS_PER_MMBTU = 1000000 / BTU_PER_THERM; // 10 therms per MMBtu
 var KWH_PER_BTU = 1 / BTU_PER_KWH; // kWh per Btu
 var THERMS_PER_BTU = 1 / BTU_PER_THERM; // therms per Btu
 
+// Sensible heat of air: Q [Btu/h] = SENSIBLE_HEAT_FACTOR x cfm x dT [F] (1.08 = 0.075 lb/ft3 x 0.24 Btu/lb/F x 60 min/h at standard air).
+// ONE figure (2026-11-27). Every airflow heat calculation reads it: the ECM templates, the Service Proposal measures, the BAS Savings Calc, BAS Trends.
+var SENSIBLE_HEAT_FACTOR = 1.08; // Btu/h per cfm per F
+
 // Propane: EIA, 1 gallon of propane = 91,452 Btu
 // https://www.eia.gov/energyexplained/units-and-calculators/british-thermal-units.php
 // ONE figure. The bill conversion (gallons -> therms) and the energy-use-intensity factor (kBtu per gallon)

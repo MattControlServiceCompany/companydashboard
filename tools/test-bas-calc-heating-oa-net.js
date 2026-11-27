@@ -95,6 +95,7 @@ function run(inp) {
   ['bc-coolAdjWarn', 'bc-adjCool', 'bc-adjHeat', 'bc-results'].forEach((k) => dom.set(k, new FE('', 'DIV')));
   const sb = { console, document: { getElementById: (id) => dom.get(id) || null }, window: {} };
   vm.createContext(sb);
+  vm.runInContext(fs.readFileSync(path.join(REPO, 'computations', 'physics.js'), 'utf8'), sb); // SENSIBLE_HEAT_FACTOR: the one 1.08
   vm.runInContext(src, sb);
   const project = { id: 'p1', basCalc: {} };
   sb.projects = [project];
