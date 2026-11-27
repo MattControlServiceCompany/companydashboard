@@ -2508,6 +2508,8 @@ async function siteResetAllMeterTableSettings() {
    site-ui.js delegates to this array and should NOT maintain its own copy.
 */
 var RELEASE_NOTES = [
+  { v: 'v2026.11.27.391', date: '2026-11-27', title: 'Energy Savings tab shows the Service Proposal savings',
+    items: [ { type: 'improved', text: 'The Energy Savings tab now lists every Service Proposal measure and the savings of each option. The Energy Savings tab, the Cost Estimate and the Service Proposal now use one calculation, so their numbers always agree.' } ] },
   { v: 'v2026.11.25.390', date: '2026-11-25', title: 'Cost Estimate: savings shown once per item',
     items: [ { type: 'fixed', text: 'Cost Estimate: an item that covers several merged rows shows its estimated savings and payback on the first row only, so the column no longer counts it twice.' } ] },
   { v: 'v2026.11.25.389', date: '2026-11-25', title: 'Smaller PDF downloads',
